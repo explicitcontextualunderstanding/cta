@@ -1,0 +1,144 @@
+# CTA Framework Configuration
+
+# Data paths
+data:
+  # Where to find Claude Code execution logs
+  trace_logs_dir: "./claude_process"
+
+  # Where to find skill documents
+  skills_dir: "./skills"
+
+  # Where to find task metadata
+  task_metadata_file: "./config/tasks.json"
+
+  # Output directory
+  output_dir: "./cta_output"
+
+# Module configurations
+modules:
+  # Module 1: Trace Parsing
+  trace_parser:
+    # Maximum content length to store (chars)
+    max_content_length: 5000
+    max_reasoning_length: 2000
+
+  # Module 2: Phase Segmentation
+  phase_segmenter:
+    # Keywords for phase detection
+    planning_keywords:
+      - "i will"
+      - "i'll"
+      - "the approach"
+      - "steps:"
+      - "strategy"
+      - "plan"
+      - "solution"
+
+    test_build_keywords:
+      - "test"
+      - "pytest"
+      - "npm test"
+      - "build"
+      - "make"
+      - "cargo test"
+      - "go test"
+
+    # Validation
+    min_phase_f1_score: 0.85
+
+  # Module 3: Trace Alignment
+  trace_aligner:
+    # Intent similarity threshold for alignment
+    intent_similarity_threshold: 0.7
+
+    # Embedding model (use simple hash-based for now)
+    embedding_model: "hash"
+    embedding_dim: 100
+
+  # Module 4: SIP Detection
+  sip_detector:
+    # Path to manual annotations (optional)
+    annotation_file: null
+
+    # Confidence thresholds
+    min_detection_confidence: 0.5
+
+    # Training data
+    annotated_divergences_file: null
+
+  # Module 5: Skill Quality Prediction
+  skill_predictor:
+    # Cross-validation strategy
+    cv_strategy: "leave_one_skill_out"
+
+    # Model type
+    model_type: "xgboost"
+
+    # Feature scaling
+    normalize_features: true
+
+# Analysis configuration
+analysis:
+  # Number of runs per task (for variance estimation)
+  runs_per_task: 3
+
+  # Temperature for trace runs
+  temperature: 0.0
+
+  # Task selection
+  # Set to null to include all tasks
+  included_tasks: null  # or ["task1", "task2", ...]
+  excluded_tasks: null  # or ["task_to_skip", ...]
+
+  # Comparison metrics
+  metrics:
+    - "pass_rate_delta"
+    - "token_efficiency"
+    - "phase_sequence_similarity"
+    - "divergence_count"
+
+# Output configuration
+output:
+  # Report formats
+  formats:
+    - "json"
+    - "html"
+    - "markdown"
+
+  # Detailed logging
+  verbose: true
+
+  # Save intermediate results
+  save_intermediate: true
+
+  # Generate visualizations
+  generate_plots: true
+
+# Case study configuration
+case_studies:
+  # Best positive skill
+  best_positive:
+    skill_id: "risk-metrics-calculation"
+    expected_delta: 0.30
+
+  # Worst negative skill
+  worst_negative:
+    skill_id: "springboot-tdd"
+    expected_delta: -0.10
+
+  # Maximum token overhead
+  max_token_overhead:
+    skill_id: "service-mesh-observability"
+    expected_delta: 0.0
+    expected_token_increase: 4.5
+
+# Validation settings
+validation:
+  # Whether to validate traces
+  validate_traces: true
+
+  # Check for data integrity
+  integrity_check: true
+
+  # Save validation reports
+  save_validation_report: true
