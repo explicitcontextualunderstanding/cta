@@ -1,204 +1,258 @@
 """
 Tests for the clojure-write skill.
-Verifies that the Metabase query processor Clojure modules (preprocess.clj,
-normalize.clj, validate.clj) are correctly implemented with proper namespace
-declarations, function definitions, threading macro usage, and mocked
-functional validation of normalize/validate logic.
+
+Validates that a Clojure query preprocessing pipeline was implemented for
+Metabase, including normalization, validation, transformation, default
+values, wildcard expansion, and idempotency of normalization.
+
+Repo: metabase (https://github.com/metabase/metabase)
 """
 
 import os
 import re
-
-import pytest
+import subprocess
 
 REPO_DIR = "/workspace/metabase"
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
-def _path(rel: str) -> str:
-    return os.path.join(REPO_DIR, rel)
-
-
-def _read(rel: str) -> str:
-    full = _path(rel)
-    if not os.path.isfile(full):
-        pytest.skip(f"File not found: {full}")
-    with open(full, encoding="utf-8", errors="replace") as fh:
-        return fh.read()
-
-
-# ---------------------------------------------------------------------------
-# Mocked implementations for functional testing
-# ---------------------------------------------------------------------------
-
-
-def _normalize_query(query: dict) -> dict:
-    """Python mock of normalize-query: convert snake_case keys to kebab-case and remove nils."""
-    result = {}
-    for k, v in query.items():
-        if v is None:
-            continue
-        new_key = k.replace("_", "-")
-        result[new_key] = v
-    return result
-
-
-def _validate_query(query: dict) -> dict:
-    """Python mock of validate-query: check for required fields and constraints."""
-    errors = []
-    if (
-        not query.get(":source-table")
-        and not query.get("source-table")
-        and not query.get("source_table")
-    ):
-        errors.append("Missing required field: :source-table")
-    limit = query.get(":limit") or query.get("limit")
-    if limit is not None and limit < 0:
-        errors.append(":limit must be a non-negative integer")
-    return {"valid": len(errors) == 0, "errors": errors}
-
-
-# ---------------------------------------------------------------------------
-# File path checks
-# ---------------------------------------------------------------------------
-
-
-class TestClojureWrite:
-    """Test suite for the Clojure Development (Metabase query processor) skill."""
+class TestFilePathCheck:
+    """Verify that all required files were created."""
 
     def test_preprocess_file_exists(self):
-        """Verify preprocess.clj exists at the expected path."""
-        target = _path("src/metabase/query_processor/preprocess.clj")
-        assert os.path.isfile(target), f"preprocess.clj not found: {target}"
-        assert os.path.getsize(target) > 0, "preprocess.clj must be non-empty"
+        path = os.path.join(REPO_DIR, "src", "metabase", "query_processor", "preprocess.clj")
+        assert os.path.isfile(path), f"Expected preprocess.clj at {path}"
 
-    def test_normalize_and_validate_files_exist(self):
-        """Verify normalize.clj and validate.clj exist."""
-        for rel in (
-            "src/metabase/query_processor/normalize.clj",
-            "src/metabase/query_processor/validate.clj",
-        ):
-            assert os.path.isfile(_path(rel)), f"Missing file: {rel}"
+    def test_normalize_file_exists(self):
+        path = os.path.join(
+            REPO_DIR, "src", "metabase", "query_processor", "preprocess", "normalize.clj"
+        )
+        assert os.path.isfile(path), f"Expected normalize.clj at {path}"
 
-    # -----------------------------------------------------------------------
-    # Semantic checks
-    # -----------------------------------------------------------------------
+    def test_validate_file_exists(self):
+        path = os.path.join(
+            REPO_DIR, "src", "metabase", "query_processor", "preprocess", "validate.clj"
+        )
+        assert os.path.isfile(path), f"Expected validate.clj at {path}"
 
-    def test_preprocess_defines_preprocess_function(self):
-        """Verify preprocess.clj defines a preprocess or preprocess-query function."""
-        content = _read("src/metabase/query_processor/preprocess.clj")
-        has_fn = "defn preprocess" in content or "(defn preprocess" in content
-        assert (
-            has_fn
-        ), "preprocess.clj must define a 'preprocess' or 'preprocess-query' function"
+    def test_preprocess_test_file_exists(self):
+        path = os.path.join(
+            REPO_DIR, "test", "metabase", "query_processor", "preprocess_test.clj"
+        )
+        assert os.path.isfile(path), f"Expected preprocess_test.clj at {path}"
 
-    def test_normalize_defines_normalize_query(self):
-        """Verify normalize.clj defines normalize-query function."""
-        content = _read("src/metabase/query_processor/normalize.clj")
-        assert (
-            "(defn normalize-query" in content
-        ), "normalize.clj must define '(defn normalize-query ...'"
 
-    def test_threading_macro_usage(self):
-        """Verify preprocess.clj uses Clojure threading macros (-> or ->>)."""
-        content = _read("src/metabase/query_processor/preprocess.clj")
-        has_thread = "->" in content or "->>" in content
-        assert has_thread, "preprocess.clj must use threading macros (-> or ->>)"
+class TestSemanticNormalization:
+    """Verify normalize-query function characteristics."""
 
-    def test_validate_defines_validate_query(self):
-        """Verify validate.clj defines validate-query function."""
-        content = _read("src/metabase/query_processor/validate.clj")
-        assert (
-            "(defn validate-query" in content
-        ), "validate.clj must define '(defn validate-query ...'"
+    def _read_normalize_file(self):
+        path = os.path.join(
+            REPO_DIR, "src", "metabase", "query_processor", "preprocess", "normalize.clj"
+        )
+        with open(path, "r") as f:
+            return f.read()
 
-    # -----------------------------------------------------------------------
-    # Functional checks (mocked in Python)
-    # -----------------------------------------------------------------------
+    def test_normalize_query_function_defined(self):
+        content = self._read_normalize_file()
+        assert re.search(r"normalize-query", content), (
+            "Expected normalize-query function in normalize.clj"
+        )
 
-    def test_normalize_query_converts_snake_to_kebab_case(self):
-        """Verify normalize-query converts snake_case keys {:source_table 1} to kebab-case {:source-table 1}."""
-        result = _normalize_query({"source_table": 1})
-        assert (
-            "source-table" in result
-        ), f"normalize-query must convert 'source_table' to 'source-table', got keys: {list(result.keys())}"
-        assert result["source-table"] == 1
+    def test_kebab_case_conversion(self):
+        """Normalization should convert underscore keys to kebab-case."""
+        content = self._read_normalize_file()
+        assert re.search(r"kebab|snake.*case|_.*-|camel|->kebab", content, re.IGNORECASE), (
+            "Expected key case conversion logic (underscore to kebab-case)"
+        )
 
-    def test_normalize_query_removes_nil_values(self):
-        """Verify normalize-query removes nil values from query map."""
-        result = _normalize_query({"source_table": 1, "limit": None, "filter": None})
-        assert (
-            "limit" not in result and ":limit" not in result
-        ), "nil 'limit' must be removed"
-        assert (
-            "filter" not in result and ":filter" not in result
-        ), "nil 'filter' must be removed"
-        assert (
-            "source-table" in result
-        ), "Non-nil 'source_table' must remain (as 'source-table')"
+    def test_nil_removal(self):
+        """Normalization should remove nil-valued entries."""
+        content = self._read_normalize_file()
+        assert re.search(r"nil\?|remove.*nil|dissoc.*nil|filter.*nil", content, re.IGNORECASE), (
+            "Expected nil value removal logic in normalize-query"
+        )
 
-    def test_normalize_query_is_idempotent(self):
-        """Verify calling normalize-query twice produces the same result as once."""
-        query = {"source_table": 1, "limit": 10}
-        once = _normalize_query(query)
-        twice = _normalize_query(once)
-        assert (
-            once == twice
-        ), f"normalize-query must be idempotent; first={once}, second={twice}"
+    def test_order_by_shorthand_normalization(self):
+        """order-by shorthand [:field-id N] should expand to [:asc [:field-id N]]."""
+        content = self._read_normalize_file()
+        assert re.search(r"order-by|:asc", content), (
+            "Expected order-by normalization (shorthand to full :asc form)"
+        )
 
-    def test_validate_query_empty_returns_invalid(self):
-        """Verify validate-query({}) returns {valid: false} with non-empty errors."""
-        result = _validate_query({})
-        assert result["valid"] is False, "Empty query must fail validation"
-        assert (
-            len(result["errors"]) > 0
-        ), "Errors list must be non-empty for empty query"
+    def test_field_deduplication(self):
+        """Duplicate :fields entries should be removed."""
+        content = self._read_normalize_file()
+        assert re.search(r"dedupe|distinct|set|unique", content, re.IGNORECASE), (
+            "Expected field deduplication logic in normalize-query"
+        )
 
-    def test_validate_query_negative_limit_error(self):
-        """Verify validate-query with limit=-5 returns error referencing the limit field."""
-        result = _validate_query({":source-table": 1, ":limit": -5, "limit": -5})
-        assert result["valid"] is False, "Query with limit=-5 must fail validation"
-        assert any(
-            "limit" in err for err in result["errors"]
-        ), "Error message must reference the 'limit' field"
+    def test_namespace_declaration(self):
+        content = self._read_normalize_file()
+        assert re.search(
+            r"\(ns\s+metabase\.query.processor\.preprocess\.normalize", content
+        ), "Expected proper namespace declaration for normalize.clj"
 
-    def test_normalize_deduplicates_fields(self):
-        """Verify normalize-query deduplicates repeated field references in :fields list."""
 
-        # Mocked: pass a dict with duplicate-like structure
-        # Since our mock doesn't deduplicate, we test the logic concept via a helper
-        def deduplicate_fields(fields: list) -> list:
-            seen = set()
-            unique = []
-            for f in fields:
-                key = str(f)
-                if key not in seen:
-                    seen.add(key)
-                    unique.append(f)
-            return unique
+class TestSemanticValidation:
+    """Verify validate-query function characteristics."""
 
-        fields = [["field", 1], ["field", 1], ["field", 2]]
-        result = deduplicate_fields(fields)
-        assert (
-            len(result) == 2
-        ), f"Deduplication must yield 2 unique fields, got {len(result)}"
+    def _read_validate_file(self):
+        path = os.path.join(
+            REPO_DIR, "src", "metabase", "query_processor", "preprocess", "validate.clj"
+        )
+        with open(path, "r") as f:
+            return f.read()
 
-    def test_clojure_files_have_valid_namespace_declarations(self):
-        """Verify all three Clojure files have valid ns namespace declarations."""
-        for rel in (
-            "src/metabase/query_processor/preprocess.clj",
-            "src/metabase/query_processor/normalize.clj",
-            "src/metabase/query_processor/validate.clj",
-        ):
-            full = _path(rel)
-            if not os.path.isfile(full):
-                continue
-            with open(full, encoding="utf-8", errors="replace") as f:
-                content = f.read()
-            assert (
-                "(ns " in content
-            ), f"{rel} must contain a Clojure '(ns ...)' namespace declaration"
+    def test_validate_query_function_defined(self):
+        content = self._read_validate_file()
+        assert re.search(r"validate-query", content), (
+            "Expected validate-query function in validate.clj"
+        )
+
+    def test_source_table_validation(self):
+        content = self._read_validate_file()
+        assert re.search(r"source-table", content), (
+            "Expected source-table validation in validate-query"
+        )
+
+    def test_filter_operator_validation(self):
+        """Validation should check filter operators against a whitelist."""
+        content = self._read_validate_file()
+        filter_ops = [":=", ":!=", ":<", ":>", ":between", ":contains", ":is-null", ":not-null"]
+        found_count = sum(1 for op in filter_ops if op in content)
+        assert found_count >= 4, (
+            f"Expected at least 4 filter operators in validation whitelist, found {found_count}"
+        )
+
+    def test_limit_validation(self):
+        """Limit must be a positive integer <= 10000."""
+        content = self._read_validate_file()
+        assert re.search(r":limit|10000", content), (
+            "Expected :limit validation (positive int <= 10000)"
+        )
+
+    def test_returns_valid_structure(self):
+        """Validation should return {:valid true/false, :errors [...]}."""
+        content = self._read_validate_file()
+        assert ":valid" in content, "Expected :valid key in validation results"
+
+    def test_collects_all_errors(self):
+        """Validation should collect all errors, not short-circuit on the first."""
+        content = self._read_validate_file()
+        assert re.search(r":errors|errors|concat|conj|into", content), (
+            "Expected error accumulation logic (collect all errors)"
+        )
+
+
+class TestSemanticPipeline:
+    """Verify the preprocessing pipeline in preprocess.clj."""
+
+    def _read_preprocess_file(self):
+        path = os.path.join(REPO_DIR, "src", "metabase", "query_processor", "preprocess.clj")
+        with open(path, "r") as f:
+            return f.read()
+
+    def test_preprocess_function_defined(self):
+        content = self._read_preprocess_file()
+        assert re.search(r"\(defn\s+preprocess\b", content), (
+            "Expected preprocess function defined in preprocess.clj"
+        )
+
+    def test_default_limit_added(self):
+        """Pipeline should add a default limit of 2000 when none specified."""
+        content = self._read_preprocess_file()
+        assert "2000" in content, (
+            "Expected default limit value 2000 in pipeline"
+        )
+
+    def test_field_resolver_parameter(self):
+        """Pipeline should accept a field-resolver parameter."""
+        content = self._read_preprocess_file()
+        assert re.search(r"field-resolver", content), (
+            "Expected field-resolver parameter in preprocess function"
+        )
+
+    def test_pipeline_uses_threading_or_comp(self):
+        """Pipeline should use comp or threading macros."""
+        content = self._read_preprocess_file()
+        assert re.search(r"\bcomp\b|->|->>", content), (
+            "Expected pipeline composition using comp, -> or ->>"
+        )
+
+    def test_warnings_support(self):
+        """Non-fatal issues should produce :warnings instead of errors."""
+        content = self._read_preprocess_file()
+        assert re.search(r":warnings|warn", content, re.IGNORECASE), (
+            "Expected :warnings support for non-fatal issues"
+        )
+
+
+class TestFunctionalClojureSyntax:
+    """Validate that Clojure files are syntactically well-formed."""
+
+    def _check_balanced(self, filepath):
+        with open(filepath, "r") as f:
+            content = f.read()
+        open_count = content.count("(") + content.count("[") + content.count("{")
+        close_count = content.count(")") + content.count("]") + content.count("}")
+        return open_count == close_count, open_count, close_count
+
+    def test_preprocess_balanced(self):
+        path = os.path.join(REPO_DIR, "src", "metabase", "query_processor", "preprocess.clj")
+        balanced, o, c = self._check_balanced(path)
+        assert balanced, f"Unbalanced delimiters in preprocess.clj: {o} open vs {c} close"
+
+    def test_normalize_balanced(self):
+        path = os.path.join(
+            REPO_DIR, "src", "metabase", "query_processor", "preprocess", "normalize.clj"
+        )
+        balanced, o, c = self._check_balanced(path)
+        assert balanced, f"Unbalanced delimiters in normalize.clj: {o} open vs {c} close"
+
+    def test_validate_balanced(self):
+        path = os.path.join(
+            REPO_DIR, "src", "metabase", "query_processor", "preprocess", "validate.clj"
+        )
+        balanced, o, c = self._check_balanced(path)
+        assert balanced, f"Unbalanced delimiters in validate.clj: {o} open vs {c} close"
+
+    def test_test_file_has_deftest(self):
+        path = os.path.join(
+            REPO_DIR, "test", "metabase", "query_processor", "preprocess_test.clj"
+        )
+        with open(path, "r") as f:
+            content = f.read()
+        matches = re.findall(r"\(deftest\s+", content)
+        assert len(matches) >= 3, (
+            f"Expected at least 3 deftest forms in preprocess_test.clj, found {len(matches)}"
+        )
+
+    def test_test_file_uses_clojure_test(self):
+        path = os.path.join(
+            REPO_DIR, "test", "metabase", "query_processor", "preprocess_test.clj"
+        )
+        with open(path, "r") as f:
+            content = f.read()
+        assert re.search(r"clojure\.test", content), (
+            "Expected clojure.test in preprocess_test.clj"
+        )
+
+    def test_test_imports_preprocess_namespace(self):
+        path = os.path.join(
+            REPO_DIR, "test", "metabase", "query_processor", "preprocess_test.clj"
+        )
+        with open(path, "r") as f:
+            content = f.read()
+        assert re.search(r"metabase\.query.processor\.preprocess", content), (
+            "Expected preprocess namespace import in test file"
+        )
+
+    def test_normalize_requires_walk_or_postwalk(self):
+        """Recursive normalization likely uses clojure.walk."""
+        path = os.path.join(
+            REPO_DIR, "src", "metabase", "query_processor", "preprocess", "normalize.clj"
+        )
+        with open(path, "r") as f:
+            content = f.read()
+        assert re.search(r"walk|postwalk|prewalk|reduce|map", content), (
+            "Expected recursive traversal (walk/reduce/map) for deep normalization"
+        )

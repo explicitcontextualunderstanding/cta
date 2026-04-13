@@ -1,152 +1,256 @@
 """
-Tests for v3-performance-optimization skill.
-REPO_DIR: /workspace/flash-attention
+Tests for the v3-performance-optimization skill.
+
+Validates that a Flash Attention benchmark suite with memory optimization
+analysis was implemented, including attention benchmarks, memory analysis,
+benchmark report generation, and correctness tests.
+
+Repo: flash-attention (https://github.com/Dao-AILab/flash-attention)
 """
 
 import os
-import pytest
+import re
+import subprocess
+import sys
 
 REPO_DIR = "/workspace/flash-attention"
 
 
-def _path(rel):
-    return os.path.join(REPO_DIR, rel)
+class TestFilePathCheck:
+    """Verify all required files were created."""
+
+    def test_benchmark_attention_exists(self):
+        path = os.path.join(REPO_DIR, "benchmarks", "benchmark_attention.py")
+        assert os.path.isfile(path), f"Expected benchmarks/benchmark_attention.py"
+
+    def test_memory_analysis_exists(self):
+        path = os.path.join(REPO_DIR, "benchmarks", "memory_analysis.py")
+        assert os.path.isfile(path), f"Expected benchmarks/memory_analysis.py"
+
+    def test_benchmark_report_exists(self):
+        path = os.path.join(REPO_DIR, "benchmarks", "benchmark_report.py")
+        assert os.path.isfile(path), f"Expected benchmarks/benchmark_report.py"
+
+    def test_test_benchmark_suite_exists(self):
+        path = os.path.join(REPO_DIR, "tests", "test_benchmark_suite.py")
+        assert os.path.isfile(path), f"Expected tests/test_benchmark_suite.py"
 
 
-def _read(rel):
-    with open(_path(rel), encoding="utf-8") as f:
-        return f.read()
+class TestSemanticBenchmarkAttention:
+    """Verify attention benchmark suite."""
 
+    def _read(self):
+        path = os.path.join(REPO_DIR, "benchmarks", "benchmark_attention.py")
+        with open(path, "r") as f:
+            return f.read()
 
-class TestV3PerformanceOptimization:
-    # ── file_path_check ────────────────────────────────────────────────────
-    def test_benchmark_attention_py_exists(self):
-        """Verify benchmarks/benchmark_attention.py exists."""
-        fpath = _path("benchmarks/benchmark_attention.py")
-        assert os.path.isfile(fpath), "benchmarks/benchmark_attention.py must exist"
-        assert os.path.getsize(fpath) > 0, "benchmark_attention.py must be non-empty"
-
-    def test_memory_analysis_and_report_exist(self):
-        """Verify memory_analysis.py and benchmark_report.py exist in benchmarks/."""
-        memory_path = _path("benchmarks/memory_analysis.py")
-        report_path = _path("benchmarks/benchmark_report.py")
-        assert os.path.isfile(memory_path), "benchmarks/memory_analysis.py must exist"
-        assert os.path.isfile(report_path), "benchmarks/benchmark_report.py must exist"
-
-    # ── semantic_check ─────────────────────────────────────────────────────
-    def test_cuda_event_timing_not_time_time(self):
-        """Verify torch.cuda.Event is used for GPU timing (not time.time)."""
-        content = _read("benchmarks/benchmark_attention.py")
-        has_cuda_event = "torch.cuda.Event" in content or "cuda.Event" in content
-        assert (
-            has_cuda_event
-        ), "torch.cuda.Event must be used for GPU timing, not wall-clock time.time"
-        has_timing_calls = (
-            "record()" in content
-            or "elapsed_time(" in content
-            or "synchronize()" in content
-        )
-        assert (
-            has_timing_calls
-        ), "CUDA event record()/elapsed_time()/synchronize() must be used for timing"
-
-    def test_tflops_formula_correct(self):
-        """Verify TFLOPS formula: 4*B*H*S^2*D / (time_ms * 1e9) is present."""
-        content = _read("benchmarks/benchmark_attention.py")
-        # Check for the 4* multiplier characteristic of attention TFLOPS formula
-        has_4x = "4 *" in content or "4*" in content
-        assert has_4x, "TFLOPS formula must start with '4 *' (attention ops multiplier)"
-        has_time = "time_ms" in content or "elapsed" in content
-        assert has_time, "Time in ms must be used in the TFLOPS denominator"
-        has_tflops = "tflops" in content.lower() or "TFLOPS" in content
-        assert has_tflops, "Result must be labeled as TFLOPS or tflops"
-
-    def test_allclose_atol_1e2_for_correctness(self):
-        """Verify torch.allclose with atol=1e-2 is used for numerical correctness."""
-        content = _read("benchmarks/benchmark_attention.py")
-        assert (
-            "torch.allclose" in content
-        ), "torch.allclose must be used for numerical correctness verification"
-        has_atol = "atol=1e-2" in content or "atol=0.01" in content
-        assert (
-            has_atol
-        ), "torch.allclose must use atol=1e-2 for FP16 precision tolerance"
-
-    def test_oom_error_handling(self):
-        """Verify try/except RuntimeError is used to handle GPU OOM errors gracefully."""
-        content = _read("benchmarks/benchmark_attention.py")
-        assert "try:" in content, "try: block must be present for OOM error handling"
-        assert (
-            "except RuntimeError" in content
-        ), "except RuntimeError must be used for CUDA OOM handling"
-
-    def test_complexity_labels_in_report(self):
-        """Verify benchmark_report.py contains O(N) and O(N^2) complexity labels."""
-        content = _read("benchmarks/benchmark_report.py")
-        has_on = "O(N)" in content or "linear" in content.lower()
-        assert has_on, "Benchmark report must include O(N) or 'linear' complexity label"
-        has_on2 = (
-            "O(N^2)" in content
-            or "O(N**2)" in content
-            or "quadratic" in content.lower()
-        )
-        assert (
-            has_on2
-        ), "Benchmark report must include O(N^2) or 'quadratic' complexity label"
-
-    # ── functional_check (mocked / static) ────────────────────────────────
-    def test_warmup_iterations_before_timing(self):
-        """Verify GPU warmup iterations are performed before recording benchmark timing."""
-        content = _read("benchmarks/benchmark_attention.py")
-        warmup_patterns = ["warmup", "warm_up", "n_warmup", "warmup_iters"]
-        has_warmup = any(p in content for p in warmup_patterns)
-        assert has_warmup, (
-            "Warmup loop must be present before timing starts "
-            "(patterns: warmup, warm_up, n_warmup, warmup_iters)"
+    def test_class_definition(self):
+        content = self._read()
+        assert re.search(r"class\s+AttentionBenchmark", content), (
+            "Expected AttentionBenchmark class"
         )
 
-    def test_memory_analysis_peak_memory_tracked(self):
-        """Verify memory_analysis.py tracks peak GPU memory via torch.cuda.max_memory_allocated."""
-        content = _read("benchmarks/memory_analysis.py")
-        patterns = ["max_memory_allocated", "memory_allocated", "peak_memory"]
-        has_pattern = any(p in content for p in patterns)
-        assert has_pattern, (
-            "Peak GPU memory must be tracked via torch.cuda.max_memory_allocated() or "
-            "memory_allocated() in memory_analysis.py"
+    def test_batch_sizes(self):
+        content = self._read()
+        for bs in ["1", "4", "8", "16"]:
+            assert bs in content, f"Expected batch size {bs}"
+
+    def test_sequence_lengths(self):
+        content = self._read()
+        for sl in ["512", "1024", "2048", "4096"]:
+            assert sl in content, f"Expected sequence length {sl}"
+
+    def test_flash_attention_import(self):
+        content = self._read()
+        assert re.search(r"flash_attn|flash_attention", content, re.IGNORECASE), (
+            "Expected Flash Attention implementation reference"
         )
 
-    def test_benchmark_report_generates_summary(self):
-        """Verify benchmark_report.py generates summary with TFLOPS and memory columns."""
-        content = _read("benchmarks/benchmark_report.py")
-        has_tflops = "TFLOPS" in content or "tflops" in content
-        assert has_tflops, "Benchmark report must include TFLOPS column/field"
-        has_memory = "memory_gb" in content or "memory" in content.lower()
-        assert has_memory, "Benchmark report must include memory measurement (GB)"
-        has_latency = "latency_ms" in content or "latency" in content.lower()
-        assert has_latency, "Benchmark report must include latency in ms"
-
-    def test_multiple_sequence_lengths_tested(self):
-        """Verify benchmark tests multiple sequence lengths to capture scaling behaviour."""
-        content = _read("benchmarks/benchmark_attention.py")
-        patterns = [
-            "seq_len",
-            "sequence_lengths",
-            "seq_lengths",
-            "[128",
-            "[256",
-            "[512",
-        ]
-        has_seq_lengths = any(p in content for p in patterns)
-        assert has_seq_lengths, (
-            "Attention benchmark must test multiple sequence lengths "
-            "(seq_len, sequence_lengths, or explicit [128/256/512 lists)"
+    def test_standard_attention(self):
+        content = self._read()
+        assert re.search(r"scaled_dot_product_attention|standard.*attention", content, re.IGNORECASE), (
+            "Expected PyTorch standard attention comparison"
         )
 
-    def test_baseline_comparison_in_report(self):
-        """Verify benchmark report compares optimized vs baseline implementation."""
-        content = _read("benchmarks/benchmark_report.py")
-        patterns = ["baseline", "speedup", "improvement", " vs ", "_vs_"]
-        has_comparison = any(p in content.lower() for p in patterns)
-        assert (
-            has_comparison
-        ), "Benchmark report must compare optimized vs baseline with speedup ratio"
+    def test_cuda_events_timing(self):
+        content = self._read()
+        assert re.search(r"cuda.*event|Event\(|start\.record|elapsed_time", content, re.IGNORECASE), (
+            "Expected CUDA event timing (not wall-clock)"
+        )
+
+    def test_flops_calculation(self):
+        content = self._read()
+        assert re.search(r"4\s*\*|flops|FLOPS|tflops|TFLOPS", content, re.IGNORECASE), (
+            "Expected FLOPS calculation (4 * batch * heads * seq_len^2 * head_dim)"
+        )
+
+    def test_warmup_runs(self):
+        content = self._read()
+        assert re.search(r"warmup|warm_up|warm.*up", content, re.IGNORECASE), (
+            "Expected warmup runs before measurement"
+        )
+
+    def test_memory_estimation_skip(self):
+        content = self._read()
+        assert re.search(r"skip|exceed|memory.*limit|OOM", content, re.IGNORECASE), (
+            "Expected skipping configurations that exceed GPU memory"
+        )
+
+
+class TestSemanticMemoryAnalysis:
+    """Verify memory analysis module."""
+
+    def _read(self):
+        path = os.path.join(REPO_DIR, "benchmarks", "memory_analysis.py")
+        with open(path, "r") as f:
+            return f.read()
+
+    def test_class_definition(self):
+        content = self._read()
+        assert re.search(r"class\s+MemoryAnalyzer", content), (
+            "Expected MemoryAnalyzer class"
+        )
+
+    def test_peak_memory(self):
+        content = self._read()
+        assert re.search(r"max_memory_allocated|peak.*memory", content, re.IGNORECASE), (
+            "Expected peak memory measurement via torch.cuda.max_memory_allocated"
+        )
+
+    def test_memory_savings_ratio(self):
+        content = self._read()
+        assert re.search(r"savings.*ratio|memory.*ratio|savings", content, re.IGNORECASE), (
+            "Expected memory savings ratio computation"
+        )
+
+    def test_linear_growth_check(self):
+        content = self._read()
+        assert re.search(r"linear|O\(N\)|regression", content, re.IGNORECASE), (
+            "Expected verification of Flash Attention O(N) memory"
+        )
+
+    def test_quadratic_growth_check(self):
+        content = self._read()
+        assert re.search(r"quadratic|O\(N.?2\)|N\^2|N\*\*2", content, re.IGNORECASE), (
+            "Expected verification of standard attention O(N^2) memory"
+        )
+
+
+class TestSemanticBenchmarkReport:
+    """Verify benchmark report generation."""
+
+    def _read(self):
+        path = os.path.join(REPO_DIR, "benchmarks", "benchmark_report.py")
+        with open(path, "r") as f:
+            return f.read()
+
+    def test_class_definition(self):
+        content = self._read()
+        assert re.search(r"class\s+BenchmarkReport", content), (
+            "Expected BenchmarkReport class"
+        )
+
+    def test_speedup_table(self):
+        content = self._read()
+        assert re.search(r"speedup|Speedup", content), (
+            "Expected speedup table generation"
+        )
+
+    def test_memory_savings_table(self):
+        content = self._read()
+        assert re.search(r"memory.*saving|savings|Memory", content, re.IGNORECASE), (
+            "Expected memory savings table"
+        )
+
+    def test_scaling_analysis(self):
+        content = self._read()
+        assert re.search(r"scaling|scale|seq.*len", content, re.IGNORECASE), (
+            "Expected scaling analysis (how speedup changes with seq_len)"
+        )
+
+    def test_peak_performance(self):
+        content = self._read()
+        assert re.search(r"peak.*performance|highest.*tflops|max.*tflops", content, re.IGNORECASE), (
+            "Expected peak performance identification"
+        )
+
+    def test_csv_export(self):
+        content = self._read()
+        assert re.search(r"csv|CSV|to_csv", content), (
+            "Expected CSV export format"
+        )
+
+    def test_json_export(self):
+        content = self._read()
+        assert re.search(r"json|JSON|to_json", content), (
+            "Expected JSON export format"
+        )
+
+
+class TestSemanticCorrectnessAndReproducibility:
+    """Verify correctness verification and reproducibility."""
+
+    def _read_benchmark(self):
+        path = os.path.join(REPO_DIR, "benchmarks", "benchmark_attention.py")
+        with open(path, "r") as f:
+            return f.read()
+
+    def test_torch_allclose(self):
+        content = self._read_benchmark()
+        assert re.search(r"allclose|torch\.allclose", content), (
+            "Expected torch.allclose correctness verification"
+        )
+
+    def test_random_seed(self):
+        content = self._read_benchmark()
+        assert re.search(r"manual_seed|seed.*42|torch\.manual_seed", content), (
+            "Expected random seed for reproducibility (42)"
+        )
+
+    def test_fp16_support(self):
+        content = self._read_benchmark()
+        assert re.search(r"float16|fp16|half", content, re.IGNORECASE), (
+            "Expected FP16 data type support"
+        )
+
+    def test_bf16_support(self):
+        content = self._read_benchmark()
+        assert re.search(r"bfloat16|bf16", content, re.IGNORECASE), (
+            "Expected BF16 data type support"
+        )
+
+
+class TestFunctionalPythonSyntax:
+    """Validate Python files compile and tests pass."""
+
+    def test_benchmark_attention_syntax(self):
+        path = os.path.join(REPO_DIR, "benchmarks", "benchmark_attention.py")
+        with open(path, "r") as f:
+            content = f.read()
+        compile(content, path, "exec")
+
+    def test_memory_analysis_syntax(self):
+        path = os.path.join(REPO_DIR, "benchmarks", "memory_analysis.py")
+        with open(path, "r") as f:
+            content = f.read()
+        compile(content, path, "exec")
+
+    def test_benchmark_report_syntax(self):
+        path = os.path.join(REPO_DIR, "benchmarks", "benchmark_report.py")
+        with open(path, "r") as f:
+            content = f.read()
+        compile(content, path, "exec")
+
+    def test_agent_tests_pass(self):
+        test_path = os.path.join(REPO_DIR, "tests", "test_benchmark_suite.py")
+        if os.path.isfile(test_path):
+            result = subprocess.run(
+                [sys.executable, "-m", "pytest", test_path, "-v", "--tb=short"],
+                cwd=REPO_DIR,
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+            assert result.returncode == 0, (
+                f"Agent tests failed:\n{result.stdout[-1000:]}\n{result.stderr[-500:]}"
+            )

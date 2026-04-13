@@ -1,232 +1,147 @@
 """
-Test for 'service-mesh-observability' skill — Linkerd Service Mesh Observability
-Validates 99.5% success threshold, P99 latency >500ms alerting,
-Prometheus metrics, and service mesh monitoring configuration.
+Test skill: service-mesh-observability
+Verify that the Agent builds a Go metrics aggregation service for Linkerd
+with golden signals, health checker, topology builder, and REST API.
 """
 
 import os
 import re
-
+import subprocess
 import pytest
-
-try:
-    import yaml
-except ImportError:
-    yaml = None
 
 
 class TestServiceMeshObservability:
-    """Verify service mesh observability in Linkerd."""
-
     REPO_DIR = "/workspace/linkerd2"
 
-    # ── file_path_check ─────────────────────────────────────────────────────
+    AGGREGATOR = "viz/metrics/aggregator.go"
+    GOLDEN_SIGNALS = "viz/metrics/golden_signals.go"
+    HEALTH_CHECKER = "viz/metrics/health_checker.go"
+    API = "viz/metrics/api.go"
+    TOPOLOGY = "viz/metrics/topology.go"
+    TESTS = "viz/metrics/aggregator_test.go"
 
-    def test_observability_files_exist(self):
-        """Verify observability/monitoring config files exist."""
-        found = False
-        for dirpath, _, fnames in os.walk(self.REPO_DIR):
-            if ".git" in dirpath:
-                continue
-            for f in fnames:
-                if (
-                    "monitor" in f.lower()
-                    or "observ" in f.lower()
-                    or "metric" in f.lower()
-                    or "prometheus" in f.lower()
-                    or "grafana" in f.lower()
-                    or "dashboard" in f.lower()
-                ):
-                    found = True
-                    break
-            if found:
-                break
-        assert found, "No observability/monitoring files found"
+    def _read_file(self, rel_path):
+        filepath = os.path.join(self.REPO_DIR, rel_path)
+        with open(filepath) as f:
+            return f.read()
 
-    def test_prometheus_config_exists(self):
-        """Verify Prometheus configuration files exist."""
-        found = False
-        for dirpath, _, fnames in os.walk(self.REPO_DIR):
-            if ".git" in dirpath:
-                continue
-            for f in fnames:
-                if "prometheus" in f.lower() and (
-                    f.endswith(".yml") or f.endswith(".yaml") or f.endswith(".go")
-                ):
-                    found = True
-                    break
-            if found:
-                break
-        assert found, "No Prometheus config found"
+    # === File Path Checks ===
 
-    # ── semantic_check ──────────────────────────────────────────────────────
+    def test_aggregator_exists(self):
+        filepath = os.path.join(self.REPO_DIR, self.AGGREGATOR)
+        assert os.path.exists(filepath), f"aggregator.go not found"
 
-    def test_success_rate_threshold(self):
-        """Verify 99.5% success rate threshold."""
-        source_files = self._find_source_files()
-        for fpath in source_files:
-            content = self._read(fpath)
-            if re.search(
-                r"(99\.5|0\.995|success.?rate|success_threshold)",
-                content,
-                re.IGNORECASE,
-            ):
-                return
-        pytest.fail("No 99.5% success rate threshold found")
+    def test_golden_signals_exists(self):
+        filepath = os.path.join(self.REPO_DIR, self.GOLDEN_SIGNALS)
+        assert os.path.exists(filepath), f"golden_signals.go not found"
 
-    def test_p99_latency_alert(self):
-        """Verify P99 latency >500ms alerting."""
-        source_files = self._find_source_files()
-        for fpath in source_files:
-            content = self._read(fpath)
-            if re.search(
-                r"(p99|P99|percentile.*99|latency.*500|histogram_quantile.*0\.99)",
-                content,
-                re.IGNORECASE,
-            ):
-                return
-        pytest.fail("No P99 latency monitoring found")
+    def test_health_checker_exists(self):
+        filepath = os.path.join(self.REPO_DIR, self.HEALTH_CHECKER)
+        assert os.path.exists(filepath), f"health_checker.go not found"
 
-    def test_prometheus_metrics(self):
-        """Verify Prometheus metrics (request_total, latency_bucket, etc.)."""
-        source_files = self._find_source_files()
-        for fpath in source_files:
-            content = self._read(fpath)
-            if re.search(
-                r"(request_total|response_total|latency_bucket|request_duration|histogram_quantile)",
-                content,
-                re.IGNORECASE,
-            ):
-                return
-        pytest.fail("No Prometheus metrics found")
+    def test_api_exists(self):
+        filepath = os.path.join(self.REPO_DIR, self.API)
+        assert os.path.exists(filepath), f"api.go not found"
 
-    def test_golden_signals(self):
-        """Verify golden signals monitoring (latency, traffic, errors, saturation)."""
-        source_files = self._find_source_files()
-        signals = set()
-        for fpath in source_files:
-            content = self._read(fpath)
-            if re.search(r"latency", content, re.IGNORECASE):
-                signals.add("latency")
-            if re.search(r"(traffic|throughput|request_total)", content, re.IGNORECASE):
-                signals.add("traffic")
-            if re.search(r"(error|failure|5\d\d)", content, re.IGNORECASE):
-                signals.add("errors")
-            if re.search(
-                r"(saturation|utilization|cpu|memory)", content, re.IGNORECASE
-            ):
-                signals.add("saturation")
-        assert len(signals) >= 2, f"Only {signals} golden signals found"
+    def test_topology_exists(self):
+        filepath = os.path.join(self.REPO_DIR, self.TOPOLOGY)
+        assert os.path.exists(filepath), f"topology.go not found"
 
-    def test_scrape_config(self):
-        """Verify Prometheus scrape configuration."""
-        source_files = self._find_source_files()
-        for fpath in source_files:
-            content = self._read(fpath)
-            if re.search(
-                r"(scrape|prometheus\.io|metrics.?path|port.?name.*metrics)",
-                content,
-                re.IGNORECASE,
-            ):
-                return
-        pytest.fail("No scrape configuration found")
+    def test_aggregator_test_exists(self):
+        filepath = os.path.join(self.REPO_DIR, self.TESTS)
+        assert os.path.exists(filepath), f"aggregator_test.go not found"
 
-    # ── functional_check ────────────────────────────────────────────────────
+    # === Semantic Checks ===
 
-    def test_yaml_files_valid(self):
-        """Verify YAML configuration files parse."""
-        if yaml is None:
-            pytest.skip("PyYAML not available")
-        yaml_files = self._find_yaml_files()
-        for fpath in yaml_files[:10]:
-            with open(fpath, "r") as fh:
-                try:
-                    yaml.safe_load(fh)
-                except yaml.YAMLError as e:
-                    pytest.fail(f"YAML error in {os.path.basename(fpath)}: {e}")
+    def test_golden_signals_struct_fields(self):
+        """Verify GoldenSignals struct with RequestRate, SuccessRate, latencies"""
+        content = self._read_file(self.GOLDEN_SIGNALS)
+        assert "GoldenSignals" in content, "Missing GoldenSignals struct"
+        for field in ["RequestRate", "SuccessRate", "P50Latency",
+                      "P95Latency", "P99Latency"]:
+            assert field in content, f"GoldenSignals missing field: {field}"
 
-    def test_grafana_dashboard_json(self):
-        """Verify Grafana dashboard JSON files exist and parse."""
-        import json
+    def test_service_health_struct(self):
+        """Verify ServiceHealth struct with Status field"""
+        content = self._read_file(self.GOLDEN_SIGNALS)
+        assert "ServiceHealth" in content, "Missing ServiceHealth struct"
+        assert "Status" in content, "ServiceHealth missing Status field"
+        assert "ServiceName" in content, "ServiceHealth missing ServiceName"
+        assert "Namespace" in content, "ServiceHealth missing Namespace"
 
-        found = False
-        for dirpath, _, fnames in os.walk(self.REPO_DIR):
-            if ".git" in dirpath:
-                continue
-            for f in fnames:
-                if f.endswith(".json") and (
-                    "dashboard" in f.lower() or "grafana" in f.lower()
-                ):
-                    fpath = os.path.join(dirpath, f)
-                    with open(fpath, "r") as fh:
-                        data = json.load(fh)
-                        assert isinstance(data, dict)
-                    found = True
-                    break
-            if found:
-                break
-        if not found:
-            pytest.skip("No Grafana dashboard JSON found")
+    def test_aggregator_constructor(self):
+        """Verify NewMetricsAggregator with prometheusURL"""
+        content = self._read_file(self.AGGREGATOR)
+        assert "NewMetricsAggregator" in content, "Missing NewMetricsAggregator"
+        assert "prometheusURL" in content or "prometheus" in content.lower(), \
+            "Aggregator missing Prometheus URL parameter"
 
-    def test_alerting_rules_defined(self):
-        """Verify alerting rules for SLO violations."""
-        source_files = self._find_source_files()
-        for fpath in source_files:
-            content = self._read(fpath)
-            if re.search(
-                r"(alert:|AlertRule|alertmanager|firing|critical|warning)",
-                content,
-                re.IGNORECASE,
-            ):
-                return
-        pytest.fail("No alerting rules found")
+    def test_aggregator_golden_signals_method(self):
+        """Verify GetGoldenSignals method"""
+        content = self._read_file(self.AGGREGATOR)
+        assert "GetGoldenSignals" in content, "Missing GetGoldenSignals"
 
-    def test_service_profile_metrics(self):
-        """Verify ServiceProfile-based per-route metrics."""
-        source_files = self._find_source_files()
-        for fpath in source_files:
-            content = self._read(fpath)
-            if re.search(
-                r"(ServiceProfile|route.*metric|per.?route)", content, re.IGNORECASE
-            ):
-                return
-        pytest.fail("No ServiceProfile per-route metrics found")
+    def test_aggregator_promql_queries(self):
+        """Verify PromQL queries for rate, success rate, histogram quantile"""
+        content = self._read_file(self.AGGREGATOR)
+        assert "response_total" in content, "Missing response_total PromQL query"
+        assert "histogram_quantile" in content, \
+            "Missing histogram_quantile PromQL query"
 
-    def test_mTLS_or_identity(self):
-        """Verify mTLS or identity-based observability."""
-        source_files = self._find_source_files()
-        for fpath in source_files:
-            content = self._read(fpath)
-            if re.search(
-                r"(mTLS|mutual.?TLS|identity|tls_route|authority)",
-                content,
-                re.IGNORECASE,
-            ):
-                return
-        pytest.fail("No mTLS/identity observability found")
+    def test_health_checker_thresholds(self):
+        """Verify HealthChecker with degraded/critical thresholds"""
+        content = self._read_file(self.HEALTH_CHECKER)
+        assert "HealthChecker" in content, "Missing HealthChecker"
+        assert "degraded" in content.lower(), "Missing degraded threshold"
+        assert "critical" in content.lower(), "Missing critical threshold"
+        assert "0.99" in content, "Missing 99% success rate threshold"
+        assert "0.95" in content, "Missing 95% success rate threshold"
 
-    # ── helpers ──────────────────────────────────────────────────────────────
+    def test_health_checker_evaluate(self):
+        """Verify Evaluate method"""
+        content = self._read_file(self.HEALTH_CHECKER)
+        assert "Evaluate" in content, "Missing Evaluate method"
 
-    def _find_source_files(self):
-        results = []
-        for dirpath, _, fnames in os.walk(self.REPO_DIR):
-            if ".git" in dirpath:
-                continue
-            for f in fnames:
-                if f.endswith((".go", ".yaml", ".yml", ".json", ".py")):
-                    results.append(os.path.join(dirpath, f))
-        return results
+    def test_topology_builder(self):
+        """Verify BuildTopology with Nodes and Edges"""
+        content = self._read_file(self.TOPOLOGY)
+        assert "BuildTopology" in content, "Missing BuildTopology"
+        assert "ServiceEdge" in content, "Missing ServiceEdge type"
+        assert "Source" in content, "ServiceEdge missing Source"
+        assert "Destination" in content, "ServiceEdge missing Destination"
 
-    def _find_yaml_files(self):
-        results = []
-        for dirpath, _, fnames in os.walk(self.REPO_DIR):
-            if ".git" in dirpath:
-                continue
-            for f in fnames:
-                if f.endswith((".yaml", ".yml")):
-                    results.append(os.path.join(dirpath, f))
-        return results
+    def test_api_endpoints(self):
+        """Verify /api/services, /api/services/{name}, /api/topology endpoints"""
+        content = self._read_file(self.API)
+        assert "/api/services" in content, "Missing /api/services endpoint"
+        assert "/api/topology" in content, "Missing /api/topology endpoint"
 
-    def _read(self, path):
-        with open(path, "r", errors="ignore") as fh:
-            return fh.read()
+    def test_api_error_codes(self):
+        """Verify proper HTTP error codes (400, 502)"""
+        content = self._read_file(self.API)
+        has_400 = "400" in content or "BadRequest" in content
+        has_502 = "502" in content or "BadGateway" in content
+        assert has_400, "API missing 400 error handling"
+        assert has_502, "API missing 502 error handling"
+
+    # === Functional Checks ===
+
+    def test_go_files_compile(self):
+        """Verify Go files compile"""
+        metrics_dir = os.path.join(self.REPO_DIR, "viz/metrics")
+        result = subprocess.run(
+            ["go", "build", "./..."],
+            cwd=metrics_dir,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        if result.returncode != 0:
+            pytest.fail(f"Go build failed: {result.stderr[:500]}")
+
+    def test_tests_have_assertions(self):
+        """Verify test file has test functions"""
+        content = self._read_file(self.TESTS)
+        test_count = len(re.findall(r'func Test\w+', content))
+        assert test_count >= 3, \
+            f"Expected >=3 test functions, found {test_count}"

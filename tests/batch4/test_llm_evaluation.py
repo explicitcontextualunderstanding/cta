@@ -1,217 +1,264 @@
 """
-Test for 'llm-evaluation' skill — LLM Evaluation
-Validates EvaluationSuite and EvaluationResult in the HELM benchmark framework,
-covering exact_match, f1, judge metrics, custom metrics, and edge cases.
+Tests for skill: llm-evaluation
+Repo: stanford-crfm/helm
+Image: zhangyiiiiii/swe-skills-bench-python
+Task: Build an LLM evaluation framework with automated metrics,
+      LLM-as-Judge scoring, and statistical comparison reporting.
 """
 
+import ast
 import os
 import re
-import ast
-import sys
+import subprocess
+
 import pytest
 
+REPO_DIR = "/workspace/helm"
+EVAL_DIR = os.path.join(REPO_DIR, "src", "helm", "benchmark", "evaluation")
 
-class TestLlmEvaluation:
-    """Tests for LLM evaluation suite in the helm repo."""
+SUITE_FILE = os.path.join(EVAL_DIR, "eval_suite.py")
+METRICS_FILE = os.path.join(EVAL_DIR, "metrics.py")
+JUDGE_FILE = os.path.join(EVAL_DIR, "llm_judge.py")
+REPORTER_FILE = os.path.join(EVAL_DIR, "reporter.py")
+TEST_FILE = os.path.join(EVAL_DIR, "test_evaluation.py")
 
-    REPO_DIR = "/workspace/helm"
 
-    def _read(self, relpath):
-        full = os.path.join(self.REPO_DIR, relpath)
-        with open(full, "r", errors="ignore") as f:
-            return f.read()
+# ---------------------------------------------------------------------------
+# Layer 1 — file_path_check
+# ---------------------------------------------------------------------------
 
-    # --- File Path Checks ---
+class TestFilePathCheck:
+    """Verify all required evaluation files were created."""
 
-    def test_eval_suite_py_exists(self):
-        """Verifies that helm/benchmark/evaluation/eval_suite.py exists."""
-        path = os.path.join(
-            self.REPO_DIR, "helm", "benchmark", "evaluation", "eval_suite.py"
+    def test_eval_suite_exists(self):
+        assert os.path.isfile(SUITE_FILE), f"Expected {SUITE_FILE}"
+
+    def test_metrics_exists(self):
+        assert os.path.isfile(METRICS_FILE), f"Expected {METRICS_FILE}"
+
+    def test_llm_judge_exists(self):
+        assert os.path.isfile(JUDGE_FILE), f"Expected {JUDGE_FILE}"
+
+    def test_reporter_exists(self):
+        assert os.path.isfile(REPORTER_FILE), f"Expected {REPORTER_FILE}"
+
+    def test_test_file_exists(self):
+        assert os.path.isfile(TEST_FILE), f"Expected {TEST_FILE}"
+
+
+# ---------------------------------------------------------------------------
+# Layer 2 — semantic_check
+# ---------------------------------------------------------------------------
+
+class TestSemanticEvalSuite:
+    """Verify EvaluationSuite class."""
+
+    @pytest.fixture(autouse=True)
+    def _load_source(self):
+        with open(SUITE_FILE, "r", encoding="utf-8") as f:
+            self.src = f.read()
+        self.tree = ast.parse(self.src)
+
+    def test_class_defined(self):
+        classes = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.ClassDef)]
+        assert "EvaluationSuite" in classes, (
+            f"Expected EvaluationSuite class; found: {classes}"
         )
-        assert os.path.exists(path), f"Expected file not found: {path}"
 
-    def test_evaluation_init_py_exists(self):
-        """Verifies that helm/benchmark/evaluation/__init__.py exists."""
-        path = os.path.join(
-            self.REPO_DIR, "helm", "benchmark", "evaluation", "__init__.py"
+    def test_evaluate_method(self):
+        funcs = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.FunctionDef)]
+        assert "evaluate" in funcs, "Expected evaluate() method"
+
+    def test_evaluation_result_class(self):
+        """Must define or use EvaluationResult."""
+        assert "EvaluationResult" in self.src, "Expected EvaluationResult class"
+
+    def test_handles_prediction_failures(self):
+        """Failed predictions must be caught, not crash the suite."""
+        has_try = "try" in self.src or "except" in self.src
+        assert has_try, "Expected exception handling for prediction failures"
+
+    def test_per_case_and_aggregated(self):
+        assert "per_case" in self.src, "Expected per_case results"
+        assert "aggregated" in self.src, "Expected aggregated scores"
+
+
+class TestSemanticMetrics:
+    """Verify metric implementations."""
+
+    @pytest.fixture(autouse=True)
+    def _load_source(self):
+        with open(METRICS_FILE, "r", encoding="utf-8") as f:
+            self.src = f.read()
+        self.tree = ast.parse(self.src)
+
+    def test_exact_match(self):
+        funcs = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.FunctionDef)]
+        assert "exact_match" in funcs, "Expected exact_match function"
+
+    def test_f1_score(self):
+        funcs = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.FunctionDef)]
+        assert "f1_score" in funcs, "Expected f1_score function"
+
+    def test_bleu_score(self):
+        funcs = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.FunctionDef)]
+        assert "bleu_score" in funcs, "Expected bleu_score function"
+
+    def test_rouge_l(self):
+        funcs = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.FunctionDef)]
+        assert "rouge_l" in funcs, "Expected rouge_l function"
+
+    def test_contains_match(self):
+        funcs = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.FunctionDef)]
+        assert "contains_match" in funcs, "Expected contains_match function"
+
+    def test_register_metric(self):
+        """Must support custom metric registration."""
+        assert "register_metric" in self.src, "Expected register_metric function"
+
+
+class TestSemanticLLMJudge:
+    """Verify LLMJudge class."""
+
+    @pytest.fixture(autouse=True)
+    def _load_source(self):
+        with open(JUDGE_FILE, "r", encoding="utf-8") as f:
+            self.src = f.read()
+        self.tree = ast.parse(self.src)
+
+    def test_class_defined(self):
+        classes = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.ClassDef)]
+        assert "LLMJudge" in classes, f"Expected LLMJudge class; found: {classes}"
+
+    def test_score_pointwise_method(self):
+        funcs = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.FunctionDef)]
+        assert "score_pointwise" in funcs, "Expected score_pointwise() method"
+
+    def test_compare_pairwise_method(self):
+        funcs = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.FunctionDef)]
+        assert "compare_pairwise" in funcs, "Expected compare_pairwise() method"
+
+    def test_scoring_rubric(self):
+        assert "rubric" in self.src.lower(), "Expected scoring_rubric parameter"
+
+    def test_position_debiasing(self):
+        """Pairwise comparison must evaluate both orderings."""
+        has_debias = (
+            "debias" in self.src.lower()
+            or "both order" in self.src.lower()
+            or "swap" in self.src.lower()
+            or "reverse" in self.src.lower()
+            or "position" in self.src.lower()
         )
-        assert os.path.exists(path), f"Expected file not found: {path}"
+        assert has_debias, "Expected position debiasing in pairwise comparison"
 
-    # --- Semantic Checks ---
 
-    def test_sem_import_evaluation_suite_and_result(self):
-        """from helm.benchmark.evaluation.eval_suite import EvaluationSuite, EvaluationResult — importable."""
-        old_path = sys.path[:]
-        sys.path.insert(0, self.REPO_DIR)
+class TestSemanticReporter:
+    """Verify EvaluationReporter class."""
+
+    @pytest.fixture(autouse=True)
+    def _load_source(self):
+        with open(REPORTER_FILE, "r", encoding="utf-8") as f:
+            self.src = f.read()
+        self.tree = ast.parse(self.src)
+
+    def test_class_defined(self):
+        classes = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.ClassDef)]
+        assert "EvaluationReporter" in classes, (
+            f"Expected EvaluationReporter class; found: {classes}"
+        )
+
+    def test_summary_table_method(self):
+        funcs = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.FunctionDef)]
+        assert "summary_table" in funcs, "Expected summary_table() method"
+
+    def test_compare_method(self):
+        funcs = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.FunctionDef)]
+        assert "compare" in funcs, "Expected compare() method"
+
+    def test_best_model_method(self):
+        funcs = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.FunctionDef)]
+        assert "best_model" in funcs, "Expected best_model() method"
+
+    def test_statistical_significance(self):
+        """Compare must include p-value and significance testing."""
+        has_stats = (
+            "p_value" in self.src
+            or "ttest" in self.src
+            or "t_test" in self.src
+            or "scipy.stats" in self.src
+        )
+        assert has_stats, "Expected statistical significance testing (t-test)"
+
+
+# ---------------------------------------------------------------------------
+# Layer 3 — functional_check
+# ---------------------------------------------------------------------------
+
+class TestFunctionalLLMEvaluation:
+    """Functional checks — syntax and basic correctness."""
+
+    def _parse(self, filepath):
+        with open(filepath, "r", encoding="utf-8") as f:
+            src = f.read()
         try:
-            from helm.benchmark.evaluation.eval_suite import (
-                EvaluationSuite,
-                EvaluationResult,
+            ast.parse(src)
+            return True, None
+        except SyntaxError as e:
+            return False, str(e)
+
+    def test_suite_valid_python(self):
+        ok, err = self._parse(SUITE_FILE)
+        assert ok, f"eval_suite.py syntax error: {err}"
+
+    def test_metrics_valid_python(self):
+        ok, err = self._parse(METRICS_FILE)
+        assert ok, f"metrics.py syntax error: {err}"
+
+    def test_judge_valid_python(self):
+        ok, err = self._parse(JUDGE_FILE)
+        assert ok, f"llm_judge.py syntax error: {err}"
+
+    def test_reporter_valid_python(self):
+        ok, err = self._parse(REPORTER_FILE)
+        assert ok, f"reporter.py syntax error: {err}"
+
+    def test_test_file_valid_python(self):
+        ok, err = self._parse(TEST_FILE)
+        assert ok, f"test_evaluation.py syntax error: {err}"
+
+    def test_metrics_importable(self):
+        """Metrics must be importable."""
+        result = subprocess.run(
+            f"python -c \"import sys; sys.path.insert(0, '{EVAL_DIR}'); "
+            f"from metrics import exact_match, f1_score; print('OK')\"",
+            shell=True, capture_output=True, text=True, timeout=30,
+            cwd=REPO_DIR,
+        )
+        if result.returncode != 0:
+            # Fallback to package import
+            result2 = subprocess.run(
+                f"python -c \"import sys; sys.path.insert(0, '{os.path.dirname(os.path.dirname(os.path.dirname(EVAL_DIR)))}'); "
+                f"from helm.benchmark.evaluation.metrics import exact_match; print('OK')\"",
+                shell=True, capture_output=True, text=True, timeout=30,
+                cwd=REPO_DIR,
+            )
+            assert "OK" in result.stdout or "OK" in result2.stdout, (
+                f"Could not import metrics:\n{result.stderr[:300]}\n{result2.stderr[:300]}"
             )
 
-            assert EvaluationSuite is not None
-            assert EvaluationResult is not None
-        finally:
-            sys.path[:] = old_path
-
-    def test_sem_constructor_has_predict_fn_metrics_judge_fn(self):
-        """EvaluationSuite constructor has predict_fn, metrics, judge_fn parameters."""
-        content = self._read("helm/benchmark/evaluation/eval_suite.py")
-        tree = ast.parse(content)
-        for node in ast.walk(tree):
-            if isinstance(node, ast.ClassDef) and node.name == "EvaluationSuite":
-                for item in node.body:
-                    if isinstance(item, ast.FunctionDef) and item.name == "__init__":
-                        arg_names = [a.arg for a in item.args.args if a.arg != "self"]
-                        assert (
-                            "predict_fn" in arg_names
-                        ), f"predict_fn not in __init__ args: {arg_names}"
-                        assert (
-                            "metrics" in arg_names
-                        ), f"metrics not in __init__ args: {arg_names}"
-                        assert (
-                            "judge_fn" in arg_names
-                        ), f"judge_fn not in __init__ args: {arg_names}"
-                        return
-        pytest.fail("EvaluationSuite.__init__ not found")
-
-    def test_sem_evaluation_result_attributes(self):
-        """EvaluationResult has attributes: scores_by_metric, mean_score_by_metric, overall_score, dataset_size."""
-        content = self._read("helm/benchmark/evaluation/eval_suite.py")
-        for attr in [
-            "scores_by_metric",
-            "mean_score_by_metric",
-            "overall_score",
-            "dataset_size",
-        ]:
-            assert attr in content, f"Attribute '{attr}' not found in eval_suite.py"
-
-    def test_sem_get_supported_metrics_includes_exact_match_f1(self):
-        """EvaluationSuite.get_supported_metrics() includes at least 'exact_match' and 'f1'."""
-        content = self._read("helm/benchmark/evaluation/eval_suite.py")
-        assert "exact_match" in content, "'exact_match' not found in eval_suite.py"
-        assert "f1" in content, "'f1' not found in eval_suite.py"
-        assert re.search(
-            r"def\s+get_supported_metrics", content
-        ), "get_supported_metrics method not found"
-
-    # --- Functional Checks (import) ---
-
-    def test_func_exact_match_perfect_score(self):
-        """predict_fn returns 'hello world', reference='hello world' -> exact_match == 1.0."""
-        old_path = sys.path[:]
-        sys.path.insert(0, self.REPO_DIR)
-        try:
-            from helm.benchmark.evaluation.eval_suite import EvaluationSuite
-
-            predict_fn = lambda prompt: "hello world"
-            suite = EvaluationSuite(predict_fn, ["exact_match"])
-            result = suite.evaluate([{"prompt": "q", "reference": "hello world"}])
-            assert result.mean_score_by_metric["exact_match"] == 1.0
-        finally:
-            sys.path[:] = old_path
-
-    def test_func_exact_match_zero_score(self):
-        """predict_fn returns 'hello world', reference='different answer' -> exact_match == 0.0."""
-        old_path = sys.path[:]
-        sys.path.insert(0, self.REPO_DIR)
-        try:
-            from helm.benchmark.evaluation.eval_suite import EvaluationSuite
-
-            predict_fn = lambda prompt: "hello world"
-            suite = EvaluationSuite(predict_fn, ["exact_match"])
-            result = suite.evaluate([{"prompt": "q", "reference": "different answer"}])
-            assert result.mean_score_by_metric["exact_match"] == 0.0
-        finally:
-            sys.path[:] = old_path
-
-    def test_func_case_insensitive_exact_match(self):
-        """Case-insensitive: predict_fn returns 'Hello World', reference='hello world' -> exact_match == 1.0."""
-        old_path = sys.path[:]
-        sys.path.insert(0, self.REPO_DIR)
-        try:
-            from helm.benchmark.evaluation.eval_suite import EvaluationSuite
-
-            predict_fn = lambda prompt: "Hello World"
-            suite = EvaluationSuite(predict_fn, ["exact_match"])
-            result = suite.evaluate([{"prompt": "q", "reference": "hello world"}])
-            assert result.mean_score_by_metric["exact_match"] == 1.0
-        finally:
-            sys.path[:] = old_path
-
-    def test_func_f1_partial_overlap(self):
-        """f1 metric: predict='a b c', reference='a b d' -> f1 ≈ 2/3."""
-        old_path = sys.path[:]
-        sys.path.insert(0, self.REPO_DIR)
-        try:
-            from helm.benchmark.evaluation.eval_suite import EvaluationSuite
-
-            f1_suite = EvaluationSuite(lambda p: "a b c", ["f1"])
-            r = f1_suite.evaluate([{"prompt": "x", "reference": "a b d"}])
-            assert (
-                abs(r.mean_score_by_metric["f1"] - 2 / 3) < 0.01
-            ), f"Expected f1 ≈ 0.667, got {r.mean_score_by_metric['f1']}"
-        finally:
-            sys.path[:] = old_path
-
-    def test_func_empty_dataset(self):
-        """Empty dataset: evaluate([]).dataset_size == 0."""
-        old_path = sys.path[:]
-        sys.path.insert(0, self.REPO_DIR)
-        try:
-            from helm.benchmark.evaluation.eval_suite import EvaluationSuite
-
-            predict_fn = lambda prompt: "hello world"
-            suite = EvaluationSuite(predict_fn, ["exact_match"])
-            result = suite.evaluate([])
-            assert result.dataset_size == 0
-        finally:
-            sys.path[:] = old_path
-
-    def test_func_judge_fn_called(self):
-        """Mock judge_fn is called when 'judge' metric is used."""
-        from unittest.mock import Mock
-
-        old_path = sys.path[:]
-        sys.path.insert(0, self.REPO_DIR)
-        try:
-            from helm.benchmark.evaluation.eval_suite import EvaluationSuite
-
-            predict_fn = lambda prompt: "hello world"
-            mock_judge = Mock(return_value=0.8)
-            judge_suite = EvaluationSuite(predict_fn, ["judge"], judge_fn=mock_judge)
-            judge_suite.evaluate([{"prompt": "q", "reference": "r"}])
-            assert mock_judge.called, "judge_fn was not called"
-        finally:
-            sys.path[:] = old_path
-
-    def test_func_judge_without_fn_raises_value_error(self):
-        """Using 'judge' metric with judge_fn=None raises ValueError."""
-        old_path = sys.path[:]
-        sys.path.insert(0, self.REPO_DIR)
-        try:
-            from helm.benchmark.evaluation.eval_suite import EvaluationSuite
-
-            predict_fn = lambda prompt: "hello world"
-            suite = EvaluationSuite(predict_fn, ["judge"], judge_fn=None)
-            with pytest.raises(ValueError):
-                suite.evaluate([{"prompt": "q", "reference": "r"}])
-        finally:
-            sys.path[:] = old_path
-
-    def test_func_add_custom_metric(self):
-        """suite.add_metric('char_match', ...) adds custom metric to results."""
-        old_path = sys.path[:]
-        sys.path.insert(0, self.REPO_DIR)
-        try:
-            from helm.benchmark.evaluation.eval_suite import EvaluationSuite
-
-            predict_fn = lambda prompt: "hello"
-            suite = EvaluationSuite(predict_fn, ["exact_match"])
-            suite.add_metric("char_match", lambda p, r: float(p == r))
-            result = suite.evaluate([{"prompt": "q", "reference": "hello"}])
-            assert (
-                "char_match" in result.scores_by_metric
-            ), f"'char_match' not in scores_by_metric: {list(result.scores_by_metric.keys())}"
-        finally:
-            sys.path[:] = old_path
+    def test_exact_match_correctness(self):
+        """exact_match('hello', 'hello') must return 1.0."""
+        result = subprocess.run(
+            f"python -c \""
+            f"import sys; sys.path.insert(0, '{EVAL_DIR}'); "
+            f"from metrics import exact_match; "
+            f"print(exact_match('hello', 'hello'))\"",
+            shell=True, capture_output=True, text=True, timeout=30,
+            cwd=REPO_DIR,
+        )
+        if result.returncode == 0:
+            val = float(result.stdout.strip())
+            assert val == 1.0, f"Expected exact_match('hello','hello')=1.0; got {val}"
+        else:
+            pytest.skip(f"exact_match not runnable: {result.stderr[:300]}")

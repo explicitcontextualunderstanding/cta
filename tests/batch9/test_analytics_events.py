@@ -1,178 +1,184 @@
 """
-Test for 'analytics-events' skill — TypeScript Analytics Event Tracking Library
-Validates event type definitions, AnalyticsTracker, BatchProcessor, adapter patterns,
-type-checking, and runtime behavior for event batching and validation.
+Test skill: analytics-events
+Verify that the Agent adds 4 collection sharing analytics events to Metabase:
+created, revoked, link_copied, settings_viewed.
 """
 
 import os
-import re
 import subprocess
-import sys
-
+import re
 import pytest
 
 
 class TestAnalyticsEvents:
-    """Verify TypeScript analytics event tracking library implementation."""
-
     REPO_DIR = "/workspace/metabase"
 
-    # ── helpers ──────────────────────────────────────────────────────────
+    # === File Path Checks ===
 
-    @staticmethod
-    def _read_file(path: str) -> str:
-        try:
-            with open(path, "r", errors="ignore") as fh:
-                return fh.read()
-        except OSError:
-            return ""
+    def test_frontend_src_exists(self):
+        """Verify Metabase frontend source directory exists"""
+        path = os.path.join(self.REPO_DIR, "frontend/src")
+        assert os.path.isdir(path), f"frontend/src not found at {path}"
 
-    def _src(self, *parts) -> str:
-        return os.path.join(self.REPO_DIR, "src", "analytics", *parts)
+    # === Semantic Checks ===
 
-    def _npm_install(self):
-        pkg = os.path.join(self.REPO_DIR, "package.json")
-        if not os.path.isfile(pkg):
-            pytest.skip("package.json not found")
-        nm = os.path.join(self.REPO_DIR, "node_modules")
-        if not os.path.isdir(nm):
-            result = subprocess.run(
-                ["npm", "install", "--ignore-scripts"],
-                cwd=self.REPO_DIR,
-                capture_output=True,
-                timeout=120,
-            )
-            if result.returncode != 0:
-                pytest.skip(f"npm install failed: {result.stderr[:200]}")
+    def test_sharing_analytics_events_defined(self):
+        """Verify all 4 sharing analytics event names are defined in source"""
+        events = ["created", "revoked", "link_copied", "settings_viewed"]
+        all_content = ""
+        for root, dirs, files in os.walk(os.path.join(self.REPO_DIR, "frontend/src")):
+            if "node_modules" in root:
+                continue
+            for f in files:
+                if f.endswith((".ts", ".tsx", ".js")):
+                    fpath = os.path.join(root, f)
+                    try:
+                        with open(fpath) as fh:
+                            content = fh.read()
+                        if "sharing" in content.lower() or "collection" in content.lower():
+                            all_content += content + "\n"
+                    except (UnicodeDecodeError, PermissionError):
+                        continue
+        found_events = [e for e in events if e in all_content.lower()]
+        assert len(found_events) >= 3, (
+            f"Only found {len(found_events)} of 4 expected events: {found_events}. Missing: {set(events) - set(found_events)}"
+        )
 
-    # ── file_path_check ──────────────────────────────────────────────────
+    def test_tracking_functions_exist(self):
+        """Verify tracking functions are defined for sharing events"""
+        all_content = ""
+        for root, dirs, files in os.walk(os.path.join(self.REPO_DIR, "frontend/src")):
+            if "node_modules" in root:
+                continue
+            for f in files:
+                if f.endswith((".ts", ".tsx")):
+                    fpath = os.path.join(root, f)
+                    try:
+                        with open(fpath) as fh:
+                            content = fh.read()
+                        if "track" in content.lower() and "shar" in content.lower():
+                            all_content += content + "\n"
+                    except (UnicodeDecodeError, PermissionError):
+                        continue
+        has_tracking = (
+            "trackEvent" in all_content
+            or "track(" in all_content
+            or "trackShar" in all_content
+            or "useTracking" in all_content
+            or "analytics" in all_content.lower()
+        )
+        assert has_tracking, "No tracking functions found for sharing events"
 
-    def test_tracker_ts_source_file_exists(self):
-        """src/analytics/tracker.ts must exist."""
-        path = self._src("tracker.ts")
-        assert os.path.isfile(path), f"{path} does not exist"
-        assert os.path.getsize(path) > 0
-
-    def test_events_type_definition_file_exists(self):
-        """src/analytics/events.ts must exist."""
-        path = self._src("events.ts")
-        assert os.path.isfile(path), f"{path} does not exist"
-
-    def test_batch_processor_and_adapter_files_exist(self):
-        """batch.ts and adapters/segment.ts must exist."""
-        batch = self._src("batch.ts")
-        adapter = self._src("adapters", "segment.ts")
-        assert os.path.isfile(batch), f"{batch} does not exist"
-        assert os.path.isfile(adapter), f"{adapter} does not exist"
-
-    # ── semantic_check ───────────────────────────────────────────────────
-
-    def test_event_schema_is_discriminated_union(self):
-        """EventSchema must be a discriminated union type keyed on 'name'."""
-        path = self._src("events.ts")
-        if not os.path.isfile(path):
-            pytest.skip("events.ts not found")
-        content = self._read_file(path)
-        assert re.search(r"type\s+EventSchema", content), "EventSchema type not defined"
-        assert "|" in content, "EventSchema should be a union type with |"
-        assert re.search(r"name\s*:\s*['\"]", content), "Union members should have literal name field"
-
-    def test_track_method_generic_signature(self):
-        """AnalyticsTracker must have a generic track<T extends EventSchema> method."""
-        path = self._src("tracker.ts")
-        if not os.path.isfile(path):
-            pytest.skip("tracker.ts not found")
-        content = self._read_file(path)
-        assert re.search(r"track", content), "No track method found"
-        assert "any" not in content.split("track")[1][:50] or "EventSchema" in content, \
-            "track parameter type should not be 'any'; must reference EventSchema"
-
-    def test_batch_processor_maxsize_and_flush_interval(self):
-        """BatchProcessor must accept maxSize and flushInterval parameters."""
-        path = self._src("batch.ts")
-        if not os.path.isfile(path):
-            pytest.skip("batch.ts not found")
-        content = self._read_file(path)
-        assert "maxSize" in content, "maxSize parameter not found in batch.ts"
-        assert "flushInterval" in content, "flushInterval parameter not found in batch.ts"
-
-    def test_event_validation_error_extends_error(self):
-        """EventValidationError must extend the built-in Error class."""
-        candidates = [
-            self._src("validation.ts"),
-            self._src("errors.ts"),
-            self._src("tracker.ts"),
-        ]
+    def test_collection_sharing_modal_exists(self):
+        """Verify CollectionSharingModal component exists"""
         found = False
-        for path in candidates:
-            if os.path.isfile(path):
-                content = self._read_file(path)
-                if "EventValidationError" in content and "extends Error" in content:
+        for root, dirs, files in os.walk(os.path.join(self.REPO_DIR, "frontend/src")):
+            if "node_modules" in root:
+                continue
+            for f in files:
+                if "sharing" in f.lower() and "modal" in f.lower():
                     found = True
                     break
-        assert found, "EventValidationError extending Error not found in any analytics file"
+                if f.endswith((".ts", ".tsx")):
+                    fpath = os.path.join(root, f)
+                    try:
+                        with open(fpath) as fh:
+                            content = fh.read()
+                        if "CollectionSharingModal" in content:
+                            found = True
+                            break
+                    except (UnicodeDecodeError, PermissionError):
+                        continue
+            if found:
+                break
+        assert found, "CollectionSharingModal component not found"
 
-    # ── functional_check ─────────────────────────────────────────────────
+    def test_events_have_typescript_types(self):
+        """Verify analytics events have TypeScript type definitions"""
+        all_content = ""
+        for root, dirs, files in os.walk(os.path.join(self.REPO_DIR, "frontend/src")):
+            if "node_modules" in root:
+                continue
+            for f in files:
+                if f.endswith((".ts", ".tsx")):
+                    fpath = os.path.join(root, f)
+                    try:
+                        with open(fpath) as fh:
+                            content = fh.read()
+                        if "shar" in content.lower() and ("type " in content or "interface " in content or "enum " in content):
+                            all_content += content + "\n"
+                    except (UnicodeDecodeError, PermissionError):
+                        continue
+        has_types = (
+            "type" in all_content
+            or "interface" in all_content
+            or "enum" in all_content
+        )
+        assert has_types or len(all_content) > 0, (
+            "No TypeScript types found for sharing analytics events"
+        )
 
-    def test_typescript_type_check_passes(self):
-        """TypeScript source must compile without type errors using tsc --noEmit."""
-        self._npm_install()
-        tsconfig = os.path.join(self.REPO_DIR, "tsconfig.json")
-        if not os.path.isfile(tsconfig):
-            pytest.skip("tsconfig.json not found")
+    # === Functional Checks ===
+
+    def test_typescript_compiles(self):
+        """Verify TypeScript compilation succeeds for frontend"""
+        fe_dir = os.path.join(self.REPO_DIR, "frontend")
+        if not os.path.exists(os.path.join(fe_dir, "package.json")):
+            fe_dir = self.REPO_DIR
         result = subprocess.run(
-            ["npx", "tsc", "--noEmit"],
+            ["npx", "tsc", "--noEmit", "--skipLibCheck"],
+            cwd=fe_dir,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        # TypeScript compilation may have pre-existing errors; check our files aren't causing new ones
+        if result.returncode != 0:
+            sharing_errors = [
+                line for line in result.stdout.splitlines()
+                if "sharing" in line.lower() or "analytics" in line.lower()
+            ]
+            assert len(sharing_errors) == 0, (
+                f"TypeScript errors in sharing/analytics files: {sharing_errors[:5]}"
+            )
+
+    def test_eslint_on_sharing_files(self):
+        """Verify ESLint passes on sharing-related files"""
+        sharing_files = []
+        for root, dirs, files in os.walk(os.path.join(self.REPO_DIR, "frontend/src")):
+            if "node_modules" in root:
+                continue
+            for f in files:
+                if "sharing" in f.lower() and f.endswith((".ts", ".tsx")):
+                    sharing_files.append(os.path.join(root, f))
+        if not sharing_files:
+            pytest.skip("No sharing files found to lint")
+        result = subprocess.run(
+            ["npx", "eslint"] + sharing_files[:5],
             cwd=self.REPO_DIR,
             capture_output=True,
             text=True,
             timeout=120,
         )
-        if result.returncode != 0:
-            pytest.skip(f"tsc failed (may need setup): {result.stderr[:200]}")
+        assert result.returncode == 0, f"ESLint errors: {result.stdout[:500]}"
 
-    def test_batch_flush_triggers_at_maxsize(self):
-        """BatchProcessor.flush() should be callable; batch.ts must contain flush logic."""
-        path = self._src("batch.ts")
-        if not os.path.isfile(path):
-            pytest.skip("batch.ts not found")
-        content = self._read_file(path)
-        assert "flush" in content, "flush method not defined in BatchProcessor"
-        assert "maxSize" in content, "maxSize not referenced in flush logic"
-        assert re.search(r"(length|size|count)\s*[><=]+", content), \
-            "No length/size comparison found in batch.ts (needed for flush trigger)"
-
-    def test_empty_batch_flush_no_api_call(self):
-        """Flushing empty queue should not invoke send — check guard clause exists."""
-        path = self._src("batch.ts")
-        if not os.path.isfile(path):
-            pytest.skip("batch.ts not found")
-        content = self._read_file(path)
-        assert re.search(r"(\.length\s*[=<>!]+\s*0|\.length\s*===?\s*0|isEmpty|queue\.length)", content), \
-            "batch.ts should guard against flushing empty queue"
-
-    def test_anonymous_id_handling(self):
-        """Tracker should handle anonymous_id when identify() not called."""
-        path = self._src("tracker.ts")
-        if not os.path.isfile(path):
-            pytest.skip("tracker.ts not found")
-        content = self._read_file(path)
-        has_anon = "anonymous" in content.lower() or "anon" in content.lower()
-        has_identify = "identify" in content
-        assert has_identify or has_anon, \
-            "tracker.ts should handle identify() and/or anonymous_id pattern"
-
-    def test_validation_error_thrown_for_missing_property(self):
-        """Validation logic should check for required properties."""
-        candidates = [
-            self._src("validation.ts"),
-            self._src("tracker.ts"),
-            self._src("events.ts"),
-        ]
-        found = False
-        for path in candidates:
-            if os.path.isfile(path):
-                content = self._read_file(path)
-                if "required" in content.lower() or "validate" in content.lower():
-                    found = True
-                    break
-        assert found, "No validation/required property checking found"
+    def test_sharing_modal_integrates_tracking(self):
+        """Verify CollectionSharingModal calls tracking functions"""
+        modal_content = ""
+        for root, dirs, files in os.walk(os.path.join(self.REPO_DIR, "frontend/src")):
+            if "node_modules" in root:
+                continue
+            for f in files:
+                if "sharing" in f.lower() and "modal" in f.lower() and f.endswith((".ts", ".tsx")):
+                    fpath = os.path.join(root, f)
+                    with open(fpath) as fh:
+                        modal_content += fh.read() + "\n"
+        if not modal_content:
+            pytest.skip("Sharing modal file not found")
+        has_tracking_call = (
+            "track" in modal_content.lower()
+            and ("event" in modal_content.lower() or "analytics" in modal_content.lower())
+        )
+        assert has_tracking_call, (
+            "CollectionSharingModal does not appear to call tracking functions"
+        )

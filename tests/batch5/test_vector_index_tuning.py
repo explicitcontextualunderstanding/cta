@@ -1,178 +1,137 @@
 """
-Test for 'vector-index-tuning' skill — FAISS Vector Index Tuning
-Validates 5 index types, recall@k evaluation, perf_counter timing,
-index configuration, and search quality measurement.
+Test skill: vector-index-tuning
+Verify that the Agent correctly implements a FAISS index benchmarking suite
+with multiple index configurations, metrics, and report generation.
 """
 
 import os
 import re
-
+import ast
 import pytest
 
 
 class TestVectorIndexTuning:
-    """Verify FAISS vector index tuning patterns."""
-
     REPO_DIR = "/workspace/faiss"
 
-    # ── file_path_check ─────────────────────────────────────────────────────
+    BENCHMARK = "benchs/index_benchmark.py"
+    CONFIGS = "benchs/index_configs.py"
+    REPORT = "benchs/report_generator.py"
+    TESTS = "tests/test_index_benchmark.py"
 
-    def test_faiss_source_exists(self):
-        """Verify FAISS source directory exists."""
-        assert os.path.isdir(self.REPO_DIR), "FAISS repo not found"
+    def _read_file(self, rel_path):
+        filepath = os.path.join(self.REPO_DIR, rel_path)
+        with open(filepath) as f:
+            return f.read()
 
-    def test_index_source_files(self):
-        """Verify index-related source files exist."""
-        found = False
-        for dirpath, _, fnames in os.walk(self.REPO_DIR):
-            if ".git" in dirpath:
-                continue
-            for f in fnames:
-                if f.endswith((".py", ".cpp", ".h")) and "index" in f.lower():
-                    found = True
-                    break
-            if found:
-                break
-        assert found, "No index source files found"
+    # === File Path Checks ===
 
-    # ── semantic_check ──────────────────────────────────────────────────────
+    def test_benchmark_file_exists(self):
+        filepath = os.path.join(self.REPO_DIR, self.BENCHMARK)
+        assert os.path.exists(filepath), f"index_benchmark.py not found at {filepath}"
 
-    def test_five_index_types(self):
-        """Verify at least 5 index types are referenced."""
-        source_files = self._find_source_files()
-        index_types = set()
-        patterns = [
-            r"IndexFlat",
-            r"IndexIVFFlat",
-            r"IndexIVFPQ",
-            r"IndexHNSW",
-            r"IndexLSH",
-            r"IndexPQ",
-            r"IndexIVFScalar",
-            r"IndexScalar",
-            r"GpuIndex",
-            r"IndexBinary",
-            r"IndexIVF",
+    def test_configs_file_exists(self):
+        filepath = os.path.join(self.REPO_DIR, self.CONFIGS)
+        assert os.path.exists(filepath), f"index_configs.py not found at {filepath}"
+
+    def test_report_file_exists(self):
+        filepath = os.path.join(self.REPO_DIR, self.REPORT)
+        assert os.path.exists(filepath), f"report_generator.py not found at {filepath}"
+
+    def test_tests_file_exists(self):
+        filepath = os.path.join(self.REPO_DIR, self.TESTS)
+        assert os.path.exists(filepath), f"test_index_benchmark.py not found at {filepath}"
+
+    # === Semantic Checks ===
+
+    def test_configs_define_all_index_types(self):
+        """Verify configs define Flat, IVF4096, HNSW32, PQ32, IVF4096_PQ32"""
+        content = self._read_file(self.CONFIGS)
+        for idx_name in ["Flat", "IVF4096", "HNSW32", "PQ32"]:
+            assert idx_name in content, f"Configs missing index type: {idx_name}"
+
+    def test_configs_use_factory_strings(self):
+        """Verify configs use FAISS index factory strings"""
+        content = self._read_file(self.CONFIGS)
+        factory_patterns = ["IVF4096,Flat", "HNSW32", "PQ32", "IVF4096,PQ32"]
+        found = sum(1 for p in factory_patterns if p in content)
+        assert found >= 3, \
+            f"Configs should include at least 3 factory strings, found {found}"
+
+    def test_configs_define_search_parameters(self):
+        """Verify configs include nprobe and efSearch parameters"""
+        content = self._read_file(self.CONFIGS)
+        assert "nprobe" in content, "Configs missing nprobe parameter"
+        assert "efSearch" in content, "Configs missing efSearch parameter"
+
+    def test_benchmark_generates_synthetic_data(self):
+        """Verify benchmark generates 1M vectors of dim 128 with seed 42"""
+        content = self._read_file(self.BENCHMARK)
+        assert "128" in content, "Benchmark missing dimension D=128"
+        assert "42" in content, "Benchmark missing seed=42"
+        has_million = bool(re.search(r'(1_?000_?000|1e6|10\*\*6)', content))
+        assert has_million, "Benchmark missing N=1,000,000 vector count"
+
+    def test_benchmark_computes_ground_truth(self):
+        """Verify benchmark computes ground truth with IndexFlatL2"""
+        content = self._read_file(self.BENCHMARK)
+        assert "IndexFlatL2" in content, "Benchmark missing IndexFlatL2 for ground truth"
+        assert "100" in content, "Benchmark missing k=100 for ground truth"
+
+    def test_benchmark_measures_all_metrics(self):
+        """Verify benchmark measures build time, latency, recall, memory"""
+        content = self._read_file(self.BENCHMARK)
+        for metric in ["build_time", "latency", "recall", "memory"]:
+            assert metric in content.lower(), f"Benchmark missing metric: {metric}"
+
+    def test_benchmark_measures_p99_latency(self):
+        """Verify benchmark computes P99 latency"""
+        content = self._read_file(self.BENCHMARK)
+        has_p99 = bool(re.search(r'(p99|percentile.*99|99th)', content, re.IGNORECASE))
+        assert has_p99, "Benchmark missing P99 latency measurement"
+
+    def test_report_generates_markdown(self):
+        """Verify report generator produces Markdown table"""
+        content = self._read_file(self.REPORT)
+        assert "generate_report" in content, "Missing generate_report function"
+        has_md = bool(re.search(r'(\|.*\|.*\||markdown|table)', content, re.IGNORECASE))
+        assert has_md, "Report missing Markdown table generation"
+
+    def test_report_has_recommend_function(self):
+        """Verify recommend function with recall and latency thresholds"""
+        content = self._read_file(self.REPORT)
+        assert "recommend" in content, "Missing recommend function"
+        assert "min_recall" in content, "recommend missing min_recall parameter"
+        assert "max_latency" in content, "recommend missing max_latency parameter"
+
+    # === Functional Checks ===
+
+    def test_all_files_valid_python(self):
+        """Verify all files have valid Python syntax"""
+        for path in [self.BENCHMARK, self.CONFIGS, self.REPORT]:
+            filepath = os.path.join(self.REPO_DIR, path)
+            with open(filepath) as f:
+                try:
+                    ast.parse(f.read())
+                except SyntaxError as e:
+                    pytest.fail(f"{path} syntax error: {e}")
+
+    def test_recall_computation_logic(self):
+        """Verify benchmark includes recall@10 and recall@100 calculation"""
+        content = self._read_file(self.BENCHMARK)
+        has_recall10 = bool(re.search(r'recall.*10|@10|k=10|k\s*=\s*10', content))
+        has_recall100 = bool(re.search(r'recall.*100|@100|k=100|k\s*=\s*100', content))
+        assert has_recall10, "Benchmark missing recall@10 computation"
+        assert has_recall100, "Benchmark missing recall@100 computation"
+
+    def test_tests_use_small_scale_data(self):
+        """Verify tests use 10K vectors for validation"""
+        content = self._read_file(self.TESTS)
+        has_10k = bool(re.search(r'(10_?000|10000|1e4)', content))
+        assert has_10k, "Tests should use 10K vectors for small-scale validation"
+        tree = ast.parse(content)
+        test_funcs = [
+            n.name for n in ast.walk(tree)
+            if isinstance(n, ast.FunctionDef) and n.name.startswith("test_")
         ]
-        for fpath in source_files:
-            content = self._read(fpath)
-            for pat in patterns:
-                if re.search(pat, content):
-                    index_types.add(pat.replace(r"\\", ""))
-        assert (
-            len(index_types) >= 5
-        ), f"Only {len(index_types)} index types found: {index_types}"
-
-    def test_recall_at_k(self):
-        """Verify recall@k evaluation metric."""
-        source_files = self._find_source_files()
-        for fpath in source_files:
-            content = self._read(fpath)
-            if re.search(
-                r"(recall|recall@|recall_at_k|intersection|groundtruth)",
-                content,
-                re.IGNORECASE,
-            ):
-                return
-        pytest.fail("No recall@k evaluation found")
-
-    def test_perf_counter_timing(self):
-        """Verify perf_counter or timing measurement."""
-        source_files = self._find_source_files()
-        for fpath in source_files:
-            content = self._read(fpath)
-            if re.search(
-                r"(perf_counter|time\.time|timeit|elapsed|duration|chrono)",
-                content,
-                re.IGNORECASE,
-            ):
-                return
-        pytest.fail("No timing measurement found")
-
-    def test_nprobe_parameter(self):
-        """Verify nprobe parameter for IVF indices."""
-        source_files = self._find_source_files()
-        for fpath in source_files:
-            content = self._read(fpath)
-            if re.search(r"(nprobe|n_probe)", content, re.IGNORECASE):
-                return
-        pytest.fail("No nprobe parameter found")
-
-    def test_training_data(self):
-        """Verify index training with data."""
-        source_files = self._find_source_files()
-        for fpath in source_files:
-            content = self._read(fpath)
-            if re.search(
-                r"(\.train\(|training|train_data|is_trained)", content, re.IGNORECASE
-            ):
-                return
-        pytest.fail("No index training found")
-
-    # ── functional_check ────────────────────────────────────────────────────
-
-    def test_python_files_parse(self):
-        """Verify Python files parse correctly."""
-        import ast
-
-        py_files = [f for f in self._find_source_files() if f.endswith(".py")]
-        for fpath in py_files[:15]:
-            content = self._read(fpath)
-            try:
-                ast.parse(content, filename=fpath)
-            except SyntaxError as e:
-                pytest.fail(f"SyntaxError in {os.path.basename(fpath)}: {e}")
-
-    def test_search_api(self):
-        """Verify search API (index.search)."""
-        source_files = self._find_source_files()
-        for fpath in source_files:
-            content = self._read(fpath)
-            if re.search(r"(\.search\(|range_search|search_with_params)", content):
-                return
-        pytest.fail("No search API found")
-
-    def test_add_vectors(self):
-        """Verify adding vectors to index."""
-        source_files = self._find_source_files()
-        for fpath in source_files:
-            content = self._read(fpath)
-            if re.search(r"(\.add\(|add_with_ids|ntotal)", content):
-                return
-        pytest.fail("No vector adding found")
-
-    def test_index_io(self):
-        """Verify index save/load (write_index/read_index)."""
-        source_files = self._find_source_files()
-        for fpath in source_files:
-            content = self._read(fpath)
-            if re.search(
-                r"(write_index|read_index|save_index|load_index|serialize)", content
-            ):
-                return
-        pytest.fail("No index I/O found")
-
-    def test_dimension_parameter(self):
-        """Verify dimension parameter for index creation."""
-        source_files = self._find_source_files()
-        for fpath in source_files:
-            content = self._read(fpath)
-            if re.search(r"(d\s*=\s*\d+|dim\s*=|dimension|d_model)", content):
-                return
-        pytest.fail("No dimension parameter found")
-
-    # ── helpers ──────────────────────────────────────────────────────────────
-
-    def _find_source_files(self):
-        results = []
-        for dirpath, _, fnames in os.walk(self.REPO_DIR):
-            if ".git" in dirpath:
-                continue
-            for f in fnames:
-                if f.endswith((".py", ".cpp", ".h", ".cuh")):
-                    results.append(os.path.join(dirpath, f))
-        return results
-
-    def _read(self, path):
-        with open(path, "r", errors="ignore") as fh:
-            return fh.read()
+        assert len(test_funcs) >= 3, \
+            f"Expected at least 3 tests, found {len(test_funcs)}"

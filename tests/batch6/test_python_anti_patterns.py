@@ -1,214 +1,254 @@
 """
-Tests for 'python-anti-patterns' skill.
-Generated from benchmark case definitions for python-anti-patterns.
+Test skill: python-anti-patterns
+Verify that the Agent correctly refactors boltons iterutils.py and
+fileutils.py to eliminate mutable default arguments, bare except clauses,
+type checks with ==, and missing input validation.
 """
 
-import ast
-import base64
-import glob
-import json
 import os
-import py_compile
 import re
+import ast
 import subprocess
-import textwrap
-
 import pytest
-
-try:
-    import yaml
-except ModuleNotFoundError:
-    yaml = None
 
 
 class TestPythonAntiPatterns:
-    """Verify the python-anti-patterns skill output."""
+    REPO_DIR = "/workspace/boltons"
 
-    REPO_DIR = '/workspace/boltons'
-
-
-    # ── helpers ──────────────────────────────────────────────
-
-    _SETUP_CACHE: dict = {}
-
-    @staticmethod
-    def _repo_path(rel: str) -> str:
-        return os.path.join(TestPythonAntiPatterns.REPO_DIR, rel)
-
-    @staticmethod
-    def _safe_read(path: str) -> str:
-        with open(path, "r", encoding="utf-8", errors="ignore") as fh:
-            return fh.read()
-
-    @staticmethod
-    def _load_yaml(path: str):
-        if yaml is None:
-            pytest.skip("PyYAML not available")
-        with open(path, "r", encoding="utf-8", errors="ignore") as fh:
-            return yaml.safe_load(fh)
-
-    @staticmethod
-    def _load_json(path: str):
-        with open(path, "r", encoding="utf-8", errors="ignore") as fh:
-            return json.load(fh)
-
-    @classmethod
-    def _run_in_repo(cls, script: str, timeout: int = 120) -> subprocess.CompletedProcess:
-        return subprocess.run(
-            ["python", "-c", textwrap.dedent(script)],
-            cwd=cls.REPO_DIR,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-        )
-
-    @classmethod
-    def _run_cmd(cls, command, args=None, timeout=120):
-        args = args or []
-        if isinstance(command, str) and args:
-            return subprocess.run(
-                [command, *args],
-                cwd=cls.REPO_DIR,
-                capture_output=True,
-                text=True,
-                timeout=timeout,
-            )
-        return subprocess.run(
-            command if isinstance(command, list) else command,
-            cwd=cls.REPO_DIR,
-            shell=isinstance(command, str),
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-        )
-
-    @classmethod
-    def _ensure_setup(cls, label, setup_cmds, fallback):
-        if not setup_cmds:
-            return
-        key = tuple(setup_cmds)
-        if key in cls._SETUP_CACHE:
-            ok, msg = cls._SETUP_CACHE[key]
-            if ok:
-                return
-            if fallback == "skip_if_setup_fails":
-                pytest.skip(f"{label} setup failed: {msg}")
-            pytest.fail(f"{label} setup failed: {msg}")
-        for cmd in setup_cmds:
-            r = subprocess.run(cmd, cwd=cls.REPO_DIR, shell=True,
-                               capture_output=True, text=True, timeout=300)
-            if r.returncode != 0:
-                msg = (r.stderr or r.stdout or 'failed').strip()
-                cls._SETUP_CACHE[key] = (False, msg)
-                if fallback == "skip_if_setup_fails":
-                    pytest.skip(f"{label} setup failed: {msg}")
-                pytest.fail(f"{label} setup failed: {msg}")
-        cls._SETUP_CACHE[key] = (True, 'ok')
-
-
-    # ── file_path_check (static) ────────────────────────────────────────
+    # === File Path Checks ===
 
     def test_iterutils_exists(self):
-        """Verify refactored iterutils.py exists"""
-        _p = self._repo_path('boltons/iterutils.py')
-        assert os.path.isfile(_p), f'Missing file: boltons/iterutils.py'
-        py_compile.compile(_p, doraise=True)
+        """Verify iterutils.py exists"""
+        path = os.path.join(self.REPO_DIR, "boltons/iterutils.py")
+        assert os.path.exists(path), f"iterutils.py not found at {path}"
 
     def test_fileutils_exists(self):
-        """Verify refactored fileutils.py exists"""
-        _p = self._repo_path('boltons/fileutils.py')
-        assert os.path.isfile(_p), f'Missing file: boltons/fileutils.py'
-        py_compile.compile(_p, doraise=True)
+        """Verify fileutils.py exists"""
+        path = os.path.join(self.REPO_DIR, "boltons/fileutils.py")
+        assert os.path.exists(path), f"fileutils.py not found at {path}"
 
-    # ── semantic_check (static) ────────────────────────────────────────
+    # === Semantic Checks ===
 
-    def test_no_mutable_defaults(self):
-        """Verify no mutable default arguments remain in function signatures"""
-        _p = self._repo_path('boltons/iterutils.py')
-        assert os.path.exists(_p), f'Missing: boltons/iterutils.py'
-        _contents = self._safe_read(_p)
-        _all = _contents if isinstance(_contents, str) else ''
-        assert re.search('=[]', _all, re.MULTILINE), 'Pattern not found: =[]'
-        assert '={}' in _all, 'Missing: ={}'
+    def test_no_mutable_default_args_in_iterutils(self):
+        """Verify iterutils.py has no mutable default arguments (list/dict/set)"""
+        path = os.path.join(self.REPO_DIR, "boltons/iterutils.py")
+        with open(path, "r") as f:
+            source = f.read()
+        tree = ast.parse(source)
 
-    def test_no_bare_except(self):
-        """Verify no bare except: clauses remain"""
-        _p = self._repo_path('boltons/iterutils.py')
-        assert os.path.exists(_p), f'Missing: boltons/iterutils.py'
-        _contents = self._safe_read(_p)
-        _all = _contents if isinstance(_contents, str) else ''
-        assert 'except:' in _all, 'Missing: except:'
-
-    def test_isinstance_usage(self):
-        """Verify isinstance used instead of type() comparisons"""
-        _p = self._repo_path('boltons/iterutils.py')
-        assert os.path.exists(_p), f'Missing: boltons/iterutils.py'
-        _contents = self._safe_read(_p)
-        _all = _contents if isinstance(_contents, str) else ''
-        assert 'isinstance' in _all, 'Missing: isinstance'
-        assert re.search('type(', _all, re.MULTILINE), 'Pattern not found: type('
-
-    # ── functional_check ────────────────────────────────────────
-
-    def test_chunked_preserves_behavior(self):
-        """Verify chunked still works correctly for normal inputs"""
-        self._ensure_setup('test_chunked_preserves_behavior', ['pip install boltons'], 'fail_if_missing')
-        result = self._run_cmd('python', args=['-c', "from boltons.iterutils import chunked; assert list(chunked([1,2,3,4,5],2))==[[1,2],[3,4],[5]]; print('PASS')"], timeout=120)
-        assert result.returncode == 0, (
-            f'test_chunked_preserves_behavior failed (exit {result.returncode})\n' + result.stderr[:500]
-        )
-        assert 'PASS' in (result.stdout + result.stderr), 'Expected PASS in output'
-
-    def test_chunked_zero_raises(self):
-        """Verify chunked(src, 0) raises ValueError"""
-        self._ensure_setup('test_chunked_zero_raises', ['pip install boltons'], 'fail_if_missing')
-        result = self._run_cmd('python', args=['-c', "from boltons.iterutils import chunked\ntry:\n    chunked([1,2,3], 0)\n    assert False, 'Should have raised'\nexcept ValueError as e:\n    assert 'positive' in str(e).lower(); print('PASS')"], timeout=120)
-        assert result.returncode == 0, (
-            f'test_chunked_zero_raises failed (exit {result.returncode})\n' + result.stderr[:500]
-        )
-        assert 'PASS' in (result.stdout + result.stderr), 'Expected PASS in output'
-
-    def test_chunked_negative_raises(self):
-        """Verify chunked(src, -1) raises ValueError"""
-        self._ensure_setup('test_chunked_negative_raises', ['pip install boltons'], 'fail_if_missing')
-        result = self._run_cmd('python', args=['-c', "from boltons.iterutils import chunked\ntry:\n    chunked([1,2,3], -1)\n    assert False, 'Should have raised'\nexcept ValueError as e:\n    assert 'positive' in str(e).lower(); print('PASS')"], timeout=120)
-        assert result.returncode == 0, (
-            f'test_chunked_negative_raises failed (exit {result.returncode})\n' + result.stderr[:500]
-        )
-        assert 'PASS' in (result.stdout + result.stderr), 'Expected PASS in output'
-
-    def test_bucketize_no_shared_state(self):
-        """Verify bucketize called twice has no shared mutable state"""
-        self._ensure_setup('test_bucketize_no_shared_state', ['pip install boltons'], 'fail_if_missing')
-        result = self._run_cmd('python', args=['-c', "from boltons.iterutils import bucketize; r1=bucketize(range(5), key=lambda x: x%2); r2=bucketize(range(3), key=lambda x: x%2); assert r1!=r2 or len(r1[0])!=len(r2[0]); print('PASS')"], timeout=120)
-        assert result.returncode == 0, (
-            f'test_bucketize_no_shared_state failed (exit {result.returncode})\n' + result.stderr[:500]
-        )
-        assert 'PASS' in (result.stdout + result.stderr), 'Expected PASS in output'
-
-    def test_first_empty_returns_none(self):
-        """Verify first([]) returns None without error"""
-        self._ensure_setup('test_first_empty_returns_none', ['pip install boltons'], 'fail_if_missing')
-        result = self._run_cmd('python', args=['-c', "from boltons.iterutils import first; assert first([])==None; print('PASS')"], timeout=120)
-        assert result.returncode == 0, (
-            f'test_first_empty_returns_none failed (exit {result.returncode})\n' + result.stderr[:500]
-        )
-        assert 'PASS' in (result.stdout + result.stderr), 'Expected PASS in output'
-
-    def test_atomic_save_type_error(self):
-        """Verify atomic_save(123) raises TypeError"""
-        self._ensure_setup('test_atomic_save_type_error', ['pip install boltons'], 'fail_if_missing')
-        result = self._run_cmd('python', args=['-c', "from boltons.fileutils import atomic_save\ntry:\n    atomic_save(123)\n    assert False, 'Should have raised'\nexcept TypeError:\n    print('PASS')"], timeout=120)
-        assert result.returncode == 0, (
-            f'test_atomic_save_type_error failed (exit {result.returncode})\n' + result.stderr[:500]
-        )
-        assert 'PASS' in (result.stdout + result.stderr), 'Expected PASS in output'
-
-    def test_pytest_refactor_suite(self):
-        """Run the full refactor test suite"""
-        self._ensure_setup('test_pytest_refactor_suite', ['pip install boltons pytest'], 'fail_if_missing')
-        result = self._run_cmd('python', args=['-m', 'pytest', 'tests/', '-v', '--tb=short'], timeout=120)
-        assert result.returncode == 0, (
-            f'test_pytest_refactor_suite failed (exit {result.returncode})\n' + result.stderr[:500]
+        violations = []
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                for default in node.args.defaults + node.args.kw_defaults:
+                    if default is None:
+                        continue
+                    if isinstance(default, (ast.List, ast.Dict, ast.Set)):
+                        violations.append(
+                            f"{node.name}() at line {node.lineno} has mutable default"
+                        )
+        assert not violations, (
+            f"Mutable default arguments found:\n" + "\n".join(violations)
         )
 
+    def test_no_mutable_default_args_in_fileutils(self):
+        """Verify fileutils.py has no mutable default arguments"""
+        path = os.path.join(self.REPO_DIR, "boltons/fileutils.py")
+        with open(path, "r") as f:
+            source = f.read()
+        tree = ast.parse(source)
+
+        violations = []
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                for default in node.args.defaults + node.args.kw_defaults:
+                    if default is None:
+                        continue
+                    if isinstance(default, (ast.List, ast.Dict, ast.Set)):
+                        violations.append(
+                            f"{node.name}() at line {node.lineno} has mutable default"
+                        )
+        assert not violations, (
+            f"Mutable default arguments found:\n" + "\n".join(violations)
+        )
+
+    def test_no_bare_excepts_in_iterutils(self):
+        """Verify iterutils.py has no bare except clauses"""
+        path = os.path.join(self.REPO_DIR, "boltons/iterutils.py")
+        with open(path, "r") as f:
+            source = f.read()
+        tree = ast.parse(source)
+
+        bare_excepts = []
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ExceptHandler):
+                if node.type is None:
+                    bare_excepts.append(f"line {node.lineno}")
+
+        assert not bare_excepts, (
+            f"Bare except clauses found at: {', '.join(bare_excepts)}"
+        )
+
+    def test_no_bare_excepts_in_fileutils(self):
+        """Verify fileutils.py has no bare except clauses"""
+        path = os.path.join(self.REPO_DIR, "boltons/fileutils.py")
+        with open(path, "r") as f:
+            source = f.read()
+        tree = ast.parse(source)
+
+        bare_excepts = []
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ExceptHandler):
+                if node.type is None:
+                    bare_excepts.append(f"line {node.lineno}")
+
+        assert not bare_excepts, (
+            f"Bare except clauses found at: {', '.join(bare_excepts)}"
+        )
+
+    def test_uses_isinstance_not_type_equality(self):
+        """Verify type checks use isinstance() instead of type() == comparison"""
+        for filename in ["boltons/iterutils.py", "boltons/fileutils.py"]:
+            path = os.path.join(self.REPO_DIR, filename)
+            with open(path, "r") as f:
+                source = f.read()
+
+            # Pattern: type(x) == type or type(x) is type (exact type comparison)
+            # This check looks for type() == <something> antipattern
+            bad_patterns = re.findall(
+                r"type\s*\([^)]+\)\s*==\s*", source
+            )
+            assert not bad_patterns, (
+                f"{filename} still uses type() == for comparison; "
+                "use isinstance() instead"
+            )
+
+    def test_chunked_validates_size_argument(self):
+        """Verify chunked() validates that chunk size is a positive integer"""
+        path = os.path.join(self.REPO_DIR, "boltons/iterutils.py")
+        with open(path, "r") as f:
+            source = f.read()
+
+        # Look for input validation on size/chunk_size parameter
+        assert re.search(
+            r"(raise\s+(ValueError|TypeError)|if\s+.*size\s*(<=|<\s*1|is\s+not|not\s+isinstance))",
+            source,
+        ), "chunked() should validate the size argument"
+
+    def test_windowed_validates_size_argument(self):
+        """Verify windowed() / windowed_iter() validates window size"""
+        path = os.path.join(self.REPO_DIR, "boltons/iterutils.py")
+        with open(path, "r") as f:
+            source = f.read()
+
+        # Find windowed function and check for validation
+        func_match = re.search(
+            r"def\s+windowed(?:_iter)?\s*\(.*?\n((?:[ \t]+.*\n){1,15})",
+            source,
+        )
+        if func_match:
+            body = func_match.group(1)
+            has_validation = ("raise" in body and ("ValueError" in body or "TypeError" in body)) or \
+                             ("if" in body and ("size" in body or "window" in body))
+            assert has_validation, "windowed() should validate window size"
+        # If function not found, pass silently (may have different name)
+
+    def test_atomic_save_validates_file_path_type(self):
+        """Verify atomic_save() validates file_path is a string"""
+        path = os.path.join(self.REPO_DIR, "boltons/fileutils.py")
+        with open(path, "r") as f:
+            source = f.read()
+
+        # Find atomic_save/AtomicSaver and check for type validation
+        assert re.search(
+            r"(isinstance\s*\(.*(?:file_path|dest_path|path).*str|"
+            r"raise\s+TypeError.*(?:file_path|dest_path|path))",
+            source,
+        ), "atomic_save should validate that file_path is a string"
+
+    def test_none_sentinel_pattern_used(self):
+        """Verify sentinel/None pattern is used instead of mutable defaults"""
+        for filename in ["boltons/iterutils.py", "boltons/fileutils.py"]:
+            path = os.path.join(self.REPO_DIR, filename)
+            with open(path, "r") as f:
+                source = f.read()
+
+            # Common sentinel patterns: `=None` with `if x is None: x = []`
+            # or a _UNSET / _SENTINEL constant
+            has_none_default = "=None" in source or "= None" in source
+            has_sentinel = re.search(r"_UNSET|_SENTINEL|_DEFAULT|_MISSING", source)
+            has_none_guard = re.search(r"if\s+\w+\s+is\s+None", source)
+
+            assert has_none_default or has_sentinel or has_none_guard, (
+                f"{filename} should use None/sentinel pattern for formerly mutable defaults"
+            )
+
+    # === Functional Checks ===
+
+    def test_iterutils_module_imports(self):
+        """Verify iterutils module can be imported without errors"""
+        result = subprocess.run(
+            ["python", "-c", "from boltons.iterutils import chunked, bucketize"],
+            capture_output=True, text=True, timeout=30,
+            cwd=self.REPO_DIR,
+        )
+        assert result.returncode == 0, (
+            f"Failed to import iterutils:\nstdout: {result.stdout}\nstderr: {result.stderr}"
+        )
+
+    def test_fileutils_module_imports(self):
+        """Verify fileutils module can be imported without errors"""
+        result = subprocess.run(
+            ["python", "-c", "from boltons.fileutils import atomic_save, mkdir_p"],
+            capture_output=True, text=True, timeout=30,
+            cwd=self.REPO_DIR,
+        )
+        assert result.returncode == 0, (
+            f"Failed to import fileutils:\nstdout: {result.stdout}\nstderr: {result.stderr}"
+        )
+
+    def test_chunked_raises_on_invalid_size(self):
+        """Verify chunked() raises ValueError on invalid chunk size"""
+        result = subprocess.run(
+            [
+                "python", "-c",
+                "from boltons.iterutils import chunked; chunked([1,2,3], 0)"
+            ],
+            capture_output=True, text=True, timeout=30,
+            cwd=self.REPO_DIR,
+        )
+        assert result.returncode != 0, (
+            "chunked() should raise an error for size=0"
+        )
+        assert "ValueError" in result.stderr or "Error" in result.stderr, (
+            f"Expected ValueError for chunked(... , 0), got: {result.stderr}"
+        )
+
+    def test_chunked_works_correctly(self):
+        """Verify chunked() still produces correct output"""
+        result = subprocess.run(
+            [
+                "python", "-c",
+                "from boltons.iterutils import chunked; "
+                "result = chunked(range(7), 3); print(result)"
+            ],
+            capture_output=True, text=True, timeout=30,
+            cwd=self.REPO_DIR,
+        )
+        assert result.returncode == 0, (
+            f"chunked() failed:\nstdout: {result.stdout}\nstderr: {result.stderr}"
+        )
+        output = result.stdout.strip()
+        # Should output something like [[0, 1, 2], [3, 4, 5], [6]]
+        assert "[" in output, f"Unexpected output from chunked(): {output}"
+
+    def test_existing_tests_pass(self):
+        """Verify the existing boltons test suite still passes for iterutils and fileutils"""
+        result = subprocess.run(
+            ["python", "-m", "pytest", "tests/test_iterutils.py", "tests/test_fileutils.py",
+             "-v", "--tb=short", "-x"],
+            capture_output=True, text=True, timeout=120,
+            cwd=self.REPO_DIR,
+        )
+        assert result.returncode == 0, (
+            f"Existing tests failed after refactoring:\n{result.stdout}\n{result.stderr}"
+        )

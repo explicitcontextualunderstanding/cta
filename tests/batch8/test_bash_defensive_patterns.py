@@ -1,121 +1,162 @@
 """
-Test for 'bash-defensive-patterns' skill — Defensive Bash Scripting
-Validates that the Agent created three defensive Bash scripts with strict mode,
-atomic writes, trap cleanup, retry loops, and proper input validation.
+Tests for the bash-defensive-patterns skill.
+Validates a defensive Bash script library with strict mode, error trapping,
+atomic file operations, lock management, input validation, and deploy script.
 """
 
 import os
 import re
 import subprocess
 
-import pytest
+REPO_DIR = "/workspace/shellcheck"
+LIB_DIR = os.path.join(REPO_DIR, "test", "scripts", "lib")
 
 
 class TestBashDefensivePatterns:
-    """Verify defensive Bash scripting patterns in shellcheck repo."""
+    """Tests for the defensive Bash script library."""
 
-    REPO_DIR = "/workspace/shellcheck"
+    # ── file_path_check ──────────────────────────────────────────────
 
-    @staticmethod
-    def _read(path: str) -> str:
-        try:
-            with open(path, "r", errors="ignore") as fh:
-                return fh.read()
-        except OSError:
+    def test_defensive_utils_exists(self):
+        """Core defensive_utils.sh library must exist."""
+        path = os.path.join(LIB_DIR, "defensive_utils.sh")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    def test_file_ops_exists(self):
+        """File operations library must exist."""
+        path = os.path.join(LIB_DIR, "file_ops.sh")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    def test_lock_manager_exists(self):
+        """Lock manager library must exist."""
+        path = os.path.join(LIB_DIR, "lock_manager.sh")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    def test_input_validator_exists(self):
+        """Input validator library must exist."""
+        path = os.path.join(LIB_DIR, "input_validator.sh")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    def test_deploy_script_exists(self):
+        """Deploy script must exist."""
+        path = os.path.join(REPO_DIR, "test", "scripts", "deploy.sh")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    # ── semantic_check ───────────────────────────────────────────────
+
+    def _read(self, rel_path):
+        path = os.path.join(REPO_DIR, "test", "scripts", rel_path)
+        if not os.path.isfile(path):
             return ""
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read()
 
-    # ── file_path_check ─────────────────────────────────────────────
-
-    def test_download_script_exists(self):
-        """Verify scripts/download-release.sh exists at expected path."""
-        path = os.path.join(self.REPO_DIR, "scripts/download-release.sh")
-        assert os.path.isfile(path), "scripts/download-release.sh missing"
-
-    def test_pipeline_and_health_scripts_exist(self):
-        """Verify scripts/run-pipeline.sh and scripts/health-check.sh exist."""
-        for rel in ("scripts/run-pipeline.sh", "scripts/health-check.sh"):
-            path = os.path.join(self.REPO_DIR, rel)
-            assert os.path.isfile(path), f"Missing: {rel}"
-
-    def test_scripts_executable(self):
-        """Verify all three scripts are non-empty files."""
-        for rel in ("scripts/download-release.sh", "scripts/run-pipeline.sh",
-                     "scripts/health-check.sh"):
-            path = os.path.join(self.REPO_DIR, rel)
-            if not os.path.isfile(path):
-                pytest.skip(f"{rel} does not exist")
-            assert os.path.getsize(path) > 0, f"{rel} is empty"
-
-    # ── semantic_check ──────────────────────────────────────────────
-
-    def test_set_euo_pipefail_in_all_scripts(self):
-        """Verify 'set -euo pipefail' strict mode appears in all three scripts."""
-        for rel in ("scripts/download-release.sh", "scripts/run-pipeline.sh",
-                     "scripts/health-check.sh"):
-            content = self._read(os.path.join(self.REPO_DIR, rel))
-            assert content, f"{rel} is empty or unreadable"
-            assert "set -euo pipefail" in content, \
-                f"'set -euo pipefail' not found in {rel}"
-
-    def test_atomic_write_pattern_in_download_script(self):
-        """Verify download-release.sh uses mktemp + mv atomic write pattern."""
-        content = self._read(os.path.join(self.REPO_DIR, "scripts/download-release.sh"))
-        assert content, "download-release.sh is empty or unreadable"
-        assert "mktemp" in content, "mktemp not found in download-release.sh"
-        assert "mv " in content, "mv (atomic move) not found in download-release.sh"
-
-    def test_trap_err_cleanup_present(self):
-        """Verify trap ERR or trap EXIT cleanup handler is present in download script."""
-        content = self._read(os.path.join(self.REPO_DIR, "scripts/download-release.sh"))
-        assert content, "download-release.sh is empty or unreadable"
-        found = bool(re.search(r"trap.*ERR", content)) or bool(re.search(r"trap.*EXIT", content))
-        assert found, "No trap ERR or trap EXIT handler found"
-
-    def test_retry_loop_in_health_check(self):
-        """Verify health-check.sh contains a retry loop with RETRY_COUNT variable."""
-        content = self._read(os.path.join(self.REPO_DIR, "scripts/health-check.sh"))
-        assert content, "health-check.sh is empty or unreadable"
-        assert "RETRY_COUNT" in content, "RETRY_COUNT variable not found in health-check.sh"
-
-    # ── functional_check (command) ──────────────────────────────────
-
-    def _ensure_scripts_exist(self):
-        if not os.path.isdir(self.REPO_DIR):
-            pytest.skip("Repo dir does not exist")
-        script = os.path.join(self.REPO_DIR, "scripts/download-release.sh")
-        if not os.path.isfile(script):
-            pytest.skip("download-release.sh does not exist")
-
-    def test_download_script_missing_url_exits_1(self):
-        """Running download-release.sh with no arguments exits code 1."""
-        self._ensure_scripts_exist()
-        result = subprocess.run(
-            ["bash", os.path.join(self.REPO_DIR, "scripts/download-release.sh")],
-            capture_output=True, text=True, timeout=30,
+    def test_strict_mode(self):
+        """defensive_utils.sh must set strict mode with -Eeuo pipefail."""
+        content = self._read("lib/defensive_utils.sh")
+        assert re.search(r"set\s+-[Eeuo]+\s*pipefail|set\s+-E.*-e.*-u.*-o\s*pipefail", content), (
+            "Strict mode (set -Eeuo pipefail) not found"
         )
-        assert result.returncode == 1, f"Expected exit 1, got {result.returncode}"
-        assert "Missing required argument" in result.stderr or "usage" in result.stderr.lower(), \
-            "stderr missing usage/argument error message"
 
-    def test_download_script_http_url_exits_1(self):
-        """Running download-release.sh with http:// URL exits 1 with 'Invalid URL'."""
-        self._ensure_scripts_exist()
-        result = subprocess.run(
-            ["bash", os.path.join(self.REPO_DIR, "scripts/download-release.sh"),
-             "http://example.com/file.tar.gz"],
-            capture_output=True, text=True, timeout=30,
-        )
-        assert result.returncode == 1, f"Expected exit 1, got {result.returncode}"
-        assert "Invalid URL" in result.stderr or "https" in result.stderr.lower(), \
-            "stderr missing 'Invalid URL' error"
+    def test_error_trap(self):
+        """defensive_utils.sh must set up ERR trap with BASH_COMMAND and LINENO."""
+        content = self._read("lib/defensive_utils.sh")
+        assert re.search(r"trap\s+.*ERR", content), "ERR trap not found"
+        assert "BASH_COMMAND" in content, "BASH_COMMAND not referenced in error trap"
+        assert "LINENO" in content, "LINENO not referenced in error trap"
 
-    def test_log_output_contains_iso_timestamp(self):
-        """Script stderr output contains ISO 8601 timestamp pattern."""
-        self._ensure_scripts_exist()
-        result = subprocess.run(
-            ["bash", os.path.join(self.REPO_DIR, "scripts/download-release.sh")],
-            capture_output=True, text=True, timeout=30,
+    def test_cleanup_trap(self):
+        """defensive_utils.sh must register EXIT trap for cleanup."""
+        content = self._read("lib/defensive_utils.sh")
+        assert re.search(r"trap\s+.*EXIT", content), "EXIT trap not found"
+        assert re.search(r"register_cleanup|cleanup", content), "Cleanup registration not found"
+
+    def test_atomic_write_function(self):
+        """file_ops.sh must define atomic_write using temp file + mv."""
+        content = self._read("lib/file_ops.sh")
+        assert re.search(r"atomic_write", content), "atomic_write function not found"
+        assert re.search(r"mktemp|tmp", content, re.IGNORECASE), "Temp file usage not found"
+        assert re.search(r"\bmv\b", content), "mv command not found (needed for atomic write)"
+
+    def test_safe_remove_protection(self):
+        """file_ops.sh must protect dangerous paths from removal."""
+        content = self._read("lib/file_ops.sh")
+        assert "safe_remove" in content, "safe_remove function not found"
+        for path in ["/etc", "/usr", "/var"]:
+            assert path in content, f"Protected path '{path}' not listed in safe_remove"
+
+    def test_lock_acquire_and_release(self):
+        """lock_manager.sh must define acquire_lock and release_lock."""
+        content = self._read("lib/lock_manager.sh")
+        assert re.search(r"acquire_lock", content), "acquire_lock function not found"
+        assert re.search(r"release_lock", content), "release_lock function not found"
+
+    def test_stale_lock_detection(self):
+        """lock_manager.sh must detect stale locks from dead processes."""
+        content = self._read("lib/lock_manager.sh")
+        assert re.search(r"stale|kill\s+-0|/proc/", content, re.IGNORECASE), (
+            "Stale lock detection not found"
         )
-        pattern = r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}"
-        assert re.search(pattern, result.stderr), \
-            "No ISO 8601 timestamp found in stderr output"
+
+    def test_input_validation_functions(self):
+        """input_validator.sh must define validation functions."""
+        content = self._read("lib/input_validator.sh")
+        for func in ["validate_not_empty", "validate_integer", "validate_ip", "sanitize_input"]:
+            assert func in content, f"{func} function not found"
+
+    def test_deploy_argument_parsing(self):
+        """deploy.sh must parse --app-name, --version, --target-dir arguments."""
+        content = self._read("deploy.sh")
+        for arg in ["--app-name", "--version", "--target-dir"]:
+            assert arg in content, f"Argument '{arg}' not handled in deploy.sh"
+
+    # ── functional_check ─────────────────────────────────────────────
+
+    def test_bash_syntax_valid(self):
+        """All shell scripts must have valid bash syntax."""
+        scripts = [
+            os.path.join(LIB_DIR, "defensive_utils.sh"),
+            os.path.join(LIB_DIR, "file_ops.sh"),
+            os.path.join(LIB_DIR, "lock_manager.sh"),
+            os.path.join(LIB_DIR, "input_validator.sh"),
+            os.path.join(REPO_DIR, "test", "scripts", "deploy.sh"),
+        ]
+        errors = []
+        for script in scripts:
+            if not os.path.isfile(script):
+                continue
+            result = subprocess.run(
+                ["bash", "-n", script],
+                capture_output=True, text=True, timeout=10
+            )
+            if result.returncode != 0:
+                errors.append(f"{script}: {result.stderr.strip()}")
+        assert not errors, "Bash syntax errors:\n" + "\n".join(errors)
+
+    def test_ip_validation_regex(self):
+        """input_validator.sh must validate IPv4 format with octet range check."""
+        content = self._read("lib/input_validator.sh")
+        assert re.search(r"[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+|25[0-5]|2[0-4]|[01]?[0-9]", content), (
+            "IPv4 validation regex not found"
+        )
+
+    def test_semver_validation_in_deploy(self):
+        """deploy.sh must validate version matches semver pattern."""
+        content = self._read("deploy.sh")
+        assert re.search(r"[0-9]+\.[0-9]+\.[0-9]+|semver", content, re.IGNORECASE), (
+            "Semver validation not found in deploy.sh"
+        )
+
+    def test_health_check_in_deploy(self):
+        """deploy.sh must perform health check with curl."""
+        content = self._read("deploy.sh")
+        assert re.search(r"curl|health|health.url", content, re.IGNORECASE), (
+            "Health check (curl) not found in deploy.sh"
+        )
+
+    def test_rollback_in_deploy(self):
+        """deploy.sh must support rollback on failure."""
+        content = self._read("deploy.sh")
+        assert re.search(r"rollback|restore|backup", content, re.IGNORECASE), (
+            "Rollback support not found in deploy.sh"
+        )

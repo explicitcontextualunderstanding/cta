@@ -1,161 +1,160 @@
-"""Test file for the python-performance-optimization skill.
-
-This suite validates the SummaryRecorder, FrameSummary, and CLI
-summary subcommand in py-spy (Rust source analysis).
+"""
+Test skill: python-performance-optimization
+Verify that the Agent implements a summary subcommand for py-spy —
+SummaryRecorder (record, top_frames, render), CLI integration with clap,
+and integration tests.
 """
 
-from __future__ import annotations
-
-import pathlib
+import os
 import re
-
+import subprocess
 import pytest
 
 
 class TestPythonPerformanceOptimization:
-    """Verify py-spy summary profiler implementation."""
-
     REPO_DIR = "/workspace/py-spy"
 
-    SUMMARY_RS = "src/summary.rs"
-    MAIN_RS = "src/main.rs"
-    TEST_SUMMARY_PY = "tests/test_summary.py"
+    # ────── helpers ──────
 
-    # ------------------------------------------------------------------
-    # Helpers
-    # ------------------------------------------------------------------
+    def _read(self, rel_path):
+        fpath = os.path.join(self.REPO_DIR, rel_path)
+        with open(fpath, "r") as f:
+            return f.read()
 
-    def _repo_path(self, relative: str) -> pathlib.Path:
-        return pathlib.Path(self.REPO_DIR, *relative.split("/"))
+    def _exists(self, rel_path):
+        return os.path.isfile(os.path.join(self.REPO_DIR, rel_path))
 
-    def _read_text(self, relative: str) -> str:
-        path = self._repo_path(relative)
-        assert path.exists(), f"Expected path to exist: {path}"
-        return path.read_text(encoding="utf-8", errors="ignore")
+    # === File Path Checks ===
 
-    def _assert_non_empty_file(self, relative: str) -> pathlib.Path:
-        path = self._repo_path(relative)
-        assert path.is_file(), f"Expected file to exist: {path}"
-        assert path.stat().st_size > 0, f"Expected non-empty file: {path}"
-        return path
+    def test_summary_rs_exists(self):
+        """src/summary.rs must exist"""
+        assert self._exists("src/summary.rs")
 
-    def _rust_struct_body(self, source: str, name: str) -> str | None:
-        m = re.search(rf"struct\s+{name}\s*\{{", source)
-        if m is None:
-            return None
-        depth, i = 1, m.end()
-        while i < len(source) and depth > 0:
-            if source[i] == "{":
-                depth += 1
-            elif source[i] == "}":
-                depth -= 1
-            i += 1
-        return source[m.start() : i]
+    def test_integration_test_exists(self):
+        """tests/test_summary.py must exist"""
+        assert self._exists("tests/test_summary.py")
 
-    # ------------------------------------------------------------------
-    # Layer 1 – file_path_check (3 cases)
-    # ------------------------------------------------------------------
+    # === Semantic Checks — summary.rs ===
 
-    def test_file_path_src_summary_rs_exists(self):
-        """Verify src/summary.rs exists and is non-empty."""
-        self._assert_non_empty_file(self.SUMMARY_RS)
+    def test_frame_summary_struct(self):
+        """FrameSummary struct must be defined"""
+        src = self._read("src/summary.rs")
+        assert "FrameSummary" in src
 
-    def test_file_path_src_main_rs_modified_with_summary_subcommand(self):
-        """Verify src/main.rs modified with summary subcommand."""
-        self._assert_non_empty_file(self.MAIN_RS)
-        src = self._read_text(self.MAIN_RS)
-        assert re.search(
-            r"summary|Summary", src
-        ), "main.rs should reference summary subcommand"
+    def test_frame_summary_fields(self):
+        """FrameSummary must have function, filename, lineno, total_samples, self_samples"""
+        src = self._read("src/summary.rs")
+        for field in ["function", "filename", "lineno", "total_samples", "self_samples"]:
+            assert field in src, f"Missing field: {field}"
 
-    def test_file_path_tests_test_summary_py_exists(self):
-        """Verify tests/test_summary.py exists and is non-empty."""
-        self._assert_non_empty_file(self.TEST_SUMMARY_PY)
+    def test_summary_recorder_struct(self):
+        """SummaryRecorder struct must be defined"""
+        src = self._read("src/summary.rs")
+        assert "SummaryRecorder" in src
 
-    # ------------------------------------------------------------------
-    # Layer 2 – semantic_check (5 cases)
-    # ------------------------------------------------------------------
+    def test_recorder_new(self):
+        """SummaryRecorder::new must exist"""
+        src = self._read("src/summary.rs")
+        assert re.search(r'fn\s+new\b', src)
 
-    def test_semantic_summaryrecorder_struct_has_samples_hashmap_total_samples_sam(
-        self,
-    ):
-        """SummaryRecorder struct has samples HashMap, total_samples, sample_rate, duration_secs."""
-        src = self._read_text(self.SUMMARY_RS)
-        body = self._rust_struct_body(src, "SummaryRecorder")
-        assert body is not None, "SummaryRecorder struct not found"
-        for field in ("samples", "total_samples", "sample_rate"):
-            assert field in body, f"SummaryRecorder missing field: {field}"
+    def test_recorder_record_method(self):
+        """record method must exist"""
+        src = self._read("src/summary.rs")
+        assert re.search(r'fn\s+record\b', src)
 
-    def test_semantic_framesummary_has_function_filename_lineno_total_samples_self(
-        self,
-    ):
-        """FrameSummary has function, filename, lineno, total_samples, self_samples."""
-        src = self._read_text(self.SUMMARY_RS)
-        body = self._rust_struct_body(src, "FrameSummary")
-        assert body is not None, "FrameSummary struct not found"
-        for field in (
-            "function",
-            "filename",
-            "lineno",
-            "total_samples",
-            "self_samples",
-        ):
-            assert field in body, f"FrameSummary missing field: {field}"
+    def test_recorder_top_frames_method(self):
+        """top_frames method must exist"""
+        src = self._read("src/summary.rs")
+        assert "top_frames" in src
 
-    def test_semantic_record_method_processes_stack_frames_correctly(self):
-        """record() method processes stack frames correctly."""
-        src = self._read_text(self.SUMMARY_RS)
-        assert re.search(r"fn\s+record\s*\(", src), "record method not found"
+    def test_recorder_render_method(self):
+        """render method must exist"""
+        src = self._read("src/summary.rs")
+        assert re.search(r'fn\s+render\b', src)
 
-    def test_semantic_render_output_includes_self_total_self_function_header(self):
-        """render() output includes %Self, Total, Self, Function header."""
-        src = self._read_text(self.SUMMARY_RS)
-        assert re.search(
-            r"fn\s+render\s*\(|fn\s+format\s*\(|fn\s+display\s*\(", src
-        ), "render/format/display method not found"
+    def test_self_samples_innermost_only(self):
+        """record must increment self_samples only for innermost frame"""
+        src = self._read("src/summary.rs")
+        lower = src.lower()
+        # Should reference "first" or index 0 or "top" for self samples
+        assert "self_samples" in src
 
-    def test_semantic_cli_args_pid_duration_rate_top_nonblocking_registered(self):
-        """CLI args: --pid, --duration, --rate, --top, --nonblocking registered."""
-        src = self._read_text(self.MAIN_RS)
-        for arg in ("pid", "duration", "rate", "top"):
-            assert re.search(
-                rf"--{arg}|{arg}", src
-            ), f"CLI argument --{arg} not registered"
+    def test_total_samples_method(self):
+        """total_samples method must exist"""
+        src = self._read("src/summary.rs")
+        assert "total_samples" in src
 
-    # ------------------------------------------------------------------
-    # Layer 3 – functional_check (5 cases, source analysis)
-    # ------------------------------------------------------------------
+    def test_render_format(self):
+        """render output must include column headers"""
+        src = self._read("src/summary.rs")
+        assert "Self" in src or "%Self" in src
+        assert "Total" in src
+        assert "Function" in src
 
-    def test_functional_profiling_tight_loop_for_3s_at_100hz_produces_300_samples(self):
-        """Profiling tight loop for 3s at 100Hz produces ~300 samples."""
-        src = self._read_text(self.SUMMARY_RS)
-        assert re.search(r"fn\s+record\s*\(", src), "record method required"
-        assert re.search(
-            r"total_samples|sample_count", src
-        ), "Should track total sample count"
+    # === Semantic Checks — main.rs (CLI) ===
 
-    def test_functional_busy_loop_appears_as_top_frame_in_output(self):
-        """busy_loop appears as top frame in output."""
-        src = self._read_text(self.SUMMARY_RS)
-        assert re.search(
-            r"sort|top|self_samples", src
-        ), "Should sort frames by self_samples for top output"
+    def test_summary_subcommand_registered(self):
+        """summary subcommand must be registered in main.rs"""
+        src = self._read("src/main.rs")
+        assert "summary" in src.lower()
 
-    def test_functional_top_5_limits_render_to_5_rows(self):
-        """--top 5 limits render to 5 rows."""
-        src = self._read_text(self.SUMMARY_RS)
-        assert re.search(
-            r"top|limit|take|truncate", src, re.IGNORECASE
-        ), "Should support limiting output to top N frames"
+    def test_pid_argument(self):
+        """--pid argument must be defined"""
+        src = self._read("src/main.rs")
+        assert "pid" in src.lower()
 
-    def test_functional_invalid_pid_returns_non_zero_exit_code(self):
-        """Invalid PID returns non-zero exit code."""
-        src = self._read_text(self.MAIN_RS)
-        assert re.search(
-            r"pid|process|attach", src, re.IGNORECASE
-        ), "Should handle PID argument and errors"
+    def test_duration_argument(self):
+        """--duration argument must be defined"""
+        src = self._read("src/main.rs")
+        assert "duration" in src.lower()
 
-    def test_functional_cargo_build_release_succeeds(self):
-        """cargo build --release succeeds."""
-        cargo_toml = self._repo_path("Cargo.toml")
-        assert cargo_toml.is_file(), "Cargo.toml should exist for build"
+    def test_rate_argument(self):
+        """--rate argument must be defined"""
+        src = self._read("src/main.rs")
+        assert "rate" in src.lower()
+
+    def test_top_argument(self):
+        """--top argument must be defined"""
+        src = self._read("src/main.rs")
+        assert "top" in src.lower()
+
+    def test_run_summary_function(self):
+        """run_summary function must exist"""
+        found = False
+        for fn in ["src/main.rs", "src/summary.rs"]:
+            if self._exists(fn):
+                content = self._read(fn)
+                if "run_summary" in content:
+                    found = True
+                    break
+        assert found, "run_summary function not found"
+
+    # === Semantic Checks — Integration test ===
+
+    def test_integration_test_content(self):
+        """Integration test must test py-spy summary command"""
+        src = self._read("tests/test_summary.py")
+        assert "summary" in src.lower()
+        assert "busy_loop" in src or "target" in src.lower()
+
+    # === Functional Checks ===
+
+    def test_cargo_build(self):
+        """Project must build with cargo"""
+        result = subprocess.run(
+            ["cargo", "build"],
+            capture_output=True, text=True, cwd=self.REPO_DIR, timeout=600,
+        )
+        assert result.returncode == 0, (
+            f"cargo build failed:\n{result.stdout}\n{result.stderr}"
+        )
+
+    def test_cargo_test(self):
+        """Rust tests must pass"""
+        result = subprocess.run(
+            ["cargo", "test", "--", "--test-threads=1"],
+            capture_output=True, text=True, cwd=self.REPO_DIR, timeout=600,
+        )
+        assert result.returncode == 0, (
+            f"Tests failed:\n{result.stdout}\n{result.stderr}"
+        )

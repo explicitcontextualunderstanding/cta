@@ -1,159 +1,148 @@
 """
-Test for 'prompt-engineering-patterns' skill — Prompt Engineering Library
-Validates PromptTemplate, FewShotSelector, ChainOfThoughtFormatter,
-TokenCounter, and PromptOptimizer for correctness and behavioral patterns.
+Test skill: prompt-engineering-patterns
+Verify that the Agent creates FewShotSelector, ChainOfThoughtTemplate,
+SelfConsistencyChecker, and template library for LangChain.
 """
 
 import os
-import sys
-
+import subprocess
+import ast
+import re
 import pytest
 
 
 class TestPromptEngineeringPatterns:
-    """Verify prompt engineering library: templates, few-shot, CoT, tokenizer."""
-
     REPO_DIR = "/workspace/langchain"
 
-    # ── helpers ──────────────────────────────────────────────────────────
+    # === File Path Checks ===
 
-    @staticmethod
-    def _read_file(path: str) -> str:
-        try:
-            with open(path, "r", errors="ignore") as fh:
-                return fh.read()
-        except OSError:
-            return ""
+    def test_prompt_pattern_files_exist(self):
+        """Verify prompt engineering pattern files exist"""
+        found = False
+        for root, dirs, files in os.walk(self.REPO_DIR):
+            if ".git" in root or "node_modules" in root:
+                continue
+            for f in files:
+                if f.endswith(".py") and ("few_shot" in f.lower() or "chain_of_thought" in f.lower() or "prompt" in f.lower()):
+                    fpath = os.path.join(root, f)
+                    with open(fpath) as fh:
+                        content = fh.read()
+                    if "FewShot" in content or "ChainOfThought" in content:
+                        found = True
+                        break
+            if found:
+                break
+        assert found, "Prompt engineering pattern files not found"
 
-    def _pe(self, *parts) -> str:
-        return os.path.join(self.REPO_DIR, "examples", "prompt_engineering", *parts)
+    # === Semantic Checks ===
 
-    # ── file_path_check ──────────────────────────────────────────────────
+    def test_few_shot_selector_defined(self):
+        """Verify FewShotSelector class is defined"""
+        content = self._find_content()
+        assert "FewShotSelector" in content or "few_shot" in content.lower(), (
+            "FewShotSelector not found"
+        )
 
-    def test_template_py_exists(self):
-        """template.py must exist containing PromptTemplate class."""
-        path = self._pe("template.py")
-        assert os.path.isfile(path), f"{path} does not exist"
-        assert os.path.getsize(path) > 0
+    def test_chain_of_thought_template_defined(self):
+        """Verify ChainOfThoughtTemplate class is defined"""
+        content = self._find_content()
+        has_cot = (
+            "ChainOfThought" in content
+            or "chain_of_thought" in content.lower()
+            or "CoT" in content
+        )
+        assert has_cot, "ChainOfThoughtTemplate not found"
 
-    def test_few_shot_and_cot_exist(self):
-        """few_shot.py and chain_of_thought.py must exist."""
-        for name in ("few_shot.py", "chain_of_thought.py"):
-            path = self._pe(name)
-            assert os.path.isfile(path), f"{path} does not exist"
+    def test_self_consistency_checker_defined(self):
+        """Verify SelfConsistencyChecker class is defined"""
+        content = self._find_content()
+        has_sc = (
+            "SelfConsistency" in content
+            or "self_consistency" in content.lower()
+            or "consistency" in content.lower()
+        )
+        assert has_sc, "SelfConsistencyChecker not found"
 
-    def test_tokenizer_and_test_file_exist(self):
-        """tokenizer.py and tests/test_prompt_engineering.py must exist."""
-        assert os.path.isfile(self._pe("tokenizer.py")), "tokenizer.py not found"
-        test_path = os.path.join(self.REPO_DIR, "tests", "test_prompt_engineering.py")
-        assert os.path.isfile(test_path), f"{test_path} not found"
+    def test_template_library_exists(self):
+        """Verify a template library/registry is defined"""
+        content = self._find_content()
+        has_lib = (
+            "template" in content.lower()
+            and ("library" in content.lower() or "registry" in content.lower() or "collection" in content.lower() or "dict" in content)
+        )
+        assert has_lib, "Template library not found"
 
-    # ── semantic_check ───────────────────────────────────────────────────
+    def test_few_shot_selector_has_selection_logic(self):
+        """Verify FewShotSelector implements example selection logic"""
+        content = self._find_content()
+        has_select = (
+            "select" in content.lower()
+            or "similarity" in content.lower()
+            or "relevance" in content.lower()
+            or "choose" in content.lower()
+        )
+        assert has_select, "FewShotSelector missing selection logic"
 
-    def test_template_uses_format_variables(self):
-        """PromptTemplate must use {variable} placeholder syntax."""
-        path = self._pe("template.py")
-        if not os.path.isfile(path):
-            pytest.skip("template.py not found")
-        content = self._read_file(path)
-        assert "PromptTemplate" in content, "PromptTemplate class not defined"
-        has_format = ".format(" in content or "format_map" in content or "render" in content
-        assert has_format, "No format/render method found"
+    # === Functional Checks ===
 
-    def test_few_shot_selector_has_k_parameter(self):
-        """FewShotSelector.select must accept query and k parameters."""
-        path = self._pe("few_shot.py")
-        if not os.path.isfile(path):
-            pytest.skip("few_shot.py not found")
-        content = self._read_file(path)
-        assert "FewShotSelector" in content, "FewShotSelector not defined"
-        assert "select" in content, "select method not found"
+    def test_python_files_parse(self):
+        """Verify all prompt pattern files have valid syntax"""
+        for root, dirs, files in os.walk(self.REPO_DIR):
+            if ".git" in root:
+                continue
+            for f in files:
+                if f.endswith(".py") and ("few_shot" in f.lower() or "chain_of_thought" in f.lower() or "consistency" in f.lower()):
+                    fpath = os.path.join(root, f)
+                    with open(fpath) as fh:
+                        source = fh.read()
+                    try:
+                        ast.parse(source)
+                    except SyntaxError as e:
+                        pytest.fail(f"Syntax error in {fpath}: {e}")
 
-    def test_cot_appends_step_by_step(self):
-        """chain_of_thought.py must contain 'Let's think step by step'."""
-        path = self._pe("chain_of_thought.py")
-        if not os.path.isfile(path):
-            pytest.skip("chain_of_thought.py not found")
-        content = self._read_file(path)
-        assert "step by step" in content.lower(), "'step by step' phrase not found"
+    def test_pattern_classes_use_langchain_imports(self):
+        """Verify pattern files import from langchain"""
+        content = self._find_content()
+        has_langchain = "langchain" in content or "from langchain" in content
+        assert has_langchain, "Pattern files do not import from langchain"
 
-    def test_optimizer_respects_max_tokens(self):
-        """tokenizer.py must define PromptOptimizer with max_tokens parameter."""
-        path = self._pe("tokenizer.py")
-        if not os.path.isfile(path):
-            pytest.skip("tokenizer.py not found")
-        content = self._read_file(path)
-        assert "max_tokens" in content, "max_tokens parameter not found"
+    def test_chain_of_thought_has_reasoning_steps(self):
+        """Verify CoT template includes reasoning step logic"""
+        content = self._find_content()
+        has_steps = (
+            "step" in content.lower()
+            or "reasoning" in content.lower()
+            or "think" in content.lower()
+            or "intermediate" in content.lower()
+        )
+        assert has_steps, "ChainOfThought missing reasoning step logic"
 
-    # ── functional_check ─────────────────────────────────────────────────
+    def test_self_consistency_has_voting(self):
+        """Verify SelfConsistencyChecker implements majority voting or aggregation"""
+        content = self._find_content()
+        has_voting = (
+            "vote" in content.lower()
+            or "majority" in content.lower()
+            or "aggregate" in content.lower()
+            or "consensus" in content.lower()
+            or "most_common" in content.lower()
+        )
+        assert has_voting, "SelfConsistencyChecker missing voting/aggregation logic"
 
-    def test_render_substitutes_variable(self):
-        """PromptTemplate('Hello {name}').render({'name': 'World'}) == 'Hello World'."""
-        try:
-            sys.path.insert(0, self.REPO_DIR)
-            from examples.prompt_engineering.template import PromptTemplate
-        except ImportError:
-            pytest.skip("Cannot import PromptTemplate")
-        result = PromptTemplate("Hello {name}").render({"name": "World"})
-        assert result == "Hello World"
-
-    def test_render_missing_variable_raises_keyerror(self):
-        """Rendering with missing variable must raise KeyError."""
-        try:
-            sys.path.insert(0, self.REPO_DIR)
-            from examples.prompt_engineering.template import PromptTemplate
-        except ImportError:
-            pytest.skip("Cannot import PromptTemplate")
-        with pytest.raises(KeyError):
-            PromptTemplate("Hello {name}").render({})
-
-    def test_few_shot_returns_k_examples(self):
-        """FewShotSelector.select(query, k=3) must return exactly 3 examples."""
-        try:
-            sys.path.insert(0, self.REPO_DIR)
-            from examples.prompt_engineering.few_shot import FewShotSelector
-            from unittest.mock import MagicMock
-        except ImportError:
-            pytest.skip("Cannot import FewShotSelector")
-        selector = FewShotSelector.__new__(FewShotSelector)
-        # Ensure corpus has enough examples
-        if hasattr(selector, "examples"):
-            selector.examples = [MagicMock() for _ in range(10)]
-        try:
-            selected = selector.select("What is AI?", k=3)
-            assert len(selected) == 3
-        except Exception:
-            pytest.skip("FewShotSelector.select requires specific setup")
-
-    def test_cot_idempotent_double_application(self):
-        """CoT phrase must appear exactly once even after double application."""
-        try:
-            sys.path.insert(0, self.REPO_DIR)
-            from examples.prompt_engineering.chain_of_thought import ChainOfThoughtFormatter
-        except ImportError:
-            pytest.skip("Cannot import ChainOfThoughtFormatter")
-        f = ChainOfThoughtFormatter()
-        r1 = f.format("What is 2+2?")
-        r2 = f.format(r1)
-        assert r2.lower().count("step by step") == 1
-
-    def test_token_counter_returns_positive(self):
-        """TokenCounter.count('hello') must return >= 1."""
-        try:
-            sys.path.insert(0, self.REPO_DIR)
-            from examples.prompt_engineering.tokenizer import TokenCounter
-        except ImportError:
-            pytest.skip("Cannot import TokenCounter")
-        count = TokenCounter().count("hello")
-        assert isinstance(count, int) and count >= 1
-
-    def test_optimizer_output_within_max_tokens(self):
-        """Optimized output token count must be <= max_tokens."""
-        try:
-            sys.path.insert(0, self.REPO_DIR)
-            from examples.prompt_engineering.tokenizer import PromptOptimizer, TokenCounter
-        except ImportError:
-            pytest.skip("Cannot import PromptOptimizer")
-        optimized = PromptOptimizer().optimize("word " * 500, max_tokens=100)
-        count = TokenCounter().count(optimized)
-        assert count <= 100, f"Optimized prompt has {count} tokens, expected <= 100"
+    def _find_content(self):
+        """Helper to find prompt engineering pattern content"""
+        all_content = ""
+        for root, dirs, files in os.walk(self.REPO_DIR):
+            if ".git" in root or "node_modules" in root:
+                continue
+            for f in files:
+                if f.endswith(".py"):
+                    fpath = os.path.join(root, f)
+                    try:
+                        with open(fpath) as fh:
+                            content = fh.read()
+                        if any(kw in content for kw in ["FewShot", "ChainOfThought", "SelfConsistency"]):
+                            all_content += content + "\n"
+                    except (UnicodeDecodeError, PermissionError):
+                        continue
+        return all_content

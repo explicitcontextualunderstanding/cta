@@ -1,217 +1,161 @@
 """
-Tests for 'distributed-tracing' skill.
-Generated from benchmark case definitions for distributed-tracing.
+Test skill: distributed-tracing
+Verify that the Agent implements distributed tracing for Python
+microservices with shared tracing library, context propagation,
+per-service instrumentation, Docker Compose, and K8s manifests.
 """
 
-import ast
-import base64
-import glob
-import json
 import os
-import py_compile
 import re
-import subprocess
-import textwrap
-
+import ast
 import pytest
 
 try:
     import yaml
-except ModuleNotFoundError:
+except ImportError:
     yaml = None
 
 
 class TestDistributedTracing:
-    """Verify the distributed-tracing skill output."""
+    REPO_DIR = "/workspace/opentelemetry-collector"
 
-    REPO_DIR = '/workspace/opentelemetry-collector'
-
-
-    # ── helpers ──────────────────────────────────────────────
-
-    _SETUP_CACHE: dict = {}
-
-    @staticmethod
-    def _repo_path(rel: str) -> str:
-        return os.path.join(TestDistributedTracing.REPO_DIR, rel)
-
-    @staticmethod
-    def _safe_read(path: str) -> str:
-        with open(path, "r", encoding="utf-8", errors="ignore") as fh:
-            return fh.read()
-
-    @staticmethod
-    def _load_yaml(path: str):
-        if yaml is None:
-            pytest.skip("PyYAML not available")
-        with open(path, "r", encoding="utf-8", errors="ignore") as fh:
-            return yaml.safe_load(fh)
-
-    @staticmethod
-    def _load_json(path: str):
-        with open(path, "r", encoding="utf-8", errors="ignore") as fh:
-            return json.load(fh)
-
-    @classmethod
-    def _run_in_repo(cls, script: str, timeout: int = 120) -> subprocess.CompletedProcess:
-        return subprocess.run(
-            ["python", "-c", textwrap.dedent(script)],
-            cwd=cls.REPO_DIR,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-        )
-
-    @classmethod
-    def _run_cmd(cls, command, args=None, timeout=120):
-        args = args or []
-        if isinstance(command, str) and args:
-            return subprocess.run(
-                [command, *args],
-                cwd=cls.REPO_DIR,
-                capture_output=True,
-                text=True,
-                timeout=timeout,
-            )
-        return subprocess.run(
-            command if isinstance(command, list) else command,
-            cwd=cls.REPO_DIR,
-            shell=isinstance(command, str),
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-        )
-
-    @classmethod
-    def _ensure_setup(cls, label, setup_cmds, fallback):
-        if not setup_cmds:
-            return
-        key = tuple(setup_cmds)
-        if key in cls._SETUP_CACHE:
-            ok, msg = cls._SETUP_CACHE[key]
-            if ok:
-                return
-            if fallback == "skip_if_setup_fails":
-                pytest.skip(f"{label} setup failed: {msg}")
-            pytest.fail(f"{label} setup failed: {msg}")
-        for cmd in setup_cmds:
-            r = subprocess.run(cmd, cwd=cls.REPO_DIR, shell=True,
-                               capture_output=True, text=True, timeout=300)
-            if r.returncode != 0:
-                msg = (r.stderr or r.stdout or 'failed').strip()
-                cls._SETUP_CACHE[key] = (False, msg)
-                if fallback == "skip_if_setup_fails":
-                    pytest.skip(f"{label} setup failed: {msg}")
-                pytest.fail(f"{label} setup failed: {msg}")
-        cls._SETUP_CACHE[key] = (True, 'ok')
-
-
-    # ── file_path_check (static) ────────────────────────────────────────
+    # === File Path Checks ===
 
     def test_tracing_init_exists(self):
-        """Verify tracing module init file exists"""
-        _p = self._repo_path('lib/tracing/__init__.py')
-        assert os.path.isfile(_p), f'Missing file: lib/tracing/__init__.py'
-        py_compile.compile(_p, doraise=True)
+        assert os.path.exists(os.path.join(self.REPO_DIR, "lib/tracing/__init__.py"))
 
-    def test_middleware_file_exists(self):
-        """Verify tracing middleware file exists"""
-        _p = self._repo_path('lib/tracing/middleware.py')
-        assert os.path.isfile(_p), f'Missing file: lib/tracing/middleware.py'
-        py_compile.compile(_p, doraise=True)
+    def test_tracing_middleware_exists(self):
+        assert os.path.exists(os.path.join(self.REPO_DIR, "lib/tracing/middleware.py"))
 
-    def test_test_tracing_exists(self):
-        """Verify test file for tracing exists"""
-        _p = self._repo_path('tests/test_tracing.py')
-        assert os.path.isfile(_p), f'Missing file: tests/test_tracing.py'
-        py_compile.compile(_p, doraise=True)
+    def test_tracing_propagation_exists(self):
+        assert os.path.exists(os.path.join(self.REPO_DIR, "lib/tracing/propagation.py"))
 
-    # ── semantic_check (static) ────────────────────────────────────────
+    def test_service_tracing_setups_exist(self):
+        for svc in ("api-gateway", "user-service", "order-service", "notification-service"):
+            path = os.path.join(self.REPO_DIR, f"services/{svc}/tracing_setup.py")
+            assert os.path.exists(path), f"Missing {svc}/tracing_setup.py"
 
-    def test_configure_tracing_function(self):
-        """Verify configure_tracing function with service_name parameter"""
-        _p = self._repo_path('lib/tracing/__init__.py')
-        assert os.path.exists(_p), f'Missing: lib/tracing/__init__.py'
-        _contents = self._safe_read(_p)
-        _all = _contents if isinstance(_contents, str) else ''
-        assert 'def configure_tracing' in _all, 'Missing: def configure_tracing'
-        assert 'service_name' in _all, 'Missing: service_name'
+    def test_docker_compose_exists(self):
+        assert os.path.exists(os.path.join(self.REPO_DIR, "docker-compose.tracing.yml"))
 
-    def test_tracing_middleware_class(self):
-        """Verify TracingMiddleware class with __call__ method"""
-        _p = self._repo_path('lib/tracing/middleware.py')
-        assert os.path.exists(_p), f'Missing: lib/tracing/middleware.py'
-        _contents = self._safe_read(_p)
-        _all = _contents if isinstance(_contents, str) else ''
-        assert 'class TracingMiddleware' in _all, 'Missing: class TracingMiddleware'
-        assert '__call__' in _all, 'Missing: __call__'
+    def test_k8s_jaeger_exists(self):
+        assert os.path.exists(os.path.join(self.REPO_DIR, "k8s/tracing/jaeger.yaml"))
 
-    def test_span_kind_server(self):
-        """Verify SpanKind.SERVER used for incoming request spans"""
-        _p = self._repo_path('lib/tracing/middleware.py')
-        assert os.path.exists(_p), f'Missing: lib/tracing/middleware.py'
-        _contents = self._safe_read(_p)
-        _all = _contents if isinstance(_contents, str) else ''
-        assert 'SpanKind.SERVER' in _all, 'Missing: SpanKind.SERVER'
-        assert 'SpanKind' in _all, 'Missing: SpanKind'
+    def test_k8s_otel_collector_exists(self):
+        assert os.path.exists(os.path.join(self.REPO_DIR, "k8s/tracing/otel-collector.yaml"))
 
-    def test_span_end_in_finally(self):
-        """Verify span.end() is called in finally block"""
-        _p = self._repo_path('lib/tracing/middleware.py')
-        assert os.path.exists(_p), f'Missing: lib/tracing/middleware.py'
-        _contents = self._safe_read(_p)
-        _all = _contents if isinstance(_contents, str) else ''
-        assert 'finally' in _all, 'Missing: finally'
-        assert re.search('span.end()', _all, re.MULTILINE), 'Pattern not found: span.end()'
+    # === Semantic Checks ===
 
-    # ── functional_check ────────────────────────────────────────
-
-    def test_configure_tracing_returns_provider(self):
-        """Verify configure_tracing returns a non-None TracerProvider"""
-        self._ensure_setup('test_configure_tracing_returns_provider', ['pip install opentelemetry-sdk opentelemetry-api'], 'skip_if_setup_fails')
-        result = self._run_cmd('python', args=['-c', "from lib.tracing import configure_tracing; tp=configure_tracing('test-svc'); assert tp is not None; print('PASS')"], timeout=120)
-        assert result.returncode == 0, (
-            f'test_configure_tracing_returns_provider failed (exit {result.returncode})\n' + result.stderr[:500]
+    def test_init_tracer_function(self):
+        """Tracing init should define init_tracer with OTLP exporter"""
+        path = os.path.join(self.REPO_DIR, "lib/tracing/__init__.py")
+        with open(path) as f:
+            content = f.read()
+        assert re.search(r"def\s+init_tracer", content), "Missing init_tracer function"
+        assert "TracerProvider" in content, "Should configure TracerProvider"
+        assert "BatchSpanProcessor" in content or "SpanProcessor" in content, (
+            "Should use BatchSpanProcessor"
         )
-        assert 'PASS' in (result.stdout + result.stderr), 'Expected PASS in output'
+        assert "OTLP" in content or "otlp" in content, "Should use OTLP exporter"
 
-    def test_inmemory_exporter_captures_spans(self):
-        """Verify InMemorySpanExporter captures spans after tracer usage"""
-        self._ensure_setup('test_inmemory_exporter_captures_spans', ['pip install opentelemetry-sdk'], 'skip_if_setup_fails')
-        result = self._run_cmd('python', args=['-c', "from opentelemetry.sdk.trace import TracerProvider; from opentelemetry.sdk.trace.export.in_memory import InMemorySpanExporter; from opentelemetry.sdk.trace.export import SimpleSpanProcessor; exp=InMemorySpanExporter(); tp=TracerProvider(); tp.add_span_processor(SimpleSpanProcessor(exp)); t=tp.get_tracer('test'); s=t.start_span('test-span'); s.end(); assert len(exp.get_finished_spans())>0; print('PASS')"], timeout=120)
-        assert result.returncode == 0, (
-            f'test_inmemory_exporter_captures_spans failed (exit {result.returncode})\n' + result.stderr[:500]
+    def test_middleware_creates_spans(self):
+        """TracingMiddleware should create per-request spans"""
+        path = os.path.join(self.REPO_DIR, "lib/tracing/middleware.py")
+        with open(path) as f:
+            content = f.read()
+        assert "TracingMiddleware" in content, "Missing TracingMiddleware class"
+        assert "http.method" in content, "Should set http.method attribute"
+        assert "http.status_code" in content, "Should set http.status_code"
+
+    def test_propagation_injects_w3c(self):
+        """Propagation should inject W3C traceparent headers"""
+        path = os.path.join(self.REPO_DIR, "lib/tracing/propagation.py")
+        with open(path) as f:
+            content = f.read()
+        assert "traceparent" in content or "inject" in content, (
+            "Should inject W3C traceparent"
         )
-        assert 'PASS' in (result.stdout + result.stderr), 'Expected PASS in output'
 
-    def test_span_attributes_set(self):
-        """Verify span has http.method attribute set"""
-        self._ensure_setup('test_span_attributes_set', ['pip install opentelemetry-sdk'], 'skip_if_setup_fails')
-        result = self._run_cmd('python', args=['-c', "from opentelemetry.sdk.trace import TracerProvider; from opentelemetry.sdk.trace.export.in_memory import InMemorySpanExporter; from opentelemetry.sdk.trace.export import SimpleSpanProcessor; exp=InMemorySpanExporter(); tp=TracerProvider(); tp.add_span_processor(SimpleSpanProcessor(exp)); t=tp.get_tracer('test'); s=t.start_span('request'); s.set_attribute('http.method','GET'); s.end(); span=exp.get_finished_spans()[0]; assert span.attributes.get('http.method')=='GET'; print('PASS')"], timeout=120)
-        assert result.returncode == 0, (
-            f'test_span_attributes_set failed (exit {result.returncode})\n' + result.stderr[:500]
+    def test_api_gateway_instruments_fastapi_and_httpx(self):
+        """API gateway should instrument FastAPI and httpx"""
+        path = os.path.join(self.REPO_DIR, "services/api-gateway/tracing_setup.py")
+        with open(path) as f:
+            content = f.read()
+        assert "FastAPI" in content or "fastapi" in content, "Should instrument FastAPI"
+        assert "httpx" in content or "HTTPX" in content, "Should instrument httpx"
+
+    def test_order_service_has_custom_spans(self):
+        """Order service should create custom business spans"""
+        path = os.path.join(self.REPO_DIR, "services/order-service/tracing_setup.py")
+        with open(path) as f:
+            content = f.read()
+        assert "order" in content.lower(), "Should have order-related spans"
+
+    def test_docker_compose_has_jaeger(self):
+        """Docker compose should include Jaeger service"""
+        path = os.path.join(self.REPO_DIR, "docker-compose.tracing.yml")
+        with open(path) as f:
+            content = f.read()
+        assert "jaeger" in content.lower(), "Should include Jaeger service"
+        assert "16686" in content, "Should expose Jaeger UI port"
+
+    def test_docker_compose_has_otel_collector(self):
+        """Docker compose should include OTel Collector"""
+        path = os.path.join(self.REPO_DIR, "docker-compose.tracing.yml")
+        with open(path) as f:
+            content = f.read()
+        assert "otel" in content.lower() or "collector" in content.lower(), (
+            "Should include OTel Collector"
         )
-        assert 'PASS' in (result.stdout + result.stderr), 'Expected PASS in output'
+        assert "4317" in content, "Should expose OTel gRPC port"
 
-    def test_exception_sets_error_status(self):
-        """Verify exception in span scope sets ERROR status"""
-        self._ensure_setup('test_exception_sets_error_status', ['pip install opentelemetry-sdk'], 'skip_if_setup_fails')
-        result = self._run_cmd('python', args=['-c', "from opentelemetry.sdk.trace import TracerProvider; from opentelemetry.sdk.trace.export.in_memory import InMemorySpanExporter; from opentelemetry.sdk.trace.export import SimpleSpanProcessor; from opentelemetry.trace import StatusCode; exp=InMemorySpanExporter(); tp=TracerProvider(); tp.add_span_processor(SimpleSpanProcessor(exp)); t=tp.get_tracer('test')\ntry:\n    with t.start_as_current_span('err-span') as s:\n        s.set_status(StatusCode.ERROR, 'test error')\n        raise ValueError('boom')\nexcept ValueError:\n    pass\nspan=exp.get_finished_spans()[0]; assert span.status.status_code==StatusCode.ERROR; print('PASS')"], timeout=120)
-        assert result.returncode == 0, (
-            f'test_exception_sets_error_status failed (exit {result.returncode})\n' + result.stderr[:500]
-        )
-        assert 'PASS' in (result.stdout + result.stderr), 'Expected PASS in output'
+    def test_k8s_jaeger_uses_production_strategy(self):
+        """K8s Jaeger should use production strategy with Elasticsearch"""
+        path = os.path.join(self.REPO_DIR, "k8s/tracing/jaeger.yaml")
+        with open(path) as f:
+            content = f.read()
+        assert "production" in content, "Should use production strategy"
+        assert "elasticsearch" in content.lower(), "Should use Elasticsearch storage"
 
-    def test_traceparent_propagation(self):
-        """Verify W3C traceparent header propagation code exists"""
-        _p = self._repo_path('lib/tracing/__init__.py')
-        assert os.path.exists(_p), f'Missing: lib/tracing/__init__.py'
-        _contents = self._safe_read(_p)
-        _p = self._repo_path('lib/tracing/middleware.py')
-        assert os.path.exists(_p), f'Missing: lib/tracing/middleware.py'
-        _contents = self._safe_read(_p)
-        _all = _contents if isinstance(_contents, str) else ''
-        assert 'propagate' in _all, 'Missing: propagate'
-        assert 'inject' in _all, 'Missing: inject'
-        assert 'traceparent' in _all, 'Missing: traceparent'
+    # === Functional Checks ===
 
+    def test_all_python_files_parse(self):
+        """All Python files should parse without syntax errors"""
+        dirs = ["lib/tracing"]
+        for svc in ("api-gateway", "user-service", "order-service", "notification-service"):
+            dirs.append(f"services/{svc}")
+        for d in dirs:
+            base = os.path.join(self.REPO_DIR, d)
+            if not os.path.isdir(base):
+                continue
+            for root, _ds, files in os.walk(base):
+                for fname in files:
+                    if fname.endswith(".py"):
+                        fp = os.path.join(root, fname)
+                        with open(fp) as f:
+                            src = f.read()
+                        try:
+                            ast.parse(src)
+                        except SyntaxError as e:
+                            pytest.fail(f"{fp} syntax error: {e}")
+
+    def test_docker_compose_valid_yaml(self):
+        """Docker compose file should be valid YAML"""
+        if yaml is None:
+            pytest.skip("PyYAML not available")
+        path = os.path.join(self.REPO_DIR, "docker-compose.tracing.yml")
+        with open(path) as f:
+            data = yaml.safe_load(f)
+        assert "services" in data, "Docker compose should have services"
+
+    def test_k8s_yamls_valid(self):
+        """K8s YAML files should parse without errors"""
+        if yaml is None:
+            pytest.skip("PyYAML not available")
+        for f in ("jaeger.yaml", "otel-collector.yaml"):
+            path = os.path.join(self.REPO_DIR, f"k8s/tracing/{f}")
+            with open(path) as fh:
+                try:
+                    list(yaml.safe_load_all(fh))
+                except yaml.YAMLError as e:
+                    pytest.fail(f"{f} YAML error: {e}")

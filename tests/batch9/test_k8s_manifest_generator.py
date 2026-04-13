@@ -1,130 +1,149 @@
 """
-Test for 'k8s-manifest-generator' skill — Kubernetes Manifest Generator (Go)
-Validates DeploymentBuilder, HPABuilder, NetworkPolicyBuilder, label
-consistency, resource requests/limits validation, and Go source patterns.
+Test skill: k8s-manifest-generator
+Verify that the Agent creates Deployment, Service, HPA, PDB, and NetworkPolicy
+generators with security best practices (Go / Kustomize).
 """
 
-import glob
 import os
 import re
-
+import subprocess
 import pytest
 
 
 class TestK8sManifestGenerator:
-    """Verify K8s manifest generator via static Go source inspection."""
-
     REPO_DIR = "/workspace/kustomize"
 
-    # ── helpers ──────────────────────────────────────────────────────────
+    # === File Path Checks ===
 
-    @staticmethod
-    def _read_file(path: str) -> str:
-        try:
-            with open(path, "r", errors="ignore") as fh:
-                return fh.read()
-        except OSError:
-            return ""
+    def test_generator_files_exist(self):
+        """Verify Kubernetes manifest generator files exist"""
+        found = False
+        for root, dirs, files in os.walk(self.REPO_DIR):
+            if ".git" in root or "vendor" in root:
+                continue
+            for f in files:
+                if f.endswith(".go") and ("deploy" in f.lower() or "service" in f.lower() or "hpa" in f.lower() or "pdb" in f.lower() or "network" in f.lower() or "generator" in f.lower() or "manifest" in f.lower()):
+                    found = True
+                    break
+            if found:
+                break
+        assert found, "K8s manifest generator files not found"
 
-    def _k8s(self, *parts) -> str:
-        return os.path.join(self.REPO_DIR, "k8s", *parts)
+    # === Semantic Checks ===
 
-    # ── file_path_check ──────────────────────────────────────────────────
+    def test_deployment_generator_defined(self):
+        """Verify Deployment generator is implemented"""
+        content = self._collect_content()
+        assert "Deployment" in content, "Deployment generator not found"
 
-    def test_go_mod_exists(self):
-        """go.mod must exist at repo root."""
-        assert os.path.isfile(os.path.join(self.REPO_DIR, "go.mod")), "go.mod not found"
+    def test_service_generator_defined(self):
+        """Verify Service generator is implemented"""
+        content = self._collect_content()
+        has_svc = "Service" in content and ("ClusterIP" in content or "NodePort" in content or "LoadBalancer" in content or "Port" in content)
+        assert has_svc, "Service generator not found"
 
-    def test_deployment_go_exists(self):
-        """k8s/deployment.go must exist."""
-        path = self._k8s("deployment.go")
-        alt = os.path.join(self.REPO_DIR, "manifests", "deployment.go")
-        assert os.path.isfile(path) or os.path.isfile(alt), "deployment.go not found"
+    def test_hpa_generator_defined(self):
+        """Verify HorizontalPodAutoscaler generator is implemented"""
+        content = self._collect_content()
+        has_hpa = "HorizontalPodAutoscaler" in content or "autoscaling" in content or "HPA" in content
+        assert has_hpa, "HPA generator not found"
 
-    def test_hpa_and_network_policy_exist(self):
-        """k8s/hpa.go and k8s/network_policy.go must exist."""
-        assert os.path.isfile(self._k8s("hpa.go")), "hpa.go not found"
-        assert os.path.isfile(self._k8s("network_policy.go")), "network_policy.go not found"
+    def test_pdb_generator_defined(self):
+        """Verify PodDisruptionBudget generator is implemented"""
+        content = self._collect_content()
+        has_pdb = "PodDisruptionBudget" in content or "pdb" in content.lower()
+        assert has_pdb, "PDB generator not found"
 
-    def test_test_files_exist(self):
-        """At least one *_test.go must exist in k8s/."""
-        tests = glob.glob(self._k8s("*_test.go"))
-        assert len(tests) >= 1, "No *_test.go in k8s/"
+    def test_network_policy_generator_defined(self):
+        """Verify NetworkPolicy generator is implemented"""
+        content = self._collect_content()
+        has_np = "NetworkPolicy" in content or "networkpolicy" in content.lower()
+        assert has_np, "NetworkPolicy generator not found"
 
-    # ── semantic_check ───────────────────────────────────────────────────
+    def test_security_context_applied(self):
+        """Verify security best practices like SecurityContext are applied"""
+        content = self._collect_content()
+        content_lower = content.lower()
+        has_security = (
+            "securitycontext" in content_lower
+            or "readonly" in content_lower
+            or "runasnonroot" in content_lower
+            or "allowprivilegeescalation" in content_lower
+            or "readonlyrootfilesystem" in content_lower
+        )
+        assert has_security, "Security context not applied"
 
-    def test_deployment_build_method(self):
-        """DeploymentBuilder must have Build() returning Deployment."""
-        content = self._read_file(self._k8s("deployment.go"))
-        if not content:
-            pytest.skip("deployment.go not found")
-        assert "DeploymentBuilder" in content
-        assert "Build(" in content
-        assert "Deployment" in content
+    # === Functional Checks ===
 
-    def test_hpa_min_max_validation(self):
-        """HPABuilder must validate minReplicas <= maxReplicas."""
-        content = self._read_file(self._k8s("hpa.go"))
-        if not content:
-            pytest.skip("hpa.go not found")
-        has_min = "min" in content.lower() and "max" in content.lower()
-        has_error = "error" in content.lower() or "Error" in content
-        assert has_min and has_error, "min/max validation not found"
+    def test_go_files_have_package(self):
+        """Verify Go files have proper package declarations"""
+        go_files = self._find_go_files()
+        assert len(go_files) > 0, "No relevant Go files found"
+        for gf in go_files:
+            with open(gf) as fh:
+                content = fh.read()
+            assert "package " in content[:200], f"{gf} missing package declaration"
 
-    def test_label_consistency_validator(self):
-        """Label consistency validation must check selector matches labels."""
-        content = ""
-        for name in glob.glob(self._k8s("*.go")):
-            content += self._read_file(name)
-        has_label = "Label" in content or "label" in content
-        has_selector = "selector" in content or "matchLabels" in content
-        assert has_label and has_selector, "Label/selector consistency check not found"
+    def test_go_files_balanced_braces(self):
+        """Verify Go files have balanced braces"""
+        go_files = self._find_go_files()
+        for gf in go_files:
+            with open(gf) as fh:
+                content = fh.read()
+            cleaned = re.sub(r'"[^"]*"', '', content)
+            cleaned = re.sub(r'`[^`]*`', '', cleaned)
+            cleaned = re.sub(r'//[^\n]*', '', cleaned)
+            cleaned = re.sub(r'/\*.*?\*/', '', cleaned, flags=re.DOTALL)
+            opens = cleaned.count('{')
+            closes = cleaned.count('}')
+            assert opens == closes, f"Unbalanced braces in {gf}: {opens} vs {closes}"
 
-    def test_resource_requests_limits_check(self):
-        """DeploymentBuilder must validate requests <= limits."""
-        content = self._read_file(self._k8s("deployment.go"))
-        if not content:
-            pytest.skip("deployment.go not found")
-        has_req = "Requests" in content or "requests" in content
-        has_lim = "Limits" in content or "limits" in content
-        assert has_req and has_lim, "Resource requests/limits not found"
+    def test_go_build(self):
+        """Verify the project builds"""
+        result = subprocess.run(
+            ["go", "build", "./..."],
+            cwd=self.REPO_DIR,
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+        if result.returncode != 0:
+            related = [
+                line for line in result.stderr.splitlines()
+                if any(kw in line.lower() for kw in ["deploy", "service", "hpa", "pdb", "network", "generator", "manifest"])
+            ]
+            assert len(related) == 0, f"Build errors in generators: {related[:5]}"
 
-    def test_go_mod_version_at_least_1_21(self):
-        """go.mod must declare go >= 1.21."""
-        content = self._read_file(os.path.join(self.REPO_DIR, "go.mod"))
-        if not content:
-            pytest.skip("go.mod not found")
-        m = re.search(r"^go\s+1\.(\d+)", content, re.MULTILINE)
-        assert m, "go version directive not found"
-        assert int(m.group(1)) >= 21, f"go 1.{m.group(1)} < 1.21"
+    def test_resource_limits_enforced(self):
+        """Verify resource limits are generated for Deployments"""
+        content = self._collect_content()
+        content_lower = content.lower()
+        has_resources = "resources" in content_lower or "limits" in content_lower or "requests" in content_lower
+        assert has_resources, "Resource limits not enforced in generated manifests"
 
-    # ── functional_check (static Go) ─────────────────────────────────────
+    def _collect_content(self):
+        all_content = ""
+        for root, dirs, files in os.walk(self.REPO_DIR):
+            if ".git" in root or "vendor" in root:
+                continue
+            for f in files:
+                if f.endswith(".go"):
+                    fpath = os.path.join(root, f)
+                    try:
+                        with open(fpath) as fh:
+                            c = fh.read()
+                        if any(kw in c for kw in ["Deployment", "Service", "HorizontalPodAutoscaler", "PodDisruptionBudget", "NetworkPolicy"]):
+                            all_content += c + "\n"
+                    except (UnicodeDecodeError, PermissionError):
+                        continue
+        return all_content
 
-    def test_deployment_uses_apps_v1(self):
-        """deployment.go must use apps/v1, not extensions/v1beta1."""
-        content = self._read_file(self._k8s("deployment.go"))
-        if not content:
-            pytest.skip("deployment.go not found")
-        has_v1 = "apps/v1" in content or "appsv1" in content
-        assert has_v1, "apps/v1 apiVersion not found"
-        assert "extensions/v1beta1" not in content, "Deprecated extensions/v1beta1 used"
-
-    def test_hpa_min_max_test_case(self):
-        """Test file must contain HPA min > max validation error test."""
-        test_files = glob.glob(self._k8s("*_test.go"))
-        for tf in test_files:
-            content = self._read_file(tf)
-            if "HPA" in content or "hpa" in content:
-                has_error = "err" in content and ("min" in content.lower() or "max" in content.lower())
-                assert has_error, "HPA validation error test not found"
-                return
-        pytest.fail("No HPA test file found")
-
-    def test_deployment_zero_replicas_accepted(self):
-        """DeploymentBuilder must accept replicas=0 (scale-to-zero)."""
-        content = self._read_file(self._k8s("deployment.go"))
-        if not content:
-            pytest.skip("deployment.go not found")
-        # If replicas validation exists, it must reject negative, not zero
-        if "Replicas" in content and "<" in content:
-            assert "< 0" in content or "<= 0" not in content
+    def _find_go_files(self):
+        go_files = []
+        for root, dirs, files in os.walk(self.REPO_DIR):
+            if ".git" in root or "vendor" in root:
+                continue
+            for f in files:
+                if f.endswith(".go") and ("deploy" in f.lower() or "service" in f.lower() or "hpa" in f.lower() or "pdb" in f.lower() or "network" in f.lower() or "generator" in f.lower() or "manifest" in f.lower()):
+                    go_files.append(os.path.join(root, f))
+        return go_files

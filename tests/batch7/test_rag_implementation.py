@@ -1,167 +1,276 @@
-"""Test file for the rag-implementation skill.
-
-This suite validates the HybridRetriever, SemanticChunker, RAGChain,
-and RAGResponse classes in LangChain.
+"""
+Test skill: rag-implementation
+Verify that the Agent implements a Modular RAG Pipeline with Hybrid Retrieval
+in LangChain — HybridRetriever (RRF + weighted score), SemanticChunker, and
+RAGChain with source attribution.
 """
 
-from __future__ import annotations
-
-import ast
-import pathlib
+import os
 import re
-
+import ast
+import subprocess
 import pytest
 
 
 class TestRagImplementation:
-    """Verify RAG implementation patterns in LangChain."""
-
     REPO_DIR = "/workspace/langchain"
 
-    HYBRID_RETRIEVER_PY = "libs/langchain/langchain/retrievers/hybrid_retriever.py"
-    SEMANTIC_CHUNKER_PY = "libs/langchain/langchain/text_splitter/semantic_chunker.py"
-    RAG_CHAIN_PY = "libs/langchain/langchain/chains/rag_chain.py"
+    # ────────────────── helpers ──────────────────
 
-    # ------------------------------------------------------------------
-    # Helpers
-    # ------------------------------------------------------------------
+    def _read(self, rel_path):
+        fpath = os.path.join(self.REPO_DIR, rel_path)
+        with open(fpath, "r") as f:
+            return f.read()
 
-    def _repo_path(self, relative: str) -> pathlib.Path:
-        return pathlib.Path(self.REPO_DIR, *relative.split("/"))
+    def _exists(self, rel_path):
+        return os.path.isfile(os.path.join(self.REPO_DIR, rel_path))
 
-    def _read_text(self, relative: str) -> str:
-        path = self._repo_path(relative)
-        assert path.exists(), f"Expected path to exist: {path}"
-        return path.read_text(encoding="utf-8", errors="ignore")
+    def _parse(self, rel_path):
+        fpath = os.path.join(self.REPO_DIR, rel_path)
+        with open(fpath, "r") as f:
+            return ast.parse(f.read())
 
-    def _assert_non_empty_file(self, relative: str) -> pathlib.Path:
-        path = self._repo_path(relative)
-        assert path.is_file(), f"Expected file to exist: {path}"
-        assert path.stat().st_size > 0, f"Expected non-empty file: {path}"
-        return path
+    # === File Path Checks ===
 
-    def _class_source(self, source: str, class_name: str) -> str | None:
-        tree = ast.parse(source)
-        for node in ast.walk(tree):
-            if isinstance(node, ast.ClassDef) and node.name == class_name:
-                start = node.lineno - 1
-                end = node.end_lineno or start + 1
-                lines = source.splitlines()
-                return "\n".join(lines[start:end])
-        return None
+    def test_hybrid_retriever_exists(self):
+        """hybrid_retriever.py must exist"""
+        assert self._exists(
+            "libs/langchain/langchain/retrievers/hybrid_retriever.py"
+        )
 
-    # ------------------------------------------------------------------
-    # Layer 1 – file_path_check (3 cases)
-    # ------------------------------------------------------------------
+    def test_semantic_chunker_exists(self):
+        """semantic_chunker.py must exist"""
+        assert self._exists(
+            "libs/langchain/langchain/text_splitter/semantic_chunker.py"
+        )
 
-    def test_file_path_libs_langchain_langchain_retrievers_hybrid_retriever_py_exis(
-        self,
-    ):
-        """Verify hybrid_retriever.py exists and is non-empty."""
-        self._assert_non_empty_file(self.HYBRID_RETRIEVER_PY)
+    def test_rag_chain_exists(self):
+        """rag_chain.py must exist"""
+        assert self._exists(
+            "libs/langchain/langchain/chains/rag_chain.py"
+        )
 
-    def test_file_path_libs_langchain_langchain_text_splitter_semantic_chunker_py_e(
-        self,
-    ):
-        """Verify semantic_chunker.py exists and is non-empty."""
-        self._assert_non_empty_file(self.SEMANTIC_CHUNKER_PY)
+    def test_hybrid_retriever_test_exists(self):
+        """Unit test for hybrid retriever must exist"""
+        assert self._exists(
+            "libs/langchain/tests/unit_tests/retrievers/test_hybrid_retriever.py"
+        )
 
-    def test_file_path_libs_langchain_langchain_chains_rag_chain_py_exists(self):
-        """Verify rag_chain.py exists and is non-empty."""
-        self._assert_non_empty_file(self.RAG_CHAIN_PY)
+    def test_rag_chain_test_exists(self):
+        """Unit test for RAG chain must exist"""
+        assert self._exists(
+            "libs/langchain/tests/unit_tests/chains/test_rag_chain.py"
+        )
 
-    # ------------------------------------------------------------------
-    # Layer 2 – semantic_check (5 cases)
-    # ------------------------------------------------------------------
+    # === Semantic Checks — HybridRetriever ===
 
-    def test_semantic_hybridretriever_inherits_baseretriever_with_dense_retriever_(
-        self,
-    ):
-        """HybridRetriever inherits BaseRetriever with dense_retriever, sparse_retriever, etc."""
-        src = self._read_text(self.HYBRID_RETRIEVER_PY)
-        body = self._class_source(src, "HybridRetriever")
-        assert body is not None, "HybridRetriever class not found"
-        for field in ("dense_retriever", "sparse_retriever", "k"):
-            assert field in body, f"HybridRetriever missing field: {field}"
+    def test_hybrid_retriever_class(self):
+        """HybridRetriever class must be defined"""
+        src = self._read(
+            "libs/langchain/langchain/retrievers/hybrid_retriever.py"
+        )
+        assert re.search(r'class\s+HybridRetriever\b', src), (
+            "HybridRetriever class not found"
+        )
 
-    def test_semantic_semanticchunker_has_embedding_function_max_min_chunk_sizes_s(
-        self,
-    ):
-        """SemanticChunker has embedding_function, max/min chunk sizes, similarity_threshold."""
-        src = self._read_text(self.SEMANTIC_CHUNKER_PY)
-        body = self._class_source(src, "SemanticChunker")
-        assert body is not None, "SemanticChunker class not found"
-        assert "embedding" in body.lower(), "Missing embedding_function"
-        assert re.search(
-            r"similarity_threshold|threshold", body
-        ), "Missing similarity_threshold"
+    def test_hybrid_inherits_base_retriever(self):
+        """HybridRetriever must inherit from BaseRetriever"""
+        src = self._read(
+            "libs/langchain/langchain/retrievers/hybrid_retriever.py"
+        )
+        assert "BaseRetriever" in src, (
+            "HybridRetriever should inherit from BaseRetriever"
+        )
 
-    def test_semantic_ragchain_has_retriever_llm_system_prompt_max_context_tokens_(
-        self,
-    ):
-        """RAGChain has retriever, llm, system_prompt, max_context_tokens, return_sources."""
-        src = self._read_text(self.RAG_CHAIN_PY)
-        body = self._class_source(src, "RAGChain")
-        assert body is not None, "RAGChain class not found"
-        for field in ("retriever", "llm"):
-            assert field in body, f"RAGChain missing field: {field}"
+    def test_hybrid_get_relevant_documents(self):
+        """HybridRetriever must implement _get_relevant_documents"""
+        src = self._read(
+            "libs/langchain/langchain/retrievers/hybrid_retriever.py"
+        )
+        assert "_get_relevant_documents" in src, (
+            "_get_relevant_documents not found"
+        )
 
-    def test_semantic_ragresponse_is_a_dataclass_with_answer_sources_query_context(
-        self,
-    ):
-        """RAGResponse is a dataclass with answer, sources, query, context_length."""
-        src = self._read_text(self.RAG_CHAIN_PY)
-        body = self._class_source(src, "RAGResponse")
-        assert body is not None, "RAGResponse class not found"
-        for field in ("answer", "sources", "query"):
-            assert field in body, f"RAGResponse missing field: {field}"
+    def test_rrf_fusion_constant(self):
+        """RRF fusion must use k_rrf constant (typically 60)"""
+        src = self._read(
+            "libs/langchain/langchain/retrievers/hybrid_retriever.py"
+        )
+        assert "60" in src or "k_rrf" in src, (
+            "RRF constant k_rrf=60 not found"
+        )
 
-    def test_semantic_retrieval_score_added_to_document_metadata(self):
-        """retrieval_score added to document metadata."""
-        src = self._read_text(self.HYBRID_RETRIEVER_PY)
-        assert re.search(
-            r"retrieval_score|score|metadata", src
-        ), "retrieval_score should be added to document metadata"
+    def test_fusion_methods_supported(self):
+        """Both 'rrf' and 'weighted_score' fusion methods must be supported"""
+        src = self._read(
+            "libs/langchain/langchain/retrievers/hybrid_retriever.py"
+        )
+        assert "rrf" in src and "weighted_score" in src, (
+            "Must support both 'rrf' and 'weighted_score' fusion methods"
+        )
 
-    # ------------------------------------------------------------------
-    # Layer 3 – functional_check (5 cases, source analysis)
-    # ------------------------------------------------------------------
+    def test_retrieval_score_in_metadata(self):
+        """Fusion score should be attached as metadata['retrieval_score']"""
+        src = self._read(
+            "libs/langchain/langchain/retrievers/hybrid_retriever.py"
+        )
+        assert "retrieval_score" in src, (
+            "retrieval_score not attached to document metadata"
+        )
 
-    def test_functional_rrf_fusion_b_ranked_highest_when_it_appears_in_both_retrieve(
-        self,
-    ):
-        """RRF fusion: B ranked highest when it appears in both retrievers."""
-        src = self._read_text(self.HYBRID_RETRIEVER_PY)
-        assert re.search(
-            r"RRF|reciprocal_rank|fusion|1\s*/\s*\(", src, re.IGNORECASE
-        ), "RRF fusion logic required"
+    # === Semantic Checks — SemanticChunker ===
 
-    def test_functional_semanticchunker_splits_at_topic_boundary_detected_by_embeddi(
-        self,
-    ):
-        """SemanticChunker splits at topic boundary detected by embedding similarity drop."""
-        src = self._read_text(self.SEMANTIC_CHUNKER_PY)
-        assert re.search(
-            r"split|chunk|similarity|cosine", src, re.IGNORECASE
-        ), "SemanticChunker should split based on embedding similarity"
+    def test_semantic_chunker_class(self):
+        """SemanticChunker class must be defined"""
+        src = self._read(
+            "libs/langchain/langchain/text_splitter/semantic_chunker.py"
+        )
+        assert re.search(r'class\s+SemanticChunker\b', src), (
+            "SemanticChunker class not found"
+        )
 
-    def test_functional_ragchain_assembles_numbered_context_and_calls_llm(self):
-        """RAGChain assembles numbered context and calls LLM."""
-        src = self._read_text(self.RAG_CHAIN_PY)
-        assert re.search(
-            r"def\s+(invoke|__call__|run|query)\s*\(", src
-        ), "RAGChain should have an invoke/run method"
+    def test_split_text_method(self):
+        """SemanticChunker must have split_text() method"""
+        src = self._read(
+            "libs/langchain/langchain/text_splitter/semantic_chunker.py"
+        )
+        assert re.search(r'def\s+split_text\s*\(\s*self', src), (
+            "split_text() method not found"
+        )
 
-    def test_functional_context_truncation_works_at_token_estimate_boundary(self):
-        """Context truncation works at token estimate boundary."""
-        src = self._read_text(self.RAG_CHAIN_PY)
-        assert re.search(
-            r"max_context_tokens|truncat|token.*limit", src, re.IGNORECASE
-        ), "Context truncation logic required"
+    def test_split_documents_method(self):
+        """SemanticChunker must have split_documents() method"""
+        src = self._read(
+            "libs/langchain/langchain/text_splitter/semantic_chunker.py"
+        )
+        assert re.search(r'def\s+split_documents\s*\(\s*self', src), (
+            "split_documents() method not found"
+        )
 
-    def test_functional_streaming_invoke_yields_tokens_incrementally(self):
-        """Streaming invoke yields tokens incrementally."""
-        src = self._read_text(self.RAG_CHAIN_PY)
-        assert re.search(
-            r"stream|yield|async.*for|astream", src
-        ), "Streaming support required"
+    def test_similarity_threshold_param(self):
+        """SemanticChunker must use similarity_threshold for split decisions"""
+        src = self._read(
+            "libs/langchain/langchain/text_splitter/semantic_chunker.py"
+        )
+        assert "similarity_threshold" in src, (
+            "similarity_threshold parameter not found"
+        )
+
+    def test_overlap_sentences_param(self):
+        """SemanticChunker must support overlap_sentences for chunk overlap"""
+        src = self._read(
+            "libs/langchain/langchain/text_splitter/semantic_chunker.py"
+        )
+        assert "overlap_sentences" in src, (
+            "overlap_sentences parameter not found"
+        )
+
+    # === Semantic Checks — RAGChain ===
+
+    def test_rag_chain_class(self):
+        """RAGChain class must be defined"""
+        src = self._read("libs/langchain/langchain/chains/rag_chain.py")
+        assert re.search(r'class\s+RAGChain\b', src), (
+            "RAGChain class not found"
+        )
+
+    def test_rag_invoke_method(self):
+        """RAGChain must have invoke() method"""
+        src = self._read("libs/langchain/langchain/chains/rag_chain.py")
+        assert re.search(r'def\s+invoke\s*\(\s*self', src), (
+            "invoke() method not found"
+        )
+
+    def test_rag_response_dataclass(self):
+        """RAGResponse dataclass must be defined"""
+        src = self._read("libs/langchain/langchain/chains/rag_chain.py")
+        assert "RAGResponse" in src, "RAGResponse dataclass not found"
+
+    def test_rag_response_fields(self):
+        """RAGResponse must have answer, sources, query, context_length"""
+        src = self._read("libs/langchain/langchain/chains/rag_chain.py")
+        for field in ["answer", "sources", "query", "context_length"]:
+            assert field in src, f"RAGResponse missing field: {field}"
+
+    def test_source_numbering(self):
+        """Context assembly should number documents [1], [2], etc."""
+        src = self._read("libs/langchain/langchain/chains/rag_chain.py")
+        assert "[1]" in src or "\\[{i" in src or "f\"[{" in src, (
+            "Source document numbering not found"
+        )
+
+    def test_max_context_tokens_param(self):
+        """RAGChain must respect max_context_tokens"""
+        src = self._read("libs/langchain/langchain/chains/rag_chain.py")
+        assert "max_context_tokens" in src, (
+            "max_context_tokens parameter not found"
+        )
+
+    def test_streaming_method(self):
+        """RAGChain must have invoke_with_streaming method"""
+        src = self._read("libs/langchain/langchain/chains/rag_chain.py")
+        assert "invoke_with_streaming" in src or "stream" in src, (
+            "Streaming method not found"
+        )
+
+    # === Functional Checks ===
+
+    def test_hybrid_retriever_importable(self):
+        """HybridRetriever must be importable"""
+        result = subprocess.run(
+            ["python", "-c",
+             "from langchain.retrievers.hybrid_retriever import HybridRetriever; "
+             "print('OK')"],
+            capture_output=True, text=True, cwd=self.REPO_DIR, timeout=30,
+        )
+        assert "OK" in result.stdout, (
+            f"Import failed:\n{result.stdout}\n{result.stderr}"
+        )
+
+    def test_semantic_chunker_importable(self):
+        """SemanticChunker must be importable"""
+        result = subprocess.run(
+            ["python", "-c",
+             "from langchain.text_splitter.semantic_chunker import SemanticChunker; "
+             "print('OK')"],
+            capture_output=True, text=True, cwd=self.REPO_DIR, timeout=30,
+        )
+        assert "OK" in result.stdout, (
+            f"Import failed:\n{result.stdout}\n{result.stderr}"
+        )
+
+    def test_rag_chain_importable(self):
+        """RAGChain must be importable"""
+        result = subprocess.run(
+            ["python", "-c",
+             "from langchain.chains.rag_chain import RAGChain, RAGResponse; "
+             "print('OK')"],
+            capture_output=True, text=True, cwd=self.REPO_DIR, timeout=30,
+        )
+        assert "OK" in result.stdout, (
+            f"Import failed:\n{result.stdout}\n{result.stderr}"
+        )
+
+    def test_hybrid_retriever_unit_tests_pass(self):
+        """Hybrid retriever unit tests must pass"""
+        result = subprocess.run(
+            ["python", "-m", "pytest",
+             "libs/langchain/tests/unit_tests/retrievers/test_hybrid_retriever.py",
+             "-v", "--tb=short"],
+            capture_output=True, text=True, cwd=self.REPO_DIR, timeout=120,
+        )
+        assert result.returncode == 0, (
+            f"Tests failed:\n{result.stdout}\n{result.stderr}"
+        )
+
+    def test_rag_chain_unit_tests_pass(self):
+        """RAG chain unit tests must pass"""
+        result = subprocess.run(
+            ["python", "-m", "pytest",
+             "libs/langchain/tests/unit_tests/chains/test_rag_chain.py",
+             "-v", "--tb=short"],
+            capture_output=True, text=True, cwd=self.REPO_DIR, timeout=120,
+        )
+        assert result.returncode == 0, (
+            f"Tests failed:\n{result.stdout}\n{result.stderr}"
+        )

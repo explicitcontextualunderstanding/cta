@@ -1,192 +1,274 @@
 """
-Test for 'analyze-ci' skill — Sentry CI Failure Analyzer
-Validates that the Agent created a CI failure analyzer CLI tool for Sentry,
-including GitHub client, log parser, and analysis reporting.
+Test skill: analyze-ci
+Verify that the Agent correctly implements a GitHub Actions CI failure
+analyzer CLI for the Sentry project.
 """
 
 import os
 import re
-
+import ast
+import subprocess
 import pytest
 
 
 class TestAnalyzeCi:
-    """Verify Sentry CI failure analyzer implementation."""
-
     REPO_DIR = "/workspace/sentry"
 
-    def test_ci_analyzer_cli_exists(self):
-        """CI analyzer CLI entry point must exist."""
-        found = False
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            for f in files:
-                if f.endswith(".py"):
-                    path = os.path.join(root, f)
-                    with open(path, "r", errors="ignore") as fh:
-                        content = fh.read()
-                    if re.search(r"argparse|click|typer", content) and re.search(r"ci.*analy|analyze.*ci|failure.*analy", content, re.IGNORECASE):
-                        found = True
-                        break
-            if found:
-                break
-        assert found, "CI analyzer CLI not found"
+    # === File Path Checks ===
 
-    def test_github_client_module_exists(self):
-        """GitHub client module for fetching CI data must exist."""
-        found = False
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            for f in files:
-                if f.endswith(".py") and ("github" in f.lower() or "client" in f.lower()):
-                    path = os.path.join(root, f)
-                    with open(path, "r", errors="ignore") as fh:
-                        content = fh.read()
-                    if re.search(r"github|GitHub|actions|workflow", content, re.IGNORECASE):
-                        found = True
-                        break
-            if found:
-                break
-        assert found, "GitHub client module not found"
+    def test_analyzer_exists(self):
+        """Verify analyzer.py was created"""
+        path = os.path.join(self.REPO_DIR, "src/sentry/utils/ci/analyzer.py")
+        assert os.path.exists(path), f"analyzer.py not found at {path}"
+
+    def test_github_client_exists(self):
+        """Verify github_client.py was created"""
+        path = os.path.join(self.REPO_DIR, "src/sentry/utils/ci/github_client.py")
+        assert os.path.exists(path), f"github_client.py not found at {path}"
 
     def test_log_parser_exists(self):
-        """Log parser for CI failure logs must exist."""
-        found = False
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            for f in files:
-                if f.endswith(".py"):
-                    path = os.path.join(root, f)
-                    with open(path, "r", errors="ignore") as fh:
-                        content = fh.read()
-                    if re.search(r"parse.*log|log.*pars|LogParser|parse_failure", content, re.IGNORECASE):
-                        found = True
-                        break
-            if found:
-                break
-        assert found, "Log parser not found"
+        """Verify log_parser.py was created"""
+        path = os.path.join(self.REPO_DIR, "src/sentry/utils/ci/log_parser.py")
+        assert os.path.exists(path), f"log_parser.py not found at {path}"
 
-    def test_github_api_token_from_env(self):
-        """GitHub API token must be read from environment variable."""
-        found = False
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            for f in files:
-                if f.endswith(".py") and ("github" in f.lower() or "client" in f.lower() or "ci" in f.lower()):
-                    path = os.path.join(root, f)
-                    with open(path, "r", errors="ignore") as fh:
-                        content = fh.read()
-                    if re.search(r"os\.environ|os\.getenv|GITHUB_TOKEN|GH_TOKEN", content):
-                        found = True
-                        break
-            if found:
-                break
-        assert found, "GitHub token not read from environment"
+    def test_formatter_exists(self):
+        """Verify formatter.py was created"""
+        path = os.path.join(self.REPO_DIR, "src/sentry/utils/ci/formatter.py")
+        assert os.path.exists(path), f"formatter.py not found at {path}"
 
-    def test_analyzer_produces_report(self):
-        """Analyzer must produce a structured report output."""
-        found = False
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            for f in files:
-                if f.endswith(".py"):
-                    path = os.path.join(root, f)
-                    with open(path, "r", errors="ignore") as fh:
-                        content = fh.read()
-                    if re.search(r"report|summary|output|json\.dump|print.*result", content, re.IGNORECASE) and re.search(r"ci|failure|analy", content, re.IGNORECASE):
-                        found = True
-                        break
-            if found:
-                break
-        assert found, "Analyzer does not produce a report"
+    def test_cli_exists(self):
+        """Verify cli.py was created"""
+        path = os.path.join(self.REPO_DIR, "src/sentry/utils/ci/cli.py")
+        assert os.path.exists(path), f"cli.py not found at {path}"
 
-    def test_failure_categorization_logic(self):
-        """Analyzer must categorize failures (flaky, infra, code, timeout, etc.)."""
-        found = False
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            for f in files:
-                if f.endswith(".py"):
-                    path = os.path.join(root, f)
-                    with open(path, "r", errors="ignore") as fh:
-                        content = fh.read()
-                    if re.search(r"flaky|infrastructure|timeout|oom|categor", content, re.IGNORECASE):
-                        found = True
-                        break
-            if found:
-                break
-        assert found, "No failure categorization logic found"
+    def test_log_parser_test_exists(self):
+        """Verify test_log_parser.py was created"""
+        path = os.path.join(self.REPO_DIR, "tests/sentry/utils/ci/test_log_parser.py")
+        assert os.path.exists(path), f"test_log_parser.py not found at {path}"
 
-    def test_cli_accepts_repo_argument(self):
-        """CLI must accept repository name/URL as argument."""
-        found = False
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            for f in files:
-                if f.endswith(".py"):
-                    path = os.path.join(root, f)
-                    with open(path, "r", errors="ignore") as fh:
-                        content = fh.read()
-                    if re.search(r"add_argument.*repo|--repo|repo.*arg|repository", content):
-                        found = True
-                        break
-            if found:
-                break
-        assert found, "CLI does not accept repo argument"
+    def test_analyzer_test_exists(self):
+        """Verify test_analyzer.py was created"""
+        path = os.path.join(self.REPO_DIR, "tests/sentry/utils/ci/test_analyzer.py")
+        assert os.path.exists(path), f"test_analyzer.py not found at {path}"
 
-    def test_error_handling_for_api_failures(self):
-        """GitHub API failures must be handled gracefully."""
-        found = False
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            for f in files:
-                if f.endswith(".py") and ("github" in f.lower() or "client" in f.lower()):
-                    path = os.path.join(root, f)
-                    with open(path, "r", errors="ignore") as fh:
-                        content = fh.read()
-                    if re.search(r"except|try:|raise|HTTPError|RequestException", content):
-                        found = True
-                        break
-            if found:
-                break
-        assert found, "No error handling for API failures"
+    def test_formatter_test_exists(self):
+        """Verify test_formatter.py was created"""
+        path = os.path.join(self.REPO_DIR, "tests/sentry/utils/ci/test_formatter.py")
+        assert os.path.exists(path), f"test_formatter.py not found at {path}"
 
-    def test_rate_limiting_awareness(self):
-        """GitHub client should handle rate limiting."""
-        found = False
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            for f in files:
-                if f.endswith(".py"):
-                    path = os.path.join(root, f)
-                    with open(path, "r", errors="ignore") as fh:
-                        content = fh.read()
-                    if re.search(r"rate.limit|retry|sleep|backoff|429", content, re.IGNORECASE):
-                        found = True
-                        break
-            if found:
-                break
-        assert found, "No rate limiting handling found"
+    # === Semantic Checks: GitHub Client ===
 
-    def test_workflow_run_fetching(self):
-        """Client must fetch workflow run data from GitHub Actions API."""
-        found = False
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            for f in files:
-                if f.endswith(".py"):
-                    path = os.path.join(root, f)
-                    with open(path, "r", errors="ignore") as fh:
-                        content = fh.read()
-                    if re.search(r"actions/runs|workflow_runs|workflow.*run", content):
-                        found = True
-                        break
-            if found:
-                break
-        assert found, "No workflow run fetching logic found"
+    def test_github_client_class(self):
+        """Verify GitHubActionsClient class is defined"""
+        path = os.path.join(self.REPO_DIR, "src/sentry/utils/ci/github_client.py")
+        with open(path) as f:
+            content = f.read()
+        assert "class GitHubActionsClient" in content, (
+            "GitHubActionsClient class should be defined"
+        )
 
-    def test_tests_exist_for_analyzer(self):
-        """Test files for the CI analyzer must exist."""
-        found = False
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            for f in files:
-                if f.startswith("test_") and f.endswith(".py"):
-                    path = os.path.join(root, f)
-                    with open(path, "r", errors="ignore") as fh:
-                        content = fh.read()
-                    if re.search(r"ci.*analy|analyzer|log.*pars|failure", content, re.IGNORECASE):
-                        found = True
-                        break
-            if found:
-                break
-        assert found, "No test files for CI analyzer"
+    def test_github_client_token_from_env(self):
+        """Verify token is read from GH_TOKEN env var"""
+        path = os.path.join(self.REPO_DIR, "src/sentry/utils/ci/github_client.py")
+        with open(path) as f:
+            content = f.read()
+        assert "GH_TOKEN" in content, "Should read GH_TOKEN from environment"
+
+    def test_github_client_parse_url(self):
+        """Verify parse_url method is defined"""
+        path = os.path.join(self.REPO_DIR, "src/sentry/utils/ci/github_client.py")
+        with open(path) as f:
+            content = f.read()
+        assert "def parse_url(" in content, "Should have parse_url method"
+
+    def test_github_client_get_failed_jobs(self):
+        """Verify get_failed_jobs method is defined"""
+        path = os.path.join(self.REPO_DIR, "src/sentry/utils/ci/github_client.py")
+        with open(path) as f:
+            content = f.read()
+        assert "get_failed_jobs" in content, "Should have get_failed_jobs method"
+
+    def test_github_client_download_job_log(self):
+        """Verify download_job_log method is defined"""
+        path = os.path.join(self.REPO_DIR, "src/sentry/utils/ci/github_client.py")
+        with open(path) as f:
+            content = f.read()
+        assert "download_job_log" in content, (
+            "Should have download_job_log method"
+        )
+
+    def test_github_client_uses_auth_header(self):
+        """Verify Authorization header is set"""
+        path = os.path.join(self.REPO_DIR, "src/sentry/utils/ci/github_client.py")
+        with open(path) as f:
+            content = f.read()
+        assert "Authorization" in content or "Bearer" in content, (
+            "Should set Authorization: Bearer header"
+        )
+
+    # === Semantic Checks: Log Parser ===
+
+    def test_log_parser_parse_log(self):
+        """Verify parse_log function is defined"""
+        path = os.path.join(self.REPO_DIR, "src/sentry/utils/ci/log_parser.py")
+        with open(path) as f:
+            content = f.read()
+        assert "def parse_log(" in content, "Should have parse_log function"
+
+    def test_log_parser_extracts_errors(self):
+        """Verify error extraction patterns"""
+        path = os.path.join(self.REPO_DIR, "src/sentry/utils/ci/log_parser.py")
+        with open(path) as f:
+            content = f.read()
+        assert "errors" in content, "Should extract error lines"
+
+    def test_log_parser_extracts_stack_traces(self):
+        """Verify stack trace extraction"""
+        path = os.path.join(self.REPO_DIR, "src/sentry/utils/ci/log_parser.py")
+        with open(path) as f:
+            content = f.read()
+        assert "stack_traces" in content or "Traceback" in content, (
+            "Should extract Python/JS stack traces"
+        )
+
+    def test_log_parser_extracts_failed_tests(self):
+        """Verify test failure extraction for pytest and Jest"""
+        path = os.path.join(self.REPO_DIR, "src/sentry/utils/ci/log_parser.py")
+        with open(path) as f:
+            content = f.read()
+        assert "failed_tests" in content, "Should extract failed tests"
+        assert "FAILED" in content, "Should detect pytest FAILED patterns"
+
+    def test_log_parser_strips_ansi(self):
+        """Verify ANSI escape code stripping"""
+        path = os.path.join(self.REPO_DIR, "src/sentry/utils/ci/log_parser.py")
+        with open(path) as f:
+            content = f.read()
+        assert "\\x1b" in content or "ansi" in content.lower() or "\\033" in content, (
+            "Should strip ANSI escape codes"
+        )
+
+    def test_log_parser_extracts_annotations(self):
+        """Verify GitHub Actions annotation extraction"""
+        path = os.path.join(self.REPO_DIR, "src/sentry/utils/ci/log_parser.py")
+        with open(path) as f:
+            content = f.read()
+        assert "::error::" in content or "annotations" in content, (
+            "Should extract ::error:: annotations"
+        )
+
+    def test_log_parser_extract_context(self):
+        """Verify extract_relevant_context function is defined"""
+        path = os.path.join(self.REPO_DIR, "src/sentry/utils/ci/log_parser.py")
+        with open(path) as f:
+            content = f.read()
+        assert "extract_relevant_context" in content, (
+            "Should have extract_relevant_context function"
+        )
+
+    # === Semantic Checks: Formatter ===
+
+    def test_formatter_format_summary(self):
+        """Verify format_summary function is defined"""
+        path = os.path.join(self.REPO_DIR, "src/sentry/utils/ci/formatter.py")
+        with open(path) as f:
+            content = f.read()
+        assert "def format_summary(" in content, (
+            "Should have format_summary function"
+        )
+
+    def test_formatter_supports_text_and_json(self):
+        """Verify both text and json formats are supported"""
+        path = os.path.join(self.REPO_DIR, "src/sentry/utils/ci/formatter.py")
+        with open(path) as f:
+            content = f.read()
+        assert "text" in content, "Should support text format"
+        assert "json" in content, "Should support json format"
+
+    def test_formatter_has_markdown_headers(self):
+        """Verify text format includes markdown headers"""
+        path = os.path.join(self.REPO_DIR, "src/sentry/utils/ci/formatter.py")
+        with open(path) as f:
+            content = f.read()
+        assert "CI Failure Summary" in content, (
+            "Should include CI Failure Summary header"
+        )
+
+    # === Semantic Checks: CLI ===
+
+    def test_cli_uses_argparse(self):
+        """Verify CLI uses argparse"""
+        path = os.path.join(self.REPO_DIR, "src/sentry/utils/ci/cli.py")
+        with open(path) as f:
+            content = f.read()
+        assert "argparse" in content, "CLI should use argparse"
+
+    def test_cli_has_debug_flag(self):
+        """Verify --debug flag"""
+        path = os.path.join(self.REPO_DIR, "src/sentry/utils/ci/cli.py")
+        with open(path) as f:
+            content = f.read()
+        assert "debug" in content, "CLI should have --debug flag"
+
+    def test_cli_has_format_flag(self):
+        """Verify --format flag"""
+        path = os.path.join(self.REPO_DIR, "src/sentry/utils/ci/cli.py")
+        with open(path) as f:
+            content = f.read()
+        assert "format" in content, "CLI should have --format flag"
+
+    # === Functional Checks ===
+
+    def test_log_parser_parses(self):
+        """Verify log_parser.py has valid Python syntax"""
+        path = os.path.join(self.REPO_DIR, "src/sentry/utils/ci/log_parser.py")
+        with open(path) as f:
+            source = f.read()
+        try:
+            ast.parse(source)
+        except SyntaxError as e:
+            pytest.fail(f"log_parser.py has syntax error: {e}")
+
+    def test_formatter_parses(self):
+        """Verify formatter.py has valid Python syntax"""
+        path = os.path.join(self.REPO_DIR, "src/sentry/utils/ci/formatter.py")
+        with open(path) as f:
+            source = f.read()
+        try:
+            ast.parse(source)
+        except SyntaxError as e:
+            pytest.fail(f"formatter.py has syntax error: {e}")
+
+    def test_log_parser_tests_pass(self):
+        """Verify log parser tests pass"""
+        result = subprocess.run(
+            [
+                "python", "-m", "pytest",
+                "tests/sentry/utils/ci/test_log_parser.py",
+                "-v", "--tb=short",
+            ],
+            cwd=self.REPO_DIR,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        assert result.returncode == 0, (
+            f"Log parser tests failed:\n{result.stdout}\n{result.stderr}"
+        )
+
+    def test_formatter_tests_pass(self):
+        """Verify formatter tests pass"""
+        result = subprocess.run(
+            [
+                "python", "-m", "pytest",
+                "tests/sentry/utils/ci/test_formatter.py",
+                "-v", "--tb=short",
+            ],
+            cwd=self.REPO_DIR,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        assert result.returncode == 0, (
+            f"Formatter tests failed:\n{result.stdout}\n{result.stderr}"
+        )

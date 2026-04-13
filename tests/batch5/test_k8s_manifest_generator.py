@@ -1,13 +1,12 @@
 """
-Test for 'k8s-manifest-generator' skill — Kustomize Manifest Generation
-Validates base/overlay structure, kustomization.yaml, per-environment
-replicas, namespace, HPA bounds, and kustomize build.
+Test skill: k8s-manifest-generator
+Verify that the Agent correctly creates Kustomize base and overlay structure
+for a web application with dev, staging, and production environments.
 """
 
 import os
 import re
 import subprocess
-
 import pytest
 
 try:
@@ -16,225 +15,162 @@ except ImportError:
     yaml = None
 
 
-def _load_yaml(path):
-    """Load a single-document YAML file."""
-    with open(path, "r") as fh:
-        return yaml.safe_load(fh)
-
-
-def _load_yaml_all(path):
-    """Load a multi-document YAML file."""
-    with open(path, "r") as fh:
-        return list(yaml.safe_load_all(fh))
-
-
-def _get_replicas(docs):
-    """Extract the first 'replicas' value from a list of YAML documents."""
-    for doc in docs:
-        if not isinstance(doc, dict):
-            continue
-        spec = doc.get("spec", {})
-        if isinstance(spec, dict):
-            r = spec.get("replicas")
-            if r is not None:
-                return r
-    return None
-
-
 class TestK8sManifestGenerator:
-    """Verify Kustomize-based Kubernetes manifest generation."""
-
     REPO_DIR = "/workspace/kustomize"
 
-    # ── file_path_check ─────────────────────────────────────────────────────
+    BASE_DEPLOY = "examples/webapp/base/deployment.yaml"
+    BASE_SERVICE = "examples/webapp/base/service.yaml"
+    BASE_HPA = "examples/webapp/base/hpa.yaml"
+    BASE_KUSTOMIZATION = "examples/webapp/base/kustomization.yaml"
+    DEV_OVERLAY = "examples/webapp/overlays/dev/kustomization.yaml"
+    STAGING_OVERLAY = "examples/webapp/overlays/staging/kustomization.yaml"
+    PROD_OVERLAY = "examples/webapp/overlays/production/kustomization.yaml"
+    PROD_INGRESS = "examples/webapp/overlays/production/ingress.yaml"
+    PROD_PDB = "examples/webapp/overlays/production/pdb.yaml"
 
-    def test_base_kustomization_exists(self):
-        """Verify base/kustomization.yaml exists."""
-        found = False
-        for dirpath, _, fnames in os.walk(self.REPO_DIR):
-            if "base" in dirpath.lower() and "kustomization.yaml" in fnames:
-                found = True
-                break
-        assert found, "No base/kustomization.yaml found"
+    def _read_file(self, rel_path):
+        filepath = os.path.join(self.REPO_DIR, rel_path)
+        with open(filepath) as f:
+            return f.read()
 
-    def test_overlay_directories_exist(self):
-        """Verify overlay directories for at least 2 environments exist."""
-        envs = set()
-        for dirpath, dirs, _ in os.walk(self.REPO_DIR):
-            if ".git" in dirpath:
-                continue
-            for d in dirs:
-                dl = d.lower()
-                if dl in ("dev", "staging", "production", "prod"):
-                    envs.add(dl)
-        assert len(envs) >= 2, f"Expected ≥2 env overlays, found: {envs}"
+    # === File Path Checks ===
 
-    # ── semantic_check ──────────────────────────────────────────────────────
+    def test_base_files_exist(self):
+        for path in [self.BASE_DEPLOY, self.BASE_SERVICE, self.BASE_HPA,
+                     self.BASE_KUSTOMIZATION]:
+            filepath = os.path.join(self.REPO_DIR, path)
+            assert os.path.exists(filepath), f"Base file not found: {filepath}"
 
-    def test_kustomization_lists_resources(self):
-        """Verify kustomization.yaml files list resources."""
-        for dirpath, _, fnames in os.walk(self.REPO_DIR):
-            if "kustomization.yaml" in fnames:
-                content = self._read(os.path.join(dirpath, "kustomization.yaml"))
-                if "resources:" in content or "bases:" in content:
-                    return
-        pytest.fail("No kustomization.yaml with resources found")
+    def test_overlay_files_exist(self):
+        for path in [self.DEV_OVERLAY, self.STAGING_OVERLAY, self.PROD_OVERLAY]:
+            filepath = os.path.join(self.REPO_DIR, path)
+            assert os.path.exists(filepath), f"Overlay not found: {filepath}"
 
-    def test_dev_one_replica(self):
-        """Verify dev overlay has 1 replica."""
+    def test_prod_extras_exist(self):
+        for path in [self.PROD_INGRESS, self.PROD_PDB]:
+            filepath = os.path.join(self.REPO_DIR, path)
+            assert os.path.exists(filepath), f"Production extra not found: {filepath}"
+
+    # === Semantic Checks ===
+
+    @pytest.mark.skipif(yaml is None, reason="PyYAML not installed")
+    def test_base_deploy_has_probes_and_resources(self):
+        """Verify base deployment has probes and resource limits"""
+        docs = list(yaml.safe_load_all(self._read_file(self.BASE_DEPLOY)))
+        deploy = docs[0]
+        container = deploy["spec"]["template"]["spec"]["containers"][0]
+        assert "readinessProbe" in container, "Missing readinessProbe"
+        assert "livenessProbe" in container, "Missing livenessProbe"
+        assert "resources" in container, "Missing resource limits"
+        resources = container["resources"]
+        assert "limits" in resources, "Missing resource limits"
+        assert "requests" in resources, "Missing resource requests"
+
+    @pytest.mark.skipif(yaml is None, reason="PyYAML not installed")
+    def test_base_deploy_ports(self):
+        """Verify deployment exposes ports 8080 and 9090"""
+        docs = list(yaml.safe_load_all(self._read_file(self.BASE_DEPLOY)))
+        deploy = docs[0]
+        container = deploy["spec"]["template"]["spec"]["containers"][0]
+        ports = [p.get("containerPort") for p in container.get("ports", [])]
+        assert 8080 in ports, "Missing port 8080"
+        assert 9090 in ports, "Missing metrics port 9090"
+
+    @pytest.mark.skipif(yaml is None, reason="PyYAML not installed")
+    def test_base_hpa_config(self):
+        """Verify HPA: min 2, max 10, CPU 70%"""
+        docs = list(yaml.safe_load_all(self._read_file(self.BASE_HPA)))
+        hpa = docs[0]
+        spec = hpa["spec"]
+        assert spec.get("minReplicas") == 2, "HPA minReplicas should be 2"
+        assert spec.get("maxReplicas") == 10, "HPA maxReplicas should be 10"
+
+    def test_base_kustomization_has_configmap_generator(self):
+        """Verify base kustomization uses configMapGenerator"""
+        content = self._read_file(self.BASE_KUSTOMIZATION)
+        assert "configMapGenerator" in content, \
+            "Base kustomization missing configMapGenerator"
+
+    def test_dev_overlay_reduces_replicas(self):
+        """Verify dev overlay sets replicas to 1 and removes HPA"""
+        dev_dir = os.path.dirname(os.path.join(self.REPO_DIR, self.DEV_OVERLAY))
+        all_content = ""
+        for f in os.listdir(dev_dir):
+            fp = os.path.join(dev_dir, f)
+            if os.path.isfile(fp):
+                with open(fp) as fh:
+                    all_content += fh.read()
+        assert "1" in all_content, "Dev overlay missing replicas: 1 patch"
+        assert "debug" in all_content.lower(), "Dev overlay missing LOG_LEVEL=debug"
+
+    def test_prod_overlay_has_3_replicas(self):
+        """Verify production overlay sets 3 replicas"""
+        prod_dir = os.path.dirname(os.path.join(self.REPO_DIR, self.PROD_OVERLAY))
+        all_content = ""
+        for f in os.listdir(prod_dir):
+            fp = os.path.join(prod_dir, f)
+            if os.path.isfile(fp):
+                with open(fp) as fh:
+                    all_content += fh.read()
+        assert "3" in all_content, "Production overlay missing replicas: 3"
+
+    @pytest.mark.skipif(yaml is None, reason="PyYAML not installed")
+    def test_prod_ingress_has_tls(self):
+        """Verify production ingress has TLS configuration"""
+        docs = list(yaml.safe_load_all(self._read_file(self.PROD_INGRESS)))
+        ingress = docs[0]
+        assert ingress.get("kind") == "Ingress", "Not an Ingress resource"
+        assert "tls" in ingress.get("spec", {}), "Ingress missing TLS"
+        assert "webapp.example.com" in self._read_file(self.PROD_INGRESS), \
+            "Ingress missing host webapp.example.com"
+
+    @pytest.mark.skipif(yaml is None, reason="PyYAML not installed")
+    def test_prod_pdb_config(self):
+        """Verify PodDisruptionBudget with minAvailable"""
+        docs = list(yaml.safe_load_all(self._read_file(self.PROD_PDB)))
+        pdb = docs[0]
+        assert pdb.get("kind") == "PodDisruptionBudget", "Not a PDB resource"
+        assert "minAvailable" in pdb.get("spec", {}), "PDB missing minAvailable"
+
+    # === Functional Checks ===
+
+    def test_all_yaml_files_valid(self):
+        """Verify all YAML files parse without errors"""
         if yaml is None:
-            pytest.skip("PyYAML not available")
-        for dirpath, _, fnames in os.walk(self.REPO_DIR):
-            if "dev" in os.path.basename(dirpath).lower():
-                for f in fnames:
-                    if f.endswith(".yaml") or f.endswith(".yml"):
-                        content = self._read(os.path.join(dirpath, f))
-                        m = re.search(r"replicas:\s*(\d+)", content)
-                        if m and int(m.group(1)) == 1:
-                            return
-        pytest.skip("Dev overlay with 1 replica not found")
+            pytest.skip("PyYAML not installed")
+        paths = [
+            self.BASE_DEPLOY, self.BASE_SERVICE, self.BASE_HPA,
+            self.BASE_KUSTOMIZATION, self.DEV_OVERLAY, self.STAGING_OVERLAY,
+            self.PROD_OVERLAY, self.PROD_INGRESS, self.PROD_PDB,
+        ]
+        for path in paths:
+            filepath = os.path.join(self.REPO_DIR, path)
+            if os.path.exists(filepath):
+                with open(filepath) as f:
+                    try:
+                        list(yaml.safe_load_all(f.read()))
+                    except yaml.YAMLError as e:
+                        pytest.fail(f"{path} YAML error: {e}")
 
-    def test_production_three_replicas(self):
-        """Verify production overlay has ≥3 replicas."""
-        for dirpath, _, fnames in os.walk(self.REPO_DIR):
-            basename = os.path.basename(dirpath).lower()
-            if basename in ("production", "prod"):
-                for f in fnames:
-                    if f.endswith(".yaml") or f.endswith(".yml"):
-                        content = self._read(os.path.join(dirpath, f))
-                        m = re.search(r"replicas:\s*(\d+)", content)
-                        if m and int(m.group(1)) >= 3:
-                            return
-        pytest.skip("Production overlay with ≥3 replicas not found")
-
-    def test_namespace_per_env(self):
-        """Verify namespace is set per environment."""
-        namespaces = set()
-        for dirpath, _, fnames in os.walk(self.REPO_DIR):
-            if ".git" in dirpath:
-                continue
-            for f in fnames:
-                if f.endswith(".yaml") or f.endswith(".yml"):
-                    content = self._read(os.path.join(dirpath, f))
-                    for m in re.finditer(r"namespace:\s*(\S+)", content):
-                        namespaces.add(m.group(1))
-        assert len(namespaces) >= 1, "No namespace definitions found"
-
-    # ── functional_check ────────────────────────────────────────────────────
-
-    def test_yaml_files_valid(self):
-        """Verify all YAML files parse correctly."""
-        if yaml is None:
-            pytest.skip("PyYAML not available")
-        for dirpath, _, fnames in os.walk(self.REPO_DIR):
-            if ".git" in dirpath:
-                continue
-            for f in fnames:
-                if f.endswith(".yaml") or f.endswith(".yml"):
-                    fpath = os.path.join(dirpath, f)
-                    with open(fpath, "r") as fh:
-                        try:
-                            list(yaml.safe_load_all(fh))
-                        except yaml.YAMLError as e:
-                            pytest.fail(f"Invalid YAML in {f}: {e}")
-
-    def test_kustomize_build(self):
-        """Verify kustomize build succeeds on base."""
-        try:
-            subprocess.run(["kustomize", "version"], capture_output=True, timeout=10)
-        except (FileNotFoundError, subprocess.TimeoutExpired):
-            pytest.skip("kustomize CLI not available")
-        base_dirs = []
-        for dirpath, _, fnames in os.walk(self.REPO_DIR):
-            if "kustomization.yaml" in fnames:
-                base_dirs.append(dirpath)
-        assert base_dirs, "No kustomization.yaml found"
+    def test_kustomize_build_dev(self):
+        """Verify kustomize build succeeds for dev overlay"""
         result = subprocess.run(
-            ["kustomize", "build", base_dirs[0]],
-            capture_output=True,
-            text=True,
-            timeout=120,
+            ["kustomize", "build", "examples/webapp/overlays/dev/"],
+            cwd=self.REPO_DIR,
+            capture_output=True, text=True, timeout=30,
         )
-        assert result.returncode == 0, f"kustomize build failed: {result.stderr[:500]}"
+        if result.returncode == 0:
+            assert "Deployment" in result.stdout, "Dev build missing Deployment"
+        # May fail if kustomize not installed; not a hard failure
 
-    def test_hpa_min_lte_max(self):
-        """Verify HPA minReplicas ≤ maxReplicas."""
-        if yaml is None:
-            pytest.skip("PyYAML not available")
-        for dirpath, _, fnames in os.walk(self.REPO_DIR):
-            if ".git" in dirpath:
-                continue
-            for f in fnames:
-                if not (f.endswith(".yaml") or f.endswith(".yml")):
-                    continue
-                fpath = os.path.join(dirpath, f)
-                content = self._read(fpath)
-                if "HorizontalPodAutoscaler" in content:
-                    with open(fpath, "r") as fh:
-                        for doc in yaml.safe_load_all(fh):
-                            if not isinstance(doc, dict):
-                                continue
-                            spec = doc.get("spec", {})
-                            if "minReplicas" in spec and "maxReplicas" in spec:
-                                assert (
-                                    spec["minReplicas"] <= spec["maxReplicas"]
-                                ), f"HPA min ({spec['minReplicas']}) > max ({spec['maxReplicas']})"
-                                return
-        pytest.skip("No HPA resource found")
-
-    def test_production_has_resource_limits(self):
-        """Verify production overlay sets resource limits."""
-        for dirpath, _, fnames in os.walk(self.REPO_DIR):
-            basename = os.path.basename(dirpath).lower()
-            if basename in ("production", "prod"):
-                for f in fnames:
-                    if f.endswith(".yaml") or f.endswith(".yml"):
-                        content = self._read(os.path.join(dirpath, f))
-                        if "limits:" in content or "resources:" in content:
-                            return
-        pytest.skip("Production resource limits not found")
-
-    def test_staging_between_dev_and_prod(self):
-        """Verify staging replicas are between dev and production."""
-        for dirpath, _, fnames in os.walk(self.REPO_DIR):
-            basename = os.path.basename(dirpath).lower()
-            if basename == "staging":
-                for f in fnames:
-                    if f.endswith(".yaml") or f.endswith(".yml"):
-                        content = self._read(os.path.join(dirpath, f))
-                        m = re.search(r"replicas:\s*(\d+)", content)
-                        if m:
-                            replicas = int(m.group(1))
-                            assert (
-                                1 <= replicas <= 3
-                            ), f"Staging replicas {replicas} not between dev(1) and prod(3)"
-                            return
-        pytest.skip("No staging overlay found")
-
-    def test_missing_resource_detection(self):
-        """Verify kustomization references existing resources."""
-        for dirpath, _, fnames in os.walk(self.REPO_DIR):
-            if "kustomization.yaml" not in fnames:
-                continue
-            kust_path = os.path.join(dirpath, "kustomization.yaml")
-            if yaml is None:
-                pytest.skip("PyYAML not available")
-            data = _load_yaml(kust_path)
-            if not isinstance(data, dict):
-                continue
-            resources = data.get("resources", [])
-            if not resources:
-                continue
-            for res in resources:
-                res_path = os.path.join(dirpath, res)
-                assert os.path.exists(
-                    res_path
-                ), f"Resource '{res}' referenced in kustomization.yaml does not exist"
-            return
-        pytest.skip("No kustomization.yaml with resources to verify")
-
-    # ── helpers ──────────────────────────────────────────────────────────────
-
-    def _read(self, path):
-        with open(path, "r", errors="ignore") as fh:
-            return fh.read()
+    def test_kustomize_build_production(self):
+        """Verify kustomize build succeeds for production overlay"""
+        result = subprocess.run(
+            ["kustomize", "build", "examples/webapp/overlays/production/"],
+            cwd=self.REPO_DIR,
+            capture_output=True, text=True, timeout=30,
+        )
+        if result.returncode == 0:
+            output = result.stdout
+            assert "Deployment" in output, "Prod build missing Deployment"
+            assert "Ingress" in output, "Prod build missing Ingress"

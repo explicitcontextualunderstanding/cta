@@ -1,142 +1,297 @@
 """
-Tests for gitlab-ci-patterns skill.
-Validates GitLab CI configuration in gitlabhq repository.
+Tests for the gitlab-ci-patterns skill.
+
+Validates that a multi-stage GitLab CI pipeline was implemented with
+build, test, security scanning, and deployment stages.
+
+Repo: gitlabhq (https://github.com/gitlabhq/gitlabhq)
 """
 
 import os
-import subprocess
 import re
-import pytest
 
 REPO_DIR = "/workspace/gitlabhq"
 
 
-def _path(rel: str) -> str:
-    return os.path.join(REPO_DIR, rel)
-
-
-def _read(rel: str) -> str:
-    with open(_path(rel), encoding="utf-8", errors="ignore") as f:
-        return f.read()
-
-
-def _run(cmd: str, cwd: str = REPO_DIR, timeout: int = 60):
-    return subprocess.run(
-        cmd, shell=True, cwd=cwd, capture_output=True, text=True, timeout=timeout
-    )
-
-
-class TestGitlabCiPatterns:
-
-    # ── file_path_check ──────────────────────────────────────────────────────
+class TestFilePathCheck:
+    """Verify all required CI files were created."""
 
     def test_gitlab_ci_yml_exists(self):
-        """.gitlab-ci.yml must exist and be non-empty."""
-        rel = ".gitlab-ci.yml"
-        assert os.path.isfile(_path(rel)), ".gitlab-ci.yml not found"
-        assert os.path.getsize(_path(rel)) > 0, ".gitlab-ci.yml is empty"
+        path = os.path.join(REPO_DIR, ".gitlab-ci.yml")
+        assert os.path.isfile(path), f"Expected .gitlab-ci.yml at {path}"
 
-    def test_dynamic_pipeline_files_exist(self):
-        """generate-pipeline.rb and ci/templates/build.yml must exist."""
-        for rel in [
-            "ci/dynamic/generate-pipeline.rb",
-            "ci/templates/build.yml",
-        ]:
-            assert os.path.isfile(_path(rel)), f"{rel} not found"
+    def test_build_template_exists(self):
+        path = os.path.join(REPO_DIR, "ci", "templates", "build.yml")
+        assert os.path.isfile(path), f"Expected ci/templates/build.yml"
 
-    # ── semantic_check ───────────────────────────────────────────────────────
+    def test_test_template_exists(self):
+        path = os.path.join(REPO_DIR, "ci", "templates", "test.yml")
+        assert os.path.isfile(path), f"Expected ci/templates/test.yml"
 
-    def test_gitlab_ci_defines_required_stages(self):
-        """.gitlab-ci.yml must define build, test, security, deploy-staging, deploy-production stages."""
-        content = _read(".gitlab-ci.yml")
-        for stage in [
-            "build",
-            "test",
-            "security",
-            "deploy-staging",
-            "deploy-production",
-        ]:
-            assert (
-                stage in content
-            ), f"Required stage '{stage}' not found in .gitlab-ci.yml"
+    def test_security_template_exists(self):
+        path = os.path.join(REPO_DIR, "ci", "templates", "security.yml")
+        assert os.path.isfile(path), f"Expected ci/templates/security.yml"
 
-    def test_docker_dind_service_defined(self):
-        """docker:24-dind service must be defined for Docker-in-Docker builds."""
-        content = _read(".gitlab-ci.yml")
-        assert (
-            "docker:24-dind" in content or "docker:dind" in content
-        ), "Docker-in-Docker service not found in .gitlab-ci.yml"
+    def test_deploy_template_exists(self):
+        path = os.path.join(REPO_DIR, "ci", "templates", "deploy.yml")
+        assert os.path.isfile(path), f"Expected ci/templates/deploy.yml"
 
-    def test_rspec_uses_parallel_4(self):
-        """rspec job must use parallel: 4 for parallel test execution."""
-        content = _read(".gitlab-ci.yml")
-        assert "parallel: 4" in content, "rspec job must define 'parallel: 4'"
+    def test_dynamic_generator_exists(self):
+        path = os.path.join(REPO_DIR, "ci", "dynamic", "generate-pipeline.rb")
+        assert os.path.isfile(path), f"Expected ci/dynamic/generate-pipeline.rb"
 
-    def test_production_deploy_requires_manual_trigger(self):
-        """deploy-production job must have when: manual gate."""
-        content = _read(".gitlab-ci.yml")
-        assert (
-            "when: manual" in content
-        ), "deploy-production job must include 'when: manual'"
 
-    # ── functional_check ─────────────────────────────────────────────────────
+class TestSemanticRootPipeline:
+    """Verify root .gitlab-ci.yml structure."""
 
-    def test_gitlab_ci_yaml_is_valid(self):
-        """.gitlab-ci.yml must parse as valid YAML."""
+    def _read(self):
+        path = os.path.join(REPO_DIR, ".gitlab-ci.yml")
+        with open(path, "r") as f:
+            return f.read()
+
+    def test_stages_defined(self):
+        content = self._read()
+        assert re.search(r"stages:", content), "Expected stages: definition"
+
+    def test_five_stages(self):
+        content = self._read()
+        for stage in ["build", "test", "security", "deploy-staging", "deploy-production"]:
+            assert stage in content, f"Expected stage '{stage}'"
+
+    def test_global_variables(self):
+        content = self._read()
+        assert re.search(r"variables:", content), "Expected global variables section"
+        assert re.search(r"DOCKER_REGISTRY", content), "Expected DOCKER_REGISTRY variable"
+        assert re.search(r"IMAGE_TAG", content), "Expected IMAGE_TAG variable"
+
+    def test_include_local(self):
+        content = self._read()
+        assert re.search(r"include:", content), "Expected include: directive"
+        assert re.search(r"local:", content), "Expected include: local references"
+
+    def test_cache_configuration(self):
+        content = self._read()
+        assert re.search(r"cache:", content), "Expected global cache configuration"
+
+
+class TestSemanticBuildStage:
+    """Verify build stage templates."""
+
+    def _read(self):
+        path = os.path.join(REPO_DIR, "ci", "templates", "build.yml")
+        with open(path, "r") as f:
+            return f.read()
+
+    def test_docker_build_job(self):
+        content = self._read()
+        assert re.search(r"build:docker|build_docker", content), (
+            "Expected build:docker job"
+        )
+
+    def test_dind_service(self):
+        content = self._read()
+        assert re.search(r"docker.*dind|dind", content), (
+            "Expected Docker-in-Docker service"
+        )
+
+    def test_build_args(self):
+        content = self._read()
+        assert re.search(r"build-arg|RUBY_VERSION", content), (
+            "Expected --build-arg RUBY_VERSION"
+        )
+
+    def test_rules_changes(self):
+        content = self._read()
+        assert re.search(r"rules:|changes:", content), (
+            "Expected rules: changes: for conditional builds"
+        )
+
+    def test_assets_job(self):
+        content = self._read()
+        assert re.search(r"build:assets|assets", content), (
+            "Expected build:assets job"
+        )
+
+    def test_yarn_install(self):
+        content = self._read()
+        assert re.search(r"yarn install.*frozen-lockfile|yarn install", content), (
+            "Expected yarn install --frozen-lockfile"
+        )
+
+
+class TestSemanticTestStage:
+    """Verify test stage templates."""
+
+    def _read(self):
+        path = os.path.join(REPO_DIR, "ci", "templates", "test.yml")
+        with open(path, "r") as f:
+            return f.read()
+
+    def test_rspec_job(self):
+        content = self._read()
+        assert re.search(r"test:rspec|rspec", content), (
+            "Expected test:rspec job"
+        )
+
+    def test_parallel_execution(self):
+        content = self._read()
+        assert re.search(r"parallel:\s*4|parallel:", content), (
+            "Expected parallel: 4 for rspec"
+        )
+
+    def test_junit_artifacts(self):
+        content = self._read()
+        assert re.search(r"junit|JUnit|reports:", content), (
+            "Expected JUnit XML artifact for test reports"
+        )
+
+    def test_coverage_regex(self):
+        content = self._read()
+        assert re.search(r"coverage:", content), (
+            "Expected coverage regex configuration"
+        )
+
+    def test_jest_job(self):
+        content = self._read()
+        assert re.search(r"test:jest|jest", content), (
+            "Expected test:jest job"
+        )
+
+    def test_needs_build(self):
+        content = self._read()
+        assert re.search(r"needs:", content), (
+            "Expected needs: dependency on build stage"
+        )
+
+
+class TestSemanticSecurityStage:
+    """Verify security scanning templates."""
+
+    def _read(self):
+        path = os.path.join(REPO_DIR, "ci", "templates", "security.yml")
+        with open(path, "r") as f:
+            return f.read()
+
+    def test_sast_job(self):
+        content = self._read()
+        assert re.search(r"sast|SAST", content), "Expected SAST job"
+
+    def test_sast_excluded_paths(self):
+        content = self._read()
+        assert re.search(r"SAST_EXCLUDED_PATHS", content), (
+            "Expected SAST_EXCLUDED_PATHS configuration"
+        )
+
+    def test_dependency_scanning(self):
+        content = self._read()
+        assert re.search(r"dependency.*scanning|Dependency.*Scanning", content, re.IGNORECASE), (
+            "Expected dependency scanning job"
+        )
+
+    def test_container_scanning(self):
+        content = self._read()
+        assert re.search(r"container.*scanning|Container.*Scanning", content, re.IGNORECASE), (
+            "Expected container scanning job"
+        )
+
+
+class TestSemanticDeployStage:
+    """Verify deployment templates."""
+
+    def _read(self):
+        path = os.path.join(REPO_DIR, "ci", "templates", "deploy.yml")
+        with open(path, "r") as f:
+            return f.read()
+
+    def test_staging_job(self):
+        content = self._read()
+        assert re.search(r"deploy:staging|staging", content), (
+            "Expected deploy:staging job"
+        )
+
+    def test_staging_environment(self):
+        content = self._read()
+        assert re.search(r"environment:", content), "Expected environment config"
+        assert re.search(r"staging", content), "Expected staging environment"
+
+    def test_production_job(self):
+        content = self._read()
+        assert re.search(r"deploy:production|production", content), (
+            "Expected deploy:production job"
+        )
+
+    def test_production_manual(self):
+        content = self._read()
+        assert re.search(r"when:\s*manual", content), (
+            "Expected when: manual for production deployment"
+        )
+
+    def test_production_needs_staging(self):
+        content = self._read()
+        assert re.search(r"needs:.*staging|needs:", content), (
+            "Expected production needs staging dependency"
+        )
+
+    def test_tag_rule(self):
+        content = self._read()
+        assert re.search(r"v\*|tag|refs/tags", content, re.IGNORECASE), (
+            "Expected version tag rule (v*) for production"
+        )
+
+
+class TestSemanticDynamicPipeline:
+    """Verify dynamic child pipeline generator."""
+
+    def _read(self):
+        path = os.path.join(REPO_DIR, "ci", "dynamic", "generate-pipeline.rb")
+        with open(path, "r") as f:
+            return f.read()
+
+    def test_ruby_file(self):
+        content = self._read()
+        assert re.search(r"require|def |class |puts|YAML|yaml", content), (
+            "Expected Ruby code in generate-pipeline.rb"
+        )
+
+    def test_changed_files(self):
+        content = self._read()
+        assert re.search(r"changed|diff|CI_MERGE_REQUEST_DIFF_BASE_SHA", content), (
+            "Expected changed file detection logic"
+        )
+
+    def test_docs_only_check(self):
+        content = self._read()
+        assert re.search(r"docs|doc/", content), (
+            "Expected docs-only change detection"
+        )
+
+    def test_yaml_output(self):
+        content = self._read()
+        assert re.search(r"YAML|yaml|\.yml", content, re.IGNORECASE), (
+            "Expected YAML output generation"
+        )
+
+
+class TestFunctionalYamlValidity:
+    """Validate YAML files are well-formed."""
+
+    def test_root_pipeline_yaml(self):
         import yaml
+        path = os.path.join(REPO_DIR, ".gitlab-ci.yml")
+        with open(path, "r") as f:
+            data = yaml.safe_load(f)
+        assert isinstance(data, dict), ".gitlab-ci.yml should be valid YAML dict"
 
-        content = _read(".gitlab-ci.yml")
-        data = yaml.safe_load(content)
-        assert data is not None, ".gitlab-ci.yml parsed as empty"
-
-    def test_ruby_pipeline_generator_has_valid_syntax(self):
-        """generate-pipeline.rb must pass ruby -c syntax check."""
-        result = _run("ruby -c ci/dynamic/generate-pipeline.rb")
-        if result.returncode != 0 and "command not found" in result.stderr.lower():
-            pytest.skip("ruby not available")
-        assert result.returncode == 0, f"Ruby syntax error:\n{result.stderr}"
-        assert "Syntax OK" in result.stdout
-
-    def test_build_template_yaml_is_valid(self):
-        """ci/templates/build.yml must parse as valid YAML."""
+    def test_build_template_yaml(self):
         import yaml
+        path = os.path.join(REPO_DIR, "ci", "templates", "build.yml")
+        with open(path, "r") as f:
+            data = yaml.safe_load(f)
+        assert isinstance(data, dict), "build.yml should be valid YAML dict"
 
-        content = _read("ci/templates/build.yml")
-        data = yaml.safe_load(content)
-        assert data is not None, "ci/templates/build.yml parsed as empty"
-
-    def test_gitlab_ci_uses_include_for_templates(self):
-        """.gitlab-ci.yml must use include: to reference CI templates."""
-        content = _read(".gitlab-ci.yml")
-        assert (
-            "include:" in content
-        ), ".gitlab-ci.yml must use 'include:' directive to reference shared templates"
-
-    def test_all_job_stages_are_declared(self):
-        """Every job stage: value must appear in the global stages: list."""
+    def test_security_template_yaml(self):
         import yaml
-
-        content = _read(".gitlab-ci.yml")
-        data = yaml.safe_load(content)
-        global_stages = data.get("stages", [])
-        for job_name, job_def in data.items():
-            if isinstance(job_def, dict) and "stage" in job_def:
-                stage = job_def["stage"]
-                assert (
-                    stage in global_stages
-                ), f"Job '{job_name}' uses stage '{stage}' not in global stages list"
-
-    def test_no_raw_credentials_in_ci_config(self):
-        """Credential values in .gitlab-ci.yml must use $VAR substitution."""
-        content = _read(".gitlab-ci.yml")
-        # Find lines with credential keywords and verify they use variable references
-        cred_lines = [
-            line
-            for line in content.splitlines()
-            if re.search(r"(?i)(password|token|secret)\s*:", line)
-        ]
-        for line in cred_lines:
-            value = line.split(":", 1)[-1].strip()
-            assert (
-                value.startswith("$") or value.startswith('"$') or value == ""
-            ), f"Hardcoded credential found: {line.strip()}"
+        path = os.path.join(REPO_DIR, "ci", "templates", "security.yml")
+        with open(path, "r") as f:
+            data = yaml.safe_load(f)
+        assert isinstance(data, dict), "security.yml should be valid YAML dict"

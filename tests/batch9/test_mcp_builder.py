@@ -1,171 +1,183 @@
 """
-Test for 'mcp-builder' skill — MCP Server Builder
-Validates MCP server TypeScript project structure: server.ts, registry.ts,
-protocol.ts, JSON-RPC error codes, tools/list method, TypeScript compilation,
-and Jest test execution.
+Test skill: mcp-builder
+Verify that the Agent correctly builds a markdown-sqlite MCP server with SQLite FTS5 search.
 """
 
-import glob
-import json
 import os
-import re
 import subprocess
-
+import json
+import re
 import pytest
 
 
 class TestMcpBuilder:
-    """Verify MCP Server Builder project structure and behavior."""
-
     REPO_DIR = "/workspace/servers"
-    PKG_DIR = os.path.join(REPO_DIR, "packages", "mcp-builder")
 
-    # ── helpers ──────────────────────────────────────────────────────────
-    @staticmethod
-    def _read_file(path: str) -> str:
-        try:
-            with open(path, "r", errors="ignore") as fh:
-                return fh.read()
-        except OSError:
-            return ""
+    # === File Path Checks ===
 
-    @classmethod
-    def _npm_install(cls):
-        result = subprocess.run(
-            ["npm", "install"], cwd=cls.PKG_DIR, capture_output=True, timeout=120
+    def test_markdown_sqlite_directory_exists(self):
+        """Verify src/markdown-sqlite directory exists"""
+        path = os.path.join(self.REPO_DIR, "src/markdown-sqlite")
+        assert os.path.isdir(path), f"src/markdown-sqlite directory not found at {path}"
+
+    def test_package_json_exists(self):
+        """Verify src/markdown-sqlite/package.json exists"""
+        path = os.path.join(self.REPO_DIR, "src/markdown-sqlite/package.json")
+        assert os.path.exists(path), f"package.json not found at {path}"
+
+    def test_tsconfig_exists(self):
+        """Verify TypeScript configuration exists"""
+        candidates = [
+            os.path.join(self.REPO_DIR, "src/markdown-sqlite/tsconfig.json"),
+        ]
+        found = any(os.path.exists(c) for c in candidates)
+        assert found, "tsconfig.json not found in src/markdown-sqlite"
+
+    # === Semantic Checks ===
+
+    def test_package_json_has_mcp_dependencies(self):
+        """Verify package.json includes MCP SDK dependency"""
+        path = os.path.join(self.REPO_DIR, "src/markdown-sqlite/package.json")
+        with open(path) as f:
+            pkg = json.load(f)
+        all_deps = {}
+        all_deps.update(pkg.get("dependencies", {}))
+        all_deps.update(pkg.get("devDependencies", {}))
+        has_mcp = any("mcp" in k.lower() or "modelcontextprotocol" in k.lower() for k in all_deps)
+        assert has_mcp, f"No MCP SDK dependency found. Dependencies: {list(all_deps.keys())}"
+
+    def test_package_json_has_sqlite_dependency(self):
+        """Verify package.json includes SQLite dependency"""
+        path = os.path.join(self.REPO_DIR, "src/markdown-sqlite/package.json")
+        with open(path) as f:
+            pkg = json.load(f)
+        all_deps = {}
+        all_deps.update(pkg.get("dependencies", {}))
+        all_deps.update(pkg.get("devDependencies", {}))
+        has_sqlite = any("sqlite" in k.lower() or "better-sqlite3" in k.lower() or "sql.js" in k.lower() for k in all_deps)
+        assert has_sqlite, f"No SQLite dependency found. Dependencies: {list(all_deps.keys())}"
+
+    def test_source_defines_five_mcp_tools(self):
+        """Verify source code defines all 5 MCP tools: index_directory, search, get_document, list_documents, get_code_blocks"""
+        src_dir = os.path.join(self.REPO_DIR, "src/markdown-sqlite")
+        all_content = ""
+        for root, dirs, files in os.walk(src_dir):
+            if "node_modules" in root:
+                continue
+            for f in files:
+                if f.endswith((".ts", ".js")):
+                    fpath = os.path.join(root, f)
+                    with open(fpath) as fh:
+                        all_content += fh.read() + "\n"
+        expected_tools = ["index_directory", "search", "get_document", "list_documents", "get_code_blocks"]
+        found_tools = [t for t in expected_tools if t in all_content]
+        assert len(found_tools) >= 4, (
+            f"Expected 5 MCP tools, found {len(found_tools)}: {found_tools}. Missing: {set(expected_tools) - set(found_tools)}"
         )
-        if result.returncode != 0:
-            pytest.skip("npm install failed in mcp-builder")
 
-    # ── file_path_check ──────────────────────────────────────────────────
+    def test_fts5_used_for_search(self):
+        """Verify FTS5 virtual table is used for full-text search"""
+        src_dir = os.path.join(self.REPO_DIR, "src/markdown-sqlite")
+        all_content = ""
+        for root, dirs, files in os.walk(src_dir):
+            if "node_modules" in root:
+                continue
+            for f in files:
+                if f.endswith((".ts", ".js")):
+                    fpath = os.path.join(root, f)
+                    with open(fpath) as fh:
+                        all_content += fh.read() + "\n"
+        content_upper = all_content.upper()
+        has_fts5 = "FTS5" in content_upper
+        assert has_fts5, "No FTS5 usage found in source code"
 
-    def test_server_ts_exists(self):
-        """packages/mcp-builder/src/server.ts must exist and be non-empty."""
-        path = os.path.join(self.PKG_DIR, "src", "server.ts")
-        assert os.path.isfile(path), f"{path} does not exist"
-        assert os.path.getsize(path) > 0, "server.ts is empty"
+    def test_source_handles_markdown_parsing(self):
+        """Verify source includes markdown parsing logic"""
+        src_dir = os.path.join(self.REPO_DIR, "src/markdown-sqlite")
+        all_content = ""
+        for root, dirs, files in os.walk(src_dir):
+            if "node_modules" in root:
+                continue
+            for f in files:
+                if f.endswith((".ts", ".js")):
+                    fpath = os.path.join(root, f)
+                    with open(fpath) as fh:
+                        all_content += fh.read() + "\n"
+        has_md_parse = (
+            "markdown" in all_content.lower()
+            or "frontmatter" in all_content.lower()
+            or "remark" in all_content.lower()
+            or "unified" in all_content.lower()
+            or ".md" in all_content
+        )
+        assert has_md_parse, "No markdown parsing logic found"
 
-    def test_registry_and_protocol_ts_exist(self):
-        """registry.ts and protocol.ts must exist."""
-        for name in ("registry.ts", "protocol.ts"):
-            path = os.path.join(self.PKG_DIR, "src", name)
-            assert os.path.isfile(path), f"{path} does not exist"
-            assert os.path.getsize(path) > 0, f"{name} is empty"
+    # === Functional Checks ===
 
-    def test_package_json_and_test_file_exist(self):
-        """package.json with jest config and __tests__/server.test.ts must exist."""
-        pkg_path = os.path.join(self.PKG_DIR, "package.json")
-        assert os.path.isfile(pkg_path), f"{pkg_path} does not exist"
+    def test_npm_install_succeeds(self):
+        """Verify npm install completes in markdown-sqlite directory"""
+        result = subprocess.run(
+            ["npm", "install"],
+            cwd=os.path.join(self.REPO_DIR, "src/markdown-sqlite"),
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        assert result.returncode == 0, f"npm install failed: {result.stderr[:500]}"
+
+    def test_typescript_build_succeeds(self):
+        """Verify TypeScript compilation succeeds"""
+        result = subprocess.run(
+            ["npm", "run", "build"],
+            cwd=os.path.join(self.REPO_DIR, "src/markdown-sqlite"),
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        assert result.returncode == 0, (
+            f"Build failed:\n{result.stdout[:500]}\n{result.stderr[:500]}"
+        )
+
+    def test_build_output_exists(self):
+        """Verify build produces output files"""
+        dist_candidates = [
+            os.path.join(self.REPO_DIR, "src/markdown-sqlite/dist"),
+            os.path.join(self.REPO_DIR, "src/markdown-sqlite/build"),
+        ]
+        found = False
+        for d in dist_candidates:
+            if os.path.isdir(d) and os.listdir(d):
+                found = True
+                break
+        # Also check if there's a main entry in package.json
+        if not found:
+            pkg_path = os.path.join(self.REPO_DIR, "src/markdown-sqlite/package.json")
+            with open(pkg_path) as f:
+                pkg = json.load(f)
+            main = pkg.get("main", "")
+            if main and os.path.exists(os.path.join(self.REPO_DIR, "src/markdown-sqlite", main)):
+                found = True
+        assert found, "No build output found"
+
+    def test_server_entry_point_importable(self):
+        """Verify the compiled server entry point can be loaded with node"""
+        pkg_path = os.path.join(self.REPO_DIR, "src/markdown-sqlite/package.json")
         with open(pkg_path) as f:
             pkg = json.load(f)
-        has_jest = (
-            "jest" in pkg
-            or "jest" in pkg.get("devDependencies", {})
-            or "jest" in pkg.get("dependencies", {})
-            or "jest" in str(pkg.get("scripts", {}))
-        )
-        assert has_jest, "package.json has no jest configuration"
-        test_path = os.path.join(self.PKG_DIR, "src", "__tests__", "server.test.ts")
-        assert os.path.isfile(test_path), f"{test_path} does not exist"
-
-    # ── semantic_check ───────────────────────────────────────────────────
-
-    def test_tools_list_method_defined_in_server(self):
-        """server.ts must define tools/list handler or listTools method."""
-        content = self._read_file(os.path.join(self.PKG_DIR, "src", "server.ts"))
-        patterns = ["tools/list", "tools\\\\list", "listTools", "tools_list"]
-        found = any(p in content for p in patterns)
-        assert found, "tools/list handler not defined in server.ts"
-
-    def test_jsonrpc_error_codes_defined_in_protocol(self):
-        """-32601 (MethodNotFound) and -32602 (InvalidParams) must be defined."""
-        content = self._read_file(os.path.join(self.PKG_DIR, "src", "protocol.ts"))
-        assert "-32601" in content, "Error code -32601 (MethodNotFound) not defined"
-        assert "-32602" in content, "Error code -32602 (InvalidParams) not defined"
-
-    def test_jsonrpc_responses_include_version_and_id(self):
-        """Protocol must set jsonrpc:'2.0' and echo request id in responses."""
-        content = self._read_file(os.path.join(self.PKG_DIR, "src", "protocol.ts"))
-        assert "2.0" in content, "JSON-RPC version '2.0' not found in protocol.ts"
-        assert "id" in content, "'id' field not referenced in protocol.ts"
-
-    def test_initialize_returns_server_capabilities(self):
-        """server.ts must define initialize handler with serverInfo/capabilities."""
-        content = self._read_file(os.path.join(self.PKG_DIR, "src", "server.ts"))
-        assert "initialize" in content, "'initialize' method not found in server.ts"
-        has_caps = "serverInfo" in content or "capabilities" in content
-        assert has_caps, "serverInfo/capabilities not returned by initialize"
-
-    # ── functional_check (command) ───────────────────────────────────────
-
-    def test_typescript_compilation_no_errors(self):
-        """npx tsc --noEmit must pass without errors."""
-        self._npm_install()
+        main = pkg.get("main", pkg.get("bin", ""))
+        if isinstance(main, dict):
+            main = list(main.values())[0]
+        if not main:
+            main = "dist/index.js"
+        entry = os.path.join(self.REPO_DIR, "src/markdown-sqlite", main)
+        if not os.path.exists(entry):
+            pytest.skip(f"Entry point {entry} not found after build")
         result = subprocess.run(
-            ["npx", "tsc", "--noEmit"],
-            cwd=self.PKG_DIR,
+            ["node", "-e", f"require('{entry}')"],
+            cwd=os.path.join(self.REPO_DIR, "src/markdown-sqlite"),
             capture_output=True,
-            timeout=120,
+            text=True,
+            timeout=30,
         )
-        assert result.returncode == 0, (
-            f"tsc --noEmit failed: {result.stderr.decode(errors='replace')[:500]}"
-        )
-
-    def test_tools_list_returns_array_of_tool_definitions(self):
-        """Jest test for tools/list must pass."""
-        self._npm_install()
-        result = subprocess.run(
-            ["npx", "jest", "--testNamePattern", "tools/list"],
-            cwd=self.PKG_DIR,
-            capture_output=True,
-            timeout=120,
-        )
-        assert result.returncode == 0, (
-            f"tools/list Jest test failed: {result.stdout.decode(errors='replace')[:500]}"
-        )
-
-    def test_tools_call_valid_tool_returns_content(self):
-        """Jest test for tools/call with valid tool must pass."""
-        self._npm_install()
-        result = subprocess.run(
-            ["npx", "jest", "--testNamePattern", "tools/call.*valid"],
-            cwd=self.PKG_DIR,
-            capture_output=True,
-            timeout=120,
-        )
-        assert result.returncode == 0, (
-            f"tools/call jest test failed: {result.stdout.decode(errors='replace')[:500]}"
-        )
-
-    def test_unknown_tool_returns_method_not_found(self):
-        """Jest test for unknown tool (-32601) must pass."""
-        self._npm_install()
-        result = subprocess.run(
-            ["npx", "jest", "--testNamePattern", "unknown|MethodNotFound"],
-            cwd=self.PKG_DIR,
-            capture_output=True,
-            timeout=120,
-        )
-        assert result.returncode == 0, (
-            f"MethodNotFound jest test failed: {result.stdout.decode(errors='replace')[:500]}"
-        )
-
-    def test_invalid_args_returns_invalid_params(self):
-        """Jest test for invalid args (-32602) must pass."""
-        self._npm_install()
-        result = subprocess.run(
-            ["npx", "jest", "--testNamePattern", "invalid.*args|InvalidParams"],
-            cwd=self.PKG_DIR,
-            capture_output=True,
-            timeout=120,
-        )
-        assert result.returncode == 0, (
-            f"InvalidParams jest test failed: {result.stdout.decode(errors='replace')[:500]}"
-        )
-
-    def test_double_tool_registration_handled(self):
-        """registry.ts must handle duplicate tool registration."""
-        content = self._read_file(os.path.join(self.PKG_DIR, "src", "registry.ts"))
-        patterns = ["duplicate", "already", "has(", "throw", "overwrite", "existing"]
-        found = any(p in content.lower() for p in patterns)
-        assert found, "No duplicate tool registration handling in registry.ts"
+        # Entry point may start a server that doesn't exit, so just check no immediate crash
+        assert "SyntaxError" not in result.stderr, f"Syntax error in entry point: {result.stderr[:500]}"

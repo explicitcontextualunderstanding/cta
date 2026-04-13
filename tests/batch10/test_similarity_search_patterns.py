@@ -1,176 +1,271 @@
 """
-Test for 'similarity-search-patterns' skill — Milvus similarity search patterns
-Validates that the Agent implemented similarity search patterns using
-the Milvus vector database.
+Test skill: similarity-search-patterns
+Verify that the Agent correctly implements multi-metric similarity search
+with reranking for Milvus.
 """
 
 import os
 import re
-
+import subprocess
 import pytest
 
 
 class TestSimilaritySearchPatterns:
-    """Verify Milvus similarity search implementation."""
-
     REPO_DIR = "/workspace/milvus"
 
-    def test_collection_creation(self):
-        """Milvus collection creation must be implemented."""
-        found = False
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            for f in files:
-                if f.endswith((".py", ".go", ".java")):
-                    path = os.path.join(root, f)
-                    with open(path, "r", errors="ignore") as fh:
-                        content = fh.read()
-                    if re.search(r"[Cc]reate[Cc]ollection|create_collection|Collection\(|NewCollection", content):
-                        found = True
-                        break
-            if found:
-                break
-        assert found, "No collection creation found"
+    # === File Path Checks ===
 
-    def test_schema_definition(self):
-        """Collection schema must be defined with fields."""
-        found = False
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            for f in files:
-                if f.endswith((".py", ".go", ".java")):
-                    path = os.path.join(root, f)
-                    with open(path, "r", errors="ignore") as fh:
-                        content = fh.read()
-                    if re.search(r"[Ss]chema|FieldSchema|CollectionSchema|[Ff]ield|DataType|FloatVector", content):
-                        found = True
-                        break
-            if found:
-                break
-        assert found, "No schema definition found"
+    def test_multi_metric_search_exists(self):
+        """Verify multi_metric_search.go was created"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "internal/querynodev2/services/multi_metric_search.go",
+        )
+        assert os.path.exists(path), f"multi_metric_search.go not found at {path}"
 
-    def test_index_creation(self):
-        """Vector index must be created."""
-        found = False
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            for f in files:
-                if f.endswith((".py", ".go", ".java")):
-                    path = os.path.join(root, f)
-                    with open(path, "r", errors="ignore") as fh:
-                        content = fh.read()
-                    if re.search(r"create_index|CreateIndex|index_params|IVF_FLAT|HNSW|ANNOY|IndexType", content):
-                        found = True
-                        break
-            if found:
-                break
-        assert found, "No index creation found"
+    def test_reranker_exists(self):
+        """Verify reranker.go was created"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "internal/querynodev2/services/reranker.go",
+        )
+        assert os.path.exists(path), f"reranker.go not found at {path}"
 
-    def test_data_insertion(self):
-        """Data insertion into collection must be implemented."""
-        found = False
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            for f in files:
-                if f.endswith((".py", ".go", ".java")):
-                    path = os.path.join(root, f)
-                    with open(path, "r", errors="ignore") as fh:
-                        content = fh.read()
-                    if re.search(r"insert|Insert|upsert|Upsert", content):
-                        found = True
-                        break
-            if found:
-                break
-        assert found, "No data insertion found"
+    def test_distance_metrics_exists(self):
+        """Verify distance_metrics.go was created"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "pkg/util/distance/distance_metrics.go",
+        )
+        assert os.path.exists(path), f"distance_metrics.go not found at {path}"
 
-    def test_similarity_search(self):
-        """Similarity search must be implemented."""
-        found = False
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            for f in files:
-                if f.endswith((".py", ".go", ".java")):
-                    path = os.path.join(root, f)
-                    with open(path, "r", errors="ignore") as fh:
-                        content = fh.read()
-                    if re.search(r"search|Search|query|similarity|knn|ANN|nearest", content):
-                        found = True
-                        break
-            if found:
-                break
-        assert found, "No similarity search found"
+    def test_distance_metrics_test_exists(self):
+        """Verify distance_metrics_test.go was created"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "pkg/util/distance/distance_metrics_test.go",
+        )
+        assert os.path.exists(path), f"distance_metrics_test.go not found at {path}"
 
-    def test_distance_metric(self):
-        """Distance metric must be configured (L2, IP, COSINE)."""
-        found = False
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            for f in files:
-                if f.endswith((".py", ".go", ".java")):
-                    path = os.path.join(root, f)
-                    with open(path, "r", errors="ignore") as fh:
-                        content = fh.read()
-                    if re.search(r"metric_type|MetricType|L2|IP|COSINE|cosine|euclidean|inner_product", content):
-                        found = True
-                        break
-            if found:
-                break
-        assert found, "No distance metric configured"
+    def test_multi_metric_test_exists(self):
+        """Verify multi_metric_search_test.go was created"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "internal/querynodev2/services/multi_metric_search_test.go",
+        )
+        assert os.path.exists(path), f"multi_metric_search_test.go not found"
 
-    def test_vector_embedding(self):
-        """Vector embeddings must be generated or used."""
-        found = False
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            for f in files:
-                if f.endswith((".py", ".go", ".java")):
-                    path = os.path.join(root, f)
-                    with open(path, "r", errors="ignore") as fh:
-                        content = fh.read()
-                    if re.search(r"[Ee]mbedding|vector|FloatVector|float_vector|dim\s*=|dimension", content):
-                        found = True
-                        break
-            if found:
-                break
-        assert found, "No vector embedding found"
+    def test_reranker_test_exists(self):
+        """Verify reranker_test.go was created"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "internal/querynodev2/services/reranker_test.go",
+        )
+        assert os.path.exists(path), f"reranker_test.go not found"
 
-    def test_top_k_results(self):
-        """Search must return top-K results."""
-        found = False
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            for f in files:
-                if f.endswith((".py", ".go", ".java")):
-                    path = os.path.join(root, f)
-                    with open(path, "r", errors="ignore") as fh:
-                        content = fh.read()
-                    if re.search(r"top_k|topk|limit|nprobe|nlist|k\s*=", content):
-                        found = True
-                        break
-            if found:
-                break
-        assert found, "No top-K configuration found"
+    # === Semantic Checks: Distance Metrics ===
 
-    def test_connection_setup(self):
-        """Milvus connection must be established."""
-        found = False
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            for f in files:
-                if f.endswith((".py", ".go", ".java")):
-                    path = os.path.join(root, f)
-                    with open(path, "r", errors="ignore") as fh:
-                        content = fh.read()
-                    if re.search(r"connect|connections|MilvusClient|grpc|host|port", content, re.IGNORECASE):
-                        found = True
-                        break
-            if found:
-                break
-        assert found, "No Milvus connection setup found"
+    def test_cosine_similarity_defined(self):
+        """Verify CosineSimilarity function is defined"""
+        path = os.path.join(
+            self.REPO_DIR, "pkg/util/distance/distance_metrics.go"
+        )
+        with open(path) as f:
+            content = f.read()
+        assert "CosineSimilarity" in content, (
+            "CosineSimilarity function should be defined"
+        )
 
-    def test_collection_loading(self):
-        """Collection must be loaded into memory before search."""
-        found = False
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            for f in files:
-                if f.endswith((".py", ".go", ".java")):
-                    path = os.path.join(root, f)
-                    with open(path, "r", errors="ignore") as fh:
-                        content = fh.read()
-                    if re.search(r"load|Load|release|Release|collection\.load", content):
-                        found = True
-                        break
-            if found:
-                break
-        assert found, "No collection loading found"
+    def test_l2_distance_defined(self):
+        """Verify L2Distance function is defined"""
+        path = os.path.join(
+            self.REPO_DIR, "pkg/util/distance/distance_metrics.go"
+        )
+        with open(path) as f:
+            content = f.read()
+        assert "L2Distance" in content, "L2Distance function should be defined"
+
+    def test_inner_product_defined(self):
+        """Verify InnerProduct function is defined"""
+        path = os.path.join(
+            self.REPO_DIR, "pkg/util/distance/distance_metrics.go"
+        )
+        with open(path) as f:
+            content = f.read()
+        assert "InnerProduct" in content, (
+            "InnerProduct function should be defined"
+        )
+
+    def test_manhattan_distance_defined(self):
+        """Verify ManhattanDistance function is defined"""
+        path = os.path.join(
+            self.REPO_DIR, "pkg/util/distance/distance_metrics.go"
+        )
+        with open(path) as f:
+            content = f.read()
+        assert "ManhattanDistance" in content, (
+            "ManhattanDistance function should be defined"
+        )
+
+    def test_normalize_scores_defined(self):
+        """Verify NormalizeScores function is defined"""
+        path = os.path.join(
+            self.REPO_DIR, "pkg/util/distance/distance_metrics.go"
+        )
+        with open(path) as f:
+            content = f.read()
+        assert "NormalizeScores" in content, (
+            "NormalizeScores function should be defined"
+        )
+
+    def test_distance_functions_return_errors(self):
+        """Verify distance functions return error for invalid inputs"""
+        path = os.path.join(
+            self.REPO_DIR, "pkg/util/distance/distance_metrics.go"
+        )
+        with open(path) as f:
+            content = f.read()
+        assert "error" in content, "Functions should return error type"
+
+    # === Semantic Checks: Multi-Metric Search ===
+
+    def test_multi_metric_search_request_struct(self):
+        """Verify MultiMetricSearchRequest struct is defined"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "internal/querynodev2/services/multi_metric_search.go",
+        )
+        with open(path) as f:
+            content = f.read()
+        assert "MultiMetricSearchRequest" in content, (
+            "MultiMetricSearchRequest struct should be defined"
+        )
+
+    def test_search_result_struct(self):
+        """Verify SearchResult struct is defined"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "internal/querynodev2/services/multi_metric_search.go",
+        )
+        with open(path) as f:
+            content = f.read()
+        assert "SearchResult" in content, (
+            "SearchResult struct should be defined"
+        )
+
+    def test_execute_multi_metric_search_function(self):
+        """Verify ExecuteMultiMetricSearch function is defined"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "internal/querynodev2/services/multi_metric_search.go",
+        )
+        with open(path) as f:
+            content = f.read()
+        assert "ExecuteMultiMetricSearch" in content, (
+            "ExecuteMultiMetricSearch function should be defined"
+        )
+
+    def test_rrf_fusion_implemented(self):
+        """Verify RRF fusion is implemented"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "internal/querynodev2/services/multi_metric_search.go",
+        )
+        with open(path) as f:
+            content = f.read()
+        assert "rrf" in content.lower() or "rank" in content.lower(), (
+            "Should implement RRF fusion"
+        )
+
+    # === Semantic Checks: Reranker ===
+
+    def test_rerank_by_score_defined(self):
+        """Verify RerankByScore function is defined"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "internal/querynodev2/services/reranker.go",
+        )
+        with open(path) as f:
+            content = f.read()
+        assert "RerankByScore" in content, (
+            "RerankByScore function should be defined"
+        )
+
+    def test_rerank_by_mmr_defined(self):
+        """Verify RerankByMMR function is defined"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "internal/querynodev2/services/reranker.go",
+        )
+        with open(path) as f:
+            content = f.read()
+        assert "RerankByMMR" in content, (
+            "RerankByMMR function should be defined"
+        )
+
+    def test_deduplicate_defined(self):
+        """Verify Deduplicate function is defined"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "internal/querynodev2/services/reranker.go",
+        )
+        with open(path) as f:
+            content = f.read()
+        assert "Deduplicate" in content, (
+            "Deduplicate function should be defined"
+        )
+
+    def test_mmr_uses_lambda(self):
+        """Verify MMR uses lambda parameter"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "internal/querynodev2/services/reranker.go",
+        )
+        with open(path) as f:
+            content = f.read()
+        assert "lambda" in content.lower(), (
+            "RerankByMMR should use lambda parameter"
+        )
+
+    # === Functional Checks ===
+
+    def test_go_files_have_package(self):
+        """Verify Go files have proper package declarations"""
+        files = [
+            "pkg/util/distance/distance_metrics.go",
+            "internal/querynodev2/services/multi_metric_search.go",
+            "internal/querynodev2/services/reranker.go",
+        ]
+        for rel_path in files:
+            path = os.path.join(self.REPO_DIR, rel_path)
+            with open(path) as f:
+                content = f.read()
+            assert content.startswith("package "), (
+                f"{rel_path} should start with package declaration"
+            )
+
+    def test_go_vet_distance(self):
+        """Verify distance_metrics.go passes go vet"""
+        result = subprocess.run(
+            ["go", "vet", "./pkg/util/distance/..."],
+            cwd=self.REPO_DIR,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        assert result.returncode == 0, (
+            f"go vet failed:\n{result.stderr}"
+        )
+
+    def test_distance_tests_pass(self):
+        """Verify distance metric tests pass"""
+        result = subprocess.run(
+            ["go", "test", "./pkg/util/distance/", "-v", "-run", "TestDistance"],
+            cwd=self.REPO_DIR,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        assert result.returncode == 0, (
+            f"Distance tests failed:\n{result.stdout}\n{result.stderr}"
+        )

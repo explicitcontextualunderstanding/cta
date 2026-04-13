@@ -1,195 +1,244 @@
 """
-Test for 'xlsx' skill — openpyxl financial workbook builder
-Validates that the Agent created a multi-sheet financial comparison
-workbook using openpyxl with formatting, charts, and proper structure.
+Test skill: xlsx
+Verify that the Agent correctly creates a multi-sheet financial comparison
+workbook using openpyxl with all formulas, formatting, and structure.
 """
 
 import os
-import re
-
+import subprocess
 import pytest
 
 
 class TestXlsx:
-    """Verify openpyxl financial workbook builder implementation."""
-
     REPO_DIR = "/workspace/openpyxl"
 
-    def test_workbook_builder_file_exists(self):
-        """workbook_builder.py must exist and import openpyxl."""
-        found = False
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            for f in files:
-                if f == "workbook_builder.py":
-                    path = os.path.join(root, f)
-                    with open(path, "r", errors="ignore") as fh:
-                        content = fh.read()
-                    if re.search(r"import\s+openpyxl|from\s+openpyxl", content):
-                        if re.search(r"Workbook\(\)", content):
-                            found = True
-                            break
-            if found:
-                break
-        assert found, "workbook_builder.py with openpyxl Workbook usage not found"
+    @classmethod
+    def setup_class(cls):
+        """Ensure openpyxl is importable; run the build script if needed."""
+        try:
+            import openpyxl
+        except ImportError:
+            subprocess.run(
+                ["pip", "install", "-e", "."],
+                cwd=cls.REPO_DIR,
+                capture_output=True,
+                timeout=120,
+            )
 
-    def test_financial_report_file_exists(self):
-        """financial_report.py must exist with report generation function."""
-        found = False
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            for f in files:
-                if f == "financial_report.py":
-                    path = os.path.join(root, f)
-                    with open(path, "r", errors="ignore") as fh:
-                        content = fh.read()
-                    if re.search(r"def\s+(generate_report|build_workbook|create_report)", content):
-                        found = True
-                        break
-            if found:
-                break
-        assert found, "financial_report.py with report generation function not found"
+    # === File Path Checks ===
 
-    def test_multiple_sheets_created(self):
-        """Workbook must create multiple named sheets."""
-        found = False
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            for f in files:
-                if f == "workbook_builder.py":
-                    path = os.path.join(root, f)
-                    with open(path, "r", errors="ignore") as fh:
-                        content = fh.read()
-                    create_count = len(re.findall(r"create_sheet", content))
-                    if create_count >= 2:
-                        found = True
-                        break
-            if found:
-                break
-        assert found, "At least 2 create_sheet calls not found in workbook_builder.py"
+    def test_build_script_exists(self):
+        """Verify scripts/build_financial_report.py was created"""
+        path = os.path.join(self.REPO_DIR, "scripts/build_financial_report.py")
+        assert os.path.exists(path), f"Build script not found at {path}"
 
-    def test_bold_headers_applied(self):
-        """Header cells must have bold font formatting."""
-        found = False
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            for f in files:
-                if f == "workbook_builder.py":
-                    path = os.path.join(root, f)
-                    with open(path, "r", errors="ignore") as fh:
-                        content = fh.read()
-                    if re.search(r"Font\(.*bold\s*=\s*True", content):
-                        found = True
-                        break
-            if found:
-                break
-        assert found, "Font(bold=True) not found in workbook_builder.py"
+    def test_build_script_is_valid_python(self):
+        """Verify build_financial_report.py is syntactically valid"""
+        import ast
+        path = os.path.join(self.REPO_DIR, "scripts/build_financial_report.py")
+        with open(path) as f:
+            source = f.read()
+        try:
+            ast.parse(source)
+        except SyntaxError as e:
+            pytest.fail(f"build_financial_report.py has syntax errors: {e}")
 
-    def test_currency_number_format_applied(self):
-        """Financial columns must use currency number format."""
-        found = False
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            for f in files:
-                if f == "workbook_builder.py":
-                    path = os.path.join(root, f)
-                    with open(path, "r", errors="ignore") as fh:
-                        content = fh.read()
-                    if re.search(r"number_format|#,##0|currency|\$", content):
-                        found = True
-                        break
-            if found:
-                break
-        assert found, "Currency number format not found in workbook_builder.py"
+    # === Functional Check: Generate Workbook ===
 
-    def test_chart_added_to_summary_sheet(self):
-        """At least one chart (BarChart/LineChart/PieChart) must be added."""
-        found = False
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            for f in files:
-                if f == "workbook_builder.py":
-                    path = os.path.join(root, f)
-                    with open(path, "r", errors="ignore") as fh:
-                        content = fh.read()
-                    if re.search(r"BarChart|LineChart|PieChart", content):
-                        if re.search(r"add_chart|add_data", content):
-                            found = True
-                            break
-            if found:
-                break
-        assert found, "Chart (BarChart/LineChart/PieChart) with add_chart not found"
+    def _generate_workbook(self):
+        """Helper to run the build script and return the output path."""
+        result = subprocess.run(
+            ["python", "scripts/build_financial_report.py"],
+            cwd=self.REPO_DIR,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        assert result.returncode == 0, (
+            f"Build script failed: {result.stderr[-1000:]}\n{result.stdout[-500:]}"
+        )
+        output_path = os.path.join(self.REPO_DIR, "output/financial_comparison.xlsx")
+        assert os.path.exists(output_path), (
+            f"Expected output file not found at {output_path}"
+        )
+        return output_path
 
-    def test_workbook_saves_to_xlsx(self):
-        """Workbook must call wb.save() with .xlsx extension."""
-        found = False
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            for f in files:
-                if f in ("workbook_builder.py", "financial_report.py"):
-                    path = os.path.join(root, f)
-                    with open(path, "r", errors="ignore") as fh:
-                        content = fh.read()
-                    if re.search(r"\.save\(", content) and re.search(r"\.xlsx", content):
-                        found = True
-                        break
-            if found:
-                break
-        assert found, "wb.save() with .xlsx extension not found"
+    def test_script_produces_xlsx_file(self):
+        """Verify running the build script produces the xlsx output file"""
+        self._generate_workbook()
 
-    def test_saved_file_is_valid_xlsx(self):
-        """Saved file must have openpyxl import for load_workbook validation."""
-        found = False
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            for f in files:
-                if f in ("workbook_builder.py", "financial_report.py"):
-                    path = os.path.join(root, f)
-                    with open(path, "r", errors="ignore") as fh:
-                        content = fh.read()
-                    if re.search(r"openpyxl", content) and re.search(r"Workbook|load_workbook", content):
-                        found = True
-                        break
-            if found:
-                break
-        assert found, "openpyxl workbook creation not found"
+    def test_workbook_has_four_sheets(self):
+        """Verify workbook contains exactly 4 sheets with correct names"""
+        import openpyxl
+        wb_path = self._generate_workbook()
+        wb = openpyxl.load_workbook(wb_path)
+        expected_sheets = {"Assumptions", "Division Summary", "Consolidated P&L", "Dashboard"}
+        actual_sheets = set(wb.sheetnames)
+        assert expected_sheets == actual_sheets, (
+            f"Expected sheets {expected_sheets}, got {actual_sheets}"
+        )
 
-    def test_empty_data_creates_empty_sheets(self):
-        """Empty data handling must not crash the builder."""
-        found = False
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            for f in files:
-                if f in ("workbook_builder.py", "financial_report.py"):
-                    path = os.path.join(root, f)
-                    with open(path, "r", errors="ignore") as fh:
-                        content = fh.read()
-                    if re.search(r"if\s+not\s+data|len\(data\)|empty|default", content, re.IGNORECASE):
-                        found = True
-                        break
-            if found:
-                break
-        assert found, "Empty data handling not found"
+    # === Semantic Checks ===
 
-    def test_header_row_is_frozen(self):
-        """Header row must use freeze_panes for navigation."""
-        found = False
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            for f in files:
-                if f == "workbook_builder.py":
-                    path = os.path.join(root, f)
-                    with open(path, "r", errors="ignore") as fh:
-                        content = fh.read()
-                    if re.search(r"freeze_panes", content):
-                        found = True
-                        break
-            if found:
-                break
-        assert found, "freeze_panes not found in workbook_builder.py"
+    def test_assumptions_sheet_has_growth_rates(self):
+        """Verify Assumptions sheet contains growth rate values"""
+        import openpyxl
+        wb_path = self._generate_workbook()
+        wb = openpyxl.load_workbook(wb_path)
+        ws = wb["Assumptions"]
+        # Check C2 has a numeric value (growth rate)
+        c2_val = ws["C2"].value
+        assert c2_val is not None, "Assumptions C2 (first growth rate) is empty"
+        assert isinstance(c2_val, (int, float)), (
+            f"Growth rate should be numeric, got {type(c2_val)}: {c2_val}"
+        )
 
-    def test_missing_output_path_raises_error(self):
-        """None or empty output_path must be validated."""
-        found = False
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            for f in files:
-                if f in ("workbook_builder.py", "financial_report.py"):
-                    path = os.path.join(root, f)
-                    with open(path, "r", errors="ignore") as fh:
-                        content = fh.read()
-                    if re.search(r"ValueError|TypeError|output_path|path.*None|not.*path", content):
-                        found = True
-                        break
-            if found:
-                break
-        assert found, "Output path validation not found"
+    def test_assumptions_sheet_has_cogs_and_tax(self):
+        """Verify Assumptions sheet has COGS % and Tax Rate"""
+        import openpyxl
+        wb_path = self._generate_workbook()
+        wb = openpyxl.load_workbook(wb_path)
+        ws = wb["Assumptions"]
+        # Look for COGS and Tax Rate in column B
+        found_cogs = False
+        found_tax = False
+        for row in ws.iter_rows(min_col=2, max_col=2, values_only=False):
+            for cell in row:
+                if cell.value and isinstance(cell.value, str):
+                    if "cogs" in cell.value.lower():
+                        found_cogs = True
+                    if "tax" in cell.value.lower():
+                        found_tax = True
+        assert found_cogs, "Assumptions sheet missing COGS % label"
+        assert found_tax, "Assumptions sheet missing Tax Rate label"
+
+    def test_division_summary_has_formulas(self):
+        """Verify Division Summary uses Excel formulas, not hardcoded values"""
+        import openpyxl
+        wb_path = self._generate_workbook()
+        wb = openpyxl.load_workbook(wb_path)
+        ws = wb["Division Summary"]
+        formula_count = 0
+        for row in ws.iter_rows():
+            for cell in row:
+                if isinstance(cell.value, str) and cell.value.startswith("="):
+                    formula_count += 1
+        assert formula_count >= 10, (
+            f"Division Summary should have many formulas, found only {formula_count}"
+        )
+
+    def test_division_summary_has_three_divisions(self):
+        """Verify Division Summary lists Cloud Services, Enterprise Software, Professional Services"""
+        import openpyxl
+        wb_path = self._generate_workbook()
+        wb = openpyxl.load_workbook(wb_path)
+        ws = wb["Division Summary"]
+        content = ""
+        for row in ws.iter_rows(values_only=True):
+            for cell in row:
+                if cell and isinstance(cell, str):
+                    content += cell + " "
+        content_lower = content.lower()
+        assert "cloud" in content_lower, "Missing 'Cloud Services' division"
+        assert "enterprise" in content_lower, "Missing 'Enterprise Software' division"
+        assert "professional" in content_lower, "Missing 'Professional Services' division"
+
+    def test_consolidated_pl_has_formulas(self):
+        """Verify Consolidated P&L uses Excel formulas for computed rows"""
+        import openpyxl
+        wb_path = self._generate_workbook()
+        wb = openpyxl.load_workbook(wb_path)
+        ws = wb["Consolidated P&L"]
+        formula_count = 0
+        for row in ws.iter_rows():
+            for cell in row:
+                if isinstance(cell.value, str) and cell.value.startswith("="):
+                    formula_count += 1
+        assert formula_count >= 20, (
+            f"Consolidated P&L should have many formulas, found only {formula_count}"
+        )
+
+    def test_consolidated_pl_has_required_rows(self):
+        """Verify P&L has Revenue, COGS, Gross Profit, EBIT, Taxes, Net Income rows"""
+        import openpyxl
+        wb_path = self._generate_workbook()
+        wb = openpyxl.load_workbook(wb_path)
+        ws = wb["Consolidated P&L"]
+        labels = set()
+        for row in ws.iter_rows(min_col=1, max_col=1, values_only=True):
+            for cell in row:
+                if cell and isinstance(cell, str):
+                    labels.add(cell.lower().strip())
+        label_text = " ".join(labels)
+        assert "revenue" in label_text, "P&L missing Revenue row"
+        assert "cogs" in label_text or "cost" in label_text, "P&L missing COGS row"
+        assert "gross" in label_text, "P&L missing Gross Profit row"
+        assert "ebit" in label_text or "operating" in label_text, "P&L missing EBIT row"
+        assert "tax" in label_text, "P&L missing Taxes row"
+        assert "net" in label_text, "P&L missing Net Income row"
+
+    def test_taxes_formula_uses_max_zero(self):
+        """Verify Taxes formula uses MAX(..., 0) to handle negative EBIT"""
+        import openpyxl
+        wb_path = self._generate_workbook()
+        wb = openpyxl.load_workbook(wb_path)
+        ws = wb["Consolidated P&L"]
+        found_max = False
+        for row in ws.iter_rows():
+            for cell in row:
+                if isinstance(cell.value, str) and "MAX" in cell.value.upper():
+                    found_max = True
+                    break
+        assert found_max, (
+            "Taxes formula should use MAX(..., 0) to prevent negative tax on losses"
+        )
+
+    def test_dashboard_has_formulas(self):
+        """Verify Dashboard sheet uses formulas for computed metrics"""
+        import openpyxl
+        wb_path = self._generate_workbook()
+        wb = openpyxl.load_workbook(wb_path)
+        ws = wb["Dashboard"]
+        formula_count = 0
+        for row in ws.iter_rows():
+            for cell in row:
+                if isinstance(cell.value, str) and cell.value.startswith("="):
+                    formula_count += 1
+        assert formula_count >= 4, (
+            f"Dashboard should have at least 4 formulas for key metrics, found {formula_count}"
+        )
+
+    def test_cross_sheet_references_exist(self):
+        """Verify formulas contain cross-sheet references (e.g., Assumptions!)"""
+        import openpyxl
+        wb_path = self._generate_workbook()
+        wb = openpyxl.load_workbook(wb_path)
+        cross_refs = 0
+        for sheet_name in ["Division Summary", "Consolidated P&L", "Dashboard"]:
+            ws = wb[sheet_name]
+            for row in ws.iter_rows():
+                for cell in row:
+                    if isinstance(cell.value, str) and "!" in cell.value and cell.value.startswith("="):
+                        cross_refs += 1
+        assert cross_refs >= 5, (
+            f"Expected multiple cross-sheet references, found only {cross_refs}"
+        )
+
+    def test_no_hardcoded_computed_values(self):
+        """Verify Division Summary computed cells are formulas, not Python-calculated numbers"""
+        import openpyxl
+        wb_path = self._generate_workbook()
+        wb = openpyxl.load_workbook(wb_path)
+        ws = wb["Division Summary"]
+        # Check that cells after the base revenue (columns beyond B for Q2+) are formulas
+        non_formula_computed = 0
+        for row in ws.iter_rows(min_row=3, max_row=20, min_col=3, max_col=10):
+            for cell in row:
+                if cell.value is not None and isinstance(cell.value, (int, float)):
+                    # This could be a hardcoded value - count them
+                    non_formula_computed += 1
+        # Allow a few numeric cells (like base revenue), but not too many
+        assert non_formula_computed <= 10, (
+            f"Found {non_formula_computed} numeric (non-formula) cells in computed area. "
+            "Computed values should be Excel formulas, not Python-calculated numbers."
+        )

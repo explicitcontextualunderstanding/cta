@@ -1,188 +1,211 @@
 """
-Tests for python-performance-optimization skill.
-Validates Rust flamegraph and stack_trace files in py-spy repository.
+Tests for the python-performance-optimization skill.
+
+Validates that profiling-based optimizations were applied to py-spy's
+flamegraph aggregation pipeline, including string interning, efficient
+data structures, benchmarks, and correctness tests.
+
+Repo: py-spy (https://github.com/benfred/py-spy)
 """
 
 import os
 import re
-import glob
-import pytest
+import subprocess
 
 REPO_DIR = "/workspace/py-spy"
 
 
-def _path(rel: str) -> str:
-    return os.path.join(REPO_DIR, rel)
-
-
-def _read(rel: str) -> str:
-    with open(_path(rel), encoding="utf-8", errors="ignore") as f:
-        return f.read()
-
-
-class TestPythonPerformanceOptimization:
-
-    # ── file_path_check ──────────────────────────────────────────────────────
+class TestFilePathCheck:
+    """Verify all required files exist."""
 
     def test_flamegraph_rs_exists(self):
-        """src/flamegraph.rs must exist."""
-        rel = "src/flamegraph.rs"
-        assert os.path.isfile(_path(rel)), f"{rel} not found"
-        assert os.path.getsize(_path(rel)) > 0, "flamegraph.rs is empty"
+        path = os.path.join(REPO_DIR, "src", "flamegraph.rs")
+        assert os.path.isfile(path), f"Expected src/flamegraph.rs at {path}"
 
     def test_stack_trace_rs_exists(self):
-        """src/stack_trace.rs must exist."""
-        rel = "src/stack_trace.rs"
-        assert os.path.isfile(_path(rel)), f"{rel} not found"
-        assert os.path.getsize(_path(rel)) > 0, "stack_trace.rs is empty"
+        path = os.path.join(REPO_DIR, "src", "stack_trace.rs")
+        assert os.path.isfile(path), f"Expected src/stack_trace.rs at {path}"
 
-    def test_flamegraph_bench_rs_exists(self):
-        """benches/flamegraph_bench.rs must exist."""
-        rel = "benches/flamegraph_bench.rs"
-        assert os.path.isfile(_path(rel)), f"{rel} not found"
-        assert os.path.getsize(_path(rel)) > 0, "flamegraph_bench.rs is empty"
+    def test_benchmark_exists(self):
+        path = os.path.join(REPO_DIR, "benches", "flamegraph_bench.rs")
+        assert os.path.isfile(path), f"Expected benches/flamegraph_bench.rs"
 
-    # ── semantic_check ───────────────────────────────────────────────────────
+    def test_perf_test_exists(self):
+        path = os.path.join(REPO_DIR, "tests", "test_flamegraph_perf.rs")
+        assert os.path.isfile(path), f"Expected tests/test_flamegraph_perf.rs"
 
-    def test_stack_frame_uses_arc_str_or_interned(self):
-        """StackFrame must use Arc<str> or InternedString to avoid per-frame allocation."""
-        content = _read("src/stack_trace.rs")
-        assert "struct StackFrame" in content, "StackFrame struct not defined"
-        has_arc_or_intern = (
-            "Arc<str>" in content
-            or "InternedString" in content
-            or "Arc<String>" in content
+
+class TestSemanticFlamegraph:
+    """Verify flamegraph aggregation optimizations."""
+
+    def _read(self):
+        path = os.path.join(REPO_DIR, "src", "flamegraph.rs")
+        with open(path, "r") as f:
+            return f.read()
+
+    def test_intern_mechanism(self):
+        content = self._read()
+        assert re.search(r"intern|Intern|interner|StringPool|string_pool", content), (
+            "Expected string interning mechanism for frame deduplication"
         )
-        assert (
-            has_arc_or_intern
-        ), "StackFrame must use Arc<str> or InternedString (found neither)"
 
-    def test_flamegraph_uses_hashmap_for_children(self):
-        """flamegraph.rs must use HashMap for child node lookup."""
-        content = _read("src/flamegraph.rs")
-        assert "HashMap" in content, "HashMap not imported or used in flamegraph.rs"
-        assert "children" in content, "No 'children' field found in flamegraph.rs"
+    def test_efficient_child_lookup(self):
+        content = self._read()
+        assert re.search(r"HashMap|BTreeMap|hash_map|btree", content), (
+            "Expected efficient lookup structure (HashMap/BTreeMap) for child frames"
+        )
 
-    def test_pre_allocated_string_buffer(self):
-        """flamegraph.rs must pre-allocate String buffer with String::with_capacity."""
-        content = _read("src/flamegraph.rs")
-        assert (
-            "with_capacity" in content
-        ), "String::with_capacity not found — SVG buffer not pre-allocated"
+    def test_pre_allocated_buffer(self):
+        content = self._read()
+        assert re.search(r"String::with_capacity|Vec::with_capacity|buf|buffer|Buffer", content), (
+            "Expected pre-allocated buffer for collapsed format output"
+        )
 
-    def test_bench_has_criterion_benchmarks(self):
-        """flamegraph_bench.rs must define criterion benchmark group with >= 3 entries."""
-        content = _read("benches/flamegraph_bench.rs")
-        assert (
-            "criterion_group!" in content or "criterion" in content.lower()
-        ), "criterion_group! macro not found in flamegraph_bench.rs"
-        # Count fn declarations for bench functions
-        fn_count = len(re.findall(r"\bfn\s+bench_", content))
-        assert (
-            fn_count >= 3 or "criterion_group!" in content
-        ), f"Expected >= 3 bench functions, found {fn_count}"
 
-    # ── functional_check ─────────────────────────────────────────────────────
+class TestSemanticStackTrace:
+    """Verify stack frame memory optimizations."""
 
-    def test_intern_pool_has_size_limit(self):
-        """Intern pool must have a size limit to prevent unbounded memory growth (mocked)."""
-        MAX_POOL = 10_000
+    def _read(self):
+        path = os.path.join(REPO_DIR, "src", "stack_trace.rs")
+        with open(path, "r") as f:
+            return f.read()
 
-        class InternPool:
-            def __init__(self, max_size: int = MAX_POOL):
-                self._pool = {}
-                self.max_size = max_size
+    def test_stack_frame_struct(self):
+        content = self._read()
+        assert re.search(r"struct\s+StackFrame|StackFrame", content), (
+            "Expected StackFrame struct"
+        )
 
-            def intern(self, s: str) -> str:
-                if s in self._pool:
-                    return self._pool[s]
-                if len(self._pool) >= self.max_size:
-                    raise MemoryError("Intern pool at capacity")
-                self._pool[s] = s
-                return self._pool[s]
+    def test_interned_strings(self):
+        content = self._read()
+        assert re.search(r"Rc<str>|Arc<str>|intern|InternedString|Cow<", content), (
+            "Expected interned/shared string references in StackFrame"
+        )
 
-        pool = InternPool(max_size=5)
-        for i in range(5):
-            pool.intern(f"func_{i}")
-        with pytest.raises(MemoryError):
-            pool.intern("overflow_func")
+    def test_name_field(self):
+        content = self._read()
+        assert re.search(r"name|function_name|func_name", content), (
+            "Expected name/function_name field in StackFrame"
+        )
 
-    def test_flamegraph_distinct_nodes_for_distinct_funcs(self):
-        """Distinct function names must produce separate child nodes (mocked)."""
-        from collections import defaultdict
+    def test_filename_field(self):
+        content = self._read()
+        assert re.search(r"filename|file_name|file", content), (
+            "Expected filename field in StackFrame"
+        )
 
-        class FlamegraphNode:
-            def __init__(self, name: str):
-                self.name = name
-                self.count = 0
-                self.children = {}
 
-        def build_flamegraph(stacks: list) -> FlamegraphNode:
-            root = FlamegraphNode("root")
-            for stack in stacks:
-                node = root
-                for frame in stack:
-                    if frame not in node.children:
-                        node.children[frame] = FlamegraphNode(frame)
-                    node = node.children[frame]
-                    node.count += 1
-            return root
+class TestSemanticBenchmarks:
+    """Verify benchmark suite."""
 
-        stacks = [["main", "parse", "tokenize"], ["main", "parse", "lex"]]
-        root = build_flamegraph(stacks)
-        parse_node = root.children["main"].children["parse"]
-        assert "tokenize" in parse_node.children, "tokenize node missing"
-        assert "lex" in parse_node.children, "lex node missing"
+    def _read(self):
+        path = os.path.join(REPO_DIR, "benches", "flamegraph_bench.rs")
+        with open(path, "r") as f:
+            return f.read()
 
-    def test_stack_frame_equality_by_content(self):
-        """StackFrames with same content must compare equal (mocked)."""
-        from dataclasses import dataclass
+    def test_criterion_usage(self):
+        content = self._read()
+        assert re.search(r"criterion|Criterion|criterion_group|criterion_main", content), (
+            "Expected Criterion benchmark framework usage"
+        )
 
-        @dataclass
-        class StackFrame:
-            function: str
-            line: int
+    def test_small_benchmark(self):
+        content = self._read()
+        assert re.search(r"small|1.?000|1_000", content, re.IGNORECASE), (
+            "Expected small benchmark (1,000 samples)"
+        )
 
-        f1 = StackFrame(function="main", line=10)
-        f2 = StackFrame(function="main", line=10)
-        assert f1 == f2, "StackFrames with same content must be equal"
+    def test_medium_benchmark(self):
+        content = self._read()
+        assert re.search(r"medium|100.?000|100_000", content, re.IGNORECASE), (
+            "Expected medium benchmark (100,000 samples)"
+        )
 
-    def test_empty_stacks_produces_empty_flamegraph(self):
-        """Building flamegraph from empty stacks must return empty result (mocked)."""
+    def test_large_benchmark(self):
+        content = self._read()
+        assert re.search(r"large|1.?000.?000|1_000_000", content, re.IGNORECASE), (
+            "Expected large benchmark (1,000,000 samples)"
+        )
 
-        class EmptyInputError(Exception):
-            pass
 
-        def build_flamegraph(stacks: list):
-            if not stacks:
-                raise EmptyInputError("No stacks provided")
-            return {"root": {}}
+class TestSemanticPerfTests:
+    """Verify integration tests for correctness after optimization."""
 
-        with pytest.raises(EmptyInputError):
-            build_flamegraph([])
+    def _read(self):
+        path = os.path.join(REPO_DIR, "tests", "test_flamegraph_perf.rs")
+        with open(path, "r") as f:
+            return f.read()
 
-    def test_duplicate_stack_merges_counts(self):
-        """Identical stacks must be merged with additive counts (mocked)."""
-        from collections import defaultdict
+    def test_output_correctness(self):
+        content = self._read()
+        assert re.search(r"assert|assert_eq|correct|identical|byte.*identical", content), (
+            "Expected correctness assertions (byte-identical output)"
+        )
 
-        class FlamegraphNode:
-            def __init__(self, name: str):
-                self.name = name
-                self.count = 0
-                self.children = {}
+    def test_test_functions(self):
+        content = self._read()
+        count = len(re.findall(r"#\[test\]|fn\s+test_", content))
+        assert count >= 2, (
+            f"Expected >= 2 test functions, found {count}"
+        )
 
-        def build_flamegraph(stacks: list) -> FlamegraphNode:
-            root = FlamegraphNode("root")
-            for stack in stacks:
-                node = root
-                for frame in stack:
-                    if frame not in node.children:
-                        node.children[frame] = FlamegraphNode(frame)
-                    node = node.children[frame]
-                    node.count += 1
-            return root
 
-        stacks = [["main", "work"]] * 3
-        root = build_flamegraph(stacks)
-        work_node = root.children["main"].children["work"]
-        assert work_node.count == 3, f"Expected count=3, got {work_node.count}"
+class TestSemanticInternPool:
+    """Verify intern pool is bounded."""
+
+    def _read_all(self):
+        content = ""
+        for fname in ["flamegraph.rs", "stack_trace.rs"]:
+            path = os.path.join(REPO_DIR, "src", fname)
+            if os.path.isfile(path):
+                with open(path, "r") as f:
+                    content += f.read()
+        return content
+
+    def test_pool_limit(self):
+        content = self._read_all()
+        assert re.search(r"100.?000|max.*capacity|limit|bounded", content, re.IGNORECASE), (
+            "Expected intern pool bounded at 100,000 entries"
+        )
+
+    def test_fallback_allocation(self):
+        content = self._read_all()
+        assert re.search(r"fallback|warn|log.*warn|regular.*alloc", content, re.IGNORECASE), (
+            "Expected fallback to regular allocation when pool is full"
+        )
+
+
+class TestFunctionalRustSyntax:
+    """Validate Rust files compile."""
+
+    def test_cargo_build(self):
+        result = subprocess.run(
+            ["cargo", "build", "--release"],
+            cwd=REPO_DIR,
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+        assert result.returncode == 0, (
+            f"cargo build --release failed:\n{result.stderr[:1000]}"
+        )
+
+    def test_balanced_braces_flamegraph(self):
+        path = os.path.join(REPO_DIR, "src", "flamegraph.rs")
+        with open(path, "r") as f:
+            content = f.read()
+        opens = content.count("{")
+        closes = content.count("}")
+        assert opens == closes, (
+            f"Unbalanced braces in flamegraph.rs: {opens} {{ vs {closes} }}"
+        )
+
+    def test_balanced_braces_stack_trace(self):
+        path = os.path.join(REPO_DIR, "src", "stack_trace.rs")
+        with open(path, "r") as f:
+            content = f.read()
+        opens = content.count("{")
+        closes = content.count("}")
+        assert opens == closes, (
+            f"Unbalanced braces in stack_trace.rs: {opens} {{ vs {closes} }}"
+        )

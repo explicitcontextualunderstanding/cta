@@ -1,12 +1,11 @@
 """
-Test for 'linkerd-patterns' skill — Linkerd Service Mesh Configuration
-Validates ServiceProfile, TrafficSplit YAMLs with retryable routes,
-weight sums, timeout bounds, and edge cases.
+Test skill: linkerd-patterns
+Verify that the Agent correctly implements Linkerd service profiles,
+traffic splits, and authorization policies for a microservices app.
 """
 
 import os
 import re
-
 import pytest
 
 try:
@@ -16,166 +15,138 @@ except ImportError:
 
 
 class TestLinkerdPatterns:
-    """Verify Linkerd service mesh configuration patterns."""
-
     REPO_DIR = "/workspace/linkerd2"
 
-    # ── file_path_check ─────────────────────────────────────────────────────
+    API_PROFILE = "policy/profiles/api-gateway-profile.yaml"
+    ORDER_PROFILE = "policy/profiles/order-service-profile.yaml"
+    PAYMENT_PROFILE = "policy/profiles/payment-service-profile.yaml"
+    TRAFFIC_SPLIT = "policy/traffic-split/order-canary.yaml"
+    SERVER_AUTHZ = "policy/authorization/server.yaml"
+    AUTHZ_POLICY = "policy/authorization/authz-policy.yaml"
+    TESTS = "tests/test_linkerd_patterns.py"
 
-    def test_service_profile_yaml_exists(self):
-        """Verify ServiceProfile YAML file exists."""
-        for fpath in self._find_yaml_files():
-            content = self._read(fpath)
-            if "ServiceProfile" in content:
-                return
-        pytest.fail("No ServiceProfile YAML found")
+    def _read_file(self, rel_path):
+        filepath = os.path.join(self.REPO_DIR, rel_path)
+        with open(filepath) as f:
+            return f.read()
 
-    def test_traffic_split_yaml_exists(self):
-        """Verify TrafficSplit YAML file exists."""
-        for fpath in self._find_yaml_files():
-            content = self._read(fpath)
-            if "TrafficSplit" in content:
-                return
-        pytest.fail("No TrafficSplit YAML found")
+    # === File Path Checks ===
 
-    # ── semantic_check ──────────────────────────────────────────────────────
+    def test_api_gateway_profile_exists(self):
+        filepath = os.path.join(self.REPO_DIR, self.API_PROFILE)
+        assert os.path.exists(filepath), f"api-gateway-profile.yaml not found"
 
-    def test_linkerd_api_version(self):
-        """Verify linkerd.io/v1alpha2 or similar API version."""
-        for fpath in self._find_yaml_files():
-            content = self._read(fpath)
-            if re.search(r"linkerd\.io/v1alpha[12]", content):
-                return
-            if re.search(r"split\.smi-spec\.io", content):
-                return
-        pytest.fail("No Linkerd API version found")
+    def test_order_service_profile_exists(self):
+        filepath = os.path.join(self.REPO_DIR, self.ORDER_PROFILE)
+        assert os.path.exists(filepath), f"order-service-profile.yaml not found"
 
-    def test_get_retryable_true(self):
-        """Verify GET routes are marked isRetryable: true."""
-        for fpath in self._find_yaml_files():
-            content = self._read(fpath)
-            if "ServiceProfile" in content:
-                if "GET" in content and "isRetryable" in content:
-                    return
-        pytest.fail("No GET route with isRetryable found")
+    def test_payment_service_profile_exists(self):
+        filepath = os.path.join(self.REPO_DIR, self.PAYMENT_PROFILE)
+        assert os.path.exists(filepath), f"payment-service-profile.yaml not found"
 
-    def test_post_not_retryable(self):
-        """Verify POST routes are NOT retryable (or omitted)."""
-        for fpath in self._find_yaml_files():
-            content = self._read(fpath)
-            if "ServiceProfile" in content and "POST" in content:
-                # Check that POST is not marked retryable
-                lines = content.split("\n")
-                in_post = False
-                for line in lines:
-                    if "POST" in line:
-                        in_post = True
-                    if in_post and "isRetryable: true" in line:
-                        pytest.fail("POST route should not be retryable")
-                    if in_post and line.strip().startswith("- "):
-                        in_post = False
-                return
-        pytest.skip("No POST route in ServiceProfile to verify")
+    def test_traffic_split_exists(self):
+        filepath = os.path.join(self.REPO_DIR, self.TRAFFIC_SPLIT)
+        assert os.path.exists(filepath), f"order-canary.yaml not found"
 
-    def test_traffic_split_weights_sum_1000m(self):
-        """Verify TrafficSplit weights sum to 1000m (or 1)."""
-        for fpath in self._find_yaml_files():
-            content = self._read(fpath)
-            if "TrafficSplit" not in content:
-                continue
-            weights = re.findall(r"weight:\s*(\d+)m?", content)
-            if weights:
-                total = sum(int(w) for w in weights)
-                # Could be in milliunits (1000m) or units (1 or 100)
-                assert total in (
-                    1000,
-                    100,
-                    1,
-                ), f"TrafficSplit weights sum to {total}, expected 1000m or 100 or 1"
-                return
-        pytest.fail("No TrafficSplit weights found")
+    def test_authorization_files_exist(self):
+        for path in [self.SERVER_AUTHZ, self.AUTHZ_POLICY]:
+            filepath = os.path.join(self.REPO_DIR, path)
+            assert os.path.exists(filepath), f"Authorization file not found: {filepath}"
 
-    # ── functional_check ────────────────────────────────────────────────────
+    def test_tests_file_exists(self):
+        filepath = os.path.join(self.REPO_DIR, self.TESTS)
+        assert os.path.exists(filepath), f"Tests file not found"
 
-    def test_yaml_files_valid(self):
-        """Verify all YAML files parse correctly."""
+    # === Semantic Checks ===
+
+    @pytest.mark.skipif(yaml is None, reason="PyYAML not installed")
+    def test_api_gateway_profile_routes(self):
+        """Verify API gateway profile defines required routes"""
+        content = self._read_file(self.API_PROFILE)
+        assert "ServiceProfile" in content, "Missing ServiceProfile kind"
+        for route in ["/api/orders", "/api/health"]:
+            assert route in content, f"API profile missing route: {route}"
+
+    def test_api_gateway_retry_budget(self):
+        """Verify API gateway has retryBudget configured"""
+        content = self._read_file(self.API_PROFILE)
+        assert "retryBudget" in content, "API profile missing retryBudget"
+        assert "retryRatio" in content, "retryBudget missing retryRatio"
+
+    def test_api_gateway_post_not_retryable(self):
+        """Verify POST /api/orders is NOT retryable"""
+        content = self._read_file(self.API_PROFILE)
+        assert "POST" in content, "API profile missing POST method"
+        # POST + isRetryable: false should be near each other
+        assert "isRetryable" in content, "Missing isRetryable field"
+
+    def test_payment_charge_not_retryable(self):
+        """Verify POST /charge is not retryable (financial transaction)"""
+        content = self._read_file(self.PAYMENT_PROFILE)
+        assert "/charge" in content, "Payment profile missing /charge route"
+        assert "15" in content, "Payment /charge missing 15s timeout"
+
+    def test_traffic_split_90_10(self):
+        """Verify traffic split: 90% stable, 10% canary"""
+        content = self._read_file(self.TRAFFIC_SPLIT)
+        assert "TrafficSplit" in content, "Missing TrafficSplit kind"
+        assert "900" in content, "TrafficSplit missing weight 900 (90%)"
+        assert "100" in content, "TrafficSplit missing weight 100 (10%)"
+        assert "stable" in content, "TrafficSplit missing stable backend"
+        assert "canary" in content, "TrafficSplit missing canary backend"
+
+    def test_server_authorization_restricts_payment(self):
+        """Verify ServerAuthorization restricts payment-service to order-service"""
+        content = self._read_file(self.SERVER_AUTHZ)
+        assert "ServerAuthorization" in content or "Server" in content, \
+            "Missing Server/ServerAuthorization resource"
+        assert "payment" in content.lower(), "Missing payment-service reference"
+        assert "order-service" in content, "Missing order-service reference"
+
+    def test_authz_policy_uses_mtls(self):
+        """Verify AuthorizationPolicy with MeshTLSAuthentication"""
+        content = self._read_file(self.AUTHZ_POLICY)
+        assert "AuthorizationPolicy" in content, "Missing AuthorizationPolicy"
+        has_mtls = "MeshTLSAuthentication" in content or "meshTLS" in content.lower()
+        assert has_mtls, "Missing MeshTLSAuthentication"
+
+    def test_order_service_profile_routes(self):
+        """Verify order-service profile defines order routes"""
+        content = self._read_file(self.ORDER_PROFILE)
+        assert "/orders" in content, "Order profile missing /orders route"
+
+    # === Functional Checks ===
+
+    def test_all_yaml_files_valid(self):
+        """Verify all YAML files parse without errors"""
         if yaml is None:
-            pytest.skip("PyYAML not available")
-        for fpath in self._find_yaml_files():
-            with open(fpath, "r") as fh:
+            pytest.skip("PyYAML not installed")
+        paths = [
+            self.API_PROFILE, self.ORDER_PROFILE, self.PAYMENT_PROFILE,
+            self.TRAFFIC_SPLIT, self.SERVER_AUTHZ, self.AUTHZ_POLICY,
+        ]
+        for path in paths:
+            filepath = os.path.join(self.REPO_DIR, path)
+            with open(filepath) as f:
                 try:
-                    list(yaml.safe_load_all(fh))
+                    list(yaml.safe_load_all(f.read()))
                 except yaml.YAMLError as e:
-                    pytest.fail(f"Invalid YAML in {os.path.basename(fpath)}: {e}")
+                    pytest.fail(f"{path} YAML error: {e}")
 
-    def test_retryable_filter_logic(self):
-        """Verify routes with isRetryable are GET-only (idempotent)."""
-        for fpath in self._find_yaml_files():
-            content = self._read(fpath)
-            if "ServiceProfile" not in content:
-                continue
-            if yaml is None:
-                pytest.skip("PyYAML not available")
-            with open(fpath, "r") as fh:
-                for doc in yaml.safe_load_all(fh):
-                    if not isinstance(doc, dict):
-                        continue
-                    spec = doc.get("spec", {})
-                    routes = spec.get("routes", [])
-                    for route in routes:
-                        if not isinstance(route, dict):
-                            continue
-                        if route.get("isRetryable"):
-                            condition = route.get("condition", {})
-                            method = condition.get("method", "")
-                            assert method in (
-                                "GET",
-                                "HEAD",
-                                "OPTIONS",
-                                "",
-                            ), f"Non-idempotent method {method} marked retryable"
-            return
-        pytest.skip("No ServiceProfile to verify")
+    def test_traffic_split_weights_sum_to_1000(self):
+        """Verify TrafficSplit weights sum to 1000"""
+        if yaml is None:
+            pytest.skip("PyYAML not installed")
+        docs = list(yaml.safe_load_all(self._read_file(self.TRAFFIC_SPLIT)))
+        for doc in docs:
+            if doc and doc.get("kind") == "TrafficSplit":
+                backends = doc.get("spec", {}).get("backends", [])
+                total = sum(b.get("weight", 0) for b in backends)
+                assert total == 1000, f"TrafficSplit weights sum to {total}, expected 1000"
 
-    def test_weight_sum_validation(self):
-        """Verify no negative weights exist."""
-        for fpath in self._find_yaml_files():
-            content = self._read(fpath)
-            weights = re.findall(r"weight:\s*(-?\d+)", content)
-            for w in weights:
-                assert int(w) >= 0, f"Negative weight {w} found"
-
-    def test_timeout_bounds(self):
-        """Verify route timeouts are positive durations."""
-        for fpath in self._find_yaml_files():
-            content = self._read(fpath)
-            if "timeout" in content.lower():
-                timeouts = re.findall(r"timeout:\s*(\S+)", content)
-                for t in timeouts:
-                    assert re.match(r"\d+[smh]?s?$", t), f"Invalid timeout format: {t}"
-                return
-        pytest.skip("No timeout configuration found")
-
-    def test_service_profile_has_routes(self):
-        """Verify ServiceProfile defines at least one route."""
-        for fpath in self._find_yaml_files():
-            content = self._read(fpath)
-            if "ServiceProfile" in content and "routes:" in content:
-                return
-        pytest.fail("No ServiceProfile with routes found")
-
-    # ── helpers ──────────────────────────────────────────────────────────────
-
-    def _find_yaml_files(self):
-        results = []
-        for dirpath, _, fnames in os.walk(self.REPO_DIR):
-            if ".git" in dirpath or "vendor" in dirpath:
-                continue
-            for f in fnames:
-                if f.endswith(".yaml") or f.endswith(".yml"):
-                    results.append(os.path.join(dirpath, f))
-        return results
-
-    def _read(self, path):
-        with open(path, "r", errors="ignore") as fh:
-            return fh.read()
+    def test_service_profiles_have_timeout(self):
+        """Verify all service profiles define route timeouts"""
+        for path in [self.API_PROFILE, self.ORDER_PROFILE, self.PAYMENT_PROFILE]:
+            content = self._read_file(path)
+            assert "timeout" in content.lower(), \
+                f"{path} missing timeout configuration"

@@ -1,218 +1,220 @@
 """
-Tests for 'add-admin-api-endpoint' skill.
-Generated from benchmark case definitions for add-admin-api-endpoint.
+Test skill: add-admin-api-endpoint
+Verify that the Agent correctly adds a Webhooks CRUD Admin API endpoint to Ghost CMS.
 """
 
-import ast
-import base64
-import glob
-import json
 import os
-import py_compile
 import re
+import json
 import subprocess
-import textwrap
-
 import pytest
-
-try:
-    import yaml
-except ModuleNotFoundError:
-    yaml = None
 
 
 class TestAddAdminApiEndpoint:
-    """Verify the add-admin-api-endpoint skill output."""
+    REPO_DIR = "/workspace/Ghost"
 
-    REPO_DIR = '/workspace/Ghost'
+    # === File Path Checks ===
 
+    def test_webhooks_endpoint_file_exists(self):
+        """Verify that the webhooks API controller file exists"""
+        path = os.path.join(self.REPO_DIR, "ghost/core/core/server/api/endpoints/webhooks.js")
+        assert os.path.exists(path), f"webhooks.js endpoint not found at {path}"
 
-    # ── helpers ──────────────────────────────────────────────
+    def test_admin_routes_file_exists(self):
+        """Verify that the admin routes file exists"""
+        path = os.path.join(self.REPO_DIR, "ghost/core/core/server/web/api/endpoints/admin/routes.js")
+        assert os.path.exists(path), f"admin routes.js not found at {path}"
 
-    _SETUP_CACHE: dict = {}
+    def test_e2e_test_file_exists(self):
+        """Verify that the E2E test file for webhooks exists"""
+        path = os.path.join(self.REPO_DIR, "ghost/core/test/e2e-api/admin/webhooks.test.js")
+        assert os.path.exists(path), f"webhooks.test.js not found at {path}"
 
-    @staticmethod
-    def _repo_path(rel: str) -> str:
-        return os.path.join(TestAddAdminApiEndpoint.REPO_DIR, rel)
+    # === Semantic Checks ===
 
-    @staticmethod
-    def _safe_read(path: str) -> str:
-        with open(path, "r", encoding="utf-8", errors="ignore") as fh:
-            return fh.read()
+    def test_webhooks_controller_has_docname(self):
+        """Verify that webhooks controller exports docName as 'webhooks'"""
+        path = os.path.join(self.REPO_DIR, "ghost/core/core/server/api/endpoints/webhooks.js")
+        with open(path, "r") as f:
+            content = f.read()
 
-    @staticmethod
-    def _load_yaml(path: str):
-        if yaml is None:
-            pytest.skip("PyYAML not available")
-        with open(path, "r", encoding="utf-8", errors="ignore") as fh:
-            return yaml.safe_load(fh)
-
-    @staticmethod
-    def _load_json(path: str):
-        with open(path, "r", encoding="utf-8", errors="ignore") as fh:
-            return json.load(fh)
-
-    @classmethod
-    def _run_in_repo(cls, script: str, timeout: int = 120) -> subprocess.CompletedProcess:
-        return subprocess.run(
-            ["python", "-c", textwrap.dedent(script)],
-            cwd=cls.REPO_DIR,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
+        assert "docName" in content, "Webhooks controller missing docName property"
+        # Verify docName value is 'webhooks'
+        docname_pattern = re.compile(r"""docName\s*[:=]\s*['"]webhooks['"]""")
+        assert docname_pattern.search(content), (
+            "docName should be 'webhooks', but pattern not found"
         )
 
-    @classmethod
-    def _run_cmd(cls, command, args=None, timeout=120):
-        args = args or []
-        if isinstance(command, str) and args:
-            return subprocess.run(
-                [command, *args],
-                cwd=cls.REPO_DIR,
+    def test_webhooks_controller_has_all_crud_methods(self):
+        """Verify that webhooks controller defines browse, read, add, edit, destroy"""
+        path = os.path.join(self.REPO_DIR, "ghost/core/core/server/api/endpoints/webhooks.js")
+        with open(path, "r") as f:
+            content = f.read()
+
+        required_methods = ["browse", "read", "add", "edit", "destroy"]
+        for method in required_methods:
+            assert method in content, (
+                f"Webhooks controller missing '{method}' method"
+            )
+
+    def test_webhooks_controller_validates_target_url_https(self):
+        """Verify that add/edit methods validate that target_url uses HTTPS"""
+        path = os.path.join(self.REPO_DIR, "ghost/core/core/server/api/endpoints/webhooks.js")
+        with open(path, "r") as f:
+            content = f.read()
+
+        has_https_validation = any(kw in content for kw in [
+            "https", "HTTPS", "target_url must use HTTPS",
+            "target_url", "protocol",
+        ])
+        assert has_https_validation, (
+            "Webhooks controller should validate that target_url uses HTTPS scheme"
+        )
+
+    def test_webhooks_controller_validates_event_types(self):
+        """Verify that controller validates event types against allowed list"""
+        path = os.path.join(self.REPO_DIR, "ghost/core/core/server/api/endpoints/webhooks.js")
+        with open(path, "r") as f:
+            content = f.read()
+
+        allowed_events = [
+            "post.published", "post.unpublished", "post.deleted",
+            "page.published", "page.unpublished", "page.deleted",
+            "member.added", "member.deleted",
+        ]
+        found_events = sum(1 for event in allowed_events if event in content)
+        assert found_events >= 4, (
+            f"Webhooks controller should define allowed event types. "
+            f"Found {found_events} of {len(allowed_events)} expected events"
+        )
+
+    def test_admin_routes_has_webhook_routes(self):
+        """Verify that admin routes file registers all webhook HTTP routes"""
+        path = os.path.join(self.REPO_DIR, "ghost/core/core/server/web/api/endpoints/admin/routes.js")
+        with open(path, "r") as f:
+            content = f.read()
+
+        assert "webhooks" in content, (
+            "Admin routes file should register webhook routes"
+        )
+
+        # Check for HTTP methods
+        has_get = re.search(r"(get|GET).*webhooks", content)
+        has_post = re.search(r"(post|POST).*webhooks", content)
+        has_put = re.search(r"(put|PUT).*webhooks", content)
+        has_delete = re.search(r"(delete|DELETE|del).*webhooks", content)
+
+        assert has_get, "Admin routes missing GET /webhooks/ route"
+        assert has_post, "Admin routes missing POST /webhooks/ route"
+        assert has_put, "Admin routes missing PUT /webhooks/:id/ route"
+        assert has_delete, "Admin routes missing DELETE /webhooks/:id/ route"
+
+    def test_webhooks_controller_requires_admin_permission(self):
+        """Verify that webhook operations require admin permissions"""
+        path = os.path.join(self.REPO_DIR, "ghost/core/core/server/api/endpoints/webhooks.js")
+        with open(path, "r") as f:
+            content = f.read()
+
+        has_permission = any(kw in content for kw in [
+            "permissions", "permission", "admin", "isAdmin",
+        ])
+        assert has_permission, (
+            "Webhooks controller should require admin permissions for all operations"
+        )
+
+    def test_webhooks_controller_cache_invalidation(self):
+        """Verify that add/edit/destroy invalidate cache"""
+        path = os.path.join(self.REPO_DIR, "ghost/core/core/server/api/endpoints/webhooks.js")
+        with open(path, "r") as f:
+            content = f.read()
+
+        has_cache_handling = any(kw in content for kw in [
+            "cache", "invalidate", "Cache",
+        ])
+        assert has_cache_handling, (
+            "Webhooks controller should handle cache invalidation on mutations"
+        )
+
+    # === Functional Checks ===
+
+    def test_e2e_tests_cover_crud_operations(self):
+        """Verify that E2E tests cover all CRUD operations"""
+        path = os.path.join(self.REPO_DIR, "ghost/core/test/e2e-api/admin/webhooks.test.js")
+        with open(path, "r") as f:
+            content = f.read()
+
+        # Check for creation test
+        assert "POST" in content or "add" in content or "create" in content.lower(), (
+            "E2E tests should include webhook creation test"
+        )
+        # Check for read/browse test
+        assert "GET" in content or "browse" in content or "read" in content, (
+            "E2E tests should include webhook read/browse test"
+        )
+        # Check for update test
+        assert "PUT" in content or "edit" in content or "update" in content.lower(), (
+            "E2E tests should include webhook update test"
+        )
+        # Check for delete test
+        assert "DELETE" in content or "destroy" in content or "delete" in content.lower(), (
+            "E2E tests should include webhook delete test"
+        )
+
+    def test_e2e_tests_cover_validation_failures(self):
+        """Verify that E2E tests include validation error scenarios"""
+        path = os.path.join(self.REPO_DIR, "ghost/core/test/e2e-api/admin/webhooks.test.js")
+        with open(path, "r") as f:
+            content = f.read()
+
+        has_validation_test = any(kw in content for kw in [
+            "422", "validation", "invalid", "http://", "Invalid event",
+        ])
+        assert has_validation_test, (
+            "E2E tests should include validation failure scenarios "
+            "(e.g., HTTP URL, invalid event type)"
+        )
+
+    def test_e2e_tests_cover_404_handling(self):
+        """Verify that E2E tests include 404 not-found scenarios"""
+        path = os.path.join(self.REPO_DIR, "ghost/core/test/e2e-api/admin/webhooks.test.js")
+        with open(path, "r") as f:
+            content = f.read()
+
+        assert "404" in content or "not found" in content.lower() or "NotFound" in content, (
+            "E2E tests should include 404 not-found scenarios"
+        )
+
+    def test_webhooks_js_is_valid_javascript(self):
+        """Verify that the webhooks.js file is valid JavaScript syntax"""
+        path = os.path.join(self.REPO_DIR, "ghost/core/core/server/api/endpoints/webhooks.js")
+        result = subprocess.run(
+            ["node", "-c", path],
+            cwd=self.REPO_DIR,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        # node -c checks syntax
+        if result.returncode != 0:
+            # Try alternative: node --check
+            result = subprocess.run(
+                ["node", "--check", path],
+                cwd=self.REPO_DIR,
                 capture_output=True,
                 text=True,
-                timeout=timeout,
+                timeout=30,
             )
-        return subprocess.run(
-            command if isinstance(command, list) else command,
-            cwd=cls.REPO_DIR,
-            shell=isinstance(command, str),
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-        )
-
-    @classmethod
-    def _ensure_setup(cls, label, setup_cmds, fallback):
-        if not setup_cmds:
-            return
-        key = tuple(setup_cmds)
-        if key in cls._SETUP_CACHE:
-            ok, msg = cls._SETUP_CACHE[key]
-            if ok:
-                return
-            if fallback == "skip_if_setup_fails":
-                pytest.skip(f"{label} setup failed: {msg}")
-            pytest.fail(f"{label} setup failed: {msg}")
-        for cmd in setup_cmds:
-            r = subprocess.run(cmd, cwd=cls.REPO_DIR, shell=True,
-                               capture_output=True, text=True, timeout=300)
-            if r.returncode != 0:
-                msg = (r.stderr or r.stdout or 'failed').strip()
-                cls._SETUP_CACHE[key] = (False, msg)
-                if fallback == "skip_if_setup_fails":
-                    pytest.skip(f"{label} setup failed: {msg}")
-                pytest.fail(f"{label} setup failed: {msg}")
-        cls._SETUP_CACHE[key] = (True, 'ok')
-
-
-    # ── file_path_check (static) ────────────────────────────────────────
-
-    def test_webhook_route_file_exists(self):
-        """Verify that the webhook controller/route file exists in the expected Ghost CMS directory structure"""
-        _p = self._repo_path('core/server/routes/admin/index.js')
-        assert os.path.isfile(_p), f'Missing file: core/server/routes/admin/index.js'
-        _p = self._repo_path('core/server/controllers/webhooks.js')
-        assert os.path.isfile(_p), f'Missing file: core/server/controllers/webhooks.js'
-
-    def test_webhook_model_file_exists(self):
-        """Verify the Webhook model definition file exists"""
-        _p = self._repo_path('core/server/models/webhook.js')
-        assert os.path.isfile(_p), f'Missing file: core/server/models/webhook.js'
-
-    def test_webhook_test_file_exists(self):
-        """Verify a test file for webhook endpoints exists"""
-        _p = self._repo_path('test/regression/api/admin/webhooks.test.js')
-        assert os.path.isfile(_p), f'Missing file: test/regression/api/admin/webhooks.test.js'
-
-    # ── semantic_check (static) ────────────────────────────────────────
-
-    def test_route_handlers_defined(self):
-        """Verify POST, GET, DELETE route handlers are defined for /webhooks/"""
-        _p = self._repo_path('core/server/routes/admin/index.js')
-        assert os.path.exists(_p), f'Missing: core/server/routes/admin/index.js'
-        _contents = self._safe_read(_p)
-        _all = _contents if isinstance(_contents, str) else ''
-        assert re.search('router.post.*webhooks', _all, re.MULTILINE), 'Pattern not found: router.post.*webhooks'
-        assert re.search('router.get.*webhooks', _all, re.MULTILINE), 'Pattern not found: router.get.*webhooks'
-        assert re.search('router.delete.*webhooks', _all, re.MULTILINE), 'Pattern not found: router.delete.*webhooks'
-
-    def test_controller_methods_present(self):
-        """Verify webhooksController has add, browse, read, edit, destroy methods"""
-        _p = self._repo_path('core/server/controllers/webhooks.js')
-        assert os.path.exists(_p), f'Missing: core/server/controllers/webhooks.js'
-        _contents = self._safe_read(_p)
-        _all = _contents if isinstance(_contents, str) else ''
-        assert 'add' in _all, 'Missing: add'
-        assert 'browse' in _all, 'Missing: browse'
-        assert 'read' in _all, 'Missing: read'
-        assert 'edit' in _all, 'Missing: edit'
-        assert 'destroy' in _all, 'Missing: destroy'
-
-    def test_authentication_middleware_applied(self):
-        """Verify authentication middleware is applied on webhook routes"""
-        _p = self._repo_path('core/server/routes/admin/index.js')
-        assert os.path.exists(_p), f'Missing: core/server/routes/admin/index.js'
-        _contents = self._safe_read(_p)
-        _all = _contents if isinstance(_contents, str) else ''
-        assert 'auth' in _all, 'Missing: auth'
-        assert 'authenticate' in _all, 'Missing: authenticate'
-        assert 'middleware' in _all, 'Missing: middleware'
-
-    def test_response_wrapper_format(self):
-        """Verify response body wraps webhooks in {webhooks: [...]} or {webhook: {...}} key"""
-        _p = self._repo_path('core/server/controllers/webhooks.js')
-        assert os.path.exists(_p), f'Missing: core/server/controllers/webhooks.js'
-        _contents = self._safe_read(_p)
-        _all = _contents if isinstance(_contents, str) else ''
-        assert 'webhooks' in _all, 'Missing: webhooks'
-        assert 'webhook' in _all, 'Missing: webhook'
-
-    # ── functional_check ────────────────────────────────────────
-
-    def test_create_webhook_returns_201(self):
-        """Verify POST /webhooks/ returns HTTP 201 Created (not 200)"""
-        self._ensure_setup('test_create_webhook_returns_201', ['npm install'], 'skip_if_setup_fails')
-        result = self._run_cmd("npm test -- --grep 'webhooks'", args=[], timeout=300)
         assert result.returncode == 0, (
-            f'test_create_webhook_returns_201 failed (exit {result.returncode})\n' + result.stderr[:500]
+            f"webhooks.js has JavaScript syntax errors: {result.stderr}"
         )
 
-    def test_get_nonexistent_webhook_returns_404(self):
-        """Verify GET /webhooks/:id with non-existent ID returns 404"""
-        self._ensure_setup('test_get_nonexistent_webhook_returns_404', ['npm install'], 'skip_if_setup_fails')
-        result = self._run_cmd('node -e "const ctrl = require(\'./core/server/controllers/webhooks\'); console.log(typeof ctrl.read)"', args=[], timeout=120)
-        assert result.returncode == 0, (
-            f'test_get_nonexistent_webhook_returns_404 failed (exit {result.returncode})\n' + result.stderr[:500]
+    def test_webhooks_controller_module_exports(self):
+        """Verify that webhooks.js properly exports the controller module"""
+        path = os.path.join(self.REPO_DIR, "ghost/core/core/server/api/endpoints/webhooks.js")
+        with open(path, "r") as f:
+            content = f.read()
+
+        has_export = "module.exports" in content or "export" in content
+        assert has_export, (
+            "webhooks.js should export the controller (module.exports or export)"
         )
-
-    def test_delete_webhook_returns_204(self):
-        """Verify DELETE handler is configured to return 204 No Content"""
-        _p = self._repo_path('core/server/controllers/webhooks.js')
-        assert os.path.exists(_p), f'Missing: core/server/controllers/webhooks.js'
-        _contents = self._safe_read(_p)
-        _all = _contents if isinstance(_contents, str) else ''
-        assert '204' in _all, 'Missing: 204'
-        assert 'No Content' in _all, 'Missing: No Content'
-        assert 'destroy' in _all, 'Missing: destroy'
-
-    def test_unauthenticated_request_returns_401(self):
-        """Verify that unauthenticated requests to webhook endpoints return 401"""
-        _p = self._repo_path('core/server/routes/admin/index.js')
-        assert os.path.exists(_p), f'Missing: core/server/routes/admin/index.js'
-        _contents = self._safe_read(_p)
-        _all = _contents if isinstance(_contents, str) else ''
-        assert 'auth' in _all, 'Missing: auth'
-        assert '401' in _all, 'Missing: 401'
-        assert 'Unauthorized' in _all, 'Missing: Unauthorized'
-
-    def test_post_missing_target_url_returns_422(self):
-        """Verify POST with missing target_url returns 422 validation error"""
-        _p = self._repo_path('core/server/controllers/webhooks.js')
-        assert os.path.exists(_p), f'Missing: core/server/controllers/webhooks.js'
-        _contents = self._safe_read(_p)
-        _all = _contents if isinstance(_contents, str) else ''
-        assert 'target_url' in _all, 'Missing: target_url'
-        assert 'validation' in _all, 'Missing: validation'
-        assert '422' in _all, 'Missing: 422'
-

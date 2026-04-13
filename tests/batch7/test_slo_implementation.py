@@ -1,188 +1,168 @@
-"""Test file for the slo-implementation skill.
-
-This suite validates SLO (Service Level Objective) evaluation in
-slo-generator: multi-window evaluator, burn rate calculation, and
-SLI compliance reporting.
+"""
+Test skill: slo-implementation
+Verify that the Agent implements a Multi-Window SLO Evaluator for slo-generator —
+BurnRateCalculator (WindowResult properties, BurnRateAlert, multi-window alerting),
+MultiWindowSloEvaluator (backend call per window, SloEvaluationReport).
 """
 
-from __future__ import annotations
-
-import ast
-import json
-import pathlib
+import os
 import re
-
+import subprocess
 import pytest
 
 
 class TestSloImplementation:
-    """Verify SLO multi-window evaluator in slo-generator."""
-
     REPO_DIR = "/workspace/slo-generator"
 
-    MULTI_WINDOW_PY = "slo_generator/evaluators/multi_window.py"
-    BURNRATE_PY = "slo_generator/evaluators/burnrate.py"
-    TEST_MULTI_WINDOW_PY = "tests/unit/test_multi_window_evaluator.py"
+    # ────── helpers ──────
 
-    # ------------------------------------------------------------------
-    # Helpers
-    # ------------------------------------------------------------------
+    def _read(self, rel_path):
+        fpath = os.path.join(self.REPO_DIR, rel_path)
+        with open(fpath, "r") as f:
+            return f.read()
 
-    def _repo_path(self, relative: str) -> pathlib.Path:
-        return pathlib.Path(self.REPO_DIR, *relative.split("/"))
+    def _exists(self, rel_path):
+        return os.path.isfile(os.path.join(self.REPO_DIR, rel_path))
 
-    def _read_text(self, relative: str) -> str:
-        path = self._repo_path(relative)
-        assert path.exists(), f"Expected path to exist: {path}"
-        return path.read_text(encoding="utf-8", errors="ignore")
+    # === File Path Checks ===
 
-    def _assert_non_empty_file(self, relative: str) -> pathlib.Path:
-        path = self._repo_path(relative)
-        assert path.is_file(), f"Expected file to exist: {path}"
-        assert path.stat().st_size > 0, f"Expected non-empty file: {path}"
-        return path
+    def test_multi_window_exists(self):
+        """multi_window.py must exist"""
+        assert self._exists("slo_generator/evaluators/multi_window.py")
 
-    def _class_source(self, source: str, class_name: str) -> str:
-        """Extract the full source of a class via AST."""
-        try:
-            tree = ast.parse(source)
-        except SyntaxError:
-            return ""
-        for node in ast.walk(tree):
-            if isinstance(node, ast.ClassDef) and node.name == class_name:
-                return ast.get_source_segment(source, node) or ""
-        return ""
+    def test_burnrate_exists(self):
+        """burnrate.py must exist"""
+        assert self._exists("slo_generator/evaluators/burnrate.py")
 
-    # ------------------------------------------------------------------
-    # Layer 1 – file_path_check (3 cases)
-    # ------------------------------------------------------------------
+    def test_unit_test_exists(self):
+        """test_multi_window_evaluator.py must exist"""
+        assert self._exists("tests/unit/test_multi_window_evaluator.py")
 
-    def test_file_path_slo_generator_evaluators_multi_window_py_exists(self):
-        """Verify slo_generator/evaluators/multi_window.py exists."""
-        self._assert_non_empty_file(self.MULTI_WINDOW_PY)
+    # === Semantic Checks — burnrate.py ===
 
-    def test_file_path_slo_generator_evaluators_burnrate_py_exists(self):
-        """Verify slo_generator/evaluators/burnrate.py exists."""
-        self._assert_non_empty_file(self.BURNRATE_PY)
+    def test_window_result_dataclass(self):
+        """WindowResult dataclass must be defined"""
+        src = self._read("slo_generator/evaluators/burnrate.py")
+        assert "WindowResult" in src
+        assert "dataclass" in src
 
-    def test_file_path_tests_unit_test_multi_window_evaluator_py_exists(self):
-        """Verify tests/unit/test_multi_window_evaluator.py exists."""
-        self._assert_non_empty_file(self.TEST_MULTI_WINDOW_PY)
+    def test_window_result_properties(self):
+        """WindowResult must have error_rate, sli, error_budget_consumed, compliant, burnrate"""
+        src = self._read("slo_generator/evaluators/burnrate.py")
+        for prop in ["error_rate", "sli", "error_budget_consumed", "compliant", "burnrate"]:
+            assert prop in src, f"Missing property: {prop}"
 
-    # ------------------------------------------------------------------
-    # Layer 2 – semantic_check (5 cases)
-    # ------------------------------------------------------------------
+    def test_window_result_fields(self):
+        """WindowResult must have window_hours, good_events, total_events, slo_target"""
+        src = self._read("slo_generator/evaluators/burnrate.py")
+        for field in ["window_hours", "good_events", "total_events", "slo_target"]:
+            assert field in src, f"Missing field: {field}"
 
-    def test_semantic_windowresult_is_a_dataclass_with_good_events_total_events_sl(
-        self,
-    ):
-        """WindowResult is a dataclass with good_events, total_events, slo_target, window_hours."""
-        src = self._read_text(self.MULTI_WINDOW_PY)
-        assert re.search(
-            r"@dataclass|dataclass", src
-        ), "WindowResult should be a dataclass"
-        cls = self._class_source(src, "WindowResult")
-        if not cls:
-            # Might be in burnrate
-            cls = self._class_source(self._read_text(self.BURNRATE_PY), "WindowResult")
-        assert cls, "WindowResult class not found"
-        for field in ["good_events", "total_events", "slo_target", "window_hours"]:
-            assert field in cls, f"WindowResult should have {field} field"
+    def test_burnrate_alert_dataclass(self):
+        """BurnRateAlert dataclass must be defined"""
+        src = self._read("slo_generator/evaluators/burnrate.py")
+        assert "BurnRateAlert" in src
 
-    def test_semantic_burnratecalculator_alert_configs_has_3_entries_with_correct_(
-        self,
-    ):
-        """BurnRateCalculator.ALERT_CONFIGS has 3 entries with correct thresholds."""
-        src = self._read_text(self.BURNRATE_PY)
-        cls = self._class_source(src, "BurnRateCalculator")
-        if not cls:
-            cls = src
-        assert re.search(
-            r"ALERT_CONFIGS", cls
-        ), "BurnRateCalculator should define ALERT_CONFIGS"
+    def test_burnrate_alert_fields(self):
+        """BurnRateAlert must have severity, short/long window hours, threshold, triggered"""
+        src = self._read("slo_generator/evaluators/burnrate.py")
+        for field in ["severity", "short_window", "long_window", "threshold", "triggered"]:
+            assert field in src.lower(), f"Missing field: {field}"
 
-    def test_semantic_multiwindowsloevaluator_default_windows_1_0_6_0_24_0_72_0(self):
-        """MultiWindowSloEvaluator.DEFAULT_WINDOWS = [1.0, 6.0, 24.0, 72.0]."""
-        src = self._read_text(self.MULTI_WINDOW_PY)
-        cls = self._class_source(src, "MultiWindowSloEvaluator")
-        assert cls, "MultiWindowSloEvaluator class not found"
-        assert re.search(
-            r"DEFAULT_WINDOWS", cls
-        ), "MultiWindowSloEvaluator should define DEFAULT_WINDOWS"
-        assert re.search(
-            r"1\.0.*6\.0.*24\.0.*72\.0", cls, re.DOTALL
-        ), "DEFAULT_WINDOWS should be [1.0, 6.0, 24.0, 72.0]"
+    def test_burnrate_calculator_class(self):
+        """BurnRateCalculator class must be defined"""
+        src = self._read("slo_generator/evaluators/burnrate.py")
+        assert re.search(r'class\s+BurnRateCalculator', src)
 
-    def test_semantic_slibackend_is_a_protocol_with_get_good_events_and_get_total_(
-        self,
-    ):
-        """SliBackend is a Protocol with get_good_events and get_total_events."""
-        src = self._read_text(self.MULTI_WINDOW_PY)
-        all_src = src + "\n" + self._read_text(self.BURNRATE_PY)
-        assert re.search(
-            r"class\s+SliBackend.*Protocol", all_src
-        ), "SliBackend should be a Protocol"
-        assert re.search(
-            r"get_good_events", all_src
-        ), "SliBackend should have get_good_events"
-        assert re.search(
-            r"get_total_events", all_src
-        ), "SliBackend should have get_total_events"
+    def test_alert_configs(self):
+        """Must define alert configs: (1h,6h,14.4), (6h,24h,6.0), (24h,72h,3.0)"""
+        src = self._read("slo_generator/evaluators/burnrate.py")
+        assert "14.4" in src
+        assert "6.0" in src or "6," in src
+        assert "3.0" in src or "3," in src
 
-    def test_semantic_sloevaluationreport_has_overall_compliant_and_worst_window_p(
-        self,
-    ):
-        """SloEvaluationReport has overall_compliant and worst_window properties."""
-        src = self._read_text(self.MULTI_WINDOW_PY)
-        all_src = src + "\n" + self._read_text(self.BURNRATE_PY)
-        cls = self._class_source(all_src, "SloEvaluationReport")
-        if not cls:
-            cls = all_src
-        assert re.search(
-            r"overall_compliant", cls
-        ), "SloEvaluationReport should have overall_compliant"
-        assert re.search(
-            r"worst_window", cls
-        ), "SloEvaluationReport should have worst_window"
+    def test_compute_alerts_method(self):
+        """compute_alerts method must be defined"""
+        src = self._read("slo_generator/evaluators/burnrate.py")
+        assert "compute_alerts" in src
 
-    # ------------------------------------------------------------------
-    # Layer 3 – functional_check (5 cases)
-    # ------------------------------------------------------------------
+    def test_alert_severities(self):
+        """Must define page and ticket severity levels"""
+        src = self._read("slo_generator/evaluators/burnrate.py")
+        assert "page" in src
+        assert "ticket" in src
 
-    def test_functional_slo_target_0_999_good_990_total_1000_error_rate_0_01_budget_(
-        self,
-    ):
-        """slo_target=0.999, good=990, total=1000 → error_rate=0.01, budget_consumed=10.0."""
-        src = self._read_text(self.MULTI_WINDOW_PY)
-        assert re.search(
-            r"error_rate|error_budget|budget_consumed", src
-        ), "Should calculate error_rate and budget_consumed"
+    # === Semantic Checks — multi_window.py ===
 
-    def test_functional_1h_window_with_budget_consumed_10_0_burnrate_7200(self):
-        """1h window with budget_consumed=10.0 → burnrate=7200."""
-        src = self._read_text(self.BURNRATE_PY)
-        assert re.search(
-            r"burn.*rate|burnrate", src, re.IGNORECASE
-        ), "Should calculate burn rate"
+    def test_multi_window_evaluator_class(self):
+        """MultiWindowSloEvaluator class must be defined"""
+        src = self._read("slo_generator/evaluators/multi_window.py")
+        assert re.search(r'class\s+MultiWindowSloEvaluator', src)
 
-    def test_functional_both_1h_and_6h_burnrate_14_4_page_alert_triggered(self):
-        """Both 1h and 6h burnrate > 14.4 → page alert triggered."""
-        src = self._read_text(self.BURNRATE_PY)
-        assert re.search(
-            r"14\.4|page|alert", src, re.IGNORECASE
-        ), "Should trigger page alert when burn rate exceeds threshold"
+    def test_default_windows(self):
+        """Must define default windows [1, 6, 24, 72]"""
+        src = self._read("slo_generator/evaluators/multi_window.py")
+        for w in ["1", "6", "24", "72"]:
+            assert w in src
 
-    def test_functional_overall_compliant_false_when_any_window_sli_target(self):
-        """overall_compliant=False when any window SLI < target."""
-        src = self._read_text(self.MULTI_WINDOW_PY)
-        assert re.search(
-            r"overall_compliant|all\(|any\(", src
-        ), "overall_compliant should check all windows"
+    def test_evaluate_method(self):
+        """evaluate method must exist"""
+        src = self._read("slo_generator/evaluators/multi_window.py")
+        assert re.search(r'def\s+evaluate\b', src)
 
-    def test_functional_to_dict_produces_valid_json(self):
-        """to_dict() produces valid JSON."""
-        src = self._read_text(self.MULTI_WINDOW_PY)
-        all_src = src + "\n" + self._read_text(self.BURNRATE_PY)
-        assert re.search(
-            r"to_dict|asdict|__dict__|json", all_src
-        ), "Should support to_dict or JSON serialization"
+    def test_slo_evaluation_report(self):
+        """SloEvaluationReport must be defined"""
+        src = self._read("slo_generator/evaluators/multi_window.py")
+        assert "SloEvaluationReport" in src
+
+    def test_overall_compliant_property(self):
+        """SloEvaluationReport must have overall_compliant"""
+        src = self._read("slo_generator/evaluators/multi_window.py")
+        assert "overall_compliant" in src
+
+    def test_worst_window_property(self):
+        """SloEvaluationReport must have worst_window"""
+        src = self._read("slo_generator/evaluators/multi_window.py")
+        assert "worst_window" in src
+
+    def test_to_dict_method(self):
+        """SloEvaluationReport must have to_dict"""
+        src = self._read("slo_generator/evaluators/multi_window.py")
+        assert "to_dict" in src
+
+    def test_sli_backend_protocol(self):
+        """SliBackend protocol must be defined"""
+        src = self._read("slo_generator/evaluators/multi_window.py")
+        assert "SliBackend" in src or "Protocol" in src
+
+    # === Functional Checks ===
+
+    def test_python_syntax_multi_window(self):
+        """multi_window.py must have valid syntax"""
+        result = subprocess.run(
+            ["python", "-c",
+             "import py_compile; py_compile.compile('slo_generator/evaluators/multi_window.py', doraise=True)"],
+            capture_output=True, text=True, cwd=self.REPO_DIR, timeout=30,
+        )
+        assert result.returncode == 0, f"Syntax error:\n{result.stderr}"
+
+    def test_python_syntax_burnrate(self):
+        """burnrate.py must have valid syntax"""
+        result = subprocess.run(
+            ["python", "-c",
+             "import py_compile; py_compile.compile('slo_generator/evaluators/burnrate.py', doraise=True)"],
+            capture_output=True, text=True, cwd=self.REPO_DIR, timeout=30,
+        )
+        assert result.returncode == 0, f"Syntax error:\n{result.stderr}"
+
+    def test_unit_tests_pass(self):
+        """Unit tests must pass"""
+        result = subprocess.run(
+            ["python", "-m", "pytest",
+             "tests/unit/test_multi_window_evaluator.py",
+             "-v", "--tb=short"],
+            capture_output=True, text=True, cwd=self.REPO_DIR, timeout=120,
+        )
+        assert result.returncode == 0, (
+            f"Tests failed:\n{result.stdout}\n{result.stderr}"
+        )

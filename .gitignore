@@ -9,3 +9,5 @@ __pycache__/
 # Project specific
 reports
 claude_process
+
+docs/

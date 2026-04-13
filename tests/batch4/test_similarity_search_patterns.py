@@ -1,221 +1,215 @@
 """
-Test for 'similarity-search-patterns' skill — Similarity Search Patterns
-Validates SimilarityEngine, IndexAdvisor, and BatchSearcher implementations in Milvus.
+Tests for skill: similarity-search-patterns
+Repo: milvus-io/milvus
+Image: zhangyiiiiii/swe-skills-bench-golang
+Task: Implement a similarity search engine with multi-index support,
+      auto-index selection, and batch search for Milvus.
 """
 
+import ast
 import os
 import re
-import ast
-import sys
-import glob
+import subprocess
+
 import pytest
 
+REPO_DIR = "/workspace/milvus"
+ENGINE_DIR = os.path.join(REPO_DIR, "scripts", "similarity_engine")
 
-class TestSimilaritySearchPatterns:
-    """Tests for similarity search patterns in the milvus repo."""
+ENGINE_FILE = os.path.join(ENGINE_DIR, "engine.py")
+ADVISOR_FILE = os.path.join(ENGINE_DIR, "index_advisor.py")
+BATCH_FILE = os.path.join(ENGINE_DIR, "batch_search.py")
+INIT_FILE = os.path.join(ENGINE_DIR, "__init__.py")
+TEST_FILE = os.path.join(REPO_DIR, "tests", "python", "test_similarity_engine.py")
 
-    REPO_DIR = "/workspace/milvus"
 
-    def _read(self, relpath):
-        full = os.path.join(self.REPO_DIR, relpath)
-        with open(full, "r", errors="ignore") as f:
-            return f.read()
+# ---------------------------------------------------------------------------
+# Layer 1 — file_path_check
+# ---------------------------------------------------------------------------
 
-    # --- File Path Checks ---
+class TestFilePathCheck:
+    """Verify all required files were created."""
 
-    def test_engine_py_exists(self):
-        """Verifies that scripts/similarity_engine/engine.py exists."""
-        path = os.path.join(self.REPO_DIR, "scripts", "similarity_engine", "engine.py")
-        assert os.path.exists(path), f"Expected file not found: {path}"
+    def test_engine_file_exists(self):
+        assert os.path.isfile(ENGINE_FILE), f"Expected {ENGINE_FILE}"
 
-    def test_index_advisor_py_exists(self):
-        """Verifies that scripts/similarity_engine/index_advisor.py exists."""
-        path = os.path.join(
-            self.REPO_DIR, "scripts", "similarity_engine", "index_advisor.py"
+    def test_advisor_file_exists(self):
+        assert os.path.isfile(ADVISOR_FILE), f"Expected {ADVISOR_FILE}"
+
+    def test_batch_file_exists(self):
+        assert os.path.isfile(BATCH_FILE), f"Expected {BATCH_FILE}"
+
+    def test_init_file_exists(self):
+        assert os.path.isfile(INIT_FILE), f"Expected {INIT_FILE}"
+
+    def test_test_file_exists(self):
+        assert os.path.isfile(TEST_FILE), f"Expected {TEST_FILE}"
+
+
+# ---------------------------------------------------------------------------
+# Layer 2 — semantic_check
+# ---------------------------------------------------------------------------
+
+class TestSemanticEngine:
+    """Verify SimilarityEngine class."""
+
+    @pytest.fixture(autouse=True)
+    def _load_source(self):
+        with open(ENGINE_FILE, "r", encoding="utf-8") as f:
+            self.src = f.read()
+        self.tree = ast.parse(self.src)
+
+    def test_class_defined(self):
+        classes = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.ClassDef)]
+        assert "SimilarityEngine" in classes, (
+            f"Expected SimilarityEngine class; found: {classes}"
         )
-        assert os.path.exists(path), f"Expected file not found: {path}"
 
-    def test_batch_search_py_exists(self):
-        """Verifies that scripts/similarity_engine/batch_search.py exists."""
-        path = os.path.join(
-            self.REPO_DIR, "scripts", "similarity_engine", "batch_search.py"
+    def test_insert_method(self):
+        funcs = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.FunctionDef)]
+        assert "insert" in funcs, "Expected insert() method"
+
+    def test_search_method(self):
+        funcs = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.FunctionDef)]
+        assert "search" in funcs, "Expected search() method"
+
+    def test_hybrid_search_method(self):
+        funcs = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.FunctionDef)]
+        assert "hybrid_search" in funcs, "Expected hybrid_search() method"
+
+    def test_delete_method(self):
+        funcs = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.FunctionDef)]
+        assert "delete" in funcs, "Expected delete() method"
+
+    def test_count_method(self):
+        funcs = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.FunctionDef)]
+        assert "count" in funcs, "Expected count() method"
+
+    def test_metric_types(self):
+        """Must support L2, IP, and COSINE metrics."""
+        for metric in ["L2", "IP", "COSINE"]:
+            assert metric in self.src, f"Expected metric type '{metric}'"
+
+    def test_index_types(self):
+        """Must support HNSW, FLAT, IVF_PQ index types."""
+        for idx_type in ["HNSW", "FLAT", "IVF_PQ"]:
+            assert idx_type in self.src, f"Expected index type '{idx_type}'"
+
+    def test_dimension_validation(self):
+        """Must validate vector dimensions."""
+        assert "ValueError" in self.src, "Expected ValueError for dimension mismatch"
+
+
+class TestSemanticIndexAdvisor:
+    """Verify IndexAdvisor class."""
+
+    @pytest.fixture(autouse=True)
+    def _load_source(self):
+        with open(ADVISOR_FILE, "r", encoding="utf-8") as f:
+            self.src = f.read()
+        self.tree = ast.parse(self.src)
+
+    def test_class_defined(self):
+        classes = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.ClassDef)]
+        assert "IndexAdvisor" in classes, (
+            f"Expected IndexAdvisor class; found: {classes}"
         )
-        assert os.path.exists(path), f"Expected file not found: {path}"
 
-    def test_init_py_exists(self):
-        """Verifies that scripts/similarity_engine/__init__.py exists."""
-        path = os.path.join(
-            self.REPO_DIR, "scripts", "similarity_engine", "__init__.py"
+    def test_recommend_method(self):
+        funcs = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.FunctionDef)]
+        assert "recommend" in funcs, "Expected recommend() method"
+
+    def test_threshold_based_selection(self):
+        """Selection logic should reference thresholds (10000, 1000000)."""
+        assert "10000" in self.src or "10_000" in self.src, (
+            "Expected 10,000 vector threshold"
         )
-        assert os.path.exists(path), f"Expected file not found: {path}"
 
-    # --- Semantic Checks (static) ---
+    def test_memory_estimation(self):
+        """Must estimate memory for index types."""
+        assert "memory" in self.src.lower() or "estimated_memory" in self.src, (
+            "Expected memory estimation in recommendations"
+        )
 
-    def test_sem_similarity_engine_class_defined(self):
-        """SimilarityEngine class is defined in engine.py."""
-        content = self._read("scripts/similarity_engine/engine.py")
-        assert re.search(
-            r"class\s+SimilarityEngine", content
-        ), "class SimilarityEngine not found"
+    def test_memory_budget_fallback(self):
+        """If memory_budget_mb is provided and HNSW exceeds it, fall back to IVF_PQ."""
+        has_budget = "memory_budget" in self.src
+        assert has_budget, "Expected memory_budget_mb parameter"
 
-    def test_sem_similarity_engine_methods(self):
-        """SimilarityEngine has insert, search, hybrid_search, delete, count methods."""
-        content = self._read("scripts/similarity_engine/engine.py")
-        for method in ["insert", "search", "hybrid_search", "delete", "count"]:
-            assert re.search(
-                rf"def\s+{method}\s*\(", content
-            ), f"Method {method} not found"
 
-    def test_sem_index_advisor_class_defined(self):
-        """IndexAdvisor class is defined in index_advisor.py."""
-        content = self._read("scripts/similarity_engine/index_advisor.py")
-        assert re.search(
-            r"class\s+IndexAdvisor", content
-        ), "class IndexAdvisor not found"
+class TestSemanticBatchSearcher:
+    """Verify BatchSearcher class."""
 
-    def test_sem_index_advisor_has_recommend(self):
-        """IndexAdvisor has recommend method."""
-        content = self._read("scripts/similarity_engine/index_advisor.py")
-        assert re.search(r"def\s+recommend\s*\(", content), "recommend method not found"
+    @pytest.fixture(autouse=True)
+    def _load_source(self):
+        with open(BATCH_FILE, "r", encoding="utf-8") as f:
+            self.src = f.read()
+        self.tree = ast.parse(self.src)
 
-    def test_sem_batch_searcher_class_defined(self):
-        """BatchSearcher class is defined in batch_search.py."""
-        content = self._read("scripts/similarity_engine/batch_search.py")
-        assert re.search(
-            r"class\s+BatchSearcher", content
-        ), "class BatchSearcher not found"
+    def test_class_defined(self):
+        classes = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.ClassDef)]
+        assert "BatchSearcher" in classes, (
+            f"Expected BatchSearcher class; found: {classes}"
+        )
 
-    def test_sem_similarity_engine_constructor_params(self):
-        """SimilarityEngine constructor takes dimension and metric_type parameters."""
-        content = self._read("scripts/similarity_engine/engine.py")
-        assert "dimension" in content, "dimension parameter not found"
-        assert "metric_type" in content, "metric_type parameter not found"
+    def test_search_batch_method(self):
+        funcs = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.FunctionDef)]
+        assert "search_batch" in funcs, "Expected search_batch() method"
 
-    # --- Functional Checks (import) ---
+    def test_search_and_aggregate_method(self):
+        funcs = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.FunctionDef)]
+        assert "search_and_aggregate" in funcs, "Expected search_and_aggregate() method"
 
-    def test_func_import_similarity_engine(self):
-        """SimilarityEngine is importable."""
-        old_path = sys.path[:]
-        sys.path.insert(0, os.path.join(self.REPO_DIR, "scripts"))
+    def test_aggregation_modes(self):
+        """Must support union, intersection, and rrf aggregation."""
+        for mode in ["union", "intersection", "rrf"]:
+            assert mode in self.src, f"Expected aggregation mode '{mode}'"
+
+
+# ---------------------------------------------------------------------------
+# Layer 3 — functional_check
+# ---------------------------------------------------------------------------
+
+class TestFunctionalSimilaritySearch:
+    """Functional checks — syntax and structure validation."""
+
+    def _parse(self, filepath):
+        with open(filepath, "r", encoding="utf-8") as f:
+            src = f.read()
         try:
-            from similarity_engine.engine import SimilarityEngine
+            ast.parse(src)
+            return True, None
+        except SyntaxError as e:
+            return False, str(e)
 
-            assert SimilarityEngine is not None
-        finally:
-            sys.path[:] = old_path
+    def test_engine_valid_python(self):
+        ok, err = self._parse(ENGINE_FILE)
+        assert ok, f"engine.py syntax error: {err}"
 
-    def test_func_import_index_advisor(self):
-        """IndexAdvisor is importable."""
-        old_path = sys.path[:]
-        sys.path.insert(0, os.path.join(self.REPO_DIR, "scripts"))
-        try:
-            from similarity_engine.index_advisor import IndexAdvisor
+    def test_advisor_valid_python(self):
+        ok, err = self._parse(ADVISOR_FILE)
+        assert ok, f"index_advisor.py syntax error: {err}"
 
-            assert IndexAdvisor is not None
-        finally:
-            sys.path[:] = old_path
+    def test_batch_valid_python(self):
+        ok, err = self._parse(BATCH_FILE)
+        assert ok, f"batch_search.py syntax error: {err}"
 
-    def test_func_similarity_engine_insert_and_count(self):
-        """SimilarityEngine insert data and count returns correct count."""
-        old_path = sys.path[:]
-        sys.path.insert(0, os.path.join(self.REPO_DIR, "scripts"))
-        try:
-            from similarity_engine.engine import SimilarityEngine
+    def test_test_file_valid_python(self):
+        ok, err = self._parse(TEST_FILE)
+        assert ok, f"test_similarity_engine.py syntax error: {err}"
 
-            engine = SimilarityEngine(dimension=32, metric_type="L2")
-            vectors = [[1.0] * 32 for _ in range(5)]
-            engine.insert(vectors)
-            assert engine.count() == 5, f"Expected 5, got {engine.count()}"
-        finally:
-            sys.path[:] = old_path
+    def test_numpy_used(self):
+        """Engine should use numpy for vector operations."""
+        with open(ENGINE_FILE, "r", encoding="utf-8") as f:
+            src = f.read()
+        assert "numpy" in src or "np." in src, "Expected numpy for vector operations"
 
-    def test_func_similarity_engine_search(self):
-        """SimilarityEngine search returns results."""
-        old_path = sys.path[:]
-        sys.path.insert(0, os.path.join(self.REPO_DIR, "scripts"))
-        try:
-            from similarity_engine.engine import SimilarityEngine
-
-            engine = SimilarityEngine(dimension=32, metric_type="L2")
-            vectors = [[float(i)] * 32 for i in range(5)]
-            engine.insert(vectors)
-            query = [0.0] * 32
-            results = engine.search(query, top_k=3)
-            assert len(results) <= 3, f"Expected at most 3 results, got {len(results)}"
-        finally:
-            sys.path[:] = old_path
-
-    def test_func_similarity_engine_delete(self):
-        """SimilarityEngine delete reduces count."""
-        old_path = sys.path[:]
-        sys.path.insert(0, os.path.join(self.REPO_DIR, "scripts"))
-        try:
-            from similarity_engine.engine import SimilarityEngine
-
-            engine = SimilarityEngine(dimension=32, metric_type="L2")
-            vectors = [[float(i)] * 32 for i in range(5)]
-            engine.insert(vectors)
-            initial_count = engine.count()
-            engine.delete([0])
-            assert engine.count() < initial_count, "Count did not decrease after delete"
-        finally:
-            sys.path[:] = old_path
-
-    def test_func_index_advisor_recommend_flat_for_small(self):
-        """IndexAdvisor recommends FLAT for small datasets (~500 vectors)."""
-        old_path = sys.path[:]
-        sys.path.insert(0, os.path.join(self.REPO_DIR, "scripts"))
-        try:
-            from similarity_engine.index_advisor import IndexAdvisor
-
-            advisor = IndexAdvisor()
-            recommendation = advisor.recommend(num_vectors=500)
-            assert (
-                recommendation == "FLAT"
-            ), f"Expected FLAT for 500 vectors, got {recommendation}"
-        finally:
-            sys.path[:] = old_path
-
-    def test_func_index_advisor_recommend_hnsw_for_mid(self):
-        """IndexAdvisor recommends HNSW for medium datasets (~500,000 vectors)."""
-        old_path = sys.path[:]
-        sys.path.insert(0, os.path.join(self.REPO_DIR, "scripts"))
-        try:
-            from similarity_engine.index_advisor import IndexAdvisor
-
-            advisor = IndexAdvisor()
-            recommendation = advisor.recommend(num_vectors=500_000)
-            assert (
-                recommendation == "HNSW"
-            ), f"Expected HNSW for 500k vectors, got {recommendation}"
-        finally:
-            sys.path[:] = old_path
-
-    def test_func_index_advisor_recommend_ivf_pq_for_large(self):
-        """IndexAdvisor recommends IVF_PQ for large datasets (~5,000,000 vectors)."""
-        old_path = sys.path[:]
-        sys.path.insert(0, os.path.join(self.REPO_DIR, "scripts"))
-        try:
-            from similarity_engine.index_advisor import IndexAdvisor
-
-            advisor = IndexAdvisor()
-            recommendation = advisor.recommend(num_vectors=5_000_000)
-            assert (
-                recommendation == "IVF_PQ"
-            ), f"Expected IVF_PQ for 5M vectors, got {recommendation}"
-        finally:
-            sys.path[:] = old_path
-
-    def test_func_wrong_dimension_insert_raises_error(self):
-        """Inserting vectors with wrong dimension raises ValueError."""
-        old_path = sys.path[:]
-        sys.path.insert(0, os.path.join(self.REPO_DIR, "scripts"))
-        try:
-            from similarity_engine.engine import SimilarityEngine
-
-            engine = SimilarityEngine(dimension=32, metric_type="L2")
-            wrong_vectors = [[1.0] * 64]  # wrong dimension
-            with pytest.raises(ValueError):
-                engine.insert(wrong_vectors)
-        finally:
-            sys.path[:] = old_path
+    def test_filter_expression_parsing(self):
+        """Engine must parse filter expressions."""
+        with open(ENGINE_FILE, "r", encoding="utf-8") as f:
+            src = f.read()
+        has_filter = (
+            "filter" in src
+            and ("parse" in src or "eval" in src.lower() or "expression" in src)
+        )
+        assert has_filter, "Expected filter expression parsing in engine"

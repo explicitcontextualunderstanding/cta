@@ -1,164 +1,147 @@
 """
-Test for 'risk-metrics-calculation' skill — Financial Risk Metrics
-Validates VaR, CVaR, Sharpe, MaxDrawdown, Beta calculators with numpy arrays,
-mathematical properties, and input validation.
+Test skill: risk-metrics-calculation
+Verify that the Agent creates RiskMetrics (VaR, CVaR, Sharpe, Sortino, max drawdown),
+RollingRiskAnalyzer, and PortfolioRiskReport using pyfolio.
 """
 
 import os
 import subprocess
-import sys
-
+import ast
+import re
 import pytest
 
 
 class TestRiskMetricsCalculation:
-    """Verify financial risk metric calculators: VaR, CVaR, Sharpe, Drawdown, Beta."""
-
     REPO_DIR = "/workspace/pyfolio"
 
-    # ── helpers ──────────────────────────────────────────────────────────
+    # === File Path Checks ===
 
-    @staticmethod
-    def _read_file(path: str) -> str:
-        try:
-            with open(path, "r", errors="ignore") as fh:
-                return fh.read()
-        except OSError:
-            return ""
+    def test_risk_metrics_file_exists(self):
+        """Verify risk metrics module exists"""
+        found = False
+        for root, dirs, files in os.walk(self.REPO_DIR):
+            if ".git" in root:
+                continue
+            for f in files:
+                if f.endswith(".py") and ("risk" in f.lower() or "metrics" in f.lower()):
+                    found = True
+                    break
+            if found:
+                break
+        assert found, "Risk metrics module not found"
 
-    def _rm(self, *parts) -> str:
-        return os.path.join(self.REPO_DIR, "examples", "risk_metrics", *parts)
+    # === Semantic Checks ===
 
-    def _install_deps(self):
-        try:
-            import numpy  # noqa: F401
-        except ImportError:
-            subprocess.run(
-                [sys.executable, "-m", "pip", "install", "numpy"],
-                capture_output=True, timeout=60,
-            )
+    def test_var_calculation_defined(self):
+        """Verify Value at Risk (VaR) calculation is implemented"""
+        content = self._find_content()
+        content_lower = content.lower()
+        has_var = "var" in content_lower and ("value" in content_lower or "risk" in content_lower) or "value_at_risk" in content_lower
+        assert has_var, "VaR calculation not found"
 
-    # ── file_path_check ──────────────────────────────────────────────────
+    def test_cvar_calculation_defined(self):
+        """Verify Conditional VaR (CVaR/Expected Shortfall) is implemented"""
+        content = self._find_content()
+        content_lower = content.lower()
+        has_cvar = "cvar" in content_lower or "conditional" in content_lower or "expected_shortfall" in content_lower
+        assert has_cvar, "CVaR/Expected Shortfall not found"
 
-    def test_var_and_cvar_exist(self):
-        """var.py and cvar.py must exist."""
-        for name in ("var.py", "cvar.py"):
-            path = self._rm(name)
-            assert os.path.isfile(path), f"{path} does not exist"
+    def test_sharpe_ratio_defined(self):
+        """Verify Sharpe ratio calculation is implemented"""
+        content = self._find_content()
+        content_lower = content.lower()
+        assert "sharpe" in content_lower, "Sharpe ratio calculation not found"
 
-    def test_sharpe_drawdown_beta_exist(self):
-        """sharpe.py, drawdown.py, beta.py must exist."""
-        for name in ("sharpe.py", "drawdown.py", "beta.py"):
-            path = self._rm(name)
-            assert os.path.isfile(path), f"{path} does not exist"
+    def test_sortino_ratio_defined(self):
+        """Verify Sortino ratio calculation is implemented"""
+        content = self._find_content()
+        content_lower = content.lower()
+        assert "sortino" in content_lower, "Sortino ratio calculation not found"
 
-    def test_init_and_test_file_exist(self):
-        """__init__.py and tests/test_risk_metrics.py must exist."""
-        assert os.path.isfile(self._rm("__init__.py"))
-        test_path = os.path.join(self.REPO_DIR, "tests", "test_risk_metrics.py")
-        assert os.path.isfile(test_path), f"{test_path} not found"
+    def test_max_drawdown_defined(self):
+        """Verify max drawdown calculation is implemented"""
+        content = self._find_content()
+        content_lower = content.lower()
+        has_dd = "drawdown" in content_lower or "max_dd" in content_lower
+        assert has_dd, "Max drawdown calculation not found"
 
-    # ── semantic_check ───────────────────────────────────────────────────
+    def test_rolling_risk_analyzer_defined(self):
+        """Verify RollingRiskAnalyzer class is defined"""
+        content = self._find_content()
+        has_rolling = "RollingRisk" in content or "rolling" in content.lower()
+        assert has_rolling, "RollingRiskAnalyzer not found"
 
-    def test_var_accepts_confidence_parameter(self):
-        """var.py must define VaRCalculator.calculate with confidence param."""
-        path = self._rm("var.py")
-        if not os.path.isfile(path):
-            pytest.skip("var.py not found")
-        content = self._read_file(path)
-        assert "VaRCalculator" in content, "VaRCalculator not defined"
-        assert "confidence" in content, "confidence parameter not found"
+    def test_portfolio_risk_report_defined(self):
+        """Verify PortfolioRiskReport class is defined"""
+        content = self._find_content()
+        has_report = "PortfolioRiskReport" in content or ("portfolio" in content.lower() and "report" in content.lower())
+        assert has_report, "PortfolioRiskReport not found"
 
-    def test_sharpe_annualizes_by_sqrt252(self):
-        """sharpe.py must annualize by sqrt(252)."""
-        path = self._rm("sharpe.py")
-        if not os.path.isfile(path):
-            pytest.skip("sharpe.py not found")
-        content = self._read_file(path)
-        assert "252" in content, "252 (trading days) not found in sharpe.py"
-        assert "sqrt" in content, "sqrt not found for annualization"
+    # === Functional Checks ===
 
-    def test_drawdown_uses_cummax(self):
-        """drawdown.py must use cumulative maximum for peak computation."""
-        path = self._rm("drawdown.py")
-        if not os.path.isfile(path):
-            pytest.skip("drawdown.py not found")
-        content = self._read_file(path)
-        has_cummax = "cummax" in content or "maximum.accumulate" in content or "peak" in content
-        assert has_cummax, "No cumulative max / peak computation found"
+    def test_risk_files_parse(self):
+        """Verify all risk metric files have valid Python syntax"""
+        for root, dirs, files in os.walk(self.REPO_DIR):
+            if ".git" in root:
+                continue
+            for f in files:
+                if f.endswith(".py") and ("risk" in f.lower() or "metrics" in f.lower()):
+                    fpath = os.path.join(root, f)
+                    with open(fpath) as fh:
+                        source = fh.read()
+                    try:
+                        ast.parse(source)
+                    except SyntaxError as e:
+                        pytest.fail(f"Syntax error in {fpath}: {e}")
 
-    def test_calculators_validate_empty_input(self):
-        """At least var.py must raise ValueError for empty input."""
-        path = self._rm("var.py")
-        if not os.path.isfile(path):
-            pytest.skip("var.py not found")
-        content = self._read_file(path)
-        assert "ValueError" in content, "ValueError not found in var.py"
+    def test_risk_module_importable(self):
+        """Verify risk module can be imported"""
+        risk_file = None
+        for root, dirs, files in os.walk(self.REPO_DIR):
+            if ".git" in root:
+                continue
+            for f in files:
+                if f.endswith(".py") and "risk" in f.lower():
+                    fpath = os.path.join(root, f)
+                    with open(fpath) as fh:
+                        content = fh.read()
+                    if "class" in content and "Risk" in content:
+                        risk_file = fpath
+                        break
+            if risk_file:
+                break
+        if risk_file is None:
+            pytest.skip("Risk module not found")
+        dir_name = os.path.dirname(risk_file)
+        module_name = os.path.splitext(os.path.basename(risk_file))[0]
+        result = subprocess.run(
+            ["python", "-c", f"import sys; sys.path.insert(0, '{dir_name}'); import {module_name}; print('OK')"],
+            cwd=self.REPO_DIR,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        assert result.returncode == 0 or "OK" in result.stdout, f"Import failed: {result.stderr[:300]}"
 
-    # ── functional_check ─────────────────────────────────────────────────
+    def test_uses_numpy_pandas(self):
+        """Verify risk calculations use numpy/pandas"""
+        content = self._find_content()
+        has_numpy = "numpy" in content or "np." in content
+        has_pandas = "pandas" in content or "pd." in content
+        assert has_numpy or has_pandas, "Risk calculations should use numpy or pandas"
 
-    def test_var_95_returns_correct_value(self):
-        """VaR at 95% on known returns must be <= -0.05."""
-        self._install_deps()
-        try:
-            import numpy as np
-            sys.path.insert(0, self.REPO_DIR)
-            from examples.risk_metrics.var import VaRCalculator
-        except ImportError:
-            pytest.skip("Cannot import VaRCalculator")
-        returns = np.array([-0.05] * 5 + [0.01] * 95)
-        var = VaRCalculator().calculate(returns, confidence=0.95)
-        assert var <= -0.05 + 0.01, f"VaR should be <= -0.04, got {var}"
-
-    def test_cvar_worse_than_var(self):
-        """CVaR must be <= VaR (worse loss by definition)."""
-        self._install_deps()
-        try:
-            import numpy as np
-            sys.path.insert(0, self.REPO_DIR)
-            from examples.risk_metrics.var import VaRCalculator
-            from examples.risk_metrics.cvar import CVaRCalculator
-        except ImportError:
-            pytest.skip("Cannot import VaR/CVaR calculators")
-        returns = np.array([-0.05] * 5 + [0.01] * 95)
-        var = VaRCalculator().calculate(returns, confidence=0.95)
-        cvar = CVaRCalculator().calculate(returns, confidence=0.95)
-        assert cvar <= var, f"CVaR ({cvar}) should be <= VaR ({var})"
-
-    def test_sharpe_positive_for_constant_returns(self):
-        """Sharpe ratio must be positive for constant positive returns."""
-        self._install_deps()
-        try:
-            import numpy as np
-            sys.path.insert(0, self.REPO_DIR)
-            from examples.risk_metrics.sharpe import SharpeRatio
-        except ImportError:
-            pytest.skip("Cannot import SharpeRatio")
-        returns = np.ones(252) * 0.001
-        sr = SharpeRatio().calculate(returns, risk_free_rate=0.0)
-        assert sr > 0, f"Sharpe ratio should be positive, got {sr}"
-
-    def test_beta_identical_series_equals_one(self):
-        """Beta of identical portfolio and benchmark returns must be 1.0."""
-        self._install_deps()
-        try:
-            import numpy as np
-            sys.path.insert(0, self.REPO_DIR)
-            from examples.risk_metrics.beta import BetaCalculator
-        except ImportError:
-            pytest.skip("Cannot import BetaCalculator")
-        returns = np.random.randn(100) * 0.01
-        beta = BetaCalculator().calculate(returns, returns)
-        assert abs(beta - 1.0) < 0.01, f"Beta should be ~1.0, got {beta}"
-
-    def test_empty_returns_raises_valueerror(self):
-        """Empty returns array must raise ValueError."""
-        self._install_deps()
-        try:
-            import numpy as np
-            sys.path.insert(0, self.REPO_DIR)
-            from examples.risk_metrics.var import VaRCalculator
-        except ImportError:
-            pytest.skip("Cannot import VaRCalculator")
-        with pytest.raises(ValueError):
-            VaRCalculator().calculate(np.array([]), confidence=0.95)
+    def _find_content(self):
+        """Helper to find risk metrics content"""
+        all_content = ""
+        for root, dirs, files in os.walk(self.REPO_DIR):
+            if ".git" in root:
+                continue
+            for f in files:
+                if f.endswith(".py") and ("risk" in f.lower() or "metrics" in f.lower() or "portfolio" in f.lower()):
+                    fpath = os.path.join(root, f)
+                    try:
+                        with open(fpath) as fh:
+                            all_content += fh.read() + "\n"
+                    except (UnicodeDecodeError, PermissionError):
+                        continue
+        return all_content

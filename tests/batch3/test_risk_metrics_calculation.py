@@ -1,179 +1,248 @@
 """
-Tests for risk-metrics-calculation skill.
-Validates risk metric functions in pyfolio/risk_metrics.py.
+Tests for the risk-metrics-calculation skill.
+
+Validates that a portfolio risk metrics module was implemented for pyfolio,
+including VaR (historical/parametric), CVaR, drawdown analysis,
+risk-adjusted ratios (Sharpe/Sortino/Calmar), and rolling analytics.
+
+Repo: pyfolio (https://github.com/quantopian/pyfolio)
 """
 
+import ast
 import os
-import math
-import pytest
+import re
+import subprocess
+import sys
 
 REPO_DIR = "/workspace/pyfolio"
 
 
-def _path(rel: str) -> str:
-    return os.path.join(REPO_DIR, rel)
-
-
-def _read(rel: str) -> str:
-    with open(_path(rel), encoding="utf-8", errors="ignore") as f:
-        return f.read()
-
-
-class TestRiskMetricsCalculation:
-
-    # ── file_path_check ──────────────────────────────────────────────────────
+class TestFilePathCheck:
+    """Verify that all required files were created."""
 
     def test_risk_metrics_file_exists(self):
-        """pyfolio/risk_metrics.py must exist."""
-        rel = "pyfolio/risk_metrics.py"
-        assert os.path.isfile(_path(rel)), f"{rel} not found"
-        assert os.path.getsize(_path(rel)) > 0, "risk_metrics.py is empty"
+        path = os.path.join(REPO_DIR, "pyfolio", "risk_metrics.py")
+        assert os.path.isfile(path), f"Expected risk_metrics.py at {path}"
 
-    def test_pyfolio_init_exists(self):
-        """pyfolio/__init__.py must exist."""
-        rel = "pyfolio/__init__.py"
-        assert os.path.isfile(_path(rel)), f"{rel} not found"
+    def test_risk_metrics_test_exists(self):
+        path = os.path.join(REPO_DIR, "tests", "test_risk_metrics.py")
+        assert os.path.isfile(path), f"Expected test_risk_metrics.py at {path}"
 
-    # ── semantic_check ───────────────────────────────────────────────────────
 
-    def test_risk_functions_defined(self):
-        """historical_var, cvar, parametric_var, and InsufficientDataError must be defined."""
-        content = _read("pyfolio/risk_metrics.py")
-        for symbol in (
-            "def historical_var",
-            "def cvar",
-            "def parametric_var",
-            "InsufficientDataError",
-        ):
-            assert symbol in content, f"{symbol} not found in risk_metrics.py"
+class TestSemanticVaR:
+    """Verify Value at Risk implementations."""
 
-    def test_drawdown_functions_defined(self):
-        """max_drawdown, top_drawdowns, and DrawdownResult must be defined."""
-        content = _read("pyfolio/risk_metrics.py")
-        for symbol in ("def max_drawdown", "def top_drawdowns", "DrawdownResult"):
-            assert symbol in content, f"{symbol} not found in risk_metrics.py"
+    def _read_module(self):
+        path = os.path.join(REPO_DIR, "pyfolio", "risk_metrics.py")
+        with open(path, "r") as f:
+            return f.read()
 
-    def test_ratio_functions_defined(self):
-        """sharpe_ratio, sortino_ratio, and calmar_ratio must be defined."""
-        content = _read("pyfolio/risk_metrics.py")
-        for symbol in ("def sharpe_ratio", "def sortino_ratio", "def calmar_ratio"):
-            assert symbol in content, f"{symbol} not found in risk_metrics.py"
+    def test_historical_var_function(self):
+        content = self._read_module()
+        assert re.search(r"def\s+\w*historical\w*var\w*|def\s+\w*var\w*historical", content, re.IGNORECASE), (
+            "Expected historical VaR function"
+        )
 
-    def test_rolling_functions_defined(self):
-        """rolling_var and rolling_sharpe must be defined with window parameter."""
-        content = _read("pyfolio/risk_metrics.py")
-        assert "def rolling_var" in content, "rolling_var not defined"
-        assert "def rolling_sharpe" in content, "rolling_sharpe not defined"
-        assert "window" in content, "window parameter not found"
+    def test_parametric_var_function(self):
+        content = self._read_module()
+        assert re.search(r"def\s+\w*parametric\w*var\w*|def\s+\w*var\w*parametric|gaussian", content, re.IGNORECASE), (
+            "Expected parametric VaR function"
+        )
 
-    # ── functional_check ─────────────────────────────────────────────────────
+    def test_confidence_level_parameter(self):
+        content = self._read_module()
+        assert re.search(r"confidence|alpha|quantile", content, re.IGNORECASE), (
+            "Expected confidence level parameter in VaR functions"
+        )
 
-    def test_fewer_than_30_obs_raises_insufficient_data(self):
-        """historical_var with < 30 observations must raise InsufficientDataError (mocked)."""
-        import numpy as np
+    def test_insufficient_data_error(self):
+        content = self._read_module()
+        assert re.search(r"InsufficientDataError|insufficient.*data", content, re.IGNORECASE), (
+            "Expected InsufficientDataError for short return series"
+        )
 
-        class InsufficientDataError(Exception):
-            pass
+    def test_minimum_observations_check(self):
+        """Should check for at least 30 observations."""
+        content = self._read_module()
+        assert "30" in content, (
+            "Expected minimum 30 observations check for VaR"
+        )
 
-        def historical_var(returns, confidence=0.95):
-            if len(returns) < 30:
-                raise InsufficientDataError(
-                    f"Need >= 30 observations, got {len(returns)}"
-                )
-            return float(np.percentile(returns, (1 - confidence) * 100))
 
-        np.random.seed(42)
-        with pytest.raises(InsufficientDataError):
-            historical_var(np.random.randn(20), confidence=0.95)
+class TestSemanticCVaR:
+    """Verify Conditional Value at Risk implementations."""
 
-    def test_historical_var_95_approx_neg_1_6(self):
-        """historical_var at 95% on 1%-std normal returns must be approx -0.016 (mocked)."""
-        import numpy as np
+    def _read_module(self):
+        path = os.path.join(REPO_DIR, "pyfolio", "risk_metrics.py")
+        with open(path, "r") as f:
+            return f.read()
 
-        def historical_var(returns, confidence=0.95):
-            if len(returns) < 30:
-                raise ValueError("Need >= 30 observations")
-            return float(np.percentile(returns, (1 - confidence) * 100))
+    def test_cvar_function(self):
+        content = self._read_module()
+        assert re.search(r"def\s+\w*cvar\w*|def\s+\w*expected.shortfall\w*|CVaR", content, re.IGNORECASE), (
+            "Expected CVaR / Expected Shortfall function"
+        )
 
-        np.random.seed(42)
-        returns = np.random.randn(1000) * 0.01
-        var = historical_var(returns, confidence=0.95)
-        assert -0.02 <= var <= -0.01, f"Expected VaR approx -0.016, got {var:.4f}"
+    def test_cvar_uses_tail_mean(self):
+        """CVaR should compute mean of returns below VaR threshold."""
+        content = self._read_module()
+        assert re.search(r"mean|average|tail", content, re.IGNORECASE), (
+            "Expected tail mean computation for CVaR"
+        )
 
-    def test_cvar_less_than_var(self):
-        """CVaR must be more severe (more negative) than VaR at same confidence (mocked)."""
-        import numpy as np
 
-        def historical_var(returns, confidence=0.95):
-            return float(np.percentile(returns, (1 - confidence) * 100))
+class TestSemanticDrawdown:
+    """Verify maximum drawdown analysis."""
 
-        def cvar(returns, confidence=0.95):
-            var = historical_var(returns, confidence)
-            return float(np.mean(returns[returns <= var]))
+    def _read_module(self):
+        path = os.path.join(REPO_DIR, "pyfolio", "risk_metrics.py")
+        with open(path, "r") as f:
+            return f.read()
 
-        np.random.seed(42)
-        returns = np.random.randn(1000) * 0.01
-        var_95 = historical_var(returns, 0.95)
-        cvar_95 = cvar(returns, 0.95)
-        assert (
-            cvar_95 < var_95
-        ), f"CVaR ({cvar_95:.4f}) must be below VaR ({var_95:.4f})"
+    def test_max_drawdown_function(self):
+        content = self._read_module()
+        assert re.search(r"def\s+\w*max.*drawdown\w*|def\s+\w*drawdown", content, re.IGNORECASE), (
+            "Expected max drawdown function"
+        )
 
-    def test_rolling_var_first_59_nan(self):
-        """rolling_var(window=60) must return NaN for first 59 values (mocked)."""
-        import numpy as np
+    def test_drawdown_result_structure(self):
+        content = self._read_module()
+        assert re.search(r"DrawdownResult|peak_date|trough_date|recovery_date", content), (
+            "Expected DrawdownResult with peak/trough/recovery dates"
+        )
 
-        def rolling_var(returns, window=60, confidence=0.95):
-            result = [float("nan")] * (window - 1)
-            for i in range(window - 1, len(returns)):
-                window_returns = returns[i - window + 1 : i + 1]
-                result.append(
-                    float(np.percentile(window_returns, (1 - confidence) * 100))
-                )
-            return result
+    def test_top_n_drawdowns(self):
+        content = self._read_module()
+        assert re.search(r"top.*drawdown|n.*drawdown|drawdown.*periods", content, re.IGNORECASE), (
+            "Expected top N drawdown periods computation"
+        )
 
-        np.random.seed(42)
-        returns = np.random.randn(200) * 0.01
-        rolling = rolling_var(returns, window=60)
-        for i in range(59):
-            assert math.isnan(
-                rolling[i]
-            ), f"Expected NaN at index {i}, got {rolling[i]}"
-        assert not math.isnan(rolling[59]), f"Expected non-NaN at index 59, got NaN"
+    def test_duration_tracking(self):
+        content = self._read_module()
+        assert re.search(r"duration|days|peak.*trough", content, re.IGNORECASE), (
+            "Expected duration tracking in drawdown analysis"
+        )
 
-    def test_sharpe_ratio_approx_1_0(self):
-        """sharpe_ratio must be approx 1.0 for mean/std=1 daily returns annualized (mocked)."""
-        import numpy as np
 
-        def sharpe_ratio(returns, risk_free=0.0, periods_per_year=252):
-            excess = returns - risk_free / periods_per_year
-            mean = np.mean(excess)
-            std = np.std(excess, ddof=1)
-            if std == 0:
-                return float("inf") if mean > 0 else 0.0
-            return float(mean / std * math.sqrt(periods_per_year))
+class TestSemanticRiskRatios:
+    """Verify Sharpe, Sortino, and Calmar ratio implementations."""
 
-        np.random.seed(42)
-        returns = np.random.normal(loc=0.01, scale=0.01, size=252)
-        sr = sharpe_ratio(returns, risk_free=0)
-        assert (
-            abs(sr - 1.0) <= 1.0
-        ), f"Sharpe ratio {sr:.2f} not within tolerance of 1.0 ± 1.0"
+    def _read_module(self):
+        path = os.path.join(REPO_DIR, "pyfolio", "risk_metrics.py")
+        with open(path, "r") as f:
+            return f.read()
 
-    def test_zero_std_returns_handled_gracefully(self):
-        """sharpe_ratio must not raise ZeroDivisionError for constant returns (mocked)."""
-        import numpy as np
+    def test_sharpe_ratio_function(self):
+        content = self._read_module()
+        assert re.search(r"def\s+\w*sharpe\w*", content, re.IGNORECASE), (
+            "Expected Sharpe ratio function"
+        )
 
-        def sharpe_ratio(returns, risk_free=0.0, periods_per_year=252):
-            excess = returns - risk_free / periods_per_year
-            mean = np.mean(excess)
-            std = np.std(excess, ddof=1)
-            if std == 0:
-                return float("inf") if mean > 0 else 0.0
-            return float(mean / std * math.sqrt(periods_per_year))
+    def test_sortino_ratio_function(self):
+        content = self._read_module()
+        assert re.search(r"def\s+\w*sortino\w*", content, re.IGNORECASE), (
+            "Expected Sortino ratio function"
+        )
 
-        returns = np.full(252, 0.001)
-        sr = sharpe_ratio(returns)
-        # Must not raise; result must be a valid float
-        assert isinstance(sr, float), f"Expected float, got {type(sr)}"
-        assert not math.isnan(sr) or sr == float("inf") or sr == 0.0
+    def test_calmar_ratio_function(self):
+        content = self._read_module()
+        assert re.search(r"def\s+\w*calmar\w*", content, re.IGNORECASE), (
+            "Expected Calmar ratio function"
+        )
+
+    def test_annualization_factor(self):
+        """Ratios should be annualized using sqrt(252)."""
+        content = self._read_module()
+        assert "252" in content, (
+            "Expected annualization factor of 252 trading days"
+        )
+
+    def test_risk_free_rate_parameter(self):
+        content = self._read_module()
+        assert re.search(r"risk_free|risk.free|rf", content, re.IGNORECASE), (
+            "Expected risk-free rate parameter"
+        )
+
+    def test_zero_variance_handling(self):
+        """Zero std should return inf/-inf/0.0 as specified."""
+        content = self._read_module()
+        assert re.search(r"inf|float\('inf'\)|float\(\"inf\"\)|np\.inf", content), (
+            "Expected inf handling for zero-variance edge case"
+        )
+
+
+class TestSemanticRollingAnalytics:
+    """Verify rolling VaR and Sharpe implementations."""
+
+    def _read_module(self):
+        path = os.path.join(REPO_DIR, "pyfolio", "risk_metrics.py")
+        with open(path, "r") as f:
+            return f.read()
+
+    def test_rolling_var_function(self):
+        content = self._read_module()
+        assert re.search(r"def\s+rolling_var|def\s+rolling.*var", content, re.IGNORECASE), (
+            "Expected rolling_var function"
+        )
+
+    def test_rolling_sharpe_function(self):
+        content = self._read_module()
+        assert re.search(r"def\s+rolling_sharpe|def\s+rolling.*sharpe", content, re.IGNORECASE), (
+            "Expected rolling_sharpe function"
+        )
+
+    def test_window_parameter(self):
+        content = self._read_module()
+        assert re.search(r"window", content), (
+            "Expected window parameter in rolling functions"
+        )
+
+
+class TestFunctionalPythonSyntax:
+    """Validate Python syntax of created files."""
+
+    def _check_syntax(self, filepath):
+        with open(filepath, "r") as f:
+            source = f.read()
+        ast.parse(source)
+
+    def test_risk_metrics_syntax(self):
+        self._check_syntax(os.path.join(REPO_DIR, "pyfolio", "risk_metrics.py"))
+
+    def test_test_file_syntax(self):
+        self._check_syntax(os.path.join(REPO_DIR, "tests", "test_risk_metrics.py"))
+
+
+class TestFunctionalAgentTests:
+    """Verify the agent's own tests pass."""
+
+    def test_agent_tests_have_sufficient_coverage(self):
+        path = os.path.join(REPO_DIR, "tests", "test_risk_metrics.py")
+        with open(path, "r") as f:
+            content = f.read()
+        test_count = len(re.findall(r"def\s+test_", content))
+        assert test_count >= 5, (
+            f"Expected at least 5 test functions, found {test_count}"
+        )
+
+    def test_agent_tests_pass(self):
+        result = subprocess.run(
+            [sys.executable, "-m", "pytest",
+             "tests/test_risk_metrics.py", "-v", "--tb=short"],
+            cwd=REPO_DIR,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        assert result.returncode == 0, (
+            f"Agent's risk metrics tests failed:\n{result.stdout[-1000:]}\n{result.stderr[-500:]}"
+        )
+
+    def test_uses_numpy_or_pandas(self):
+        """Risk metrics should use numpy/pandas for computation."""
+        path = os.path.join(REPO_DIR, "pyfolio", "risk_metrics.py")
+        with open(path, "r") as f:
+            content = f.read()
+        assert re.search(r"import numpy|import pandas|from numpy|from pandas", content), (
+            "Expected numpy or pandas usage in risk_metrics.py"
+        )

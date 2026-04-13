@@ -1,180 +1,276 @@
 """
-Tests for python-configuration skill.
-Validates AppSettings, DatabaseSettings, and get_settings in FastAPI test_app.
+Tests for the python-configuration skill.
+
+Validates that typed configuration management with validation,
+environment-specific defaults, and secret masking was implemented
+for a FastAPI test application.
+
+Repo: fastapi (https://github.com/fastapi/fastapi)
 """
 
+import ast
 import os
-import pytest
+import re
+import subprocess
+import sys
 
 REPO_DIR = "/workspace/fastapi"
 
 
-def _path(rel: str) -> str:
-    return os.path.join(REPO_DIR, rel)
+class TestFilePathCheck:
+    """Verify that all required files were created or modified."""
+
+    def test_config_file_exists(self):
+        path = os.path.join(REPO_DIR, "tests", "test_app", "config.py")
+        assert os.path.isfile(path), f"Expected config.py at {path}"
+
+    def test_app_file_exists(self):
+        path = os.path.join(REPO_DIR, "tests", "test_app", "app.py")
+        assert os.path.isfile(path), f"Expected app.py at {path}"
+
+    def test_test_config_file_exists(self):
+        path = os.path.join(REPO_DIR, "tests", "test_app", "test_config.py")
+        assert os.path.isfile(path), f"Expected test_config.py at {path}"
 
 
-def _read(rel: str) -> str:
-    with open(_path(rel), encoding="utf-8", errors="ignore") as f:
-        return f.read()
+class TestSemanticSettingsClasses:
+    """Verify the settings classes are properly defined."""
 
+    def _read_config(self):
+        path = os.path.join(REPO_DIR, "tests", "test_app", "config.py")
+        with open(path, "r") as f:
+            return f.read()
 
-class TestPythonConfiguration:
-
-    # ── file_path_check ──────────────────────────────────────────────────────
-
-    def test_config_py_exists(self):
-        """tests/test_app/config.py must exist."""
-        rel = "tests/test_app/config.py"
-        assert os.path.isfile(_path(rel)), f"{rel} not found"
-        assert os.path.getsize(_path(rel)) > 0, "config.py is empty"
-
-    def test_test_app_init_exists(self):
-        """tests/test_app/__init__.py must exist for importability."""
-        rel = "tests/test_app/__init__.py"
-        assert os.path.isfile(_path(rel)), f"{rel} not found"
-
-    # ── semantic_check ───────────────────────────────────────────────────────
-
-    def test_app_settings_class_defined(self):
-        """config.py must define AppSettings with environment, debug, secret_key fields."""
-        content = _read("tests/test_app/config.py")
-        assert "class AppSettings" in content, "AppSettings class not defined"
-        for field in ("environment", "debug", "secret_key"):
-            assert field in content, f"'{field}' field not found in config.py"
-
-    def test_database_settings_password_hidden_in_repr(self):
-        """config.py must mask password in __repr__ to prevent secret leakage."""
-        content = _read("tests/test_app/config.py")
-        has_repr = "__repr__" in content or "__str__" in content
-        has_mask = (
-            "***" in content or "REDACTED" in content or "hidden" in content.lower()
+    def test_database_settings_class(self):
+        content = self._read_config()
+        assert re.search(r"class\s+DatabaseSettings", content), (
+            "Expected DatabaseSettings class in config.py"
         )
-        assert has_repr, "__repr__ or __str__ override not found in config.py"
-        assert has_mask, "Password masking pattern not found in config.py"
 
-    def test_validation_production_debug_defined(self):
-        """config.py must validate that production+debug=True is rejected."""
-        content = _read("tests/test_app/config.py")
-        assert (
-            "production" in content.lower()
-        ), "'production' environment not referenced"
-        assert "debug" in content.lower(), "'debug' flag not referenced"
-        assert (
-            "validator" in content or "@" in content
-        ), "No validator decorator found in config.py"
+    def test_redis_settings_class(self):
+        content = self._read_config()
+        assert re.search(r"class\s+RedisSettings", content), (
+            "Expected RedisSettings class in config.py"
+        )
 
-    def test_get_settings_singleton_pattern(self):
-        """get_settings must use @lru_cache for singleton behavior."""
-        content = _read("tests/test_app/config.py")
-        assert "lru_cache" in content, "@lru_cache not found in config.py"
-        assert "get_settings" in content, "get_settings function not defined"
+    def test_app_settings_class(self):
+        content = self._read_config()
+        assert re.search(r"class\s+AppSettings", content), (
+            "Expected AppSettings class in config.py"
+        )
 
-    # ── functional_check ─────────────────────────────────────────────────────
+    def test_database_host_field(self):
+        content = self._read_config()
+        assert re.search(r"host", content), (
+            "Expected 'host' field in DatabaseSettings"
+        )
 
-    def test_production_debug_true_raises_value_error(self):
-        """production environment with debug=True must raise ValueError (mocked)."""
-        from pydantic import BaseModel, validator
+    def test_database_port_field_with_default(self):
+        content = self._read_config()
+        assert re.search(r"port.*5432|5432.*port", content), (
+            "Expected port field with default 5432 in DatabaseSettings"
+        )
 
-        class AppSettings(BaseModel):
-            environment: str
-            debug: bool = False
-            secret_key: str
+    def test_database_pool_size_field(self):
+        content = self._read_config()
+        assert re.search(r"pool_size", content), (
+            "Expected pool_size field in DatabaseSettings"
+        )
 
-            @validator("debug")
-            def no_debug_in_production(cls, v, values):
-                if v and values.get("environment") == "production":
-                    raise ValueError("debug mode not allowed in production")
-                return v
+    def test_database_ssl_mode_field(self):
+        content = self._read_config()
+        assert re.search(r"ssl_mode", content), (
+            "Expected ssl_mode field in DatabaseSettings"
+        )
 
-        with pytest.raises((ValueError, Exception)):
-            AppSettings(environment="production", debug=True, secret_key="a" * 32)
+    def test_ssl_mode_valid_values(self):
+        content = self._read_config()
+        for mode in ["disable", "require", "verify-ca", "verify-full"]:
+            assert mode in content, f"Expected ssl_mode value '{mode}' in config"
 
-    def test_allowed_hosts_wildcard_raises_value_error(self):
-        """allowed_hosts=['*'] must raise ValueError (mocked)."""
-        from pydantic import BaseModel, validator
-        from typing import List
+    def test_redis_url_field(self):
+        content = self._read_config()
+        assert re.search(r"redis://|rediss://", content), (
+            "Expected redis:// or rediss:// URL validation in RedisSettings"
+        )
 
-        class AppSettings(BaseModel):
-            environment: str = "development"
-            allowed_hosts: List[str] = []
-            secret_key: str
+    def test_environment_choices(self):
+        content = self._read_config()
+        for env in ["development", "staging", "production"]:
+            assert env in content, f"Expected environment choice '{env}' in AppSettings"
 
-            @validator("allowed_hosts")
-            def no_wildcard_hosts(cls, v):
-                if "*" in v:
-                    raise ValueError("Wildcard '*' not allowed in allowed_hosts")
-                return v
+    def test_secret_key_min_length(self):
+        content = self._read_config()
+        assert "32" in content, (
+            "Expected minimum secret_key length of 32 in AppSettings validation"
+        )
 
-        with pytest.raises((ValueError, Exception)):
-            AppSettings(
-                environment="development", allowed_hosts=["*"], secret_key="a" * 32
-            )
 
-    def test_port_99999_raises_value_error(self):
-        """DatabaseSettings port 99999 must raise ValueError (mocked)."""
-        from pydantic import BaseModel, validator
+class TestSemanticValidationRules:
+    """Verify validation rules are enforced at construction time."""
 
-        class DatabaseSettings(BaseModel):
-            host: str
-            port: int
-            name: str
-            user: str
-            password: str
+    def _read_config(self):
+        path = os.path.join(REPO_DIR, "tests", "test_app", "config.py")
+        with open(path, "r") as f:
+            return f.read()
 
-            @validator("port")
-            def valid_port(cls, v):
-                if not (1 <= v <= 65535):
-                    raise ValueError(f"port {v} is not in range 1-65535")
-                return v
+    def test_production_debug_conflict_check(self):
+        """production + debug=True must raise ValueError."""
+        content = self._read_config()
+        assert re.search(r"production.*debug|debug.*production|ValueError", content, re.IGNORECASE), (
+            "Expected validation: production environment rejects debug=True"
+        )
 
-        with pytest.raises((ValueError, Exception)):
-            DatabaseSettings(
-                host="db", port=99999, name="mydb", user="user", password="pass"
-            )
+    def test_production_allowed_hosts_wildcard_check(self):
+        """production + allowed_hosts=['*'] must raise ValueError."""
+        content = self._read_config()
+        assert re.search(r"allowed_hosts|allowed.hosts|\"\*\"", content), (
+            "Expected allowed_hosts wildcard validation for production"
+        )
 
-    def test_secret_key_less_than_32_chars_rejected(self):
-        """secret_key shorter than 32 chars must raise ValueError (mocked)."""
-        from pydantic import BaseModel, validator
+    def test_port_range_validation(self):
+        """database.port must be 1–65535."""
+        content = self._read_config()
+        assert "65535" in content, (
+            "Expected port range validation up to 65535"
+        )
 
-        class AppSettings(BaseModel):
-            environment: str = "development"
-            secret_key: str
+    def test_redis_url_validation(self):
+        """redis.url must start with redis:// or rediss://."""
+        content = self._read_config()
+        assert re.search(r"redis://|rediss://|startswith", content), (
+            "Expected redis URL prefix validation"
+        )
 
-            @validator("secret_key")
-            def secret_key_length(cls, v):
-                if len(v) < 32:
-                    raise ValueError("secret_key must be at least 32 characters")
-                return v
 
-        with pytest.raises((ValueError, Exception)):
-            AppSettings(environment="development", secret_key="tooshort")
+class TestSemanticSecretMasking:
+    """Verify that secret fields are masked in repr/str."""
 
-    def test_development_env_sets_debug_logging(self):
-        """Development environment must set DEBUG log level (mocked)."""
-        import logging
+    def _read_config(self):
+        path = os.path.join(REPO_DIR, "tests", "test_app", "config.py")
+        with open(path, "r") as f:
+            return f.read()
 
-        def get_log_level(environment: str) -> int:
-            mapping = {
-                "development": logging.DEBUG,
-                "staging": logging.INFO,
-                "production": logging.WARNING,
-            }
-            return mapping.get(environment, logging.INFO)
+    def test_repr_masking(self):
+        content = self._read_config()
+        assert re.search(r"__repr__|repr|SecretStr|\*\*\*|masked|hidden", content, re.IGNORECASE), (
+            "Expected __repr__ masking or SecretStr usage for sensitive fields"
+        )
 
-        assert get_log_level("development") == logging.DEBUG
+    def test_password_field_protected(self):
+        content = self._read_config()
+        assert re.search(r"password", content, re.IGNORECASE), (
+            "Expected password field in DatabaseSettings"
+        )
 
-    def test_get_settings_returns_same_instance(self):
-        """get_settings() must return the same instance on repeated calls (mocked)."""
-        from functools import lru_cache
+    def test_secret_key_field_protected(self):
+        content = self._read_config()
+        assert re.search(r"secret_key", content), (
+            "Expected secret_key field in AppSettings"
+        )
 
-        class Settings:
-            def __init__(self):
-                self.value = 42
 
-        @lru_cache(maxsize=1)
-        def get_settings():
-            return Settings()
+class TestSemanticEnvironmentDefaults:
+    """Verify environment-specific defaults."""
 
-        s1 = get_settings()
-        s2 = get_settings()
-        assert s1 is s2, "get_settings must return same singleton instance"
+    def _read_config(self):
+        path = os.path.join(REPO_DIR, "tests", "test_app", "config.py")
+        with open(path, "r") as f:
+            return f.read()
+
+    def test_log_level_defaults(self):
+        """development → DEBUG, production → WARNING."""
+        content = self._read_config()
+        assert "DEBUG" in content and "WARNING" in content, (
+            "Expected DEBUG and WARNING log level defaults for different environments"
+        )
+
+    def test_env_variable_prefix(self):
+        """Settings should load from APP_ prefixed env vars."""
+        content = self._read_config()
+        assert re.search(r"APP_|env_prefix|model_config", content), (
+            "Expected APP_ environment variable prefix configuration"
+        )
+
+
+class TestSemanticAppIntegration:
+    """Verify configuration is wired into the FastAPI app."""
+
+    def _read_app(self):
+        path = os.path.join(REPO_DIR, "tests", "test_app", "app.py")
+        with open(path, "r") as f:
+            return f.read()
+
+    def test_get_settings_dependency(self):
+        """App should have a get_settings() dependency function."""
+        content = self._read_app()
+        assert re.search(r"get_settings", content), (
+            "Expected get_settings dependency function in app.py"
+        )
+
+    def test_startup_validation(self):
+        """Settings should be validated on application startup."""
+        content = self._read_app()
+        assert re.search(r"startup|lifespan|on_event|AppSettings", content, re.IGNORECASE), (
+            "Expected startup validation or lifespan hook in app.py"
+        )
+
+
+class TestFunctionalPythonSyntax:
+    """Validate Python syntax of all created/modified files."""
+
+    def _check_syntax(self, filepath):
+        with open(filepath, "r") as f:
+            source = f.read()
+        ast.parse(source)
+
+    def test_config_syntax(self):
+        self._check_syntax(os.path.join(REPO_DIR, "tests", "test_app", "config.py"))
+
+    def test_app_syntax(self):
+        self._check_syntax(os.path.join(REPO_DIR, "tests", "test_app", "app.py"))
+
+    def test_test_config_syntax(self):
+        self._check_syntax(os.path.join(REPO_DIR, "tests", "test_app", "test_config.py"))
+
+
+class TestFunctionalTestCoverage:
+    """Verify the agent's own tests are well-structured and pass."""
+
+    def _read_test_file(self):
+        path = os.path.join(REPO_DIR, "tests", "test_app", "test_config.py")
+        with open(path, "r") as f:
+            return f.read()
+
+    def test_sufficient_test_count(self):
+        content = self._read_test_file()
+        test_count = len(re.findall(r"def\s+test_", content))
+        assert test_count >= 5, (
+            f"Expected at least 5 test functions in test_config.py, found {test_count}"
+        )
+
+    def test_covers_validation_errors(self):
+        content = self._read_test_file()
+        assert re.search(r"ValueError|ValidationError|raises|invalid", content, re.IGNORECASE), (
+            "Expected tests covering validation error scenarios"
+        )
+
+    def test_covers_environment_switching(self):
+        content = self._read_test_file()
+        assert re.search(r"development|production|staging|environment", content, re.IGNORECASE), (
+            "Expected tests covering environment switching"
+        )
+
+    def test_agent_tests_pass(self):
+        """Run the agent's own configuration tests."""
+        result = subprocess.run(
+            [sys.executable, "-m", "pytest",
+             "tests/test_app/test_config.py", "-v", "--tb=short"],
+            cwd=REPO_DIR,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        assert result.returncode == 0, (
+            f"Agent's own config tests failed:\n{result.stdout[-1000:]}\n{result.stderr[-500:]}"
+        )

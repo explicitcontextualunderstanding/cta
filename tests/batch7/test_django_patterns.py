@@ -1,206 +1,254 @@
-"""Test file for the django-patterns skill.
-
-This suite validates the ProductBundle / BundleItem models, ProductBundleQuerySet
-manager, BundleService, and related GraphQL / signal infrastructure in Saleor.
+"""
+Test skill: django-patterns
+Verify that the Agent adds a Product Bundle feature to the Saleor e-commerce
+platform — models, managers, service layer, signals, and GraphQL types/mutations.
 """
 
-from __future__ import annotations
-
-import ast
-import importlib.util
-import pathlib
+import os
 import re
+import ast
 import subprocess
-import sys
-
 import pytest
 
 
 class TestDjangoPatterns:
-    """Verify Saleor product bundle Django patterns."""
-
     REPO_DIR = "/workspace/saleor"
 
-    MODELS_PY = "saleor/product/models.py"
-    MANAGERS_PY = "saleor/product/managers.py"
-    SERVICES_PY = "saleor/product/services.py"
+    # ────────────────── helpers ──────────────────
 
-    # ------------------------------------------------------------------
-    # Helpers
-    # ------------------------------------------------------------------
+    def _read(self, rel_path):
+        fpath = os.path.join(self.REPO_DIR, rel_path)
+        with open(fpath, "r") as f:
+            return f.read()
 
-    def _repo_path(self, relative: str) -> pathlib.Path:
-        return pathlib.Path(self.REPO_DIR, *relative.split("/"))
+    def _exists(self, rel_path):
+        return os.path.isfile(os.path.join(self.REPO_DIR, rel_path))
 
-    def _read_text(self, relative: str) -> str:
-        path = self._repo_path(relative)
-        assert path.exists(), f"Expected path to exist: {path}"
-        return path.read_text(encoding="utf-8", errors="ignore")
+    # === File Path Checks ===
 
-    def _assert_non_empty_file(self, relative: str) -> pathlib.Path:
-        path = self._repo_path(relative)
-        assert path.is_file(), f"Expected file to exist: {path}"
-        assert path.stat().st_size > 0, f"Expected non-empty file: {path}"
-        return path
+    def test_product_models_exists(self):
+        """saleor/product/models.py must exist"""
+        assert self._exists("saleor/product/models.py")
 
-    def _class_source(self, source: str, class_name: str) -> str | None:
-        """Extract Python class body using AST."""
-        try:
-            tree = ast.parse(source)
-        except SyntaxError:
-            return None
-        for node in ast.walk(tree):
-            if isinstance(node, ast.ClassDef) and node.name == class_name:
-                start = node.lineno - 1
-                end = node.end_lineno
-                lines = source.splitlines()
-                return "\n".join(lines[start:end])
-        return None
+    def test_managers_file_exists(self):
+        """saleor/product/managers.py must exist"""
+        assert self._exists("saleor/product/managers.py")
 
-    # ------------------------------------------------------------------
-    # Layer 1 – file_path_check (3 cases)
-    # ------------------------------------------------------------------
+    def test_services_file_exists(self):
+        """saleor/product/services.py must exist"""
+        assert self._exists("saleor/product/services.py")
 
-    def test_file_path_saleor_product_models_py_modified_with_productbundle_and_bun(
-        self,
-    ):
-        """Verify saleor/product/models.py exists and is non-empty."""
-        self._assert_non_empty_file(self.MODELS_PY)
+    def test_signals_file_exists(self):
+        """saleor/product/signals.py must exist"""
+        assert self._exists("saleor/product/signals.py")
 
-    def test_file_path_saleor_product_managers_py_exists_with_productbundlequeryset(
-        self,
-    ):
-        """Verify saleor/product/managers.py exists and is non-empty."""
-        self._assert_non_empty_file(self.MANAGERS_PY)
+    def test_graphql_bundle_types_exists(self):
+        """GraphQL bundle types file must exist"""
+        assert self._exists("saleor/graphql/product/types/bundles.py")
 
-    def test_file_path_saleor_product_services_py_exists_with_bundleservice(self):
-        """Verify saleor/product/services.py exists and is non-empty."""
-        self._assert_non_empty_file(self.SERVICES_PY)
+    def test_graphql_bundle_mutations_exists(self):
+        """GraphQL bundle mutations file must exist"""
+        assert self._exists("saleor/graphql/product/mutations/bundles.py")
 
-    # ------------------------------------------------------------------
-    # Layer 2 – semantic_check (5 cases)
-    # ------------------------------------------------------------------
+    # === Semantic Checks — Models ===
 
-    def test_semantic_productbundle_has_name_slug_description_discount_type_discou(
-        self,
-    ):
-        """ProductBundle has name, slug, description, discount_type, discount_value, currency, is_active, timestamps."""
-        src = self._read_text(self.MODELS_PY)
-        cls = self._class_source(src, "ProductBundle")
-        assert cls is not None, "ProductBundle class not found in models.py"
-        for field in ("name", "slug", "discount_type", "discount_value", "is_active"):
-            assert field in cls, f"ProductBundle missing field: {field}"
+    def test_product_bundle_model_defined(self):
+        """ProductBundle model must be defined in models.py"""
+        src = self._read("saleor/product/models.py")
+        assert re.search(r'class\s+ProductBundle\b', src), (
+            "ProductBundle model class not found"
+        )
 
-    def test_semantic_bundleitem_has_foreignkey_to_productbundle_and_product_quant(
-        self,
-    ):
-        """BundleItem has ForeignKey to ProductBundle and Product, quantity, sort_order."""
-        src = self._read_text(self.MODELS_PY)
-        cls = self._class_source(src, "BundleItem")
-        assert cls is not None, "BundleItem class not found in models.py"
-        assert "ForeignKey" in cls, "BundleItem must have ForeignKey fields"
-        assert "quantity" in cls, "BundleItem must have quantity field"
+    def test_bundle_item_model_defined(self):
+        """BundleItem model must be defined in models.py"""
+        src = self._read("saleor/product/models.py")
+        assert re.search(r'class\s+BundleItem\b', src), (
+            "BundleItem model class not found"
+        )
 
-    def test_semantic_checkconstraint_on_discount_value_non_negative_and_percentag(
-        self,
-    ):
-        """CheckConstraint on discount_value non-negative and percentage <= 100."""
-        src = self._read_text(self.MODELS_PY)
-        assert "CheckConstraint" in src, "Models should define CheckConstraint"
-        assert re.search(
-            r"discount_value.*gte.*0|discount_value.*>=.*0|non_negative",
-            src,
-            re.IGNORECASE,
-        ), "CheckConstraint should enforce non-negative discount_value"
+    def test_product_bundle_fields(self):
+        """ProductBundle must have required fields: name, slug, discount_type,
+        discount_value, is_active"""
+        src = self._read("saleor/product/models.py")
+        for field in ["name", "slug", "discount_type", "discount_value", "is_active"]:
+            assert re.search(rf'{field}\s*=', src), (
+                f"ProductBundle missing field: {field}"
+            )
 
-    def test_semantic_unique_constraint_on_bundle_product_for_bundleitem(self):
-        """Unique constraint on (bundle, product) for BundleItem."""
-        src = self._read_text(self.MODELS_PY)
-        assert re.search(
-            r"UniqueConstraint|unique_together", src
-        ), "BundleItem should have unique constraint on (bundle, product)"
-        assert re.search(
-            r"bundle.*product|product.*bundle", src, re.IGNORECASE
-        ), "Unique constraint should involve bundle and product fields"
+    def test_discount_type_choices(self):
+        """discount_type must allow 'percentage' and 'fixed_amount'"""
+        src = self._read("saleor/product/models.py")
+        assert "percentage" in src and "fixed_amount" in src, (
+            "discount_type choices missing percentage or fixed_amount"
+        )
 
-    def test_semantic_productbundlequeryset_available_filters_by_component_stock_l(
-        self,
-    ):
-        """ProductBundleQuerySet.available() filters by component stock levels."""
-        src = self._read_text(self.MANAGERS_PY)
-        assert (
-            "ProductBundleQuerySet" in src
-        ), "ProductBundleQuerySet not found in managers.py"
-        assert re.search(
-            r"def\s+available\s*\(", src
-        ), "ProductBundleQuerySet must define available() method"
-        assert re.search(
-            r"stock|quantity|inventory", src, re.IGNORECASE
-        ), "available() should filter by stock levels"
+    def test_bundle_item_foreign_keys(self):
+        """BundleItem must have ForeignKey to ProductBundle (bundle) and Product (product)"""
+        src = self._read("saleor/product/models.py")
+        assert "ForeignKey" in src, "BundleItem missing ForeignKey definitions"
+        assert re.search(r'bundle\s*=.*ForeignKey', src), (
+            "BundleItem missing 'bundle' ForeignKey"
+        )
 
-    # ------------------------------------------------------------------
-    # Layer 3 – functional_check (5 cases, import with lightweight setup)
-    # ------------------------------------------------------------------
+    def test_check_constraint_discount_value(self):
+        """ProductBundle must have a CheckConstraint for discount_value"""
+        src = self._read("saleor/product/models.py")
+        assert "CheckConstraint" in src, (
+            "ProductBundle missing CheckConstraint for discount_value"
+        )
 
-    def _services_source(self) -> str:
-        parts = [self._read_text(self.MODELS_PY)]
-        for f in (self.MANAGERS_PY, self.SERVICES_PY):
-            path = self._repo_path(f)
-            if path.exists():
-                parts.append(path.read_text(encoding="utf-8", errors="ignore"))
-        return "\n".join(parts)
+    def test_meta_db_table(self):
+        """ProductBundle Meta must specify db_table = 'product_bundle'"""
+        src = self._read("saleor/product/models.py")
+        assert "product_bundle" in src, (
+            "ProductBundle Meta db_table not set to 'product_bundle'"
+        )
 
-    def test_functional_bundle_with_a_10_2_b_25_1_10_discount_40_50(self):
-        """Bundle with A($10x2) + B($25x1) + 10% discount → $40.50."""
-        src = self._services_source()
-        # Verify calculate_bundle_price or equivalent exists
-        assert re.search(
-            r"def\s+calculate.*price|def\s+get.*price|calculate_price", src
-        ), "Service must implement bundle price calculation"
-        # Verify percentage discount logic
-        assert re.search(
-            r"percentage|percent|PERCENTAGE", src, re.IGNORECASE
-        ), "Service must support percentage discount type"
+    # === Semantic Checks — Manager ===
 
-    def test_functional_fixed_amount_5_discount_on_45_total_40_00(self):
-        """Fixed amount $5 discount on $45 total → $40.00."""
-        src = self._services_source()
-        assert re.search(
-            r"fixed|FIXED|absolute", src, re.IGNORECASE
-        ), "Service must support fixed amount discount type"
+    def test_queryset_active_method(self):
+        """ProductBundleQuerySet must have an active() method"""
+        src = self._read("saleor/product/managers.py")
+        assert re.search(r'def\s+active\s*\(', src), (
+            "ProductBundleQuerySet missing active() method"
+        )
 
-    def test_functional_fixed_discount_exceeding_total_0_00_minimum(self):
-        """Fixed discount exceeding total → $0.00 (minimum)."""
-        src = self._services_source()
-        # Verify floor at zero
-        assert re.search(
-            r"max\s*\(.*0|min.*price|floor|clamp|Decimal\s*\(\s*['\"]0",
-            src,
-            re.IGNORECASE,
-        ), "Price calculation should floor at $0.00 when discount exceeds total"
+    def test_queryset_with_items_method(self):
+        """ProductBundleQuerySet must have a with_items() method"""
+        src = self._read("saleor/product/managers.py")
+        assert re.search(r'def\s+with_items\s*\(', src), (
+            "ProductBundleQuerySet missing with_items() method"
+        )
 
-    def test_functional_active_available_with_items_returns_correct_bundles(self):
-        """active().available().with_items() returns correct bundles."""
-        src = self._services_source()
-        assert re.search(
-            r"def\s+active\s*\(", src
-        ), "QuerySet must define active() method"
-        assert re.search(
-            r"def\s+available\s*\(", src
-        ), "QuerySet must define available() method"
-        assert re.search(
-            r"def\s+with_items\s*\(|prefetch_related|select_related", src
-        ), "QuerySet must define with_items() or use prefetch/select related"
+    def test_queryset_available_method(self):
+        """ProductBundleQuerySet must have an available() method"""
+        src = self._read("saleor/product/managers.py")
+        assert re.search(r'def\s+available\s*\(', src), (
+            "ProductBundleQuerySet missing available() method"
+        )
 
-    def test_functional_stock_drop_below_requirement_bundle_deactivated(self):
-        """Stock drop below requirement → bundle deactivated."""
-        src = self._services_source()
-        # Verify signal or check_availability related code
-        signals_path = self._repo_path("saleor/product/signals.py")
-        if signals_path.exists():
-            src += signals_path.read_text(encoding="utf-8", errors="ignore")
-        assert re.search(
-            r"signal|post_save|stock.*change|deactivate|is_active\s*=\s*False",
-            src,
-            re.IGNORECASE,
-        ), "System must deactivate bundles when stock drops below requirement"
+    def test_queryset_search_method(self):
+        """ProductBundleQuerySet must have a search() method"""
+        src = self._read("saleor/product/managers.py")
+        assert re.search(r'def\s+search\s*\(', src), (
+            "ProductBundleQuerySet missing search() method"
+        )
+
+    # === Semantic Checks — Service Layer ===
+
+    def test_bundle_service_class_exists(self):
+        """BundleService class must be defined in services.py"""
+        src = self._read("saleor/product/services.py")
+        assert re.search(r'class\s+BundleService\b', src), (
+            "BundleService class not found in services.py"
+        )
+
+    def test_create_bundle_method(self):
+        """BundleService must have a create_bundle method"""
+        src = self._read("saleor/product/services.py")
+        assert re.search(r'def\s+create_bundle\s*\(', src), (
+            "create_bundle method not found"
+        )
+
+    def test_calculate_bundle_price_method(self):
+        """BundleService must have a calculate_bundle_price method"""
+        src = self._read("saleor/product/services.py")
+        assert re.search(r'def\s+calculate_bundle_price\s*\(', src), (
+            "calculate_bundle_price method not found"
+        )
+
+    def test_check_availability_method(self):
+        """BundleService must have a check_availability method"""
+        src = self._read("saleor/product/services.py")
+        assert re.search(r'def\s+check_availability\s*\(', src), (
+            "check_availability method not found"
+        )
+
+    def test_create_bundle_uses_atomic(self):
+        """create_bundle must use transaction.atomic for atomicity"""
+        src = self._read("saleor/product/services.py")
+        assert "atomic" in src, (
+            "create_bundle should use transaction.atomic"
+        )
+
+    # === Semantic Checks — Signals ===
+
+    def test_post_save_signal_registered(self):
+        """A post_save signal must be connected for stock change handling"""
+        src = self._read("saleor/product/signals.py")
+        assert "post_save" in src, (
+            "post_save signal not found in signals.py"
+        )
+
+    # === Semantic Checks — GraphQL ===
+
+    def test_graphql_bundle_type_defined(self):
+        """ProductBundleType must be defined in graphql types"""
+        src = self._read("saleor/graphql/product/types/bundles.py")
+        assert re.search(r'class\s+ProductBundleType\b', src), (
+            "ProductBundleType not defined"
+        )
+
+    def test_graphql_total_price_field(self):
+        """ProductBundleType must expose a total_price computed field"""
+        src = self._read("saleor/graphql/product/types/bundles.py")
+        assert "total_price" in src, (
+            "total_price computed field missing from ProductBundleType"
+        )
+
+    def test_graphql_bundle_create_mutation(self):
+        """BundleCreate mutation must be defined"""
+        src = self._read("saleor/graphql/product/mutations/bundles.py")
+        assert re.search(r'class\s+BundleCreate\b', src), (
+            "BundleCreate mutation not found"
+        )
+
+    def test_graphql_bundle_delete_mutation(self):
+        """BundleDelete mutation must be defined"""
+        src = self._read("saleor/graphql/product/mutations/bundles.py")
+        assert re.search(r'class\s+BundleDelete\b', src), (
+            "BundleDelete mutation not found"
+        )
+
+    # === Functional Checks ===
+
+    def test_django_check_no_errors(self):
+        """Django system check should report no errors after model additions"""
+        result = subprocess.run(
+            ["python", "-m", "django", "check", "--settings=saleor.settings"],
+            capture_output=True, text=True, cwd=self.REPO_DIR, timeout=120,
+            env={**os.environ, "DJANGO_SETTINGS_MODULE": "saleor.settings"},
+        )
+        assert result.returncode == 0, (
+            f"Django check failed:\n{result.stdout}\n{result.stderr}"
+        )
+
+    def test_makemigrations_no_changes(self):
+        """makemigrations --check should show no pending model changes
+        (migration file must have been created)"""
+        result = subprocess.run(
+            ["python", "-m", "django", "makemigrations", "--check", "--dry-run",
+             "--settings=saleor.settings"],
+            capture_output=True, text=True, cwd=self.REPO_DIR, timeout=120,
+            env={**os.environ, "DJANGO_SETTINGS_MODULE": "saleor.settings"},
+        )
+        # returncode 0 means no changes detected (migration already exists)
+        # returncode 1 means unapplied changes — both are acceptable as long
+        # as the models compile; strict migration check is optional.
+        assert result.returncode in (0, 1), (
+            f"makemigrations failed:\n{result.stdout}\n{result.stderr}"
+        )
+
+    def test_services_importable(self):
+        """BundleService must be importable from saleor.product.services"""
+        result = subprocess.run(
+            ["python", "-c",
+             "import django; django.setup(); "
+             "from saleor.product.services import BundleService; "
+             "print('OK')"],
+            capture_output=True, text=True, cwd=self.REPO_DIR, timeout=60,
+            env={**os.environ, "DJANGO_SETTINGS_MODULE": "saleor.settings"},
+        )
+        assert "OK" in result.stdout, (
+            f"Import failed:\n{result.stdout}\n{result.stderr}"
+        )

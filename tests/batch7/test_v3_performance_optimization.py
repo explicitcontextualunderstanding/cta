@@ -1,180 +1,178 @@
-"""Test file for the v3-performance-optimization skill.
-
-This suite validates flash-attention v2 benchmark tooling:
-BenchmarkResult dataclass, TFLOPs computation, memory measurement,
-and benchmark configurations.
+"""
+Test skill: v3-performance-optimization
+Verify that the Agent implements a Flash Attention Benchmark Suite —
+benchmark_utils.py (BenchmarkResult, compute_attention_tflops, measure_peak_memory_mb,
+benchmark_forward), benchmark_flash_attn_v2.py (configs, run_all_benchmarks,
+print_comparison_table, speedup validation), and unit tests.
 """
 
-from __future__ import annotations
-
-import ast
-import pathlib
+import os
 import re
-
+import subprocess
 import pytest
 
 
 class TestV3PerformanceOptimization:
-    """Verify flash-attention v2 benchmarking tools."""
-
     REPO_DIR = "/workspace/flash-attention"
 
-    BENCHMARK_PY = "benchmarks/benchmark_flash_attn_v2.py"
-    BENCHMARK_UTILS_PY = "benchmarks/benchmark_utils.py"
-    TEST_CORRECTNESS_PY = "tests/test_benchmark_correctness.py"
+    # ────── helpers ──────
 
-    # ------------------------------------------------------------------
-    # Helpers
-    # ------------------------------------------------------------------
+    def _read(self, rel_path):
+        fpath = os.path.join(self.REPO_DIR, rel_path)
+        with open(fpath, "r") as f:
+            return f.read()
 
-    def _repo_path(self, relative: str) -> pathlib.Path:
-        return pathlib.Path(self.REPO_DIR, *relative.split("/"))
+    def _exists(self, rel_path):
+        return os.path.isfile(os.path.join(self.REPO_DIR, rel_path))
 
-    def _read_text(self, relative: str) -> str:
-        path = self._repo_path(relative)
-        assert path.exists(), f"Expected path to exist: {path}"
-        return path.read_text(encoding="utf-8", errors="ignore")
+    # === File Path Checks ===
 
-    def _assert_non_empty_file(self, relative: str) -> pathlib.Path:
-        path = self._repo_path(relative)
-        assert path.is_file(), f"Expected file to exist: {path}"
-        assert path.stat().st_size > 0, f"Expected non-empty file: {path}"
-        return path
+    def test_benchmark_utils_exists(self):
+        """benchmark_utils.py must exist"""
+        assert self._exists("benchmarks/benchmark_utils.py")
 
-    def _class_source(self, source: str, class_name: str) -> str:
-        """Extract class source via AST."""
-        try:
-            tree = ast.parse(source)
-        except SyntaxError:
-            return ""
-        for node in ast.walk(tree):
-            if isinstance(node, ast.ClassDef) and node.name == class_name:
-                return ast.get_source_segment(source, node) or ""
-        return ""
+    def test_benchmark_script_exists(self):
+        """benchmark_flash_attn_v2.py must exist"""
+        assert self._exists("benchmarks/benchmark_flash_attn_v2.py")
 
-    def _function_source(self, source: str, func_name: str) -> str:
-        """Extract function source via AST."""
-        try:
-            tree = ast.parse(source)
-        except SyntaxError:
-            return ""
-        for node in ast.walk(tree):
-            if isinstance(node, ast.FunctionDef) and node.name == func_name:
-                return ast.get_source_segment(source, node) or ""
-        return ""
+    def test_correctness_test_exists(self):
+        """test_benchmark_correctness.py must exist"""
+        assert self._exists("tests/test_benchmark_correctness.py")
 
-    # ------------------------------------------------------------------
-    # Layer 1 – file_path_check (3 cases)
-    # ------------------------------------------------------------------
+    # === Semantic Checks — benchmark_utils.py ===
 
-    def test_file_path_benchmark_flash_attn_v2_py_exists(self):
-        """Verify benchmarks/benchmark_flash_attn_v2.py exists."""
-        self._assert_non_empty_file(self.BENCHMARK_PY)
+    def test_benchmark_result_dataclass(self):
+        """BenchmarkResult dataclass must be defined"""
+        src = self._read("benchmarks/benchmark_utils.py")
+        assert "BenchmarkResult" in src
 
-    def test_file_path_benchmark_utils_py_exists(self):
-        """Verify benchmarks/benchmark_utils.py exists."""
-        self._assert_non_empty_file(self.BENCHMARK_UTILS_PY)
+    def test_benchmark_result_fields(self):
+        """BenchmarkResult must have tflops, memory_mb, latency_ms, dtype"""
+        src = self._read("benchmarks/benchmark_utils.py")
+        for field in ["tflops", "memory_mb", "latency_ms", "dtype"]:
+            assert field in src, f"Missing field: {field}"
 
-    def test_file_path_test_benchmark_correctness_py_exists(self):
-        """Verify tests/test_benchmark_correctness.py exists."""
-        self._assert_non_empty_file(self.TEST_CORRECTNESS_PY)
+    def test_compute_attention_tflops_func(self):
+        """compute_attention_tflops function must be defined"""
+        src = self._read("benchmarks/benchmark_utils.py")
+        assert "compute_attention_tflops" in src
 
-    # ------------------------------------------------------------------
-    # Layer 2 – semantic_check (5 cases)
-    # ------------------------------------------------------------------
+    def test_causal_tflops_factor(self):
+        """Must differentiate causal vs non-causal FLOPs calculation"""
+        src = self._read("benchmarks/benchmark_utils.py")
+        assert "causal" in src.lower()
 
-    def test_semantic_benchmarkresult_is_a_dataclass(self):
-        """BenchmarkResult is a dataclass with specified fields."""
-        src = self._read_text(self.BENCHMARK_UTILS_PY)
-        all_src = src + "\n" + self._read_text(self.BENCHMARK_PY)
-        assert re.search(
-            r"@dataclass|dataclass", all_src
-        ), "BenchmarkResult should be a dataclass"
-        cls = self._class_source(all_src, "BenchmarkResult")
-        assert cls, "BenchmarkResult class not found"
+    def test_measure_peak_memory_func(self):
+        """measure_peak_memory_mb function must be defined"""
+        src = self._read("benchmarks/benchmark_utils.py")
+        assert "measure_peak_memory_mb" in src
 
-    def test_semantic_compute_attention_tflops_factor_4_or_2(self):
-        """compute_attention_tflops applies factor 4 (non-causal) or 2 (causal)."""
-        src = self._read_text(self.BENCHMARK_UTILS_PY)
-        all_src = src + "\n" + self._read_text(self.BENCHMARK_PY)
-        func = self._function_source(all_src, "compute_attention_tflops")
-        if not func:
-            # May be named differently
-            func = all_src
-        assert re.search(
-            r"causal|is_causal", func, re.IGNORECASE
-        ), "compute_attention_tflops should handle causal vs non-causal"
-        assert re.search(
-            r"\b[24]\b|\*\s*[24]|factor", func
-        ), "Should apply factor 4 (non-causal) or 2 (causal)"
+    def test_cuda_memory_stats(self):
+        """Must use torch.cuda memory stats"""
+        src = self._read("benchmarks/benchmark_utils.py")
+        assert "reset_peak_memory_stats" in src or "max_memory_allocated" in src
 
-    def test_semantic_benchmark_forward_warmup_and_benchmark_iters(self):
-        """benchmark_forward has warmup_iters and benchmark_iters parameters."""
-        src = self._read_text(self.BENCHMARK_PY)
-        all_src = src + "\n" + self._read_text(self.BENCHMARK_UTILS_PY)
-        assert re.search(
-            r"warmup", all_src, re.IGNORECASE
-        ), "benchmark_forward should have warmup_iters parameter"
-        assert re.search(
-            r"benchmark_iters|num_iters|repeat", all_src, re.IGNORECASE
-        ), "benchmark_forward should have benchmark_iters parameter"
+    def test_benchmark_forward_func(self):
+        """benchmark_forward function must be defined"""
+        src = self._read("benchmarks/benchmark_utils.py")
+        assert "benchmark_forward" in src
 
-    def test_semantic_measure_peak_memory_mb(self):
-        """measure_peak_memory_mb calls reset_peak_memory_stats and max_memory_allocated."""
-        src = self._read_text(self.BENCHMARK_UTILS_PY)
-        all_src = src + "\n" + self._read_text(self.BENCHMARK_PY)
-        assert re.search(
-            r"reset_peak_memory_stats|reset_max_memory", all_src
-        ), "Should call reset_peak_memory_stats"
-        assert re.search(
-            r"max_memory_allocated", all_src
-        ), "Should call max_memory_allocated"
+    def test_cuda_synchronize(self):
+        """Must use torch.cuda.synchronize for timing"""
+        src = self._read("benchmarks/benchmark_utils.py")
+        assert "synchronize" in src
 
-    def test_semantic_benchmark_configs_contains_6_configurations(self):
-        """BENCHMARK_CONFIGS contains 6 configurations."""
-        src = self._read_text(self.BENCHMARK_PY)
-        all_src = src + "\n" + self._read_text(self.BENCHMARK_UTILS_PY)
-        assert re.search(
-            r"BENCHMARK_CONFIGS|configs|CONFIGURATIONS", all_src
-        ), "BENCHMARK_CONFIGS should be defined"
+    def test_warmup_iters(self):
+        """Must support warmup iterations"""
+        src = self._read("benchmarks/benchmark_utils.py")
+        assert "warmup" in src.lower()
 
-    # ------------------------------------------------------------------
-    # Layer 3 – functional_check (4 cases)
-    # ------------------------------------------------------------------
+    # === Semantic Checks — benchmark_flash_attn_v2.py ===
 
-    def test_functional_non_causal_tflops_computation(self):
-        """Non-causal TFLOPs: batch=1, seq=512, heads=8, dim=64, 1s → ~5.37e-4 TFLOPs."""
-        src = self._read_text(self.BENCHMARK_UTILS_PY)
-        all_src = src + "\n" + self._read_text(self.BENCHMARK_PY)
-        # Verify the TFLOPs formula exists
-        assert re.search(
-            r"tflops|flops|FLOP", all_src, re.IGNORECASE
-        ), "TFLOPs computation should be implemented"
-        # Factor 4 for non-causal
-        assert re.search(
-            r"\b4\b.*seq|seq.*\b4\b|factor.*4|non.causal", all_src, re.IGNORECASE
-        ), "Non-causal should use factor 4"
+    def test_benchmark_configs(self):
+        """BENCHMARK_CONFIGS must be defined with multiple configs"""
+        src = self._read("benchmarks/benchmark_flash_attn_v2.py")
+        assert "BENCHMARK_CONFIGS" in src
 
-    def test_functional_causal_tflops_half_of_non_causal(self):
-        """Causal TFLOPs = half of non-causal for same inputs."""
-        src = self._read_text(self.BENCHMARK_UTILS_PY)
-        all_src = src + "\n" + self._read_text(self.BENCHMARK_PY)
-        assert re.search(
-            r"causal.*2|2.*causal|factor.*2|half", all_src, re.IGNORECASE
-        ), "Causal TFLOPs should be half of non-causal"
+    def test_multiple_seq_lengths(self):
+        """Must benchmark multiple sequence lengths"""
+        src = self._read("benchmarks/benchmark_flash_attn_v2.py")
+        for seq in ["512", "1024", "4096"]:
+            assert seq in src, f"Missing seq length: {seq}"
 
-    def test_functional_benchmarkresult_dtype_correctly_set(self):
-        """BenchmarkResult.dtype correctly set for fp16/bf16."""
-        src = self._read_text(self.BENCHMARK_PY)
-        all_src = src + "\n" + self._read_text(self.BENCHMARK_UTILS_PY)
-        assert re.search(
-            r"dtype|fp16|bf16|float16|bfloat16", all_src
-        ), "BenchmarkResult should track dtype"
+    def test_dtype_options(self):
+        """Must support float16 and bfloat16"""
+        src = self._read("benchmarks/benchmark_flash_attn_v2.py")
+        assert "float16" in src
+        assert "bfloat16" in src
 
-    def test_functional_comparison_table_contains_speedup(self):
-        """print_comparison_table output contains speedup value."""
-        src = self._read_text(self.BENCHMARK_PY)
-        all_src = src + "\n" + self._read_text(self.BENCHMARK_UTILS_PY)
-        assert re.search(
-            r"speedup|comparison|table|print.*result", all_src, re.IGNORECASE
-        ), "Should have a comparison table with speedup"
+    def test_flash_attn_import(self):
+        """Must import flash_attn"""
+        src = self._read("benchmarks/benchmark_flash_attn_v2.py")
+        assert "flash_attn" in src
+
+    def test_run_all_benchmarks(self):
+        """run_all_benchmarks function must exist"""
+        src = self._read("benchmarks/benchmark_flash_attn_v2.py")
+        assert "run_all_benchmarks" in src
+
+    def test_print_comparison_table(self):
+        """print_comparison_table function must exist"""
+        src = self._read("benchmarks/benchmark_flash_attn_v2.py")
+        assert "print_comparison_table" in src
+
+    def test_speedup_validation(self):
+        """Must validate speedup with assertions"""
+        src = self._read("benchmarks/benchmark_flash_attn_v2.py")
+        assert "speedup" in src.lower()
+        assert "assert" in src
+
+    def test_memory_savings_reporting(self):
+        """Must report memory savings"""
+        src = self._read("benchmarks/benchmark_flash_attn_v2.py")
+        lower = src.lower()
+        assert "memory" in lower and ("saving" in lower or "reduction" in lower)
+
+    # === Semantic Checks — Unit Tests ===
+
+    def test_tflops_test_cases(self):
+        """Test file must verify TFLOP calculations"""
+        src = self._read("tests/test_benchmark_correctness.py")
+        assert "tflops" in src.lower() or "compute_attention" in src
+
+    def test_causal_test(self):
+        """Test file must verify causal vs non-causal difference"""
+        src = self._read("tests/test_benchmark_correctness.py")
+        assert "causal" in src.lower()
+
+    # === Functional Checks ===
+
+    def test_python_syntax_utils(self):
+        """benchmark_utils.py must have valid syntax"""
+        result = subprocess.run(
+            ["python", "-c",
+             "import py_compile; py_compile.compile('benchmarks/benchmark_utils.py', doraise=True)"],
+            capture_output=True, text=True, cwd=self.REPO_DIR, timeout=30,
+        )
+        assert result.returncode == 0, f"Syntax error:\n{result.stderr}"
+
+    def test_python_syntax_benchmark(self):
+        """benchmark_flash_attn_v2.py must have valid syntax"""
+        result = subprocess.run(
+            ["python", "-c",
+             "import py_compile; py_compile.compile('benchmarks/benchmark_flash_attn_v2.py', doraise=True)"],
+            capture_output=True, text=True, cwd=self.REPO_DIR, timeout=30,
+        )
+        assert result.returncode == 0, f"Syntax error:\n{result.stderr}"
+
+    def test_correctness_tests_pass(self):
+        """Correctness tests must pass"""
+        result = subprocess.run(
+            ["python", "-m", "pytest",
+             "tests/test_benchmark_correctness.py",
+             "-v", "--tb=short"],
+            capture_output=True, text=True, cwd=self.REPO_DIR, timeout=120,
+        )
+        assert result.returncode == 0, (
+            f"Tests failed:\n{result.stdout}\n{result.stderr}"
+        )

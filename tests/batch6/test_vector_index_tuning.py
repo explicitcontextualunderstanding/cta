@@ -1,234 +1,196 @@
 """
-Tests for 'vector-index-tuning' skill — FAISS Vector Index Tuning.
-Validates that the Agent implemented HNSW and IVFFlat index builders and an
-IndexEvaluator with recall, QPS, and memory evaluation methods, plus proper
-error handling for edge cases.
+Test skill: vector-index-tuning
+Verify that the Agent builds a vector index benchmarking and tuning
+framework with HNSW parameter sweep, quantization strategies,
+evaluation metrics, and Pareto frontier recommendation.
 """
 
-import glob
 import os
 import re
+import ast
 import subprocess
-import textwrap
-
 import pytest
 
 
 class TestVectorIndexTuning:
-    """Verify FAISS vector index tuning implementation."""
-
     REPO_DIR = "/workspace/faiss"
 
-    # ── helpers ──────────────────────────────────────────────────────────
+    # === File Path Checks ===
 
-    @staticmethod
-    def _safe_read(path: str) -> str:
-        with open(path, "r", encoding="utf-8", errors="ignore") as fh:
-            return fh.read()
+    def test_index_builder_exists(self):
+        path = os.path.join(self.REPO_DIR, "benchmark/index_builder.py")
+        assert os.path.exists(path), f"index_builder.py not found at {path}"
 
-    @classmethod
-    def _run_in_repo(
-        cls, script: str, timeout: int = 120
-    ) -> subprocess.CompletedProcess:
-        return subprocess.run(
-            ["python", "-c", textwrap.dedent(script)],
-            cwd=cls.REPO_DIR,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
+    def test_quantization_exists(self):
+        path = os.path.join(self.REPO_DIR, "benchmark/quantization.py")
+        assert os.path.exists(path), f"quantization.py not found at {path}"
+
+    def test_evaluator_exists(self):
+        path = os.path.join(self.REPO_DIR, "benchmark/evaluator.py")
+        assert os.path.exists(path), f"evaluator.py not found at {path}"
+
+    def test_parameter_sweep_exists(self):
+        path = os.path.join(self.REPO_DIR, "benchmark/parameter_sweep.py")
+        assert os.path.exists(path), f"parameter_sweep.py not found at {path}"
+
+    def test_recommender_exists(self):
+        path = os.path.join(self.REPO_DIR, "benchmark/recommender.py")
+        assert os.path.exists(path), f"recommender.py not found at {path}"
+
+    def test_benchmark_tests_exist(self):
+        path = os.path.join(self.REPO_DIR, "tests/test_benchmark.py")
+        assert os.path.exists(path), f"tests/test_benchmark.py not found"
+
+    # === Semantic Checks ===
+
+    def test_index_builder_supports_hnswlib(self):
+        """Verify HNSWIndexBuilder builds hnswlib indexes"""
+        path = os.path.join(self.REPO_DIR, "benchmark/index_builder.py")
+        with open(path, "r") as f:
+            content = f.read()
+
+        assert "HNSWIndexBuilder" in content or "IndexBuilder" in content, (
+            "Must define HNSWIndexBuilder class"
+        )
+        assert "hnswlib" in content or "hnsw" in content.lower(), (
+            "Index builder should support hnswlib"
         )
 
-    # ── file_path_check (static) ────────────────────────────────────────
+    def test_index_builder_supports_faiss(self):
+        """Verify index builder supports FAISS HNSW and IVF"""
+        path = os.path.join(self.REPO_DIR, "benchmark/index_builder.py")
+        with open(path, "r") as f:
+            content = f.read()
 
-    def test_index_builder_file_exists(self):
-        """Verify the index builder module file exists."""
-        path = os.path.join(self.REPO_DIR, "benchmark", "index_builder.py")
-        assert os.path.isfile(path), f"Missing {path}"
+        assert "faiss" in content, "Index builder should support FAISS"
+        assert "IVF" in content or "ivf" in content, "Should support IVF index"
 
-    def test_evaluator_file_exists(self):
-        """Verify the evaluator module file exists."""
-        path = os.path.join(self.REPO_DIR, "benchmark", "evaluator.py")
-        assert os.path.isfile(path), f"Missing {path}"
+    def test_index_config_dataclass(self):
+        """Verify IndexConfig dataclass is defined"""
+        path = os.path.join(self.REPO_DIR, "benchmark/index_builder.py")
+        with open(path, "r") as f:
+            content = f.read()
 
-    # ── semantic_check (static) ─────────────────────────────────────────
-
-    def test_hnsw_builder_class_defined(self):
-        """Verify HNSWIndexBuilder class is defined with M, ef_construction, and build()."""
-        path = os.path.join(self.REPO_DIR, "benchmark", "index_builder.py")
-        assert os.path.isfile(path), f"Missing {path}"
-        content = self._safe_read(path)
-        assert re.search(
-            r"class\s+HNSWIndexBuilder", content
-        ), "HNSWIndexBuilder class not found"
-        assert re.search(r"M\b", content), "M parameter not found"
-        assert re.search(
-            r"ef_construction", content
-        ), "ef_construction parameter not found"
-        assert re.search(r"def\s+build\s*\(", content), "build() method not found"
-
-    def test_ivfflat_builder_class_defined(self):
-        """Verify IVFFlatIndexBuilder class with n_lists and build() calling train+add."""
-        path = os.path.join(self.REPO_DIR, "benchmark", "index_builder.py")
-        assert os.path.isfile(path), f"Missing {path}"
-        content = self._safe_read(path)
-        assert re.search(
-            r"class\s+IVFFlatIndexBuilder", content
-        ), "IVFFlatIndexBuilder class not found"
-        assert re.search(r"n_lists", content), "n_lists parameter not found"
-        assert re.search(r"\.train\s*\(", content), "index.train() call not found"
-        assert re.search(r"\.add\s*\(", content), "index.add() call not found"
-
-    def test_evaluator_has_recall_qps_memory_methods(self):
-        """Verify IndexEvaluator defines evaluate_recall, evaluate_qps, evaluate_memory."""
-        path = os.path.join(self.REPO_DIR, "benchmark", "evaluator.py")
-        assert os.path.isfile(path), f"Missing {path}"
-        content = self._safe_read(path)
-        assert re.search(
-            r"class\s+IndexEvaluator", content
-        ), "IndexEvaluator class not found"
-        for method in ("evaluate_recall", "evaluate_qps", "evaluate_memory"):
-            assert re.search(
-                rf"def\s+{method}\s*\(", content
-            ), f"{method} method not found in IndexEvaluator"
-
-    def test_faiss_import_in_index_builder(self):
-        """Verify faiss is imported in index_builder.py."""
-        path = os.path.join(self.REPO_DIR, "benchmark", "index_builder.py")
-        assert os.path.isfile(path), f"Missing {path}"
-        content = self._safe_read(path)
-        assert re.search(
-            r"import\s+faiss|from\s+faiss", content
-        ), "'import faiss' not found in index_builder.py"
-
-    # ── functional_check ────────────────────────────────────────────────
-
-    def test_hnsw_build_ntotal_correct(self):
-        """Verify building HNSW index from 1000 vectors results in ntotal==1000."""
-        result = self._run_in_repo(
-            """\
-            import sys; sys.path.insert(0, '.')
-            import numpy as np
-            from benchmark.index_builder import HNSWIndexBuilder
-            vecs = np.random.rand(1000, 128).astype('float32')
-            idx = HNSWIndexBuilder(M=16, ef_construction=100).build(vecs)
-            assert idx.ntotal == 1000, f"ntotal={idx.ntotal}"
-            print('ntotal OK')
-        """,
-            timeout=300,
+        assert "IndexConfig" in content, "Must define IndexConfig"
+        assert "ef_construction" in content or "efConstruction" in content, (
+            "IndexConfig should have ef_construction"
         )
-        if result.returncode != 0:
-            pytest.skip(f"HNSW build test failed: {result.stderr[:300]}")
-        assert "ntotal OK" in result.stdout
 
-    def test_recall_perfect_ground_truth(self):
-        """Verify recall@k with perfect ground truth returns 1.0."""
-        result = self._run_in_repo(
-            """\
-            import sys; sys.path.insert(0, '.')
-            import numpy as np, faiss
-            from benchmark.evaluator import IndexEvaluator
-            vecs = np.random.rand(1000, 128).astype('float32')
-            ref = faiss.IndexFlatL2(128)
-            ref.add(vecs)
-            q = vecs[:10]
-            D, I = ref.search(q, 5)
-            ev = IndexEvaluator()
-            r = ev.evaluate_recall(ref, q, I, k=5)
-            assert r == 1.0, f"recall={r}"
-            print('recall OK')
-        """,
-            timeout=300,
+    def test_quantization_has_scalar_and_pq(self):
+        """Verify quantization module has scalar INT8 and PQ"""
+        path = os.path.join(self.REPO_DIR, "benchmark/quantization.py")
+        with open(path, "r") as f:
+            content = f.read()
+
+        assert "QuantizationBenchmark" in content, "Must define QuantizationBenchmark"
+        assert re.search(r"def\s+quantize_scalar_int8", content), (
+            "Missing quantize_scalar_int8"
         )
-        if result.returncode != 0:
-            pytest.skip(f"Recall test failed: {result.stderr[:300]}")
-        assert "recall OK" in result.stdout
+        assert re.search(r"def\s+build_pq_index", content), "Missing build_pq_index"
 
-    def test_recall_wrong_ground_truth_near_zero(self):
-        """Verify recall with completely wrong ground truth returns ~0.0."""
-        result = self._run_in_repo(
-            """\
-            import sys; sys.path.insert(0, '.')
-            import numpy as np, faiss
-            from benchmark.evaluator import IndexEvaluator
-            from benchmark.index_builder import HNSWIndexBuilder
-            vecs = np.random.rand(1000, 128).astype('float32')
-            idx = HNSWIndexBuilder(M=16, ef_construction=100).build(vecs)
-            q = vecs[:10]
-            wrong_gt = np.zeros((10, 5), dtype='int64') + 999
-            ev = IndexEvaluator()
-            r = ev.evaluate_recall(idx, q, wrong_gt, k=5)
-            assert r < 0.01, f"Expected near-zero recall, got {r}"
-            print('low recall OK')
-        """,
-            timeout=300,
+    def test_quantization_has_memory_estimation(self):
+        """Verify quantization has estimate_memory function"""
+        path = os.path.join(self.REPO_DIR, "benchmark/quantization.py")
+        with open(path, "r") as f:
+            content = f.read()
+
+        assert re.search(r"def\s+estimate_memory", content), "Missing estimate_memory"
+
+    def test_evaluator_measures_recall_latency_throughput(self):
+        """Verify evaluator measures recall@k, latency, and throughput"""
+        path = os.path.join(self.REPO_DIR, "benchmark/evaluator.py")
+        with open(path, "r") as f:
+            content = f.read()
+
+        assert "IndexEvaluator" in content, "Must define IndexEvaluator class"
+        assert re.search(r"def\s+recall_at_k", content), "Missing recall_at_k"
+        assert re.search(r"def\s+measure_latency", content), "Missing measure_latency"
+        assert re.search(r"def\s+measure_throughput", content), "Missing measure_throughput"
+
+    def test_evaluator_returns_percentiles(self):
+        """Verify latency measurement includes p50, p95, p99"""
+        path = os.path.join(self.REPO_DIR, "benchmark/evaluator.py")
+        with open(path, "r") as f:
+            content = f.read()
+
+        assert "p50" in content or "p95" in content or "p99" in content, (
+            "Latency should report p50/p95/p99 percentiles"
         )
-        if result.returncode != 0:
-            pytest.skip(f"Wrong GT test failed: {result.stderr[:300]}")
-        assert "low recall OK" in result.stdout
 
-    def test_qps_positive_value(self):
-        """Verify evaluate_qps returns a positive float."""
-        result = self._run_in_repo(
-            """\
-            import sys; sys.path.insert(0, '.')
-            import numpy as np
-            from benchmark.index_builder import HNSWIndexBuilder
-            from benchmark.evaluator import IndexEvaluator
-            vecs = np.random.rand(1000, 128).astype('float32')
-            idx = HNSWIndexBuilder(M=16, ef_construction=100).build(vecs)
-            ev = IndexEvaluator()
-            qps = ev.evaluate_qps(idx, vecs[:100], n_runs=3)
-            assert qps > 0, f"Expected positive QPS, got {qps}"
-            print('qps OK')
-        """,
-            timeout=300,
+    def test_parameter_sweep_covers_m_values(self):
+        """Verify parameter sweep tests M ∈ {8,16,32,48,64}"""
+        path = os.path.join(self.REPO_DIR, "benchmark/parameter_sweep.py")
+        with open(path, "r") as f:
+            content = f.read()
+
+        assert "ParameterSweep" in content, "Must define ParameterSweep class"
+        # Check M values
+        m_values = ["8", "16", "32", "48", "64"]
+        found = sum(1 for v in m_values if v in content)
+        assert found >= 3, (
+            f"Parameter sweep should test multiple M values, found {found} of {m_values}"
         )
-        if result.returncode != 0:
-            pytest.skip(f"QPS test failed: {result.stderr[:300]}")
-        assert "qps OK" in result.stdout
 
-    def test_ivfflat_too_few_vectors_raises(self):
-        """Verify IVFFlatIndexBuilder raises when n_lists exceeds vectors."""
-        result = self._run_in_repo(
-            """\
-            import sys; sys.path.insert(0, '.')
-            import numpy as np
-            from benchmark.index_builder import IVFFlatIndexBuilder
-            vecs = np.random.rand(10, 128).astype('float32')
+    def test_recommender_has_pareto_frontier(self):
+        """Verify recommender computes Pareto frontier"""
+        path = os.path.join(self.REPO_DIR, "benchmark/recommender.py")
+        with open(path, "r") as f:
+            content = f.read()
+
+        assert "ConfigRecommender" in content, "Must define ConfigRecommender"
+        assert re.search(r"def\s+pareto_frontier", content), "Missing pareto_frontier"
+
+    def test_recommender_has_profiles(self):
+        """Verify recommender has predefined profiles"""
+        path = os.path.join(self.REPO_DIR, "benchmark/recommender.py")
+        with open(path, "r") as f:
+            content = f.read()
+
+        profiles = ["low_latency", "high_recall", "balanced", "memory_efficient"]
+        found = [p for p in profiles if p in content]
+        assert len(found) >= 3, (
+            f"Recommender should have profiles. Found: {found}"
+        )
+
+    # === Functional Checks ===
+
+    def test_all_python_files_parse(self):
+        """Verify all benchmark Python files parse"""
+        files = [
+            "benchmark/index_builder.py", "benchmark/quantization.py",
+            "benchmark/evaluator.py", "benchmark/parameter_sweep.py",
+            "benchmark/recommender.py",
+        ]
+        for filename in files:
+            path = os.path.join(self.REPO_DIR, filename)
+            with open(path, "r") as f:
+                source = f.read()
             try:
-                IVFFlatIndexBuilder(n_lists=500).build(vecs)
-                print('NO_ERROR')
-            except (ValueError, RuntimeError, Exception) as e:
-                print(f'ERROR:{e}')
-        """,
-            timeout=300,
-        )
-        if result.returncode != 0:
-            pytest.skip(f"IVFFlat test failed: {result.stderr[:300]}")
-        assert "ERROR" in result.stdout, "Expected error for too few vectors"
+                ast.parse(source)
+            except SyntaxError as e:
+                pytest.fail(f"{filename} has syntax error: {e}")
 
-    def test_non_float32_vectors_raises(self):
-        """Verify that passing non-float32 vectors raises TypeError or auto-casts."""
-        result = self._run_in_repo(
-            """\
-            import sys; sys.path.insert(0, '.')
-            import numpy as np
-            from benchmark.index_builder import HNSWIndexBuilder
-            vecs = np.random.rand(100, 128).astype('float64')
-            try:
-                idx = HNSWIndexBuilder(M=16, ef_construction=100).build(vecs)
-                if idx.ntotal == 100:
-                    print('AUTOCAST')
-                else:
-                    print('ERROR:unexpected ntotal')
-            except (TypeError, RuntimeError, Exception) as e:
-                print(f'ERROR:{e}')
-        """,
-            timeout=300,
+    def test_evaluator_imports(self):
+        """Verify evaluator can be imported"""
+        result = subprocess.run(
+            ["python", "-c",
+             "import sys; sys.path.insert(0, '.'); "
+             "from benchmark.evaluator import IndexEvaluator; print('OK')"],
+            capture_output=True, text=True, timeout=30,
+            cwd=self.REPO_DIR,
         )
-        if result.returncode != 0:
-            pytest.skip(f"non-float32 test failed: {result.stderr[:300]}")
-        out = result.stdout.strip()
-        assert (
-            "ERROR" in out or "AUTOCAST" in out
-        ), "Expected TypeError or transparent auto-cast"
+        assert result.returncode == 0, (
+            f"Failed to import IndexEvaluator:\n{result.stderr[:500]}"
+        )
+
+    def test_unit_tests_pass(self):
+        """Verify benchmark unit tests pass"""
+        result = subprocess.run(
+            ["python", "-m", "pytest", "tests/test_benchmark.py",
+             "-v", "--tb=short"],
+            capture_output=True, text=True, timeout=120,
+            cwd=self.REPO_DIR,
+        )
+        assert result.returncode == 0, (
+            f"Unit tests failed:\n{result.stdout[-1000:]}\n{result.stderr[-500:]}"
+        )

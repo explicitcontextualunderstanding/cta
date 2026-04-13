@@ -1,143 +1,143 @@
 """
-Test for 'implementing-agent-modes' skill — PostHog SQL Query Toolkit
-Validates that the Agent created a read-only SQL agent toolkit with
-security guards, caching, and schema introspection tools.
+Tests for the implementing-agent-modes skill.
+Validates a SQL Query agent mode for PostHog's AI assistant with
+schema exploration, read-only query execution, and mode registration.
 """
 
 import os
 import re
-import sys
-import subprocess
+import ast
 
-import pytest
+REPO_DIR = "/workspace/posthog"
+TOOLS_DIR = os.path.join(REPO_DIR, "ee", "hogai", "tools")
+MODES_DIR = os.path.join(REPO_DIR, "ee", "hogai", "core", "agent_modes")
+PRESETS_DIR = os.path.join(MODES_DIR, "presets")
 
 
 class TestImplementingAgentModes:
-    """Verify PostHog SQL query agent toolkit implementation."""
+    """Tests for the PostHog SQL Query agent mode."""
 
-    REPO_DIR = "/workspace/posthog"
+    # ── file_path_check ──────────────────────────────────────────────
 
-    @staticmethod
-    def _read(path: str) -> str:
-        try:
-            with open(path, "r", errors="ignore") as fh:
-                return fh.read()
-        except OSError:
+    def test_sql_query_tool_exists(self):
+        """SQL query tool module must exist."""
+        path = os.path.join(TOOLS_DIR, "sql_query_tool.py")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    def test_sql_query_mode_exists(self):
+        """SQL query mode definition must exist."""
+        path = os.path.join(PRESETS_DIR, "sql_query_mode.py")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    def test_registry_exists(self):
+        """Agent mode registry must exist."""
+        path = os.path.join(MODES_DIR, "registry.py")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    def test_tool_test_exists(self):
+        """SQL query tool test file must exist."""
+        path = os.path.join(TOOLS_DIR, "sql_query_tool_test.py")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    def test_mode_test_exists(self):
+        """SQL query mode test file must exist."""
+        path = os.path.join(PRESETS_DIR, "sql_query_mode_test.py")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    # ── semantic_check ───────────────────────────────────────────────
+
+    def _read(self, path):
+        if not os.path.isfile(path):
             return ""
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read()
 
-    # ── file_path_check ─────────────────────────────────────────────
-
-    def test_sql_query_toolkit_file_exists(self):
-        """Verify sql_query_toolkit.py and query_executor.py exist."""
-        for rel in ("posthog/hogql_queries/sql_query_toolkit.py",
-                     "posthog/hogql_queries/query_executor.py"):
-            path = os.path.join(self.REPO_DIR, rel)
-            assert os.path.isfile(path), f"Missing: {rel}"
-
-    def test_models_and_tests_exist(self):
-        """Verify models.py and test file exist."""
-        for rel in ("posthog/hogql_queries/models.py",
-                     "tests/test_sql_query_toolkit.py"):
-            path = os.path.join(self.REPO_DIR, rel)
-            assert os.path.isfile(path), f"Missing: {rel}"
-
-    def test_security_error_and_toolkit_importable(self):
-        """SQLQueryToolkit and SecurityError are importable."""
-        if not os.path.isdir(self.REPO_DIR):
-            pytest.skip("Repo dir does not exist")
-        sys.path.insert(0, self.REPO_DIR)
-        try:
-            from posthog.hogql_queries.sql_query_toolkit import SQLQueryToolkit, SecurityError  # noqa: F401
-        except ImportError:
-            pytest.skip("sql_query_toolkit not importable")
-        finally:
-            sys.path.pop(0)
-
-    # ── semantic_check ──────────────────────────────────────────────
-
-    def test_get_tools_returns_exactly_three(self):
-        """Verify get_tools() returns list of 3 tools: run_sql_query, get_schema, explain_query."""
-        content = self._read(os.path.join(
-            self.REPO_DIR, "posthog/hogql_queries/sql_query_toolkit.py"))
-        assert content, "sql_query_toolkit.py is empty or unreadable"
-        for tool in ("run_sql_query", "get_schema", "explain_query"):
-            assert tool in content, f"Tool '{tool}' not found in sql_query_toolkit.py"
-
-    def test_security_check_on_write_sql(self):
-        """Verify SecurityError is raised for INSERT, UPDATE, DELETE, DROP SQL."""
-        content = self._read(os.path.join(
-            self.REPO_DIR, "posthog/hogql_queries/sql_query_toolkit.py"))
-        assert content, "sql_query_toolkit.py is empty or unreadable"
-        for kw in ("INSERT", "UPDATE", "DELETE", "DROP"):
-            assert kw in content, f"SQL mutation keyword '{kw}' not guarded"
-
-    def test_cache_ttl_sixty_seconds(self):
-        """Verify caching with 60-second TTL is implemented."""
-        content = self._read(os.path.join(
-            self.REPO_DIR, "posthog/hogql_queries/sql_query_toolkit.py"))
-        assert content, "sql_query_toolkit.py is empty or unreadable"
-        found = any(kw in content for kw in ("60", "cache_ttl", "ttl=60", "maxsize"))
-        assert found, "No cache TTL configuration found"
-
-    # ── functional_check (import) ───────────────────────────────────
-
-    def _import_toolkit(self):
-        if not os.path.isdir(self.REPO_DIR):
-            pytest.skip("Repo dir does not exist")
-        sys.path.insert(0, self.REPO_DIR)
-        try:
-            from posthog.hogql_queries.sql_query_toolkit import SQLQueryToolkit, SecurityError
-            return SQLQueryToolkit, SecurityError
-        except ImportError:
-            pytest.skip("sql_query_toolkit not importable")
-        finally:
-            sys.path.pop(0)
-
-    def test_get_tools_returns_count_three(self):
-        """SQLQueryToolkit.get_tools() returns exactly 3 tool objects."""
-        SQLQueryToolkit, _ = self._import_toolkit()
-        toolkit = SQLQueryToolkit(db=None)
-        tools = toolkit.get_tools()
-        assert len(tools) == 3, f"Expected 3 tools, got {len(tools)}"
-
-    def test_security_error_on_insert_sql(self):
-        """ExecuteSQL raises SecurityError when receiving INSERT statement."""
-        SQLQueryToolkit, SecurityError = self._import_toolkit()
-        toolkit = SQLQueryToolkit(db=None)
-        with pytest.raises(SecurityError):
-            toolkit.run_sql_query("INSERT INTO events VALUES (1)")
-
-    def test_security_error_on_drop_sql(self):
-        """ExecuteSQL raises SecurityError when receiving DROP TABLE statement."""
-        SQLQueryToolkit, SecurityError = self._import_toolkit()
-        toolkit = SQLQueryToolkit(db=None)
-        with pytest.raises(SecurityError):
-            toolkit.run_sql_query("DROP TABLE events")
-
-    def test_row_count_equals_len_rows(self):
-        """QueryResult.row_count equals len(result.rows)."""
-        if not os.path.isdir(self.REPO_DIR):
-            pytest.skip("Repo dir does not exist")
-        sys.path.insert(0, self.REPO_DIR)
-        try:
-            from posthog.hogql_queries.models import QueryResult
-        except ImportError:
-            pytest.skip("models not importable")
-        finally:
-            sys.path.pop(0)
-        r = QueryResult(rows=[{"id": 1}, {"id": 2}], columns=["id"])
-        assert r.row_count == len(r.rows)
-
-    def test_cache_hit_returns_same_result(self):
-        """Calling run_sql_query twice with same query returns cached result."""
-        if not os.path.isdir(self.REPO_DIR):
-            pytest.skip("Repo dir does not exist")
-        result = subprocess.run(
-            ["python", "-m", "pytest",
-             os.path.join(self.REPO_DIR, "tests/test_sql_query_toolkit.py"),
-             "-k", "cache", "-v"],
-            capture_output=True, text=True, timeout=120,
+    def test_sql_toolkit_class(self):
+        """SQLQueryToolkit must define explore_schema and execute_query."""
+        content = self._read(os.path.join(TOOLS_DIR, "sql_query_tool.py"))
+        assert re.search(r"class\s+SQLQueryToolkit", content), (
+            "SQLQueryToolkit class not defined"
         )
-        if result.returncode != 0 and "no tests ran" in result.stdout.lower():
-            pytest.skip("No cache tests found")
-        assert result.returncode == 0 or "passed" in result.stdout.lower()
+        assert re.search(r"def\s+explore_schema\b", content), "explore_schema not defined"
+        assert re.search(r"def\s+execute_query\b", content), "execute_query not defined"
+
+    def test_ddl_dml_rejection(self):
+        """execute_query must reject DDL/DML keywords."""
+        content = self._read(os.path.join(TOOLS_DIR, "sql_query_tool.py"))
+        for keyword in ["CREATE", "DROP", "ALTER", "INSERT", "UPDATE", "DELETE", "TRUNCATE"]:
+            assert keyword in content or keyword.lower() in content, (
+                f"DDL/DML keyword '{keyword}' not checked"
+            )
+        assert re.search(r"Only SELECT queries are allowed", content), (
+            "DDL rejection error message not found"
+        )
+
+    def test_auto_limit_injection(self):
+        """execute_query must auto-append LIMIT to queries without one."""
+        content = self._read(os.path.join(TOOLS_DIR, "sql_query_tool.py"))
+        assert re.search(r"LIMIT|limit", content), "LIMIT handling not found"
+        assert "1000" in content, "Max limit of 1000 not found"
+
+    def test_mode_id_and_name(self):
+        """SQL query mode must be registered with id 'sql_query'."""
+        content = self._read(os.path.join(PRESETS_DIR, "sql_query_mode.py"))
+        assert "sql_query" in content, "Mode id 'sql_query' not found"
+        assert re.search(r"SQL Query Explorer|SQL Query", content), (
+            "Mode display name not found"
+        )
+
+    def test_mode_system_prompt(self):
+        """SQL query mode must include system prompt with schema exploration guidance."""
+        content = self._read(os.path.join(PRESETS_DIR, "sql_query_mode.py"))
+        assert re.search(r"schema|explore.*schema|column.*name", content, re.IGNORECASE), (
+            "System prompt schema guidance not found"
+        )
+
+    def test_trajectory_examples(self):
+        """SQL query mode must include at least 2 trajectory examples."""
+        content = self._read(os.path.join(PRESETS_DIR, "sql_query_mode.py"))
+        example_count = len(re.findall(r"example|trajectory|Example", content, re.IGNORECASE))
+        assert example_count >= 2, f"Found {example_count} example references, expected ≥ 2"
+
+    def test_registry_contains_sql_query(self):
+        """Registry must include the sql_query mode."""
+        content = self._read(os.path.join(MODES_DIR, "registry.py"))
+        assert "sql_query" in content, "sql_query mode not registered in registry"
+
+    # ── functional_check ─────────────────────────────────────────────
+
+    def test_tool_file_valid_python(self):
+        """SQL query tool must have valid Python syntax."""
+        content = self._read(os.path.join(TOOLS_DIR, "sql_query_tool.py"))
+        if content:
+            ast.parse(content)
+
+    def test_mode_file_valid_python(self):
+        """SQL query mode definition must have valid Python syntax."""
+        content = self._read(os.path.join(PRESETS_DIR, "sql_query_mode.py"))
+        if content:
+            ast.parse(content)
+
+    def test_registry_valid_python(self):
+        """Registry must have valid Python syntax."""
+        content = self._read(os.path.join(MODES_DIR, "registry.py"))
+        if content:
+            ast.parse(content)
+
+    def test_query_error_prefix(self):
+        """Failed queries must return error message prefixed with 'Query error:'."""
+        content = self._read(os.path.join(TOOLS_DIR, "sql_query_tool.py"))
+        assert re.search(r"Query error:", content), "Query error prefix not found"
+
+    def test_table_not_found_message(self):
+        """explore_schema must return error for nonexistent table."""
+        content = self._read(os.path.join(TOOLS_DIR, "sql_query_tool.py"))
+        assert re.search(r"not found|Table.*not found", content, re.IGNORECASE), (
+            "Table not found error message not found"
+        )
+
+    def test_tool_tests_exist(self):
+        """Tool test file must contain actual test methods."""
+        content = self._read(os.path.join(TOOLS_DIR, "sql_query_tool_test.py"))
+        test_count = len(re.findall(r"def\s+test_", content))
+        assert test_count >= 3, f"Found {test_count} test methods, expected ≥ 3"

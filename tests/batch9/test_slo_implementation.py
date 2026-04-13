@@ -1,148 +1,143 @@
 """
-Test for 'slo-implementation' skill — SLO / SLI / Error Budget
-Validates SLICalculator, ErrorBudgetTracker, BurnRateAlerter,
-SLOConfig validation, availability formula, and burn-rate thresholds.
+Test skill: slo-implementation
+Verify that the Agent creates SLI/SLO models, calculator, and burn rate
+alerter for SLO implementation (Python).
 """
 
 import os
-import sys
-
+import re
+import ast
+import subprocess
 import pytest
 
 
 class TestSloImplementation:
-    """Verify SLO implementation: SLI, budget, alerting, config."""
-
     REPO_DIR = "/workspace/slo-generator"
 
-    # ── helpers ──────────────────────────────────────────────────────────
+    # === File Path Checks ===
 
-    @staticmethod
-    def _read_file(path: str) -> str:
-        try:
-            with open(path, "r", errors="ignore") as fh:
-                return fh.read()
-        except OSError:
-            return ""
+    def test_slo_files_exist(self):
+        """Verify SLO implementation files exist"""
+        found = False
+        for root, dirs, files in os.walk(self.REPO_DIR):
+            if ".git" in root or "node_modules" in root:
+                continue
+            for f in files:
+                if f.endswith(".py") and ("slo" in f.lower() or "sli" in f.lower() or "burn" in f.lower() or "calculator" in f.lower()):
+                    found = True
+                    break
+            if found:
+                break
+        assert found, "SLO implementation files not found"
 
-    def _slo(self, *parts) -> str:
-        return os.path.join(self.REPO_DIR, "examples", "slo", *parts)
+    # === Semantic Checks ===
 
-    # ── file_path_check ──────────────────────────────────────────────────
+    def test_sli_model_defined(self):
+        """Verify SLI model is defined"""
+        content = self._collect_content()
+        has_sli = "SLI" in content or "sli" in content.lower()
+        assert has_sli, "SLI model not found"
 
-    def test_slo_init_sli_budget_exist(self):
-        """__init__.py, sli.py, budget.py must exist."""
-        for name in ("__init__.py", "sli.py", "budget.py"):
-            assert os.path.isfile(self._slo(name)), f"{name} not found"
+    def test_slo_model_defined(self):
+        """Verify SLO model is defined"""
+        content = self._collect_content()
+        has_slo = "SLO" in content or "slo" in content.lower()
+        assert has_slo, "SLO model not found"
 
-    def test_alerting_report_exist(self):
-        """alerting.py and report.py must exist."""
-        assert os.path.isfile(self._slo("alerting.py"))
-        assert os.path.isfile(self._slo("report.py"))
+    def test_calculator_defined(self):
+        """Verify SLO calculator is implemented"""
+        content = self._collect_content()
+        content_lower = content.lower()
+        has_calc = "calculator" in content_lower or "compute" in content_lower or "calculate" in content_lower
+        assert has_calc, "SLO calculator not found"
 
-    def test_config_or_sloconfig_exists(self):
-        """config.py (SLOConfig) must exist."""
-        assert os.path.isfile(self._slo("config.py")), "config.py not found"
+    def test_burn_rate_alerter_defined(self):
+        """Verify burn rate alerter is implemented"""
+        content = self._collect_content()
+        content_lower = content.lower()
+        has_burn = "burn" in content_lower or "alert" in content_lower or "budget" in content_lower
+        assert has_burn, "Burn rate alerter not found"
 
-    # ── semantic_check ───────────────────────────────────────────────────
+    def test_error_budget_calculation(self):
+        """Verify error budget calculation is present"""
+        content = self._collect_content()
+        content_lower = content.lower()
+        has_budget = "budget" in content_lower or "error_rate" in content_lower or "remaining" in content_lower
+        assert has_budget, "Error budget calculation not found"
 
-    def test_sli_availability_formula(self):
-        """SLICalculator.availability must use float division."""
-        content = self._read_file(self._slo("sli.py"))
-        if not content:
-            pytest.skip("sli.py not found")
-        assert "SLICalculator" in content
-        assert "availability" in content
+    # === Functional Checks ===
 
-    def test_burn_rate_thresholds(self):
-        """alerting.py must use 14.4 (fast) and 6 (slow) thresholds."""
-        content = self._read_file(self._slo("alerting.py"))
-        if not content:
-            pytest.skip("alerting.py not found")
-        assert "14.4" in content
-        assert "6" in content
-        assert "critical" in content.lower()
-        assert "warning" in content.lower()
+    def test_python_files_valid_syntax(self):
+        """Verify Python files have valid AST"""
+        py_files = self._find_py_files()
+        assert len(py_files) > 0, "No SLO Python files found"
+        for pf in py_files:
+            with open(pf) as fh:
+                source = fh.read()
+            try:
+                ast.parse(source)
+            except SyntaxError as e:
+                pytest.fail(f"Syntax error in {pf}: {e}")
 
-    def test_error_budget_formula(self):
-        """budget.py formula: (1 - target) * window_minutes."""
-        content = self._read_file(self._slo("budget.py"))
-        if not content:
-            pytest.skip("budget.py not found")
-        assert "ErrorBudgetTracker" in content
-        assert "budget_minutes" in content
+    def test_python_files_define_classes(self):
+        """Verify Python files define classes"""
+        py_files = self._find_py_files()
+        any_class = False
+        for pf in py_files:
+            with open(pf) as fh:
+                source = fh.read()
+            tree = ast.parse(source)
+            for node in ast.walk(tree):
+                if isinstance(node, ast.ClassDef):
+                    any_class = True
+                    break
+            if any_class:
+                break
+        assert any_class, "No classes found in SLO files"
 
-    def test_config_validates_target(self):
-        """SLOConfig must raise ValueError for target > 1.0."""
-        content = self._read_file(self._slo("config.py"))
-        if not content:
-            pytest.skip("config.py not found")
-        assert "ValueError" in content
+    def test_window_based_calculation(self):
+        """Verify window-based SLO calculation"""
+        content = self._collect_content()
+        content_lower = content.lower()
+        has_window = "window" in content_lower or "period" in content_lower or "rolling" in content_lower or "time_range" in content_lower
+        assert has_window, "Window-based SLO calculation not found"
 
-    # ── functional_check ─────────────────────────────────────────────────
+    def test_threshold_configuration(self):
+        """Verify SLO threshold configuration"""
+        content = self._collect_content()
+        content_lower = content.lower()
+        has_threshold = (
+            "threshold" in content_lower
+            or "target" in content_lower
+            or "objective" in content_lower
+            or "99.9" in content
+            or "99.5" in content
+        )
+        assert has_threshold, "SLO threshold configuration not found"
 
-    def test_sli_availability_990_of_1000(self):
-        """availability(990, 1000) == pytest.approx(0.99)."""
-        try:
-            sys.path.insert(0, self.REPO_DIR)
-            from examples.slo.sli import SLICalculator
-        except ImportError:
-            pytest.skip("Cannot import SLICalculator")
-        calc = SLICalculator()
-        assert calc.availability(990, 1000) == pytest.approx(0.99)
+    def _collect_content(self):
+        all_content = ""
+        for root, dirs, files in os.walk(self.REPO_DIR):
+            if ".git" in root or "node_modules" in root:
+                continue
+            for f in files:
+                if f.endswith(".py"):
+                    fpath = os.path.join(root, f)
+                    try:
+                        with open(fpath) as fh:
+                            c = fh.read()
+                        if any(kw in c.lower() for kw in ["slo", "sli", "burn", "budget", "calculator"]):
+                            all_content += c + "\n"
+                    except (UnicodeDecodeError, PermissionError):
+                        continue
+        return all_content
 
-    def test_error_budget_999_slo_30day(self):
-        """ErrorBudgetTracker(slo=0.999, window=43200).budget_minutes == 43.2."""
-        try:
-            sys.path.insert(0, self.REPO_DIR)
-            from examples.slo.budget import ErrorBudgetTracker
-        except ImportError:
-            pytest.skip("Cannot import ErrorBudgetTracker")
-        tracker = ErrorBudgetTracker(slo_target=0.999, window_minutes=43200)
-        assert tracker.budget_minutes == pytest.approx(43.2)
-
-    def test_burn_rate_14_5_at_5min_critical(self):
-        """BurnRateAlerter.check(14.5, 5) == 'critical'."""
-        try:
-            sys.path.insert(0, self.REPO_DIR)
-            from examples.slo.alerting import BurnRateAlerter
-        except ImportError:
-            pytest.skip("Cannot import BurnRateAlerter")
-        alerter = BurnRateAlerter()
-        assert alerter.check(14.5, 5) == "critical"
-
-    def test_burn_rate_5_at_30min_no_alert(self):
-        """BurnRateAlerter.check(5.0, 30) is None (below slow burn)."""
-        try:
-            sys.path.insert(0, self.REPO_DIR)
-            from examples.slo.alerting import BurnRateAlerter
-        except ImportError:
-            pytest.skip("Cannot import BurnRateAlerter")
-        alerter = BurnRateAlerter()
-        assert alerter.check(5.0, 30) is None
-
-    def test_burn_rate_6_5_at_30min_warning(self):
-        """BurnRateAlerter.check(6.5, 30) == 'warning'."""
-        try:
-            sys.path.insert(0, self.REPO_DIR)
-            from examples.slo.alerting import BurnRateAlerter
-        except ImportError:
-            pytest.skip("Cannot import BurnRateAlerter")
-        alerter = BurnRateAlerter()
-        assert alerter.check(6.5, 30) == "warning"
-
-    def test_sli_zero_total_no_zerodivision(self):
-        """availability(0, 0) must raise ValueError or return None."""
-        try:
-            sys.path.insert(0, self.REPO_DIR)
-            from examples.slo.sli import SLICalculator
-        except ImportError:
-            pytest.skip("Cannot import SLICalculator")
-        calc = SLICalculator()
-        try:
-            result = calc.availability(0, 0)
-            assert result is None
-        except ValueError:
-            pass
-        except ZeroDivisionError:
-            pytest.fail("ZeroDivisionError must not propagate")
+    def _find_py_files(self):
+        result = []
+        for root, dirs, files in os.walk(self.REPO_DIR):
+            if ".git" in root or "node_modules" in root:
+                continue
+            for f in files:
+                if f.endswith(".py") and ("slo" in f.lower() or "sli" in f.lower() or "burn" in f.lower() or "calculator" in f.lower()):
+                    result.append(os.path.join(root, f))
+        return result

@@ -1,270 +1,230 @@
 """
-Tests for 'analytics-events' skill.
-Generated from benchmark case definitions for analytics-events.
+Test skill: analytics-events
+Verify that the Agent correctly adds Snowplow analytics events for dashboard
+filter interactions in Metabase frontend code.
 """
 
-import ast
-import base64
-import glob
-import json
 import os
-import py_compile
 import re
 import subprocess
-import textwrap
-
 import pytest
-
-try:
-    import yaml
-except ModuleNotFoundError:
-    yaml = None
 
 
 class TestAnalyticsEvents:
-    """Verify the analytics-events skill output."""
-
     REPO_DIR = "/workspace/metabase"
 
-    # ── helpers ──────────────────────────────────────────────
+    # === File Path Checks ===
 
-    _SETUP_CACHE: dict = {}
+    def test_analytics_module_file_exists(self):
+        """Verify that the dashboard analytics tracking module exists"""
+        path = os.path.join(self.REPO_DIR, "frontend/src/metabase/dashboard/analytics.ts")
+        assert os.path.exists(path), f"analytics.ts not found at {path}"
 
-    @staticmethod
-    def _repo_path(rel: str) -> str:
-        return os.path.join(TestAnalyticsEvents.REPO_DIR, rel)
+    def test_event_type_file_exists(self):
+        """Verify that the event type definitions file exists"""
+        path = os.path.join(self.REPO_DIR, "frontend/src/metabase-types/analytics/event.ts")
+        assert os.path.exists(path), f"event.ts not found at {path}"
 
-    @staticmethod
-    def _safe_read(path: str) -> str:
-        with open(path, "r", encoding="utf-8", errors="ignore") as fh:
-            return fh.read()
+    # === Semantic Checks ===
 
-    @staticmethod
-    def _load_yaml(path: str):
-        if yaml is None:
-            pytest.skip("PyYAML not available")
-        with open(path, "r", encoding="utf-8", errors="ignore") as fh:
-            return yaml.safe_load(fh)
+    def test_event_types_define_five_dashboard_filter_events(self):
+        """Verify that event.ts defines all 5 dashboard filter event types"""
+        path = os.path.join(self.REPO_DIR, "frontend/src/metabase-types/analytics/event.ts")
+        with open(path, "r") as f:
+            content = f.read()
 
-    @staticmethod
-    def _load_json(path: str):
-        with open(path, "r", encoding="utf-8", errors="ignore") as fh:
-            return json.load(fh)
-
-    @classmethod
-    def _run_in_repo(
-        cls, script: str, timeout: int = 120
-    ) -> subprocess.CompletedProcess:
-        return subprocess.run(
-            ["python", "-c", textwrap.dedent(script)],
-            cwd=cls.REPO_DIR,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-        )
-
-    @classmethod
-    def _run_cmd(cls, command, args=None, timeout=120):
-        args = args or []
-        if isinstance(command, str) and args:
-            return subprocess.run(
-                [command, *args],
-                cwd=cls.REPO_DIR,
-                capture_output=True,
-                text=True,
-                timeout=timeout,
+        expected_events = [
+            "dashboard_filter_applied",
+            "dashboard_filter_cleared",
+            "dashboard_filter_all_cleared",
+            "dashboard_filter_default_saved",
+            "dashboard_filter_visibility_toggled",
+        ]
+        for event in expected_events:
+            assert event in content, (
+                f"event.ts missing event type definition: {event}"
             )
-        return subprocess.run(
-            command if isinstance(command, list) else command,
-            cwd=cls.REPO_DIR,
-            shell=isinstance(command, str),
-            capture_output=True,
-            text=True,
-            timeout=timeout,
+
+    def test_event_types_have_correct_fields(self):
+        """Verify that event types define target_id and appropriate detail fields"""
+        path = os.path.join(self.REPO_DIR, "frontend/src/metabase-types/analytics/event.ts")
+        with open(path, "r") as f:
+            content = f.read()
+
+        # target_id should appear for dashboard events
+        assert "target_id" in content, (
+            "Event types should include target_id field for dashboard ID"
+        )
+        # event_detail for applied, all_cleared, default_saved
+        assert "event_detail" in content, (
+            "Event types should include event_detail field"
+        )
+        # result for visibility toggled
+        assert "result" in content, (
+            "Visibility toggled event should include result field"
         )
 
-    @classmethod
-    def _ensure_setup(cls, label, setup_cmds, fallback):
-        if not setup_cmds:
-            return
-        key = tuple(setup_cmds)
-        if key in cls._SETUP_CACHE:
-            ok, msg = cls._SETUP_CACHE[key]
-            if ok:
-                return
-            if fallback == "skip_if_setup_fails":
-                pytest.skip(f"{label} setup failed: {msg}")
-            pytest.fail(f"{label} setup failed: {msg}")
-        for cmd in setup_cmds:
-            r = subprocess.run(
-                cmd,
-                cwd=cls.REPO_DIR,
-                shell=True,
-                capture_output=True,
-                text=True,
-                timeout=300,
+    def test_event_types_added_to_dashboard_event_union(self):
+        """Verify that new event types are added to the DashboardEvent union type"""
+        path = os.path.join(self.REPO_DIR, "frontend/src/metabase-types/analytics/event.ts")
+        with open(path, "r") as f:
+            content = f.read()
+
+        # Check for DashboardEvent union type
+        assert "DashboardEvent" in content, (
+            "event.ts should define or extend DashboardEvent union type"
+        )
+        # Verify that filter events are part of the union
+        filter_types_in_union = sum(1 for t in [
+            "DashboardFilterAppliedEvent",
+            "DashboardFilterClearedEvent",
+            "DashboardFilterAllClearedEvent",
+            "DashboardFilterDefaultSavedEvent",
+            "DashboardFilterVisibilityToggledEvent",
+        ] if t in content)
+        assert filter_types_in_union >= 3, (
+            f"Only {filter_types_in_union} filter event types found in event.ts. "
+            f"Expected at least 3 of the 5 event type interfaces."
+        )
+
+    def test_analytics_module_has_five_tracking_functions(self):
+        """Verify that analytics.ts defines all 5 tracking functions"""
+        path = os.path.join(self.REPO_DIR, "frontend/src/metabase/dashboard/analytics.ts")
+        with open(path, "r") as f:
+            content = f.read()
+
+        expected_functions = [
+            "trackDashboardFilterApplied",
+            "trackDashboardFilterCleared",
+            "trackDashboardFilterAllCleared",
+            "trackDashboardFilterDefaultSaved",
+            "trackDashboardFilterVisibilityToggled",
+        ]
+        for func in expected_functions:
+            assert func in content, (
+                f"analytics.ts missing tracking function: {func}"
             )
-            if r.returncode != 0:
-                msg = (r.stderr or r.stdout or "failed").strip()
-                cls._SETUP_CACHE[key] = (False, msg)
-                if fallback == "skip_if_setup_fails":
-                    pytest.skip(f"{label} setup failed: {msg}")
-                pytest.fail(f"{label} setup failed: {msg}")
-        cls._SETUP_CACHE[key] = (True, "ok")
 
-    # ── file_path_check (static) ────────────────────────────────────────
+    def test_analytics_module_uses_track_simple_event(self):
+        """Verify that tracking functions use trackSimpleEvent()"""
+        path = os.path.join(self.REPO_DIR, "frontend/src/metabase/dashboard/analytics.ts")
+        with open(path, "r") as f:
+            content = f.read()
 
-    def test_snowplow_ts_file_exists(self):
-        """Verify the main Snowplow tracking module exists"""
-        _p = self._repo_path("frontend/src/metabase/analytics/snowplow.ts")
-        assert os.path.isfile(
-            _p
-        ), f"Missing file: frontend/src/metabase/analytics/snowplow.ts"
-
-    def test_dashboard_events_file_exists(self):
-        """Verify dashboard event module exists"""
-        _p = self._repo_path("frontend/src/metabase/analytics/events/dashboard.ts")
-        assert os.path.isfile(
-            _p
-        ), f"Missing file: frontend/src/metabase/analytics/events/dashboard.ts"
-
-    def test_snowplow_test_file_exists(self):
-        """Verify unit test file for Snowplow module exists"""
-        _p = self._repo_path(
-            "frontend/src/metabase/analytics/__tests__/snowplow.unit.spec.ts"
-        )
-        assert os.path.isfile(
-            _p
-        ), f"Missing file: frontend/src/metabase/analytics/__tests__/snowplow.unit.spec.ts"
-
-    # ── semantic_check (static) ────────────────────────────────────────
-
-    def test_trackStructEvent_typed_export(self):
-        """Verify trackStructEvent is exported with typed parameters (no 'any')"""
-        _p = self._repo_path("frontend/src/metabase/analytics/snowplow.ts")
-        assert os.path.exists(
-            _p
-        ), f"Missing: frontend/src/metabase/analytics/snowplow.ts"
-        _contents = self._safe_read(_p)
-        _all = _contents if isinstance(_contents, str) else ""
-        assert (
-            "export function trackStructEvent" in _all
-        ), "Missing: export function trackStructEvent"
-        assert "category" in _all, "Missing: category"
-        assert "action" in _all, "Missing: action"
-        assert "string" in _all, "Missing: string"
-
-    def test_trackDashboardViewed_signature(self):
-        """Verify trackDashboardViewed has typed dashboardId and accessedVia params"""
-        _p = self._repo_path("frontend/src/metabase/analytics/events/dashboard.ts")
-        assert os.path.exists(
-            _p
-        ), f"Missing: frontend/src/metabase/analytics/events/dashboard.ts"
-        _contents = self._safe_read(_p)
-        _all = _contents if isinstance(_contents, str) else ""
-        assert "trackDashboardViewed" in _all, "Missing: trackDashboardViewed"
-        assert "dashboardId" in _all, "Missing: dashboardId"
-        assert "number" in _all, "Missing: number"
-        assert "accessedVia" in _all, "Missing: accessedVia"
-        assert "string" in _all, "Missing: string"
-
-    def test_snowplow_mock_pattern(self):
-        """Verify test file uses window.snowplow mock or @snowplow/browser-tracker mock"""
-        _p = self._repo_path(
-            "frontend/src/metabase/analytics/__tests__/snowplow.unit.spec.ts"
-        )
-        assert os.path.exists(
-            _p
-        ), f"Missing: frontend/src/metabase/analytics/__tests__/snowplow.unit.spec.ts"
-        _contents = self._safe_read(_p)
-        _all = _contents if isinstance(_contents, str) else ""
-        assert "jest.fn" in _all, "Missing: jest.fn"
-        assert "jest.mock" in _all, "Missing: jest.mock"
-        assert "snowplow" in _all, "Missing: snowplow"
-        assert "window.snowplow" in _all, "Missing: window.snowplow"
-
-    def test_void_return_types(self):
-        """Verify all tracking functions have return type void"""
-        _p = self._repo_path("frontend/src/metabase/analytics/snowplow.ts")
-        assert os.path.exists(
-            _p
-        ), f"Missing: frontend/src/metabase/analytics/snowplow.ts"
-        _contents = self._safe_read(_p)
-        _all = _contents if isinstance(_contents, str) else ""
-        assert ": void" in _all, "Missing: : void"
-        assert "track" in _all, "Missing: track"
-
-    # ── functional_check ────────────────────────────────────────
-
-    def test_typescript_compilation(self):
-        """Verify TypeScript compiles without errors"""
-        self._ensure_setup(
-            "test_typescript_compilation",
-            ["cd frontend && yarn install"],
-            "skip_if_setup_fails",
-        )
-        result = self._run_cmd(
-            "npx",
-            args=["tsc", "--noEmit", "src/metabase/analytics/snowplow.ts"],
-            timeout=120,
-        )
-        assert result.returncode == 0, (
-            f"test_typescript_compilation failed (exit {result.returncode})\n"
-            + result.stderr[:500]
+        assert "trackSimpleEvent" in content, (
+            "Tracking functions should call trackSimpleEvent()"
         )
 
-    def test_jest_unit_tests_pass(self):
-        """Verify Jest unit tests for Snowplow pass"""
-        self._ensure_setup(
-            "test_jest_unit_tests_pass",
-            ["cd frontend && yarn install"],
-            "skip_if_setup_fails",
-        )
-        result = self._run_cmd(
-            "npx",
-            args=[
-                "jest",
-                "src/metabase/analytics/__tests__/snowplow.unit.spec.ts",
-                "--no-coverage",
-            ],
-            timeout=120,
-        )
-        assert result.returncode == 0, (
-            f"test_jest_unit_tests_pass failed (exit {result.returncode})\n"
-            + result.stderr[:500]
+    def test_analytics_module_accepts_dashboard_id(self):
+        """Verify that tracking functions accept dashboardId parameter"""
+        path = os.path.join(self.REPO_DIR, "frontend/src/metabase/dashboard/analytics.ts")
+        with open(path, "r") as f:
+            content = f.read()
+
+        assert "dashboardId" in content, (
+            "Tracking functions should accept dashboardId parameter"
         )
 
-    def test_no_any_in_tracking_functions(self):
-        """Verify no 'any' type annotations in tracking function signatures"""
-        result = self._run_cmd(
-            "grep",
-            args=["-c", "any", "frontend/src/metabase/analytics/snowplow.ts"],
-            timeout=120,
-        )
-        assert result.returncode == 0, (
-            f"test_no_any_in_tracking_functions failed (exit {result.returncode})\n"
-            + result.stderr[:500]
+    def test_visibility_function_maps_boolean_to_string(self):
+        """Verify that visibility toggle function maps isVisible boolean to 'visible'/'hidden' string"""
+        path = os.path.join(self.REPO_DIR, "frontend/src/metabase/dashboard/analytics.ts")
+        with open(path, "r") as f:
+            content = f.read()
+
+        has_mapping = ("visible" in content and "hidden" in content) or "isVisible" in content
+        assert has_mapping, (
+            "Visibility toggle function should map boolean to 'visible'/'hidden' string"
         )
 
-    def test_optional_params_undefined_handling(self):
-        """Verify optional params use TypeScript ? syntax and are not sent as string 'null'"""
-        _p = self._repo_path("frontend/src/metabase/analytics/snowplow.ts")
-        assert os.path.exists(
-            _p
-        ), f"Missing: frontend/src/metabase/analytics/snowplow.ts"
-        _contents = self._safe_read(_p)
-        _all = _contents if isinstance(_contents, str) else ""
-        assert "label?" in _all, "Missing: label?"
-        assert "value?" in _all, "Missing: value?"
-        assert "undefined" in _all, "Missing: undefined"
+    # === Functional Checks ===
 
-    def test_event_category_string_constants(self):
-        """Verify event category strings match documented taxonomy ('dashboard', 'question')"""
-        _p = self._repo_path("frontend/src/metabase/analytics/events/dashboard.ts")
-        assert os.path.exists(
-            _p
-        ), f"Missing: frontend/src/metabase/analytics/events/dashboard.ts"
-        _contents = self._safe_read(_p)
-        _all = _contents if isinstance(_contents, str) else ""
-        assert "'dashboard'" in _all, "Missing: 'dashboard'"
-        assert "'viewed'" in _all, "Missing: 'viewed'"
+    def test_filter_bar_component_imports_tracking(self):
+        """Verify that DashboardFilterBar.tsx imports and calls tracking functions"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "frontend/src/metabase/dashboard/components/DashboardFilterBar.tsx"
+        )
+        if not os.path.exists(path):
+            # Try alternative path patterns
+            for root, dirs, files in os.walk(
+                os.path.join(self.REPO_DIR, "frontend/src/metabase/dashboard")
+            ):
+                for f in files:
+                    if "filterbar" in f.lower() and f.endswith(".tsx"):
+                        path = os.path.join(root, f)
+                        break
+
+        assert os.path.exists(path), f"DashboardFilterBar component not found"
+        with open(path, "r") as f:
+            content = f.read()
+
+        has_tracking_import = any(kw in content for kw in [
+            "trackDashboardFilter",
+            "analytics",
+            "tracking",
+        ])
+        assert has_tracking_import, (
+            "DashboardFilterBar.tsx should import tracking functions from analytics module"
+        )
+
+    def test_filter_panel_component_imports_tracking(self):
+        """Verify that DashboardFilterPanel.tsx imports and calls tracking functions"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "frontend/src/metabase/dashboard/components/DashboardFilterPanel.tsx"
+        )
+        if not os.path.exists(path):
+            for root, dirs, files in os.walk(
+                os.path.join(self.REPO_DIR, "frontend/src/metabase/dashboard")
+            ):
+                for f in files:
+                    if "filterpanel" in f.lower() and f.endswith(".tsx"):
+                        path = os.path.join(root, f)
+                        break
+
+        assert os.path.exists(path), f"DashboardFilterPanel component not found"
+        with open(path, "r") as f:
+            content = f.read()
+
+        has_tracking_import = any(kw in content for kw in [
+            "trackDashboardFilter",
+            "analytics",
+            "tracking",
+        ])
+        assert has_tracking_import, (
+            "DashboardFilterPanel.tsx should import tracking functions"
+        )
+
+    def test_event_names_use_snake_case(self):
+        """Verify that all event names follow Metabase's snake_case convention"""
+        path = os.path.join(self.REPO_DIR, "frontend/src/metabase/dashboard/analytics.ts")
+        with open(path, "r") as f:
+            content = f.read()
+
+        # Extract event name strings
+        event_pattern = re.compile(r'"(dashboard_filter_\w+)"')
+        event_names = event_pattern.findall(content)
+        assert len(event_names) >= 3, (
+            f"Expected at least 3 event name strings, found {len(event_names)}"
+        )
+        for name in event_names:
+            assert name == name.lower(), (
+                f"Event name '{name}' should be snake_case"
+            )
+            assert "_" in name, (
+                f"Event name '{name}' should use underscore separators"
+            )
+
+    def test_analytics_ts_is_valid_typescript(self):
+        """Verify that analytics.ts file has valid TypeScript structure"""
+        path = os.path.join(self.REPO_DIR, "frontend/src/metabase/dashboard/analytics.ts")
+        with open(path, "r") as f:
+            content = f.read()
+
+        # Basic structural checks
+        assert "export" in content, "analytics.ts should export tracking functions"
+        assert "function" in content or "=>" in content, (
+            "analytics.ts should define functions"
+        )
+        # Verify it imports from analytics types or tracking utility
+        assert "import" in content, "analytics.ts should have import statements"

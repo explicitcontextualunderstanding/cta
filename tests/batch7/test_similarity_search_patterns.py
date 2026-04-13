@@ -1,185 +1,204 @@
-"""Test file for the similarity-search-patterns skill.
-
-This suite validates filtered search and selectivity estimation in Milvus,
-including pre/post-filter strategy switching and cosine distance calculations.
+"""
+Test skill: similarity-search-patterns
+Verify that the Agent implements a Filtered Vector Search Operator with Dynamic
+Pruning in Milvus — SelectivityEstimator, FilteredSearchOperator, and
+CosineDistance metric.
 """
 
-from __future__ import annotations
-
-import math
-import pathlib
+import os
 import re
-
+import subprocess
 import pytest
 
 
 class TestSimilaritySearchPatterns:
-    """Verify filtered search + selectivity estimation in Milvus."""
-
     REPO_DIR = "/workspace/milvus"
+    SEGMENTS = "internal/querynodev2/segments"
 
-    FILTERED_SEARCH_GO = "internal/querynodev2/segments/filtered_search.go"
-    SELECTIVITY_GO = "internal/querynodev2/segments/selectivity_estimator.go"
-    FILTERED_SEARCH_TEST_GO = "internal/querynodev2/segments/filtered_search_test.go"
+    # ────────────────── helpers ──────────────────
 
-    # ------------------------------------------------------------------
-    # Helpers
-    # ------------------------------------------------------------------
+    def _read(self, rel_path):
+        fpath = os.path.join(self.REPO_DIR, rel_path)
+        with open(fpath, "r") as f:
+            return f.read()
 
-    def _repo_path(self, relative: str) -> pathlib.Path:
-        return pathlib.Path(self.REPO_DIR, *relative.split("/"))
+    def _exists(self, rel_path):
+        return os.path.isfile(os.path.join(self.REPO_DIR, rel_path))
 
-    def _read_text(self, relative: str) -> str:
-        path = self._repo_path(relative)
-        assert path.exists(), f"Expected path to exist: {path}"
-        return path.read_text(encoding="utf-8", errors="ignore")
+    # === File Path Checks ===
 
-    def _assert_non_empty_file(self, relative: str) -> pathlib.Path:
-        path = self._repo_path(relative)
-        assert path.is_file(), f"Expected file to exist: {path}"
-        assert path.stat().st_size > 0, f"Expected non-empty file: {path}"
-        return path
+    def test_filtered_search_exists(self):
+        """filtered_search.go must exist"""
+        assert self._exists(f"{self.SEGMENTS}/filtered_search.go")
 
-    def _go_struct_body(self, source: str, struct_name: str) -> str:
-        """Extract the body of a Go struct type definition."""
-        pattern = rf"type\s+{struct_name}\s+struct\s*\{{([^}}]+)\}}"
-        m = re.search(pattern, source, re.DOTALL)
-        return m.group(1) if m else ""
+    def test_selectivity_estimator_exists(self):
+        """selectivity_estimator.go must exist"""
+        assert self._exists(f"{self.SEGMENTS}/selectivity_estimator.go")
 
-    def _all_go_sources(self, directory: str) -> str:
-        """Read all .go files under a directory."""
-        result = []
-        root = self._repo_path(directory)
-        if root.is_dir():
-            for f in root.rglob("*.go"):
-                result.append(f.read_text(encoding="utf-8", errors="ignore"))
-        return "\n".join(result)
+    def test_filtered_search_test_exists(self):
+        """filtered_search_test.go must exist"""
+        assert self._exists(f"{self.SEGMENTS}/filtered_search_test.go")
 
-    # ------------------------------------------------------------------
-    # Layer 1 – file_path_check (3 cases)
-    # ------------------------------------------------------------------
+    def test_selectivity_estimator_test_exists(self):
+        """selectivity_estimator_test.go must exist"""
+        assert self._exists(f"{self.SEGMENTS}/selectivity_estimator_test.go")
 
-    def test_file_path_filtered_search_go_created(self):
-        """Verify filtered_search.go exists."""
-        self._assert_non_empty_file(self.FILTERED_SEARCH_GO)
+    def test_metrics_go_exists(self):
+        """pkg/util/similarity/metrics.go must exist"""
+        assert self._exists("pkg/util/similarity/metrics.go")
 
-    def test_file_path_selectivity_estimator_go_created(self):
-        """Verify selectivity_estimator.go exists."""
-        self._assert_non_empty_file(self.SELECTIVITY_GO)
+    # === Semantic Checks — SelectivityEstimator ===
 
-    def test_file_path_filtered_search_test_go_created(self):
-        """Verify filtered_search_test.go exists."""
-        self._assert_non_empty_file(self.FILTERED_SEARCH_TEST_GO)
+    def test_selectivity_estimator_struct(self):
+        """SelectivityEstimator struct must be defined"""
+        src = self._read(f"{self.SEGMENTS}/selectivity_estimator.go")
+        assert re.search(r'type\s+SelectivityEstimator\s+struct', src), (
+            "SelectivityEstimator struct not found"
+        )
 
-    # ------------------------------------------------------------------
-    # Layer 2 – semantic_check (5 cases)
-    # ------------------------------------------------------------------
+    def test_segment_stats_struct(self):
+        """SegmentStats struct must be defined"""
+        src = self._read(f"{self.SEGMENTS}/selectivity_estimator.go")
+        assert re.search(r'type\s+SegmentStats\s+struct', src), (
+            "SegmentStats struct not found"
+        )
 
-    def test_semantic_selectivityestimator_struct_with_segmentstats_map(self):
-        """SelectivityEstimator struct with segmentStats map."""
-        src = self._read_text(self.SELECTIVITY_GO)
-        body = self._go_struct_body(src, "SelectivityEstimator")
-        assert body, "SelectivityEstimator struct not found"
-        assert re.search(
-            r"segmentStats|segment_stats|map", body, re.IGNORECASE
-        ), "SelectivityEstimator should have a segmentStats map field"
+    def test_field_stats_struct(self):
+        """FieldStats struct must be defined"""
+        src = self._read(f"{self.SEGMENTS}/selectivity_estimator.go")
+        assert re.search(r'type\s+FieldStats\s+struct', src), (
+            "FieldStats struct not found"
+        )
 
-    def test_semantic_estimateselectivity_handles_all_filter_types(self):
-        """EstimateSelectivity handles all filter types."""
-        src = self._read_text(self.SELECTIVITY_GO)
-        assert re.search(
-            r"func.*EstimateSelectivity", src
-        ), "EstimateSelectivity function should exist"
-        # Should handle multiple filter types via switch/case or if/else
-        assert re.search(
-            r"switch|case|filter.*type|FilterType", src, re.IGNORECASE
-        ), "EstimateSelectivity should handle multiple filter types"
+    def test_estimate_selectivity_method(self):
+        """EstimateSelectivity method must be defined"""
+        src = self._read(f"{self.SEGMENTS}/selectivity_estimator.go")
+        assert "EstimateSelectivity" in src, (
+            "EstimateSelectivity method not found"
+        )
 
-    def test_semantic_filteredsearchoperator_with_prefilterthreshold_postfiltermult(
-        self,
-    ):
-        """FilteredSearchOperator has preFilterThreshold/postFilterMultiplier."""
-        src = self._read_text(self.FILTERED_SEARCH_GO)
-        body = self._go_struct_body(src, "FilteredSearchOperator")
-        assert body, "FilteredSearchOperator struct not found"
-        assert re.search(
-            r"preFilter|pre_filter|PreFilter", body
-        ), "FilteredSearchOperator should have preFilterThreshold"
-        assert re.search(
-            r"postFilter|post_filter|PostFilter|Multiplier", body
-        ), "FilteredSearchOperator should have postFilterMultiplier"
+    # === Semantic Checks — FilteredSearchOperator ===
 
-    def test_semantic_search_method_both_strategies_with_switching(self):
-        """Search method supports both pre-filter and post-filter strategies."""
-        src = self._read_text(self.FILTERED_SEARCH_GO)
-        assert re.search(r"func.*Search", src), "Search method should exist"
-        assert re.search(
-            r"pre.*filter|PreFilter", src, re.IGNORECASE
-        ), "Search should support pre-filter strategy"
-        assert re.search(
-            r"post.*filter|PostFilter", src, re.IGNORECASE
-        ), "Search should support post-filter strategy"
+    def test_filtered_search_operator_struct(self):
+        """FilteredSearchOperator struct must be defined"""
+        src = self._read(f"{self.SEGMENTS}/filtered_search.go")
+        assert re.search(r'type\s+FilteredSearchOperator\s+struct', src), (
+            "FilteredSearchOperator struct not found"
+        )
 
-    def test_semantic_cosinedistance_equals_1_minus_cosinesimilarity(self):
-        """CosineDistance = 1 - CosineSimilarity."""
-        src = self._all_go_sources("internal/querynodev2/segments")
-        assert re.search(
-            r"[Cc]osine[Dd]istance|cosine_distance", src
-        ), "CosineDistance function should exist"
-        assert re.search(
-            r"1\.0?\s*-|1\s*-", src
-        ), "CosineDistance should compute 1 - CosineSimilarity"
+    def test_search_request_struct(self):
+        """SearchRequest struct must be defined"""
+        src = self._read(f"{self.SEGMENTS}/filtered_search.go")
+        assert re.search(r'type\s+SearchRequest\s+struct', src), (
+            "SearchRequest struct not found"
+        )
 
-    # ------------------------------------------------------------------
-    # Layer 3 – functional_check (5 cases)
-    # ------------------------------------------------------------------
+    def test_search_result_struct(self):
+        """SearchResult struct must be defined with Strategy field"""
+        src = self._read(f"{self.SEGMENTS}/filtered_search.go")
+        assert re.search(r'type\s+SearchResult\s+struct', src), (
+            "SearchResult struct not found"
+        )
+        assert "Strategy" in src, "SearchResult missing Strategy field"
 
-    def test_functional_selectivity_001_triggers_pre_filter(self):
-        """Selectivity 0.01 → pre-filter strategy."""
-        src = self._read_text(self.FILTERED_SEARCH_GO)
-        # Low selectivity should trigger pre-filter
-        assert re.search(
-            r"preFilter|pre.filter", src, re.IGNORECASE
-        ), "Low selectivity should trigger pre-filter path"
-        # Should have threshold comparison
-        assert re.search(
-            r"<|<=|threshold", src
-        ), "Strategy selection should compare against threshold"
+    def test_search_method(self):
+        """Search method must be defined"""
+        src = self._read(f"{self.SEGMENTS}/filtered_search.go")
+        assert re.search(r'func\s+\(.*FilteredSearchOperator\)\s+Search\b', src), (
+            "Search method not found on FilteredSearchOperator"
+        )
 
-    def test_functional_selectivity_099_triggers_post_filter(self):
-        """Selectivity 0.99 → post-filter strategy."""
-        src = self._read_text(self.FILTERED_SEARCH_GO)
-        # High selectivity should trigger post-filter
-        assert re.search(
-            r"postFilter|post.filter", src, re.IGNORECASE
-        ), "High selectivity should trigger post-filter path"
+    def test_pre_filter_strategy(self):
+        """Must implement pre_filter strategy"""
+        src = self._read(f"{self.SEGMENTS}/filtered_search.go")
+        assert "pre_filter" in src, "pre_filter strategy not found"
 
-    def test_functional_cosinedistance_orthogonal_equals_1(self):
-        """CosineDistance([1,0],[0,1]) = 1.0."""
-        src = self._all_go_sources("internal/querynodev2/segments")
-        # Verify cosine distance is implemented
-        assert re.search(
-            r"[Cc]osine[Dd]istance|cosine_distance", src
-        ), "CosineDistance should be implemented"
-        # Check test file for orthogonal vector test
-        test_src = self._read_text(self.FILTERED_SEARCH_TEST_GO)
-        assert re.search(
-            r"1\.0|orthogonal|CosineDistance", test_src
-        ), "Test should verify CosineDistance for orthogonal vectors"
+    def test_post_filter_strategy(self):
+        """Must implement post_filter strategy"""
+        src = self._read(f"{self.SEGMENTS}/filtered_search.go")
+        assert "post_filter" in src, "post_filter strategy not found"
 
-    def test_functional_cosinedistance_identical_equals_0(self):
-        """CosineDistance([1,0],[1,0]) = 0.0."""
-        test_src = self._read_text(self.FILTERED_SEARCH_TEST_GO)
-        assert re.search(
-            r"0\.0|identical|same|CosineDistance", test_src
-        ), "Test should verify CosineDistance for identical vectors"
+    def test_pre_filter_threshold(self):
+        """preFilterThreshold must be configurable"""
+        src = self._read(f"{self.SEGMENTS}/filtered_search.go")
+        assert "preFilterThreshold" in src or "PreFilterThreshold" in src, (
+            "preFilterThreshold not found"
+        )
 
-    def test_functional_dimension_mismatch_returns_error(self):
-        """Dimension mismatch → error."""
-        src = self._all_go_sources("internal/querynodev2/segments")
-        assert re.search(
-            r"dimension|mismatch|len\(|length", src, re.IGNORECASE
-        ), "Should check for dimension mismatch"
-        assert re.search(
-            r"error|Error|err\s*!=\s*nil|fmt\.Errorf", src
-        ), "Dimension mismatch should return an error"
+    def test_post_filter_multiplier(self):
+        """postFilterMultiplier must be configurable"""
+        src = self._read(f"{self.SEGMENTS}/filtered_search.go")
+        assert "postFilterMultiplier" in src or "PostFilterMultiplier" in src, (
+            "postFilterMultiplier not found"
+        )
+
+    # === Semantic Checks — Filter Expressions ===
+
+    def test_filter_expression_interface(self):
+        """FilterExpression interface must be defined"""
+        src = self._read(f"{self.SEGMENTS}/filtered_search.go")
+        assert "FilterExpression" in src, "FilterExpression interface not found"
+
+    def test_compare_expr(self):
+        """CompareExpr type must be defined"""
+        src = self._read(f"{self.SEGMENTS}/filtered_search.go")
+        assert "CompareExpr" in src, "CompareExpr type not found"
+
+    def test_and_or_not_exprs(self):
+        """AndExpr, OrExpr, NotExpr must be defined"""
+        src = self._read(f"{self.SEGMENTS}/filtered_search.go")
+        for expr_type in ["AndExpr", "OrExpr", "NotExpr"]:
+            assert expr_type in src, f"{expr_type} type not found"
+
+    # === Semantic Checks — CosineDistance ===
+
+    def test_cosine_distance_function(self):
+        """CosineDistance function must be defined in metrics.go"""
+        src = self._read("pkg/util/similarity/metrics.go")
+        assert re.search(r'func\s+CosineDistance\b', src), (
+            "CosineDistance function not found in metrics.go"
+        )
+
+    # === Functional Checks ===
+
+    def test_go_build(self):
+        """Go packages must build without errors"""
+        result = subprocess.run(
+            ["go", "build", f"./{self.SEGMENTS}/..."],
+            capture_output=True, text=True, cwd=self.REPO_DIR, timeout=120,
+        )
+        assert result.returncode == 0, (
+            f"go build failed:\n{result.stdout}\n{result.stderr}"
+        )
+
+    def test_metrics_build(self):
+        """metrics package must build without errors"""
+        result = subprocess.run(
+            ["go", "build", "./pkg/util/similarity/..."],
+            capture_output=True, text=True, cwd=self.REPO_DIR, timeout=120,
+        )
+        assert result.returncode == 0, (
+            f"go build failed:\n{result.stdout}\n{result.stderr}"
+        )
+
+    def test_filtered_search_tests_pass(self):
+        """filtered_search_test.go must pass"""
+        result = subprocess.run(
+            ["go", "test", "-v", "-run", "TestFiltered",
+             f"./{self.SEGMENTS}/..."],
+            capture_output=True, text=True, cwd=self.REPO_DIR, timeout=120,
+        )
+        assert result.returncode == 0, (
+            f"Tests failed:\n{result.stdout}\n{result.stderr}"
+        )
+
+    def test_selectivity_estimator_tests_pass(self):
+        """selectivity_estimator_test.go must pass"""
+        result = subprocess.run(
+            ["go", "test", "-v", "-run", "TestSelectivity",
+             f"./{self.SEGMENTS}/..."],
+            capture_output=True, text=True, cwd=self.REPO_DIR, timeout=120,
+        )
+        assert result.returncode == 0, (
+            f"Tests failed:\n{result.stdout}\n{result.stderr}"
+        )

@@ -1,140 +1,162 @@
 """
-Test for 'k8s-manifest-generator' skill — K8s Manifest Generator
-Validates that the Agent created a Python package for generating K8s
-Deployment/Service/ConfigMap YAML with label standards, validation, and Helm merge.
+Tests for the k8s-manifest-generator skill.
+Validates a Kubernetes manifest generator with Kustomize overlay support,
+security policies, and best-practice validation.
 """
 
 import os
 import re
-import sys
+import ast
 
-import pytest
+REPO_DIR = "/workspace/kustomize"
+PYTHON_DIR = os.path.join(REPO_DIR, "tests", "python")
 
 
 class TestK8sManifestGenerator:
-    """Verify K8s manifest generator implementation."""
+    """Tests for the Kubernetes manifest generator."""
 
-    REPO_DIR = "/workspace/kustomize"
+    # ── file_path_check ──────────────────────────────────────────────
 
-    @staticmethod
-    def _read(path: str) -> str:
-        try:
-            with open(path, "r", errors="ignore") as fh:
-                return fh.read()
-        except OSError:
+    def test_manifest_generator_exists(self):
+        """ManifestGenerator module must exist."""
+        path = os.path.join(PYTHON_DIR, "manifest_generator.py")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    def test_kustomize_builder_exists(self):
+        """KustomizeBuilder module must exist."""
+        path = os.path.join(PYTHON_DIR, "kustomize_builder.py")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    def test_security_policies_exists(self):
+        """SecurityPolicyGenerator module must exist."""
+        path = os.path.join(PYTHON_DIR, "security_policies.py")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    def test_manifest_validator_exists(self):
+        """ManifestValidator module must exist."""
+        path = os.path.join(PYTHON_DIR, "manifest_validator.py")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    # ── semantic_check ───────────────────────────────────────────────
+
+    def _read(self, filename):
+        path = os.path.join(PYTHON_DIR, filename)
+        if not os.path.isfile(path):
             return ""
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read()
 
-    # ── file_path_check ─────────────────────────────────────────────
+    def test_generator_deployment(self):
+        """ManifestGenerator must produce Deployment resources."""
+        content = self._read("manifest_generator.py")
+        assert re.search(r"class\s+ManifestGenerator", content), (
+            "ManifestGenerator class not defined"
+        )
+        assert re.search(r"def\s+generate_deployment\b", content), (
+            "generate_deployment not defined"
+        )
 
-    def test_k8s_generator_package_exists(self):
-        """Verify __init__.py and manifest.py exist under src/k8s_generator/."""
-        for rel in ("src/k8s_generator/__init__.py", "src/k8s_generator/manifest.py"):
-            path = os.path.join(self.REPO_DIR, rel)
-            assert os.path.isfile(path), f"Missing: {rel}"
+    def test_generator_service_and_others(self):
+        """ManifestGenerator must produce Service, ConfigMap, Ingress, HPA."""
+        content = self._read("manifest_generator.py")
+        for method in ["generate_service", "generate_configmap",
+                        "generate_ingress", "generate_hpa"]:
+            assert re.search(rf"def\s+{method}\b", content), f"{method} not defined"
 
-    def test_kustomize_helm_models_exist(self):
-        """Verify kustomize.py, helm.py, and models.py exist."""
-        for rel in ("src/k8s_generator/kustomize.py", "src/k8s_generator/helm.py",
-                     "src/k8s_generator/models.py"):
-            path = os.path.join(self.REPO_DIR, rel)
-            assert os.path.isfile(path), f"Missing: {rel}"
+    def test_health_probes_in_deployment(self):
+        """Deployment must include liveness and readiness probes."""
+        content = self._read("manifest_generator.py")
+        assert re.search(r"liveness|livenessProbe", content, re.IGNORECASE), (
+            "Liveness probe not found"
+        )
+        assert re.search(r"readiness|readinessProbe", content, re.IGNORECASE), (
+            "Readiness probe not found"
+        )
 
-    def test_all_classes_importable(self):
-        """ManifestGenerator, KustomizeBuilder, HelmValuesMerger are importable."""
-        if not os.path.isdir(self.REPO_DIR):
-            pytest.skip("Repo dir does not exist")
-        sys.path.insert(0, os.path.join(self.REPO_DIR, "src"))
-        try:
-            from k8s_generator.manifest import ManifestGenerator  # noqa: F401
-            from k8s_generator.kustomize import KustomizeBuilder  # noqa: F401
-            from k8s_generator.helm import HelmValuesMerger  # noqa: F401
-        except ImportError:
-            pytest.skip("k8s_generator not importable")
-        finally:
-            sys.path.pop(0)
+    def test_resource_limits_defaults(self):
+        """Deployment must include default resource requests and limits."""
+        content = self._read("manifest_generator.py")
+        assert re.search(r"requests|limits|cpu|memory", content, re.IGNORECASE), (
+            "Resource limits not found"
+        )
 
-    # ── semantic_check ──────────────────────────────────────────────
+    def test_kustomize_builder_class(self):
+        """KustomizeBuilder must define create_base and create_overlay."""
+        content = self._read("kustomize_builder.py")
+        assert re.search(r"class\s+KustomizeBuilder", content), (
+            "KustomizeBuilder class not defined"
+        )
+        assert re.search(r"def\s+create_base\b", content), "create_base not defined"
+        assert re.search(r"def\s+create_overlay\b", content), "create_overlay not defined"
 
-    def test_manifest_generator_methods_defined(self):
-        """Verify generate_deployment(), generate_service(), generate_configmap() are defined."""
-        content = self._read(os.path.join(self.REPO_DIR, "src/k8s_generator/manifest.py"))
-        assert content, "manifest.py is empty or unreadable"
-        for method in ("generate_deployment", "generate_service", "generate_configmap"):
-            assert method in content, f"'{method}' not found in manifest.py"
+    def test_security_context(self):
+        """SecurityPolicyGenerator must add non-root, read-only filesystem."""
+        content = self._read("security_policies.py")
+        assert re.search(r"runAsNonRoot|run_as_non_root", content), (
+            "runAsNonRoot not found"
+        )
+        assert re.search(r"readOnlyRootFilesystem|read_only", content), (
+            "readOnlyRootFilesystem not found"
+        )
 
-    def test_validation_error_in_manifest(self):
-        """Verify manifest.py raises ValidationError for invalid fields."""
-        content = self._read(os.path.join(self.REPO_DIR, "src/k8s_generator/manifest.py"))
-        assert content, "manifest.py is empty or unreadable"
-        assert "ValidationError" in content, "ValidationError not found"
-        assert "raise" in content, "'raise' keyword not found"
+    def test_network_policy(self):
+        """SecurityPolicyGenerator must generate NetworkPolicy."""
+        content = self._read("security_policies.py")
+        assert re.search(r"NetworkPolicy|network_policy", content), (
+            "NetworkPolicy generation not found"
+        )
 
-    def test_cpu_memory_regex_validation(self):
-        """Verify manifest.py uses regex for CPU and memory format validation."""
-        content = self._read(os.path.join(self.REPO_DIR, "src/k8s_generator/manifest.py"))
-        assert content, "manifest.py is empty or unreadable"
-        found = any(kw in content for kw in ("re.match", "re.fullmatch", "Mi", "Gi"))
-        assert found, "No CPU/memory regex validation found"
+    def test_validator_violations(self):
+        """ManifestValidator must check for common violations."""
+        content = self._read("manifest_validator.py")
+        assert re.search(r"class\s+ManifestValidator", content), (
+            "ManifestValidator class not defined"
+        )
+        assert re.search(r"def\s+validate\b", content), "validate method not defined"
+        assert re.search(r"latest|Missing.*label|resource.*limit|privileged", content, re.IGNORECASE), (
+            "Validation rules not found"
+        )
 
-    # ── functional_check (import) ───────────────────────────────────
+    # ── functional_check ─────────────────────────────────────────────
 
-    def _import(self, dotpath: str):
-        if not os.path.isdir(self.REPO_DIR):
-            pytest.skip("Repo dir does not exist")
-        sys.path.insert(0, os.path.join(self.REPO_DIR, "src"))
-        try:
-            return __import__(dotpath, fromlist=[""])
-        except ImportError:
-            pytest.skip(f"{dotpath} not importable")
-        finally:
-            sys.path.pop(0)
+    def test_all_files_valid_python(self):
+        """All manifest generator Python files must have valid syntax."""
+        errors = []
+        for fname in ["manifest_generator.py", "kustomize_builder.py",
+                       "security_policies.py", "manifest_validator.py"]:
+            content = self._read(fname)
+            if not content:
+                continue
+            try:
+                ast.parse(content)
+            except SyntaxError as e:
+                errors.append(f"{fname}: {e}")
+        assert not errors, "Syntax errors:\n" + "\n".join(errors)
 
-    def test_deployment_yaml_kind_is_deployment(self):
-        """generate_deployment() returns YAML with kind: Deployment."""
-        import yaml
-        mod = self._import("k8s_generator.manifest")
-        models = self._import("k8s_generator.models")
-        config = models.DeploymentConfig(
-            name="myapp", image="nginx:1.21", replicas=2, cpu="100m", memory="128Mi")
-        manifest = yaml.safe_load(mod.ManifestGenerator().generate_deployment(config))
-        assert manifest["kind"] == "Deployment"
+    def test_api_versions_correct(self):
+        """Generator must use correct Kubernetes API versions."""
+        content = self._read("manifest_generator.py")
+        assert re.search(r"apps/v1|networking\.k8s\.io/v1|autoscaling/v2", content), (
+            "Correct Kubernetes API versions not found"
+        )
 
-    def test_mandatory_labels_present(self):
-        """app.kubernetes.io/name label present in generated Deployment metadata."""
-        import yaml
-        mod = self._import("k8s_generator.manifest")
-        models = self._import("k8s_generator.models")
-        config = models.DeploymentConfig(
-            name="myapp", image="nginx:1.21", replicas=1, cpu="100m", memory="128Mi")
-        manifest = yaml.safe_load(mod.ManifestGenerator().generate_deployment(config))
-        assert "app.kubernetes.io/name" in manifest["metadata"]["labels"]
+    def test_rolling_update_strategy(self):
+        """Deployment must use RollingUpdate strategy."""
+        content = self._read("manifest_generator.py")
+        assert re.search(r"RollingUpdate|rolling.update|maxSurge", content, re.IGNORECASE), (
+            "RollingUpdate strategy not found"
+        )
 
-    def test_missing_name_raises_validation_error(self):
-        """DeploymentConfig without name raises ValidationError."""
-        mod = self._import("k8s_generator.manifest")
-        models = self._import("k8s_generator.models")
-        with pytest.raises(models.ValidationError):
-            mod.ManifestGenerator().generate_deployment(
-                models.DeploymentConfig(name="", image="nginx"))
+    def test_anti_affinity(self):
+        """Deployment must include pod anti-affinity for spread."""
+        content = self._read("manifest_generator.py")
+        assert re.search(r"anti.affinity|antiAffinity|podAntiAffinity", content, re.IGNORECASE), (
+            "Pod anti-affinity not found"
+        )
 
-    def test_invalid_cpu_format_raises(self):
-        """Non-numeric CPU format 'abc' raises ValidationError."""
-        mod = self._import("k8s_generator.manifest")
-        models = self._import("k8s_generator.models")
-        with pytest.raises(models.ValidationError):
-            mod.ManifestGenerator().generate_deployment(
-                models.DeploymentConfig(name="app", image="nginx", cpu="abc", memory="128Mi"))
-
-    def test_helm_deep_merge_preserves_siblings(self):
-        """HelmValuesMerger.merge() deeply merges nested dicts preserving siblings."""
-        mod = self._import("k8s_generator.helm")
-        result = mod.HelmValuesMerger().merge(
-            {"a": {"b": 1, "c": 2}}, {"a": {"b": 99}})
-        assert result == {"a": {"b": 99, "c": 2}}
-
-    def test_configmap_data_section_correct(self):
-        """generate_configmap() produces ConfigMap YAML with correct data section."""
-        import yaml
-        mod = self._import("k8s_generator.manifest")
-        cm = yaml.safe_load(mod.ManifestGenerator().generate_configmap({"key": "val"}, "my-cm"))
-        assert cm["data"]["key"] == "val"
+    def test_pdb_generation(self):
+        """SecurityPolicyGenerator must generate PodDisruptionBudget."""
+        content = self._read("security_policies.py")
+        assert re.search(r"PodDisruptionBudget|pdb|min_available", content, re.IGNORECASE), (
+            "PodDisruptionBudget generation not found"
+        )

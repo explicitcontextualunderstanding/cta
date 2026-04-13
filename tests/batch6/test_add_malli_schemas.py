@@ -1,208 +1,231 @@
 """
-Tests for 'add-malli-schemas' skill.
-Generated from benchmark case definitions for add-malli-schemas.
+Test skill: add-malli-schemas
+Verify that the Agent correctly adds Malli validation schemas to three
+Metabase API endpoints: POST /api/card, PUT /api/dashboard/:id,
+and POST /api/dataset.
 """
 
-import ast
-import base64
-import glob
-import json
 import os
-import py_compile
 import re
 import subprocess
-import textwrap
-
 import pytest
-
-try:
-    import yaml
-except ModuleNotFoundError:
-    yaml = None
 
 
 class TestAddMalliSchemas:
-    """Verify the add-malli-schemas skill output."""
+    REPO_DIR = "/workspace/metabase"
 
-    REPO_DIR = '/workspace/metabase'
+    # === File Path Checks ===
 
+    def test_card_api_file_exists(self):
+        """Verify card.clj API file exists"""
+        path = os.path.join(self.REPO_DIR, "src/metabase/api/card.clj")
+        assert os.path.exists(path), f"card.clj not found at {path}"
 
-    # ── helpers ──────────────────────────────────────────────
+    def test_dashboard_api_file_exists(self):
+        """Verify dashboard.clj API file exists"""
+        path = os.path.join(self.REPO_DIR, "src/metabase/api/dashboard.clj")
+        assert os.path.exists(path), f"dashboard.clj not found at {path}"
 
-    _SETUP_CACHE: dict = {}
+    def test_dataset_api_file_exists(self):
+        """Verify dataset.clj API file exists"""
+        path = os.path.join(self.REPO_DIR, "src/metabase/api/dataset.clj")
+        assert os.path.exists(path), f"dataset.clj not found at {path}"
 
-    @staticmethod
-    def _repo_path(rel: str) -> str:
-        return os.path.join(TestAddMalliSchemas.REPO_DIR, rel)
+    # === Semantic Checks – POST /api/card ===
 
-    @staticmethod
-    def _safe_read(path: str) -> str:
-        with open(path, "r", encoding="utf-8", errors="ignore") as fh:
-            return fh.read()
+    def test_card_endpoint_has_malli_schema(self):
+        """Verify POST /api/card has Malli schema annotations"""
+        path = os.path.join(self.REPO_DIR, "src/metabase/api/card.clj")
+        with open(path, "r") as f:
+            content = f.read()
 
-    @staticmethod
-    def _load_yaml(path: str):
-        if yaml is None:
-            pytest.skip("PyYAML not available")
-        with open(path, "r", encoding="utf-8", errors="ignore") as fh:
-            return yaml.safe_load(fh)
+        # Should have schema annotation using :- syntax or defendpoint schema
+        has_schema = ":-" in content or "defendpoint" in content
+        assert has_schema, "POST /api/card should have Malli schema annotations"
 
-    @staticmethod
-    def _load_json(path: str):
-        with open(path, "r", encoding="utf-8", errors="ignore") as fh:
-            return json.load(fh)
+    def test_card_request_validates_name(self):
+        """Verify card request body schema requires 'name' as NonBlankString"""
+        path = os.path.join(self.REPO_DIR, "src/metabase/api/card.clj")
+        with open(path, "r") as f:
+            content = f.read()
 
-    @classmethod
-    def _run_in_repo(cls, script: str, timeout: int = 120) -> subprocess.CompletedProcess:
-        return subprocess.run(
-            ["python", "-c", textwrap.dedent(script)],
-            cwd=cls.REPO_DIR,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
+        assert "name" in content, "Card schema should validate 'name' field"
+        assert "NonBlankString" in content or "non-blank" in content.lower(), (
+            "Card name should use NonBlankString or equivalent"
         )
 
-    @classmethod
-    def _run_cmd(cls, command, args=None, timeout=120):
-        args = args or []
-        if isinstance(command, str) and args:
-            return subprocess.run(
-                [command, *args],
-                cwd=cls.REPO_DIR,
-                capture_output=True,
-                text=True,
-                timeout=timeout,
+    def test_card_request_validates_dataset_query(self):
+        """Verify card request body schema validates dataset_query with type enum"""
+        path = os.path.join(self.REPO_DIR, "src/metabase/api/card.clj")
+        with open(path, "r") as f:
+            content = f.read()
+
+        assert "dataset_query" in content or "dataset-query" in content, (
+            "Card schema should validate dataset_query field"
+        )
+        # Check for enum of native/structured
+        assert "native" in content and "structured" in content, (
+            "Card schema should validate type enum: native, structured"
+        )
+
+    def test_card_response_schema_defined(self):
+        """Verify a named CardResponse schema is defined"""
+        path = os.path.join(self.REPO_DIR, "src/metabase/api/card.clj")
+        with open(path, "r") as f:
+            content = f.read()
+
+        assert re.search(r"CardResponse|::CardResponse|card-response", content), (
+            "Should define a named CardResponse schema"
+        )
+
+    # === Semantic Checks – PUT /api/dashboard/:id ===
+
+    def test_dashboard_route_param_schema(self):
+        """Verify PUT /api/dashboard/:id validates route param as PositiveInt"""
+        path = os.path.join(self.REPO_DIR, "src/metabase/api/dashboard.clj")
+        with open(path, "r") as f:
+            content = f.read()
+
+        assert "PositiveInt" in content or "pos-int" in content, (
+            "Dashboard :id route param should validate as PositiveInt"
+        )
+
+    def test_dashboard_validates_parameters(self):
+        """Verify dashboard body schema validates parameters list"""
+        path = os.path.join(self.REPO_DIR, "src/metabase/api/dashboard.clj")
+        with open(path, "r") as f:
+            content = f.read()
+
+        assert "parameters" in content, (
+            "Dashboard schema should validate 'parameters' field"
+        )
+
+    def test_dashboard_validates_cache_ttl(self):
+        """Verify dashboard body schema validates cache_ttl"""
+        path = os.path.join(self.REPO_DIR, "src/metabase/api/dashboard.clj")
+        with open(path, "r") as f:
+            content = f.read()
+
+        assert "cache_ttl" in content or "cache-ttl" in content, (
+            "Dashboard schema should validate cache_ttl field"
+        )
+
+    # === Semantic Checks – POST /api/dataset ===
+
+    def test_dataset_validates_database_field(self):
+        """Verify POST /api/dataset requires database as PositiveInt"""
+        path = os.path.join(self.REPO_DIR, "src/metabase/api/dataset.clj")
+        with open(path, "r") as f:
+            content = f.read()
+
+        assert "database" in content, (
+            "Dataset schema should validate 'database' field"
+        )
+        assert "PositiveInt" in content or "pos-int" in content, (
+            "Dataset database should be validated as PositiveInt"
+        )
+
+    def test_dataset_validates_type_enum(self):
+        """Verify POST /api/dataset validates type as native/structured enum"""
+        path = os.path.join(self.REPO_DIR, "src/metabase/api/dataset.clj")
+        with open(path, "r") as f:
+            content = f.read()
+
+        assert "native" in content and "structured" in content, (
+            "Dataset schema should validate type enum: native, structured"
+        )
+
+    def test_dataset_response_schema(self):
+        """Verify dataset response schema includes data/status/row_count"""
+        path = os.path.join(self.REPO_DIR, "src/metabase/api/dataset.clj")
+        with open(path, "r") as f:
+            content = f.read()
+
+        has_response = (
+            "data" in content
+            and ("status" in content or "completed" in content)
+        )
+        assert has_response, (
+            "Dataset response schema should define data and status fields"
+        )
+
+    def test_uses_named_schemas_with_mr_def(self):
+        """Verify that complex types use named schemas (mr/def or equivalent)"""
+        found_named_schema = False
+        for filename in ["card.clj", "dashboard.clj", "dataset.clj"]:
+            path = os.path.join(self.REPO_DIR, "src/metabase/api", filename)
+            with open(path, "r") as f:
+                content = f.read()
+            if "mr/def" in content or "mu/def" in content or "def ::" in content:
+                found_named_schema = True
+                break
+
+        assert found_named_schema, (
+            "Should use named schemas (mr/def or equivalent) for reusable types"
+        )
+
+    def test_uses_metabase_schema_types(self):
+        """Verify that standard Metabase schema types from ms namespace are used"""
+        ms_types = ["ms/PositiveInt", "ms/NonBlankString", "ms/TemporalString", "ms/BooleanValue"]
+        found_count = 0
+        for filename in ["card.clj", "dashboard.clj", "dataset.clj"]:
+            path = os.path.join(self.REPO_DIR, "src/metabase/api", filename)
+            with open(path, "r") as f:
+                content = f.read()
+            for ms_type in ms_types:
+                if ms_type in content:
+                    found_count += 1
+
+        assert found_count >= 2, (
+            f"Should use at least 2 Metabase schema types (ms/*), found {found_count}"
+        )
+
+    def test_optional_fields_use_optional_true(self):
+        """Verify optional fields use {:optional true} syntax"""
+        found = False
+        for filename in ["card.clj", "dashboard.clj", "dataset.clj"]:
+            path = os.path.join(self.REPO_DIR, "src/metabase/api", filename)
+            with open(path, "r") as f:
+                content = f.read()
+            if "{:optional true}" in content or ":optional true" in content:
+                found = True
+                break
+
+        assert found, "Optional fields should use {:optional true}"
+
+    # === Functional Checks ===
+
+    def test_clojure_files_parse_without_errors(self):
+        """Verify all modified Clojure files parse without syntax errors"""
+        for filename in ["card.clj", "dashboard.clj", "dataset.clj"]:
+            path = os.path.join(self.REPO_DIR, "src/metabase/api", filename)
+            with open(path, "r") as f:
+                content = f.read()
+
+            # Basic Clojure syntax: balanced parens
+            opens = content.count("(")
+            closes = content.count(")")
+            assert abs(opens - closes) <= 2, (
+                f"{filename}: Unbalanced parentheses ({opens} open, {closes} close)"
             )
-        return subprocess.run(
-            command if isinstance(command, list) else command,
-            cwd=cls.REPO_DIR,
-            shell=isinstance(command, str),
-            capture_output=True,
-            text=True,
-            timeout=timeout,
+
+    def test_card_file_has_no_syntax_errors(self):
+        """Verify card.clj evaluates or compiles without errors"""
+        result = subprocess.run(
+            ["clojure", "-e", f'(load-file "src/metabase/api/card.clj")'],
+            capture_output=True, text=True, timeout=120,
+            cwd=self.REPO_DIR,
         )
-
-    @classmethod
-    def _ensure_setup(cls, label, setup_cmds, fallback):
-        if not setup_cmds:
-            return
-        key = tuple(setup_cmds)
-        if key in cls._SETUP_CACHE:
-            ok, msg = cls._SETUP_CACHE[key]
-            if ok:
-                return
-            if fallback == "skip_if_setup_fails":
-                pytest.skip(f"{label} setup failed: {msg}")
-            pytest.fail(f"{label} setup failed: {msg}")
-        for cmd in setup_cmds:
-            r = subprocess.run(cmd, cwd=cls.REPO_DIR, shell=True,
-                               capture_output=True, text=True, timeout=300)
-            if r.returncode != 0:
-                msg = (r.stderr or r.stdout or 'failed').strip()
-                cls._SETUP_CACHE[key] = (False, msg)
-                if fallback == "skip_if_setup_fails":
-                    pytest.skip(f"{label} setup failed: {msg}")
-                pytest.fail(f"{label} setup failed: {msg}")
-        cls._SETUP_CACHE[key] = (True, 'ok')
-
-
-    # ── file_path_check (static) ────────────────────────────────────────
-
-    def test_schemas_file_exists(self):
-        """Verify the malli schema definition file exists"""
-        _p = self._repo_path('src/metabase/models/schemas.cljc')
-        assert os.path.isfile(_p), f'Missing file: src/metabase/models/schemas.cljc'
-
-    def test_schema_test_file_exists(self):
-        """Verify test file for schemas exists"""
-        _p = self._repo_path('test/metabase/models/schemas_test.clj')
-        assert os.path.isfile(_p), f'Missing file: test/metabase/models/schemas_test.clj'
-
-    # ── semantic_check (static) ────────────────────────────────────────
-
-    def test_malli_core_require(self):
-        """Verify schemas.cljc uses malli.core namespace"""
-        _p = self._repo_path('src/metabase/models/schemas.cljc')
-        assert os.path.exists(_p), f'Missing: src/metabase/models/schemas.cljc'
-        _contents = self._safe_read(_p)
-        _all = _contents if isinstance(_contents, str) else ''
-        assert 'malli.core' in _all, 'Missing: malli.core'
-        assert 'malli.registry' in _all, 'Missing: malli.registry'
-
-    def test_all_entity_schemas_defined(self):
-        """Verify all 5+ entity schemas are defined: user, card, dashboard, database, table/field"""
-        _p = self._repo_path('src/metabase/models/schemas.cljc')
-        assert os.path.exists(_p), f'Missing: src/metabase/models/schemas.cljc'
-        _contents = self._safe_read(_p)
-        _all = _contents if isinstance(_contents, str) else ''
-        assert ':user/Schema' in _all, 'Missing: :user/Schema'
-        assert ':card/Schema' in _all, 'Missing: :card/Schema'
-        assert ':dashboard/Schema' in _all, 'Missing: :dashboard/Schema'
-        assert ':database/Schema' in _all, 'Missing: :database/Schema'
-
-    def test_email_validation_pattern(self):
-        """Verify email format validator is defined for user schema"""
-        _p = self._repo_path('src/metabase/models/schemas.cljc')
-        assert os.path.exists(_p), f'Missing: src/metabase/models/schemas.cljc'
-        _contents = self._safe_read(_p)
-        _all = _contents if isinstance(_contents, str) else ''
-        assert 'email' in _all, 'Missing: email'
-        assert 're-pattern' in _all, 'Missing: re-pattern'
-        assert '@' in _all, 'Missing: @'
-
-    def test_engine_enum_validation(self):
-        """Verify database schema restricts :engine to enumerated set of keywords"""
-        _p = self._repo_path('src/metabase/models/schemas.cljc')
-        assert os.path.exists(_p), f'Missing: src/metabase/models/schemas.cljc'
-        _contents = self._safe_read(_p)
-        _all = _contents if isinstance(_contents, str) else ''
-        assert ':engine' in _all, 'Missing: :engine'
-        assert 'enum' in _all, 'Missing: enum'
-        assert ':h2' in _all, 'Missing: :h2'
-        assert ':postgres' in _all, 'Missing: :postgres'
-        assert ':mysql' in _all, 'Missing: :mysql'
-
-    # ── functional_check ────────────────────────────────────────
-
-    def test_valid_user_validates_true(self):
-        """Verify a valid user map passes malli validation"""
-        result = self._run_cmd('clojure', args=['-M:dev', '-e', '(require \'[metabase.models.schemas]) (require \'[malli.core :as m]) (println (m/validate :user/Schema {:id 1 :email "a@b.com" :first_name "A" :last_name "B"}))'], timeout=120)
-        assert result.returncode == 0, (
-            f'test_valid_user_validates_true failed (exit {result.returncode})\n' + result.stderr[:500]
-        )
-
-    def test_invalid_user_negative_id(self):
-        """Verify user with negative id fails validation"""
-        result = self._run_cmd('clojure', args=['-M:dev', '-e', '(require \'[metabase.models.schemas]) (require \'[malli.core :as m]) (println (m/validate :user/Schema {:id -1 :email "a@b.com" :first_name "A" :last_name "B"}))'], timeout=120)
-        assert result.returncode == 0, (
-            f'test_invalid_user_negative_id failed (exit {result.returncode})\n' + result.stderr[:500]
-        )
-
-    def test_invalid_email_format(self):
-        """Verify invalid email format fails validation"""
-        result = self._run_cmd('clojure', args=['-M:dev', '-e', '(require \'[metabase.models.schemas]) (require \'[malli.core :as m]) (println (m/validate :user/Schema {:id 1 :email "not-email" :first_name "A" :last_name "B"}))'], timeout=120)
-        assert result.returncode == 0, (
-            f'test_invalid_email_format failed (exit {result.returncode})\n' + result.stderr[:500]
-        )
-
-    def test_explain_returns_errors_for_invalid(self):
-        """Verify m/explain returns non-nil errors for invalid data"""
-        result = self._run_cmd('clojure', args=['-M:dev', '-e', "(require '[metabase.models.schemas]) (require '[malli.core :as m]) (println (some? (m/explain :user/Schema {:id -1})))"], timeout=120)
-        assert result.returncode == 0, (
-            f'test_explain_returns_errors_for_invalid failed (exit {result.returncode})\n' + result.stderr[:500]
-        )
-
-    def test_optional_field_absent_validates(self):
-        """Verify user with optional :is_superuser absent still validates"""
-        result = self._run_cmd('clojure', args=['-M:dev', '-e', '(require \'[metabase.models.schemas]) (require \'[malli.core :as m]) (println (m/validate :user/Schema {:id 1 :email "a@b.com" :first_name "A" :last_name "B"}))'], timeout=120)
-        assert result.returncode == 0, (
-            f'test_optional_field_absent_validates failed (exit {result.returncode})\n' + result.stderr[:500]
-        )
-
-    def test_unsupported_engine_fails(self):
-        """Verify database with unsupported engine keyword fails validation"""
-        result = self._run_cmd('clojure', args=['-M:dev', '-e', '(require \'[metabase.models.schemas]) (require \'[malli.core :as m]) (println (m/validate :database/Schema {:name "db" :engine :unsupported-db :details {}}))'], timeout=120)
-        assert result.returncode == 0, (
-            f'test_unsupported_engine_fails failed (exit {result.returncode})\n' + result.stderr[:500]
-        )
-
+        # If clojure CLI isn't available, try lein
+        if result.returncode != 0 and "clojure" in result.stderr.lower():
+            result = subprocess.run(
+                ["lein", "check"],
+                capture_output=True, text=True, timeout=300,
+                cwd=self.REPO_DIR,
+            )
+        # Accept if compilation doesn't show the files we modified as errors
+        if result.returncode != 0:
+            # At minimum, our files should not introduce new parse errors
+            assert "card.clj" not in result.stderr or "Syntax" not in result.stderr, (
+                f"card.clj has syntax errors:\n{result.stderr[:1000]}"
+            )

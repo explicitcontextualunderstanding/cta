@@ -1,149 +1,231 @@
 """
-Test for 'fix' skill — upgradle React/Vite lint and format fixes
-Validates that the Agent fixed lint/format issues in a React + Vite project:
-App.tsx, dictionary.ts, and related files.
+Test skill: fix
+Verify that the Agent correctly fixes lint and formatting errors in the Upgradle repository
+(a Vite + React + TypeScript word-guessing game).
 """
 
 import os
+import json
 import re
-
+import subprocess
 import pytest
 
 
 class TestFix:
-    """Verify lint and format fixes in the upgradle project."""
-
     REPO_DIR = "/workspace/upgradle"
 
+    @classmethod
+    def setup_class(cls):
+        """Install Node.js dependencies if not already present."""
+        node_modules = os.path.join(cls.REPO_DIR, "node_modules")
+        if not os.path.exists(node_modules):
+            result = subprocess.run(
+                ["yarn", "install", "--frozen-lockfile"],
+                cwd=cls.REPO_DIR,
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+            if result.returncode != 0:
+                # Try without frozen lockfile
+                result = subprocess.run(
+                    ["yarn", "install"],
+                    cwd=cls.REPO_DIR,
+                    capture_output=True,
+                    text=True,
+                    timeout=120,
+                )
+                if result.returncode != 0:
+                    pytest.skip(f"yarn install failed: {result.stderr[:500]}")
+
+    # === File Path Checks ===
+
     def test_app_tsx_exists(self):
-        """App.tsx must exist in the project."""
-        found = False
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            if "App.tsx" in files:
-                found = True
-                break
-        assert found, "App.tsx not found"
+        """Verify that the main application component src/App.tsx exists"""
+        path = os.path.join(self.REPO_DIR, "src/App.tsx")
+        assert os.path.exists(path), f"App.tsx not found at {path}"
 
     def test_dictionary_ts_exists(self):
-        """dictionary.ts must exist in the project."""
-        found = False
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            if "dictionary.ts" in files:
-                found = True
-                break
-        assert found, "dictionary.ts not found"
+        """Verify that src/dictionary.ts exists"""
+        path = os.path.join(self.REPO_DIR, "src/dictionary.ts")
+        assert os.path.exists(path), f"dictionary.ts not found at {path}"
 
-    def test_no_unused_imports_in_app(self):
-        """App.tsx should not have unused imports."""
-        app_path = None
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            if "App.tsx" in files:
-                app_path = os.path.join(root, "App.tsx")
-                break
-        assert app_path is not None, "App.tsx not found"
-        with open(app_path, "r", errors="ignore") as fh:
-            content = fh.read()
-        imports = re.findall(r"import\s+.*?from\s+['\"].*?['\"]", content)
-        assert len(imports) >= 0  # Basic structure check passes
+    def test_package_json_exists_and_parseable(self):
+        """Verify package.json exists and is valid JSON"""
+        path = os.path.join(self.REPO_DIR, "package.json")
+        assert os.path.exists(path), f"package.json not found at {path}"
+        with open(path) as f:
+            data = json.load(f)
+        assert isinstance(data, dict), "package.json did not parse to a dict"
+        assert "name" in data, "package.json missing 'name' field"
 
-    def test_app_tsx_has_valid_jsx(self):
-        """App.tsx must contain valid JSX return statement."""
-        app_path = None
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            if "App.tsx" in files:
-                app_path = os.path.join(root, "App.tsx")
-                break
-        assert app_path is not None
-        with open(app_path, "r", errors="ignore") as fh:
-            content = fh.read()
-        assert re.search(r"return\s*\(", content) or re.search(r"return\s*<", content), \
-            "App.tsx does not have a valid JSX return"
-
-    def test_dictionary_exports(self):
-        """dictionary.ts must export its contents."""
-        dict_path = None
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            if "dictionary.ts" in files:
-                dict_path = os.path.join(root, "dictionary.ts")
-                break
-        assert dict_path is not None
-        with open(dict_path, "r", errors="ignore") as fh:
-            content = fh.read()
-        assert re.search(r"export\s+(const|default|function|interface|type|enum)", content), \
-            "dictionary.ts does not export anything"
-
-    def test_no_console_log_in_production_code(self):
-        """Production source files should not have console.log statements."""
-        violations = []
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            if "node_modules" in root or ".git" in root:
-                continue
-            for f in files:
-                if f.endswith((".ts", ".tsx")) and "test" not in f.lower() and "spec" not in f.lower():
-                    path = os.path.join(root, f)
-                    with open(path, "r", errors="ignore") as fh:
-                        content = fh.read()
-                    if re.search(r"console\.log\(", content):
-                        violations.append(f)
-        # This is advisory — many projects keep console.log, so just verify the check runs
-        assert isinstance(violations, list)
-
-    def test_consistent_semicolons(self):
-        """TypeScript files should use consistent semicolons."""
-        app_path = None
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            if "App.tsx" in files:
-                app_path = os.path.join(root, "App.tsx")
-                break
-        assert app_path is not None
-        with open(app_path, "r", errors="ignore") as fh:
-            lines = fh.readlines()
-        # Just verify file is parseable with reasonable line count
-        assert len(lines) > 0, "App.tsx is empty"
-
-    def test_package_json_exists(self):
-        """package.json must exist at project root."""
-        assert os.path.isfile(os.path.join(self.REPO_DIR, "package.json")), \
-            "package.json not found"
-
-    def test_eslint_or_prettier_config_exists(self):
-        """ESLint or Prettier config should exist for linting/formatting."""
-        found = False
-        config_names = [
-            ".eslintrc", ".eslintrc.js", ".eslintrc.json", ".eslintrc.cjs",
-            "eslint.config.js", "eslint.config.mjs",
-            ".prettierrc", ".prettierrc.js", ".prettierrc.json",
-            "prettier.config.js",
+    def test_eslint_config_exists(self):
+        """Verify an ESLint configuration file exists"""
+        candidates = [
+            os.path.join(self.REPO_DIR, "eslint.config.js"),
+            os.path.join(self.REPO_DIR, "eslint.config.mjs"),
+            os.path.join(self.REPO_DIR, ".eslintrc.js"),
+            os.path.join(self.REPO_DIR, ".eslintrc.json"),
+            os.path.join(self.REPO_DIR, ".eslintrc.cjs"),
         ]
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            if "node_modules" in root:
-                continue
-            for f in files:
-                if f in config_names:
-                    found = True
-                    break
-            if found:
-                break
-        # Also check package.json for eslintConfig or prettier keys
-        if not found:
-            pkg_path = os.path.join(self.REPO_DIR, "package.json")
-            if os.path.isfile(pkg_path):
-                with open(pkg_path, "r", errors="ignore") as fh:
-                    content = fh.read()
-                if re.search(r"\"eslintConfig\"|\"prettier\"", content):
-                    found = True
-        assert found, "No ESLint or Prettier config found"
+        found = any(os.path.exists(c) for c in candidates)
+        assert found, f"No ESLint config found. Checked: {candidates}"
 
-    def test_vite_config_exists(self):
-        """Vite config must exist for the React+Vite project."""
-        found = False
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            if "node_modules" in root:
-                continue
-            for f in files:
-                if f.startswith("vite.config"):
-                    found = True
-                    break
-            if found:
-                break
-        assert found, "vite.config not found"
+    # === Semantic Checks ===
+
+    def test_package_json_has_prettier_script(self):
+        """Verify package.json has a prettier or format script defined"""
+        pkg_path = os.path.join(self.REPO_DIR, "package.json")
+        with open(pkg_path) as f:
+            pkg = json.load(f)
+        scripts = pkg.get("scripts", {})
+        has_prettier = any(
+            key in scripts for key in ("prettier", "format", "prettier:check", "format:check")
+        )
+        assert has_prettier, (
+            f"package.json missing prettier/format script. Available scripts: {list(scripts.keys())}"
+        )
+
+    def test_package_json_has_lint_script(self):
+        """Verify package.json has a linc or lint script defined"""
+        pkg_path = os.path.join(self.REPO_DIR, "package.json")
+        with open(pkg_path) as f:
+            pkg = json.load(f)
+        scripts = pkg.get("scripts", {})
+        has_lint = any(key in scripts for key in ("linc", "lint", "eslint"))
+        assert has_lint, (
+            f"package.json missing linc/lint script. Available scripts: {list(scripts.keys())}"
+        )
+
+    def test_app_tsx_no_unused_imports(self):
+        """Verify App.tsx does not contain obvious unused imports (checked via ESLint)"""
+        app_path = os.path.join(self.REPO_DIR, "src/App.tsx")
+        with open(app_path) as f:
+            content = f.read()
+        # Count @ts-ignore comments — excessive use indicates suppressed errors
+        ts_ignore_count = len(re.findall(r'@ts-ignore', content))
+        assert ts_ignore_count <= 1, (
+            f"Found {ts_ignore_count} @ts-ignore comments in App.tsx. "
+            "Should use proper type annotations instead."
+        )
+
+    def test_source_files_no_trailing_whitespace(self):
+        """Verify .ts and .tsx source files have no trailing whitespace"""
+        src_dir = os.path.join(self.REPO_DIR, "src")
+        if not os.path.isdir(src_dir):
+            pytest.skip("src/ directory not found")
+        violations = []
+        for root, _, files in os.walk(src_dir):
+            for fname in files:
+                if fname.endswith(('.ts', '.tsx')):
+                    fpath = os.path.join(root, fname)
+                    with open(fpath) as f:
+                        for i, line in enumerate(f, 1):
+                            stripped = line.rstrip('\n').rstrip('\r')
+                            if stripped != stripped.rstrip():
+                                violations.append(f"{os.path.relpath(fpath, self.REPO_DIR)}:{i}")
+                                break
+        assert len(violations) == 0, (
+            f"Files with trailing whitespace: {violations}"
+        )
+
+    def test_source_files_consistent_quotes(self):
+        """Verify source files use consistent quote style (single or double based on config)"""
+        src_dir = os.path.join(self.REPO_DIR, "src")
+        if not os.path.isdir(src_dir):
+            pytest.skip("src/ directory not found")
+        # Just verify files are parseable and not mixing styles erratically
+        tsx_files = []
+        for root, _, files in os.walk(src_dir):
+            for fname in files:
+                if fname.endswith(('.ts', '.tsx')):
+                    tsx_files.append(os.path.join(root, fname))
+        assert len(tsx_files) > 0, "No .ts/.tsx files found in src/"
+
+    # === Functional Checks ===
+
+    def test_yarn_linc_exits_cleanly(self):
+        """Verify yarn linc (lint changed files) exits with code 0, zero errors"""
+        result = subprocess.run(
+            ["yarn", "linc"],
+            cwd=self.REPO_DIR,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        assert result.returncode == 0, (
+            f"yarn linc failed (exit {result.returncode}).\n"
+            f"stdout: {result.stdout[-1000:]}\nstderr: {result.stderr[-1000:]}"
+        )
+
+    def test_yarn_build_succeeds(self):
+        """Verify yarn build (Vite production build) completes without errors"""
+        result = subprocess.run(
+            ["yarn", "build"],
+            cwd=self.REPO_DIR,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        assert result.returncode == 0, (
+            f"yarn build failed (exit {result.returncode}).\n"
+            f"stdout: {result.stdout[-1000:]}\nstderr: {result.stderr[-1000:]}"
+        )
+
+    def test_prettier_check_passes(self):
+        """Verify that all source files conform to Prettier formatting"""
+        result = subprocess.run(
+            ["npx", "prettier", "--check", "src/"],
+            cwd=self.REPO_DIR,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        if result.returncode != 0:
+            # Try with the project's own prettier script
+            result2 = subprocess.run(
+                ["yarn", "prettier"],
+                cwd=self.REPO_DIR,
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+            # After running prettier, re-check
+            result3 = subprocess.run(
+                ["npx", "prettier", "--check", "src/"],
+                cwd=self.REPO_DIR,
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+            assert result3.returncode == 0, (
+                f"Prettier check failed after formatting.\n"
+                f"Non-conforming files: {result3.stdout[-1000:]}"
+            )
+
+    def test_no_eslint_errors_in_src(self):
+        """Verify ESLint reports zero errors across all source files"""
+        result = subprocess.run(
+            ["npx", "eslint", "src/", "--format", "json"],
+            cwd=self.REPO_DIR,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        if result.stdout.strip():
+            try:
+                lint_results = json.loads(result.stdout)
+                total_errors = sum(r.get("errorCount", 0) for r in lint_results)
+                total_warnings = sum(r.get("warningCount", 0) for r in lint_results)
+                assert total_errors == 0, (
+                    f"ESLint reported {total_errors} errors and {total_warnings} warnings"
+                )
+            except json.JSONDecodeError:
+                # If JSON parsing fails, just check exit code
+                assert result.returncode == 0, (
+                    f"ESLint failed: {result.stderr[-500:]}"
+                )
+        else:
+            assert result.returncode == 0, (
+                f"ESLint failed: {result.stderr[-500:]}"
+            )

@@ -1,129 +1,212 @@
 """
-Test for 'add-admin-api-endpoint' skill — Ghost Admin API Endpoint Creator
-Validates the custom Ghost admin API endpoint: file structure, Ghost error
-classes, authentication middleware, frame/options pattern, and mocked
-functional behavior (auth, 404, empty collection).
+Test skill: add-admin-api-endpoint
+Verify that the Agent correctly adds announcements CRUD API to Ghost CMS.
 """
 
-import glob
 import os
+import subprocess
 import re
-
+import json
 import pytest
 
 
 class TestAddAdminApiEndpoint:
-    """Verify Ghost custom admin API endpoint implementation."""
-
     REPO_DIR = "/workspace/Ghost"
-    ENDPOINTS_DIR = os.path.join(
-        REPO_DIR, "ghost", "core", "core", "server", "api", "endpoints"
-    )
 
-    # ── helpers ──────────────────────────────────────────────────────────
-    @staticmethod
-    def _read_file(path: str) -> str:
-        try:
-            with open(path, "r", errors="ignore") as fh:
-                return fh.read()
-        except OSError:
-            return ""
+    # === File Path Checks ===
 
-    # ── file_path_check ──────────────────────────────────────────────────
+    def test_ghost_core_exists(self):
+        """Verify Ghost core directory structure exists"""
+        candidates = [
+            os.path.join(self.REPO_DIR, "ghost/core"),
+            os.path.join(self.REPO_DIR, "core"),
+        ]
+        found = any(os.path.isdir(c) for c in candidates)
+        assert found, "Ghost core directory not found"
 
-    def test_custom_endpoint_js_file_exists(self):
-        """ghost/core/core/server/api/endpoints/custom.js must exist and be non-empty."""
-        path = os.path.join(self.ENDPOINTS_DIR, "custom.js")
-        assert os.path.isfile(path), f"{path} does not exist"
-        assert os.path.getsize(path) > 0, "custom.js is empty"
+    # === Semantic Checks ===
 
-    def test_endpoint_registered_in_index_js(self):
-        """index.js must reference 'custom' in exports or require context."""
-        path = os.path.join(self.ENDPOINTS_DIR, "index.js")
-        assert os.path.isfile(path), f"{path} does not exist"
-        content = self._read_file(path)
-        # Must appear as an export or require, not just a comment
-        lines = [l for l in content.splitlines() if "custom" in l and not l.strip().startswith("//")]
-        assert lines, "'custom' not referenced in index.js exports"
-
-    def test_e2e_test_file_exists(self):
-        """E2E test file for custom admin endpoint must exist with at least one test."""
-        path = os.path.join(
-            self.REPO_DIR, "ghost", "core", "test", "e2e-api", "admin", "custom.test.js"
-        )
-        assert os.path.isfile(path), f"{path} does not exist"
-        content = self._read_file(path)
-        assert "it(" in content or "test(" in content, (
-            "Test file has no it()/test() invocations"
+    def test_announcement_model_or_schema_defined(self):
+        """Verify an announcement model/schema with required fields exists"""
+        found_files = []
+        for root, dirs, files in os.walk(self.REPO_DIR):
+            if "node_modules" in root or ".git" in root:
+                continue
+            for f in files:
+                if "announcement" in f.lower() and f.endswith((".js", ".ts", ".json")):
+                    found_files.append(os.path.join(root, f))
+        assert len(found_files) > 0, "No announcement-related files found"
+        all_content = ""
+        for fp in found_files[:10]:
+            with open(fp) as fh:
+                all_content += fh.read()
+        required_fields = ["title", "content", "visibility"]
+        found_fields = [f for f in required_fields if f in all_content.lower()]
+        assert len(found_fields) >= 2, (
+            f"Announcement schema missing expected fields. Found: {found_fields}, expected: {required_fields}"
         )
 
-    # ── semantic_check ───────────────────────────────────────────────────
+    def test_announcement_has_date_fields(self):
+        """Verify announcement schema includes starts_at and ends_at fields"""
+        found_files = []
+        for root, dirs, files in os.walk(self.REPO_DIR):
+            if "node_modules" in root or ".git" in root:
+                continue
+            for f in files:
+                if "announcement" in f.lower() and f.endswith((".js", ".ts")):
+                    found_files.append(os.path.join(root, f))
+        all_content = ""
+        for fp in found_files[:10]:
+            with open(fp) as fh:
+                all_content += fh.read()
+        content_lower = all_content.lower()
+        has_starts = "starts_at" in content_lower or "startsat" in content_lower or "start_date" in content_lower
+        has_ends = "ends_at" in content_lower or "endsat" in content_lower or "end_date" in content_lower
+        assert has_starts and has_ends, "Announcement schema missing starts_at or ends_at fields"
 
-    def test_ghost_error_classes_imported(self):
-        """custom.js must use @tryghost/errors, not plain Error."""
-        content = self._read_file(os.path.join(self.ENDPOINTS_DIR, "custom.js"))
-        assert "@tryghost/errors" in content, "@tryghost/errors not imported"
-        ghost_errors = ["NotFoundError", "ValidationError", "UnauthorizedError"]
-        found = any(e in content for e in ghost_errors)
-        assert found, "No Ghost error class (NotFoundError/ValidationError) used"
+    def test_crud_routes_defined(self):
+        """Verify CRUD routes for announcements are defined"""
+        found_routes = False
+        for root, dirs, files in os.walk(self.REPO_DIR):
+            if "node_modules" in root or ".git" in root:
+                continue
+            for f in files:
+                if f.endswith((".js", ".ts")):
+                    fpath = os.path.join(root, f)
+                    try:
+                        with open(fpath) as fh:
+                            content = fh.read()
+                        if "announcement" in content.lower() and (
+                            "browse" in content.lower()
+                            or "router" in content.lower()
+                            or "route" in content.lower()
+                        ):
+                            found_routes = True
+                            break
+                    except (UnicodeDecodeError, PermissionError):
+                        continue
+            if found_routes:
+                break
+        assert found_routes, "No announcement routes found in codebase"
 
-    def test_authenticate_middleware_precedes_controller(self):
-        """'authenticate' or 'auth' must appear before controller function."""
-        content = self._read_file(os.path.join(self.ENDPOINTS_DIR, "custom.js"))
-        lines = content.splitlines()
-        auth_line = None
-        controller_line = None
-        for i, line in enumerate(lines):
-            if auth_line is None and re.search(r"authenticat|auth.*middleware|adminToken", line, re.IGNORECASE):
-                auth_line = i
-            if controller_line is None and re.search(r"controller|handler|module\.exports", line, re.IGNORECASE):
-                controller_line = i
-        assert auth_line is not None, "No authentication reference found in custom.js"
-
-    def test_controller_uses_frame_options_pattern(self):
-        """Controller must use Ghost frame.options or frame.response pattern."""
-        content = self._read_file(os.path.join(self.ENDPOINTS_DIR, "custom.js"))
-        assert "frame" in content, "'frame' parameter not found in custom.js"
-        has_frame_usage = "frame.options" in content or "frame.response" in content or "frame.data" in content
-        assert has_frame_usage, "frame.options/frame.response not used in controller"
-
-    def test_endpoint_path_uses_admin_prefix(self):
-        """custom must be in admin API section of index.js, not content API."""
-        content = self._read_file(os.path.join(self.ENDPOINTS_DIR, "index.js"))
-        # The module exports custom, it's in the admin endpoints directory by path
-        assert "custom" in content, "'custom' not found in index.js"
-
-    # ── functional_check (mocked / static verification) ──────────────────
-
-    def test_unauthenticated_request_returns_401_structure(self):
-        """Endpoint code must handle UnauthorizedError for 401 responses."""
-        content = self._read_file(os.path.join(self.ENDPOINTS_DIR, "custom.js"))
-        has_401 = "401" in content or "UnauthorizedError" in content or "authenticate" in content.lower()
-        assert has_401, "No 401/UnauthorizedError handling found"
-
-    def test_invalid_admin_key_returns_401(self):
-        """Auth middleware should reject invalid keys (UnauthorizedError pattern)."""
-        content = self._read_file(os.path.join(self.ENDPOINTS_DIR, "custom.js"))
-        # Verify auth middleware is wired in
-        assert re.search(r"authenticat|auth.*token|middleware", content, re.IGNORECASE), (
-            "No authentication middleware wiring found"
+    def test_announcement_controller_has_all_crud_methods(self):
+        """Verify announcement controller implements browse, read, add, edit, destroy"""
+        controller_content = ""
+        for root, dirs, files in os.walk(self.REPO_DIR):
+            if "node_modules" in root or ".git" in root:
+                continue
+            for f in files:
+                if "announcement" in f.lower() and f.endswith((".js", ".ts")):
+                    fpath = os.path.join(root, f)
+                    try:
+                        with open(fpath) as fh:
+                            controller_content += fh.read() + "\n"
+                    except (UnicodeDecodeError, PermissionError):
+                        continue
+        if not controller_content:
+            pytest.skip("No announcement controller files found")
+        methods = ["browse", "read", "add", "edit", "destroy"]
+        found = [m for m in methods if m in controller_content.lower()]
+        assert len(found) >= 4, (
+            f"Controller missing CRUD methods. Found: {found}, expected all of: {methods}"
         )
 
-    def test_authenticated_get_returns_json_array(self):
-        """Controller must return data suitable for JSON array response."""
-        content = self._read_file(os.path.join(self.ENDPOINTS_DIR, "custom.js"))
-        response_patterns = ["findAll", "findPage", "JSON", "response", "result"]
-        found = any(p in content for p in response_patterns)
-        assert found, "No data-fetching or response construction found in controller"
+    # === Functional Checks ===
 
-    def test_nonexistent_resource_returns_404(self):
-        """Controller must throw NotFoundError for missing resources."""
-        content = self._read_file(os.path.join(self.ENDPOINTS_DIR, "custom.js"))
-        assert "NotFoundError" in content, "NotFoundError not used for 404 handling"
+    def test_npm_install_succeeds(self):
+        """Verify npm install completes"""
+        result = subprocess.run(
+            ["npm", "install"],
+            cwd=self.REPO_DIR,
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+        assert result.returncode == 0, f"npm install failed: {result.stderr[:500]}"
 
-    def test_empty_collection_returns_200_not_404(self):
-        """findAll returning empty array should still yield valid (non-404) response."""
-        # Verify the controller uses findAll/findPage rather than findOne-only pattern
-        content = self._read_file(os.path.join(self.ENDPOINTS_DIR, "custom.js"))
-        has_collection = "findAll" in content or "findPage" in content or "browse" in content
-        assert has_collection, "No collection-fetch method (findAll/findPage/browse) found"
+    def test_ghost_lint_passes(self):
+        """Verify lint passes on the codebase"""
+        # Check if lint script exists in package.json
+        pkg_path = os.path.join(self.REPO_DIR, "package.json")
+        with open(pkg_path) as f:
+            pkg = json.load(f)
+        scripts = pkg.get("scripts", {})
+        if "lint" not in scripts:
+            pytest.skip("No lint script in package.json")
+        result = subprocess.run(
+            ["npm", "run", "lint"],
+            cwd=self.REPO_DIR,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        assert result.returncode == 0, f"Lint failed: {result.stdout[:500]}"
+
+    def test_announcement_api_path_registered(self):
+        """Verify /ghost/api/admin/announcements/ path is registered in routes"""
+        found = False
+        for root, dirs, files in os.walk(self.REPO_DIR):
+            if "node_modules" in root or ".git" in root:
+                continue
+            for f in files:
+                if f.endswith((".js", ".ts")):
+                    fpath = os.path.join(root, f)
+                    try:
+                        with open(fpath) as fh:
+                            content = fh.read()
+                        if "announcements" in content and ("api" in content.lower() or "admin" in content.lower()):
+                            if re.search(r"['\"/]announcements['\"/]", content):
+                                found = True
+                                break
+                    except (UnicodeDecodeError, PermissionError):
+                        continue
+            if found:
+                break
+        assert found, "Announcement API path not found in route definitions"
+
+    def test_ghost_test_suite_passes(self):
+        """Verify Ghost test suite passes"""
+        pkg_path = os.path.join(self.REPO_DIR, "package.json")
+        with open(pkg_path) as f:
+            pkg = json.load(f)
+        scripts = pkg.get("scripts", {})
+        if "test" not in scripts:
+            pytest.skip("No test script in package.json")
+        result = subprocess.run(
+            ["npm", "test"],
+            cwd=self.REPO_DIR,
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+        assert result.returncode == 0, (
+            f"Tests failed:\n{result.stdout[-1000:]}\n{result.stderr[-500:]}"
+        )
+
+    def test_announcement_visibility_field_validated(self):
+        """Verify visibility field has validation (e.g., enum of allowed values)"""
+        all_content = ""
+        for root, dirs, files in os.walk(self.REPO_DIR):
+            if "node_modules" in root or ".git" in root:
+                continue
+            for f in files:
+                if "announcement" in f.lower() and f.endswith((".js", ".ts")):
+                    fpath = os.path.join(root, f)
+                    try:
+                        with open(fpath) as fh:
+                            all_content += fh.read() + "\n"
+                    except (UnicodeDecodeError, PermissionError):
+                        continue
+        if not all_content:
+            pytest.skip("No announcement files found")
+        has_validation = (
+            "visibility" in all_content
+            and (
+                "enum" in all_content.lower()
+                or "isIn" in all_content
+                or "oneOf" in all_content
+                or "members" in all_content.lower()
+                or "public" in all_content.lower()
+            )
+        )
+        assert has_validation, "Visibility field does not appear to have validation"

@@ -1,12 +1,11 @@
 """
-Test for 'gitops-workflow' skill — Flux GitOps Workflow
-Validates Flux system configuration, overlays, HelmRelease,
-GitRepository, prune, replica counts, retries, and PDB.
+Test skill: gitops-workflow
+Verify that the Agent correctly configures a Flux CD GitOps deployment
+pipeline with Kustomization, HelmRelease, and multi-environment overlays.
 """
 
 import os
 import re
-
 import pytest
 
 try:
@@ -16,173 +15,153 @@ except ImportError:
 
 
 class TestGitopsWorkflow:
-    """Verify Flux GitOps workflow configuration."""
-
     REPO_DIR = "/workspace/flux2"
 
-    # ── file_path_check ─────────────────────────────────────────────────────
+    GOTK_SYNC = "config/clusters/staging/flux-system/gotk-sync.yaml"
+    STAGING_KUSTOMIZATION = "config/clusters/staging/apps/kustomization.yaml"
+    FRONTEND_DEPLOY = "config/apps/base/frontend/deployment.yaml"
+    BACKEND_DEPLOY = "config/apps/base/backend/deployment.yaml"
+    STAGING_OVERLAY = "config/apps/overlays/staging/kustomization.yaml"
+    PROD_OVERLAY = "config/apps/overlays/production/kustomization.yaml"
+    HELM_RELEASE = "config/infrastructure/db/helmrelease.yaml"
+    HELM_REPO = "config/infrastructure/db/helmrepository.yaml"
 
-    def test_flux_system_directory_exists(self):
-        """Verify flux-system or base directory exists."""
-        candidates = ["flux-system", "clusters", "base", "infrastructure"]
-        for name in candidates:
-            if os.path.isdir(os.path.join(self.REPO_DIR, name)):
-                return
-        # Search deeper
-        for dirpath, dirs, _ in os.walk(self.REPO_DIR):
-            if ".git" in dirpath:
-                continue
-            for d in dirs:
-                if "flux" in d.lower() or "gitops" in d.lower():
-                    return
-        pytest.fail("No flux-system or GitOps directory found")
+    def _read_file(self, rel_path):
+        filepath = os.path.join(self.REPO_DIR, rel_path)
+        with open(filepath) as f:
+            return f.read()
 
-    def test_overlay_directories_exist(self):
-        """Verify staging and production overlay directories exist."""
-        found_envs = set()
-        for dirpath, dirs, _ in os.walk(self.REPO_DIR):
-            if ".git" in dirpath:
-                continue
-            for d in dirs:
-                dl = d.lower()
-                if dl in ("staging", "production", "prod", "dev"):
-                    found_envs.add(dl)
-        assert (
-            len(found_envs) >= 2
-        ), f"Expected ≥2 environment overlays, found: {found_envs}"
+    def _load_yaml(self, rel_path):
+        content = self._read_file(rel_path)
+        return list(yaml.safe_load_all(content))
 
-    # ── semantic_check ──────────────────────────────────────────────────────
+    # === File Path Checks ===
 
-    def test_git_repository_interval(self):
-        """Verify GitRepository source with interval (≤5m)."""
-        yml_files = self._find_yaml_files()
-        for fpath in yml_files:
-            content = self._read(fpath)
-            if "GitRepository" in content:
-                if re.search(r"interval:\s*\d+m", content):
-                    return
-        pytest.fail("No GitRepository with interval found")
+    def test_gotk_sync_exists(self):
+        filepath = os.path.join(self.REPO_DIR, self.GOTK_SYNC)
+        assert os.path.exists(filepath), f"gotk-sync.yaml not found at {filepath}"
 
-    def test_prune_enabled(self):
-        """Verify Kustomization has prune: true."""
-        yml_files = self._find_yaml_files()
-        for fpath in yml_files:
-            content = self._read(fpath)
-            if re.search(r"prune:\s*true", content):
-                return
-        pytest.fail("No prune: true found in Kustomization")
+    def test_base_deployments_exist(self):
+        for path in [self.FRONTEND_DEPLOY, self.BACKEND_DEPLOY]:
+            filepath = os.path.join(self.REPO_DIR, path)
+            assert os.path.exists(filepath), f"Deployment not found: {filepath}"
 
-    def test_replica_counts_per_env(self):
-        """Verify staging has fewer replicas than production (e.g. 1 vs 3)."""
-        staging_replicas = self._get_replicas("staging")
-        prod_replicas = self._get_replicas("production") or self._get_replicas("prod")
-        if staging_replicas is not None and prod_replicas is not None:
-            assert (
-                staging_replicas < prod_replicas
-            ), f"Staging replicas ({staging_replicas}) should be < production ({prod_replicas})"
-        else:
-            # Just verify replicas are defined somewhere
-            yml_files = self._find_yaml_files()
-            for fpath in yml_files:
-                content = self._read(fpath)
-                if "replicas" in content:
-                    return
-            pytest.fail("No replica configuration found")
+    def test_overlays_exist(self):
+        for path in [self.STAGING_OVERLAY, self.PROD_OVERLAY]:
+            filepath = os.path.join(self.REPO_DIR, path)
+            assert os.path.exists(filepath), f"Overlay not found: {filepath}"
 
-    def test_helm_release_retries(self):
-        """Verify HelmRelease has retries configuration."""
-        yml_files = self._find_yaml_files()
-        for fpath in yml_files:
-            content = self._read(fpath)
-            if "HelmRelease" in content:
-                if re.search(r"(retries|maxRetries|retry)", content):
-                    return
-        pytest.fail("No HelmRelease retries configuration found")
+    def test_helm_release_exists(self):
+        filepath = os.path.join(self.REPO_DIR, self.HELM_RELEASE)
+        assert os.path.exists(filepath), f"HelmRelease not found at {filepath}"
 
-    def test_pdb_production_only(self):
-        """Verify PodDisruptionBudget exists for production."""
-        yml_files = self._find_yaml_files()
-        for fpath in yml_files:
-            content = self._read(fpath)
-            if "PodDisruptionBudget" in content:
-                return
-            if "pdb" in os.path.basename(fpath).lower():
-                return
-        pytest.fail("No PodDisruptionBudget found")
+    # === Semantic Checks ===
 
-    # ── functional_check ────────────────────────────────────────────────────
+    @pytest.mark.skipif(yaml is None, reason="PyYAML not installed")
+    def test_gotk_sync_has_gitrepository_and_kustomization(self):
+        """Verify gotk-sync.yaml contains GitRepository and Kustomization"""
+        docs = self._load_yaml(self.GOTK_SYNC)
+        kinds = [d.get("kind") for d in docs if d]
+        assert "GitRepository" in kinds, "Missing GitRepository resource"
+        assert "Kustomization" in kinds, "Missing Kustomization resource"
 
-    def test_yaml_files_valid(self):
-        """Verify all YAML files parse correctly."""
+    @pytest.mark.skipif(yaml is None, reason="PyYAML not installed")
+    def test_frontend_deploy_has_probes_and_resources(self):
+        """Verify frontend deployment has readiness probe and resource limits"""
+        docs = self._load_yaml(self.FRONTEND_DEPLOY)
+        deploy = docs[0]
+        containers = deploy["spec"]["template"]["spec"]["containers"]
+        container = containers[0]
+        assert "readinessProbe" in container, "Frontend missing readinessProbe"
+        assert "resources" in container, "Frontend missing resource limits"
+
+    @pytest.mark.skipif(yaml is None, reason="PyYAML not installed")
+    def test_backend_deploy_has_env_from_configmap_and_secret(self):
+        """Verify backend deployment gets env vars from ConfigMap and Secret"""
+        content = self._read_file(self.BACKEND_DEPLOY)
+        assert "configMapKeyRef" in content or "configMapRef" in content or "backend-config" in content, \
+            "Backend missing ConfigMap env vars"
+        assert "secretKeyRef" in content or "secretRef" in content or "backend-secrets" in content, \
+            "Backend missing Secret env vars"
+
+    @pytest.mark.skipif(yaml is None, reason="PyYAML not installed")
+    def test_helm_release_postgresql(self):
+        """Verify HelmRelease references Bitnami PostgreSQL chart"""
+        docs = self._load_yaml(self.HELM_RELEASE)
+        hr = docs[0]
+        assert hr.get("kind") == "HelmRelease", "Not a HelmRelease resource"
+        chart = hr["spec"]["chart"]["spec"]
+        assert chart.get("chart") == "postgresql", "HelmRelease missing postgresql chart"
+        assert "bitnami" in chart.get("sourceRef", {}).get("name", "").lower() or \
+               "bitnami" in self._read_file(self.HELM_REPO).lower(), \
+            "HelmRelease missing Bitnami source"
+
+    @pytest.mark.skipif(yaml is None, reason="PyYAML not installed")
+    def test_helm_release_remediation(self):
+        """Verify HelmRelease has install/upgrade remediation retries"""
+        content = self._read_file(self.HELM_RELEASE)
+        assert "remediation" in content, "HelmRelease missing remediation config"
+        assert "retries" in content, "HelmRelease missing retry count"
+
+    def test_prod_overlay_has_pdb(self):
+        """Verify production overlay includes PodDisruptionBudget"""
+        prod_dir = os.path.dirname(os.path.join(self.REPO_DIR, self.PROD_OVERLAY))
+        files = os.listdir(prod_dir) if os.path.isdir(prod_dir) else []
+        all_content = ""
+        for f in files:
+            fp = os.path.join(prod_dir, f)
+            if os.path.isfile(fp):
+                with open(fp) as fh:
+                    all_content += fh.read()
+        assert "PodDisruptionBudget" in all_content, \
+            "Production overlay missing PodDisruptionBudget"
+
+    def test_staging_overlay_reduces_replicas(self):
+        """Verify staging overlay sets replicas to 1"""
+        content = self._read_file(self.STAGING_OVERLAY)
+        staging_dir = os.path.dirname(os.path.join(self.REPO_DIR, self.STAGING_OVERLAY))
+        all_content = content
+        for f in os.listdir(staging_dir):
+            fp = os.path.join(staging_dir, f)
+            if os.path.isfile(fp) and f != "kustomization.yaml":
+                with open(fp) as fh:
+                    all_content += fh.read()
+        assert "1" in all_content, "Staging overlay missing replicas: 1"
+
+    # === Functional Checks ===
+
+    def test_all_yaml_files_valid(self):
+        """Verify all YAML files parse without errors"""
         if yaml is None:
-            pytest.skip("PyYAML not available")
-        yml_files = self._find_yaml_files()
-        assert yml_files, "No YAML files found"
-        for fpath in yml_files:
-            with open(fpath, "r") as fh:
-                try:
-                    list(yaml.safe_load_all(fh))
-                except yaml.YAMLError as e:
-                    pytest.fail(f"Invalid YAML in {os.path.basename(fpath)}: {e}")
+            pytest.skip("PyYAML not installed")
+        paths = [
+            self.GOTK_SYNC, self.FRONTEND_DEPLOY, self.BACKEND_DEPLOY,
+            self.HELM_RELEASE, self.HELM_REPO,
+            self.STAGING_OVERLAY, self.PROD_OVERLAY,
+        ]
+        for path in paths:
+            filepath = os.path.join(self.REPO_DIR, path)
+            if os.path.exists(filepath):
+                with open(filepath) as f:
+                    try:
+                        list(yaml.safe_load_all(f.read()))
+                    except yaml.YAMLError as e:
+                        pytest.fail(f"{path} has YAML error: {e}")
 
-    def test_kustomization_files_reference_resources(self):
-        """Verify kustomization.yaml files list resources."""
-        for dirpath, _, fnames in os.walk(self.REPO_DIR):
-            if ".git" in dirpath:
-                continue
-            for f in fnames:
-                if f in ("kustomization.yaml", "kustomization.yml"):
-                    content = self._read(os.path.join(dirpath, f))
-                    if "resources:" in content or "bases:" in content:
-                        return
-        pytest.fail("No kustomization.yaml with resources found")
+    def test_dependency_ordering(self):
+        """Verify dependency ordering: database → backend → frontend"""
+        content = self._read_file(self.STAGING_KUSTOMIZATION) if os.path.exists(
+            os.path.join(self.REPO_DIR, self.STAGING_KUSTOMIZATION)
+        ) else ""
+        # Also check gotk-sync for dependency refs
+        gotk = self._read_file(self.GOTK_SYNC)
+        combined = content + gotk
+        assert "dependsOn" in combined or "depends" in combined.lower(), \
+            "Missing dependency ordering in Flux resources"
 
-    def test_namespace_per_environment(self):
-        """Verify namespaces are defined per environment."""
-        yml_files = self._find_yaml_files()
-        namespaces = set()
-        for fpath in yml_files:
-            content = self._read(fpath)
-            for m in re.finditer(r"namespace:\s*(\S+)", content):
-                namespaces.add(m.group(1))
-        assert len(namespaces) >= 1, "No namespace definitions found"
-
-    def test_source_reference_consistency(self):
-        """Verify Flux sources reference consistent repository URLs."""
-        yml_files = self._find_yaml_files()
-        urls = set()
-        for fpath in yml_files:
-            content = self._read(fpath)
-            for m in re.finditer(r"url:\s*(\S+)", content):
-                urls.add(m.group(1))
-        # Just verify URLs exist, not checking for consistency issues
-        if not urls:
-            pytest.skip("No source URLs found in YAML files")
-
-    # ── helpers ──────────────────────────────────────────────────────────────
-
-    def _find_yaml_files(self):
-        results = []
-        for dirpath, _, fnames in os.walk(self.REPO_DIR):
-            if ".git" in dirpath:
-                continue
-            for f in fnames:
-                if f.endswith(".yaml") or f.endswith(".yml"):
-                    results.append(os.path.join(dirpath, f))
-        return results
-
-    def _get_replicas(self, env_keyword):
-        for dirpath, _, fnames in os.walk(self.REPO_DIR):
-            if env_keyword not in dirpath.lower():
-                continue
-            for f in fnames:
-                if f.endswith(".yaml") or f.endswith(".yml"):
-                    content = self._read(os.path.join(dirpath, f))
-                    m = re.search(r"replicas:\s*(\d+)", content)
-                    if m:
-                        return int(m.group(1))
-        return None
-
-    def _read(self, path):
-        with open(path, "r", errors="ignore") as fh:
-            return fh.read()
+    def test_rolling_update_strategy(self):
+        """Verify deployments use rolling update strategy"""
+        for path in [self.FRONTEND_DEPLOY, self.BACKEND_DEPLOY]:
+            content = self._read_file(path)
+            assert "RollingUpdate" in content or "maxSurge" in content, \
+                f"{path} missing rolling update strategy"

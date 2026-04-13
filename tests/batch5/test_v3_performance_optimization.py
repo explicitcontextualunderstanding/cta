@@ -1,182 +1,127 @@
 """
-Test for 'v3-performance-optimization' skill — Flash Attention Performance
-Validates speedup ratio, memory tracking, causal mask,
-attention kernel, and performance benchmarking.
+Test skill: v3-performance-optimization
+Verify that the Agent benchmarks and optimizes Flash Attention forward pass
+for long sequences with correct CSV output and kernel modifications.
 """
 
 import os
 import re
-
+import ast
+import csv
 import pytest
 
 
 class TestV3PerformanceOptimization:
-    """Verify Flash Attention performance optimizations."""
-
     REPO_DIR = "/workspace/flash-attention"
 
-    # ── file_path_check ─────────────────────────────────────────────────────
+    BENCHMARK = "benchmarks/benchmark_flash_attn_long_seq.py"
+    INTERFACE = "hopper/flash_attn_interface.py"
+    KERNEL = "hopper/flash_fwd_kernel.h"
+    BASELINE_CSV = "benchmarks/results/long_seq_baseline.csv"
+    OPTIMIZED_CSV = "benchmarks/results/long_seq_optimized.csv"
 
-    def test_repo_exists(self):
-        """Verify flash-attention repository exists."""
-        assert os.path.isdir(self.REPO_DIR), "flash-attention repo not found"
+    def _read_file(self, rel_path):
+        filepath = os.path.join(self.REPO_DIR, rel_path)
+        with open(filepath) as f:
+            return f.read()
 
-    def test_source_files_exist(self):
-        """Verify CUDA/Python source files exist."""
-        found = False
-        for dirpath, _, fnames in os.walk(self.REPO_DIR):
-            if ".git" in dirpath:
-                continue
-            for f in fnames:
-                if f.endswith((".cu", ".cuh", ".py", ".cpp")):
-                    found = True
-                    break
-            if found:
-                break
-        assert found, "No source files found"
+    # === File Path Checks ===
 
-    # ── semantic_check ──────────────────────────────────────────────────────
+    def test_benchmark_script_exists(self):
+        filepath = os.path.join(self.REPO_DIR, self.BENCHMARK)
+        assert os.path.exists(filepath), "benchmark script not found"
 
-    def test_speedup_ratio(self):
-        """Verify speedup ratio measurement or reference."""
-        source_files = self._find_source_files()
-        for fpath in source_files:
-            content = self._read(fpath)
-            if re.search(
-                r"(speedup|speed_up|faster|ratio|benchmark|throughput)",
-                content,
-                re.IGNORECASE,
-            ):
-                return
-        pytest.fail("No speedup ratio reference found")
+    def test_interface_exists(self):
+        filepath = os.path.join(self.REPO_DIR, self.INTERFACE)
+        assert os.path.exists(filepath), "flash_attn_interface.py not found"
 
-    def test_memory_tracking(self):
-        """Verify memory tracking/optimization."""
-        source_files = self._find_source_files()
-        for fpath in source_files:
-            content = self._read(fpath)
-            if re.search(
-                r"(memory|mem_efficient|memory_efficient|peak_memory|max_memory_allocated)",
-                content,
-                re.IGNORECASE,
-            ):
-                return
-        pytest.fail("No memory tracking found")
+    def test_kernel_exists(self):
+        filepath = os.path.join(self.REPO_DIR, self.KERNEL)
+        assert os.path.exists(filepath), "flash_fwd_kernel.h not found"
 
-    def test_causal_mask(self):
-        """Verify causal mask implementation."""
-        source_files = self._find_source_files()
-        for fpath in source_files:
-            content = self._read(fpath)
-            if re.search(
-                r"(causal|is_causal|causal_mask|mask.*causal|triu)",
-                content,
-                re.IGNORECASE,
-            ):
-                return
-        pytest.fail("No causal mask found")
+    def test_baseline_csv_exists(self):
+        filepath = os.path.join(self.REPO_DIR, self.BASELINE_CSV)
+        assert os.path.exists(filepath), "long_seq_baseline.csv not found"
 
-    def test_attention_kernel(self):
-        """Verify flash attention kernel implementation."""
-        source_files = self._find_source_files()
-        for fpath in source_files:
-            content = self._read(fpath)
-            if re.search(
-                r"(flash.?attn|flash_attention|FlashAttention|attention.*kernel)",
-                content,
-                re.IGNORECASE,
-            ):
-                return
-        pytest.fail("No flash attention kernel found")
+    def test_optimized_csv_exists(self):
+        filepath = os.path.join(self.REPO_DIR, self.OPTIMIZED_CSV)
+        assert os.path.exists(filepath), "long_seq_optimized.csv not found"
 
-    def test_tiling_or_blocking(self):
-        """Verify tiling/blocking strategy for GPU."""
-        source_files = self._find_source_files()
-        for fpath in source_files:
-            content = self._read(fpath)
-            if re.search(
-                r"(tile|block|BLOCK_SIZE|blockDim|tile_size|shared_mem)",
-                content,
-                re.IGNORECASE,
-            ):
-                return
-        pytest.fail("No tiling/blocking strategy found")
+    # === Semantic Checks ===
 
-    # ── functional_check ────────────────────────────────────────────────────
+    def test_benchmark_measures_configs(self):
+        """Verify benchmark tests seq_len 4096, 8192, 16384"""
+        content = self._read_file(self.BENCHMARK)
+        for seq_len in ["4096", "8192", "16384"]:
+            assert seq_len in content, f"Benchmark missing seq_len={seq_len}"
 
-    def test_python_files_parse(self):
-        """Verify Python source files are syntactically valid."""
-        import ast
+    def test_benchmark_measures_batch_sizes(self):
+        """Verify benchmark tests batch_size 1, 4, 8"""
+        content = self._read_file(self.BENCHMARK)
+        for bs in ["1", "4", "8"]:
+            assert bs in content, f"Benchmark missing batch_size={bs}"
 
-        py_files = [f for f in self._find_source_files() if f.endswith(".py")]
-        for fpath in py_files[:15]:
-            content = self._read(fpath)
-            try:
-                ast.parse(content, filename=fpath)
-            except SyntaxError as e:
-                pytest.fail(f"SyntaxError in {os.path.basename(fpath)}: {e}")
+    def test_benchmark_measures_causal(self):
+        """Verify benchmark tests both causal and non-causal"""
+        content = self._read_file(self.BENCHMARK)
+        assert "causal" in content.lower(), "Benchmark missing causal testing"
 
-    def test_benchmark_script(self):
-        """Verify benchmark or profiling script exists."""
-        source_files = self._find_source_files()
-        for fpath in source_files:
-            basename = os.path.basename(fpath).lower()
-            if "bench" in basename or "profile" in basename or "perf" in basename:
-                return
-            content = self._read(fpath)
-            if re.search(
-                r"(benchmark|time\.\w+|perf_counter|torch\.cuda\.Event)", content
-            ):
-                return
-        pytest.fail("No benchmark script found")
+    def test_benchmark_warmup_and_median(self):
+        """Verify benchmark uses warmup runs and median timing"""
+        content = self._read_file(self.BENCHMARK)
+        has_warmup = bool(re.search(r'(warmup|warm_up|warm)', content))
+        has_median = bool(re.search(r'(median|np\.median)', content))
+        assert has_warmup, "Benchmark missing warmup runs"
+        assert has_median, "Benchmark missing median timing"
 
-    def test_softmax_computation(self):
-        """Verify online/fused softmax computation."""
-        source_files = self._find_source_files()
-        for fpath in source_files:
-            content = self._read(fpath)
-            if re.search(
-                r"(softmax|logsumexp|exp\(|online_softmax)", content, re.IGNORECASE
-            ):
-                return
-        pytest.fail("No softmax computation found")
+    def test_benchmark_correctness_check(self):
+        """Verify benchmark validates against reference attention"""
+        content = self._read_file(self.BENCHMARK)
+        has_ref = bool(re.search(
+            r'(scaled_dot_product_attention|atol|allclose|reference)', content
+        ))
+        assert has_ref, "Benchmark missing correctness validation"
 
-    def test_backward_pass(self):
-        """Verify backward pass / gradient computation."""
-        source_files = self._find_source_files()
-        for fpath in source_files:
-            content = self._read(fpath)
-            if re.search(
-                r"(backward|bwd|gradient|dout|dq|dk|dv|autograd)",
-                content,
-                re.IGNORECASE,
-            ):
-                return
-        pytest.fail("No backward pass found")
+    def test_benchmark_csv_output(self):
+        """Verify benchmark outputs CSV with required columns"""
+        content = self._read_file(self.BENCHMARK)
+        for col in ["seq_len", "batch_size", "time_ms", "peak_memory"]:
+            assert col in content, f"Benchmark missing CSV column: {col}"
 
-    def test_dropout_support(self):
-        """Verify dropout support in attention."""
-        source_files = self._find_source_files()
-        for fpath in source_files:
-            content = self._read(fpath)
-            if re.search(
-                r"(dropout|drop_prob|p_drop|dropout_mask)", content, re.IGNORECASE
-            ):
-                return
-        pytest.fail("No dropout support found")
+    def test_interface_tile_size_logic(self):
+        """Verify interface has tile-size selection for long sequences"""
+        content = self._read_file(self.INTERFACE)
+        has_tile = bool(re.search(
+            r'(tile|block_size|BLOCK|seqlen.*4096|long_seq)', content, re.I
+        ))
+        assert has_tile, "Interface missing tile-size selection for long sequences"
 
-    # ── helpers ──────────────────────────────────────────────────────────────
+    def test_csv_files_have_headers(self):
+        """Verify CSV files have correct column headers"""
+        for path in [self.BASELINE_CSV, self.OPTIMIZED_CSV]:
+            filepath = os.path.join(self.REPO_DIR, path)
+            with open(filepath) as f:
+                reader = csv.reader(f)
+                header = next(reader)
+                header_str = ",".join(header).lower()
+                assert "seq_len" in header_str, f"{path} CSV missing seq_len column"
+                assert "time" in header_str, f"{path} CSV missing time column"
 
-    def _find_source_files(self):
-        results = []
-        for dirpath, _, fnames in os.walk(self.REPO_DIR):
-            if ".git" in dirpath:
-                continue
-            for f in fnames:
-                if f.endswith((".py", ".cu", ".cuh", ".cpp", ".h")):
-                    results.append(os.path.join(dirpath, f))
-        return results
+    # === Functional Checks ===
 
-    def _read(self, path):
-        with open(path, "r", errors="ignore") as fh:
-            return fh.read()
+    def test_benchmark_valid_python(self):
+        """Verify benchmark script has valid Python syntax"""
+        content = self._read_file(self.BENCHMARK)
+        try:
+            ast.parse(content)
+        except SyntaxError as e:
+            pytest.fail(f"Benchmark syntax error: {e}")
+
+    def test_csv_has_data_rows(self):
+        """Verify CSV files have data (not just headers)"""
+        for path in [self.BASELINE_CSV, self.OPTIMIZED_CSV]:
+            filepath = os.path.join(self.REPO_DIR, path)
+            with open(filepath) as f:
+                lines = f.readlines()
+                assert len(lines) >= 2, \
+                    f"{path} CSV has no data rows (only {len(lines)} lines)"

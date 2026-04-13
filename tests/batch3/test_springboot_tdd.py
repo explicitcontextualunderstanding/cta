@@ -1,201 +1,228 @@
 """
-Tests for springboot-tdd skill.
-REPO_DIR: /workspace/spring-petclinic
+Test skill: springboot-tdd
+Verify that the Agent correctly implements a Pet Vaccination Tracking feature
+using TDD for Spring PetClinic.
 """
 
 import os
 import subprocess
-import glob
+import json
+import re
 import pytest
-
-REPO_DIR = "/workspace/spring-petclinic"
-
-
-def _path(rel):
-    return os.path.join(REPO_DIR, rel)
-
-
-def _read_dir_files(rel_pattern):
-    return glob.glob(os.path.join(REPO_DIR, rel_pattern), recursive=True)
-
-
-def _run(cmd, **kwargs):
-    return subprocess.run(
-        cmd,
-        shell=True,
-        cwd=REPO_DIR,
-        capture_output=True,
-        text=True,
-        **kwargs,
-    )
 
 
 class TestSpringbootTdd:
-    # ── file_path_check ────────────────────────────────────────────────────
-    def test_main_entity_java_exists(self):
-        """Verify main domain entity Java file exists in src/main/java/."""
-        java_dir = _path("src/main/java")
-        assert os.path.isdir(java_dir), "src/main/java directory must exist"
-        java_files = glob.glob(os.path.join(java_dir, "**", "*.java"), recursive=True)
-        assert len(java_files) > 0, "src/main/java/ must contain .java source files"
+    REPO_DIR = "/workspace/spring-petclinic"
 
-    def test_controller_test_java_exists(self):
-        """Verify controller test file exists in src/test/java/."""
-        test_dir = _path("src/test/java")
-        assert os.path.isdir(test_dir), "src/test/java directory must exist"
-        test_files = glob.glob(
-            os.path.join(test_dir, "**", "*Test*.java"), recursive=True
-        )
-        alt_test_files = glob.glob(
-            os.path.join(test_dir, "**", "*Tests*.java"), recursive=True
-        )
-        all_test_files = test_files + alt_test_files
-        assert (
-            len(all_test_files) > 0
-        ), "src/test/java/ must contain controller test files (*Test.java or *Tests.java)"
+    # === File Path Checks ===
 
-    # ── semantic_check ─────────────────────────────────────────────────────
-    def test_entity_annotations_defined(self):
-        """Verify @Entity and @Table JPA annotations are present on domain entity class."""
-        java_files = glob.glob(
-            os.path.join(_path("src/main/java"), "**", "*.java"), recursive=True
+    def test_vaccination_entity_exists(self):
+        """Verify that the Vaccination entity Java file exists"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "src/main/java/org/springframework/samples/petclinic/vaccination/Vaccination.java"
         )
-        all_content = ""
-        for f in java_files:
-            with open(f, encoding="utf-8") as fh:
-                all_content += fh.read()
-        assert "@Entity" in all_content, "@Entity annotation must be present"
-        assert "@Table" in all_content, "@Table annotation must be present"
-        has_id = "@Id" in all_content or "@GeneratedValue" in all_content
-        assert has_id, "@Id or @GeneratedValue annotation must be present"
+        assert os.path.exists(path), f"Vaccination.java not found at {path}"
 
-    def test_mockmvc_test_structure(self):
-        """Verify MockMvc is used in controller tests with @WebMvcTest or @SpringBootTest."""
-        test_files = glob.glob(
-            os.path.join(_path("src/test/java"), "**", "*.java"), recursive=True
+    def test_vaccination_repository_exists(self):
+        """Verify that the VaccinationRepository interface file exists"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "src/main/java/org/springframework/samples/petclinic/vaccination/VaccinationRepository.java"
         )
-        all_content = ""
-        for f in test_files:
-            with open(f, encoding="utf-8") as fh:
-                all_content += fh.read()
-        assert "MockMvc" in all_content, "MockMvc must be used in controller tests"
-        has_annotation = (
-            "@WebMvcTest" in all_content or "@SpringBootTest" in all_content
-        )
-        assert (
-            has_annotation
-        ), "@WebMvcTest or @SpringBootTest annotation must be present in test files"
+        assert os.path.exists(path), f"VaccinationRepository.java not found at {path}"
 
-    def test_http_status_codes_tested(self):
-        """Verify 400, 409, and 404 status code assertions are present in tests."""
-        test_files = glob.glob(
-            os.path.join(_path("src/test/java"), "**", "*.java"), recursive=True
+    def test_vaccination_service_exists(self):
+        """Verify that the VaccinationService file exists"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "src/main/java/org/springframework/samples/petclinic/vaccination/VaccinationService.java"
         )
-        all_content = ""
-        for f in test_files:
-            with open(f, encoding="utf-8") as fh:
-                all_content += fh.read()
-        has_400 = "400" in all_content or "BAD_REQUEST" in all_content
-        has_409 = "409" in all_content or "CONFLICT" in all_content
-        has_404 = "404" in all_content or "NOT_FOUND" in all_content
-        assert has_400, "400 or BAD_REQUEST must be asserted in test files"
-        assert has_409, "409 or CONFLICT must be asserted in test files"
-        assert has_404, "404 or NOT_FOUND must be asserted in test files"
+        assert os.path.exists(path), f"VaccinationService.java not found at {path}"
 
-    def test_repository_or_service_layer_defined(self):
-        """Verify Repository interface and/or Service class are defined."""
-        java_files = glob.glob(
-            os.path.join(_path("src/main/java"), "**", "*.java"), recursive=True
+    def test_vaccination_controller_exists(self):
+        """Verify that the VaccinationController file exists"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "src/main/java/org/springframework/samples/petclinic/vaccination/VaccinationController.java"
         )
-        all_content = ""
-        for f in java_files:
-            with open(f, encoding="utf-8") as fh:
-                all_content += fh.read()
-        has_repo = (
-            "Repository" in all_content
-            or "JpaRepository" in all_content
-            or "@Repository" in all_content
-        )
-        has_service = "@Service" in all_content or "Service" in all_content
-        assert (
-            has_repo
-        ), "Repository interface or @Repository annotation must be present"
-        assert has_service, "@Service annotation or service class must be present"
+        assert os.path.exists(path), f"VaccinationController.java not found at {path}"
 
-    # ── functional_check (command) ─────────────────────────────────────────
-    def test_mvn_compile_skip_tests_succeeds(self):
-        """Verify ./mvnw compile -DskipTests exits 0 (project compiles cleanly)."""
-        mvnw = _path("mvnw")
-        if not os.path.isfile(mvnw):
-            pytest.skip("Maven wrapper (mvnw) not present in REPO_DIR; skipping")
-        result = _run("./mvnw compile -DskipTests", timeout=300)
+    # === Semantic Checks ===
+
+    def test_vaccination_entity_has_jpa_annotations(self):
+        """Verify Vaccination entity uses JPA annotations (Entity, Id, ManyToOne)"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "src/main/java/org/springframework/samples/petclinic/vaccination/Vaccination.java"
+        )
+        with open(path) as f:
+            content = f.read()
+        assert "@Entity" in content, "Vaccination.java missing @Entity annotation"
+        assert "@Id" in content, "Vaccination.java missing @Id annotation"
+        assert "@ManyToOne" in content or "ManyToOne" in content, \
+            "Vaccination.java missing @ManyToOne relationship to Pet"
+
+    def test_vaccination_entity_has_required_fields(self):
+        """Verify Vaccination entity has all required fields"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "src/main/java/org/springframework/samples/petclinic/vaccination/Vaccination.java"
+        )
+        with open(path) as f:
+            content = f.read()
+        required_fields = [
+            "vaccineName", "vaccineType", "dateAdministered",
+            "expirationDate", "batchNumber", "veterinarian"
+        ]
+        for field in required_fields:
+            assert field in content, \
+                f"Vaccination.java missing required field: {field}"
+
+    def test_vaccination_entity_has_bean_validation(self):
+        """Verify Vaccination entity uses bean validation annotations"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "src/main/java/org/springframework/samples/petclinic/vaccination/Vaccination.java"
+        )
+        with open(path) as f:
+            content = f.read()
+        # Should have validation annotations
+        validation_annotations = ["@NotNull", "@NotBlank", "@NotEmpty", "@Size", "@Pattern"]
+        found = sum(1 for ann in validation_annotations if ann in content)
+        assert found >= 2, \
+            f"Vaccination.java should have bean validation annotations, found {found}"
+
+    def test_vaccination_entity_has_batch_number_pattern(self):
+        """Verify batchNumber field has pattern validation [A-Z]{2}[0-9]{6}"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "src/main/java/org/springframework/samples/petclinic/vaccination/Vaccination.java"
+        )
+        with open(path) as f:
+            content = f.read()
+        assert "@Pattern" in content, "Missing @Pattern annotation for batchNumber"
+        assert "[A-Z]" in content and "[0-9]" in content, \
+            "batchNumber pattern should validate format [A-Z]{2}[0-9]{6}"
+
+    def test_controller_has_rest_endpoints(self):
+        """Verify VaccinationController defines required REST endpoints"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "src/main/java/org/springframework/samples/petclinic/vaccination/VaccinationController.java"
+        )
+        with open(path) as f:
+            content = f.read()
+        assert "@RestController" in content or "@Controller" in content, \
+            "Controller missing @RestController annotation"
+        # Check for endpoint mappings
+        assert "@GetMapping" in content or "@RequestMapping" in content, \
+            "Controller missing GET endpoint mappings"
+        assert "@PostMapping" in content, "Controller missing POST endpoint mapping"
+        # Check for pet-based URL paths
+        assert "petId" in content or "pet" in content.lower(), \
+            "Controller should have pet-scoped endpoints"
+
+    def test_controller_has_status_and_report_endpoints(self):
+        """Verify controller has status and report endpoint methods"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "src/main/java/org/springframework/samples/petclinic/vaccination/VaccinationController.java"
+        )
+        with open(path) as f:
+            content = f.read()
+        assert "status" in content.lower(), \
+            "Controller missing status endpoint"
+        assert "report" in content.lower(), \
+            "Controller missing report endpoint"
+
+    def test_service_has_business_logic_methods(self):
+        """Verify VaccinationService has key business methods"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "src/main/java/org/springframework/samples/petclinic/vaccination/VaccinationService.java"
+        )
+        with open(path) as f:
+            content = f.read()
+        # Check for main methods
+        method_patterns = ["addVaccination", "getVaccinationStatus", "generateReport"]
+        found_methods = [m for m in method_patterns if m in content]
+        assert len(found_methods) >= 2, \
+            f"Service should have business methods like addVaccination, getVaccinationStatus, generateReport. Found: {found_methods}"
+
+    # === Functional Checks ===
+
+    def test_project_compiles(self):
+        """Verify the project compiles successfully with mvnw"""
+        mvnw = os.path.join(self.REPO_DIR, "mvnw")
+        if not os.path.exists(mvnw):
+            pytest.skip("mvnw not found")
+        result = subprocess.run(
+            ["./mvnw", "compile", "-DskipTests", "-q"],
+            cwd=self.REPO_DIR,
+            capture_output=True, text=True, timeout=600
+        )
+        assert result.returncode == 0, \
+            f"Project compilation failed:\n{result.stdout[:1000]}\n{result.stderr[:1000]}"
+
+    def test_controller_tests_exist_and_use_mockmvc(self):
+        """Verify controller tests exist and use MockMvc"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "src/test/java/org/springframework/samples/petclinic/vaccination/VaccinationControllerTests.java"
+        )
+        assert os.path.exists(path), f"Controller test file not found at {path}"
+        with open(path) as f:
+            content = f.read()
+        assert "MockMvc" in content, "Controller tests should use MockMvc"
+        assert "@WebMvcTest" in content or "@SpringBootTest" in content, \
+            "Controller tests should have @WebMvcTest or @SpringBootTest"
+
+    def test_service_tests_exist_and_use_mocks(self):
+        """Verify service tests exist and use mock repository"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "src/test/java/org/springframework/samples/petclinic/vaccination/VaccinationServiceTests.java"
+        )
+        assert os.path.exists(path), f"Service test file not found at {path}"
+        with open(path) as f:
+            content = f.read()
+        assert "@Mock" in content or "Mockito" in content, \
+            "Service tests should use @Mock or Mockito"
+        assert "assert" in content.lower() or "Assert" in content, \
+            "Service tests should contain assertions"
+
+    def test_repository_tests_exist(self):
+        """Verify repository integration tests exist"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "src/test/java/org/springframework/samples/petclinic/vaccination/VaccinationRepositoryTests.java"
+        )
+        assert os.path.exists(path), f"Repository test file not found at {path}"
+        with open(path) as f:
+            content = f.read()
+        assert "@DataJpaTest" in content or "@SpringBootTest" in content, \
+            "Repository tests should use @DataJpaTest"
+
+    def test_unit_tests_pass(self):
+        """Verify that the vaccination unit tests pass"""
+        mvnw = os.path.join(self.REPO_DIR, "mvnw")
+        if not os.path.exists(mvnw):
+            pytest.skip("mvnw not found")
+        result = subprocess.run(
+            ["./mvnw", "test", "-pl", ".",
+             "-Dtest=VaccinationControllerTests,VaccinationServiceTests,VaccinationRepositoryTests",
+             "-DfailIfNoTests=false", "-q"],
+            cwd=self.REPO_DIR,
+            capture_output=True, text=True, timeout=600
+        )
+        # Allow partial success - some tests might need specific DB config
         if result.returncode != 0:
-            pytest.skip(f"mvnw compile failed (env not set up): {result.stderr[:300]}")
-        assert (
-            "BUILD SUCCESS" in result.stdout
-        ), "mvnw compile -DskipTests must produce BUILD SUCCESS"
-
-    def test_future_date_returns_400(self):
-        """Verify POST with a future date in a past-only field returns HTTP 400 Bad Request."""
-        mvnw = _path("mvnw")
-        if not os.path.isfile(mvnw):
-            pytest.skip("Maven wrapper not present; skipping integration test")
-        result = _run(
-            "./mvnw test -Dtest=*ControllerTest#testFutureDate* -pl .", timeout=300
-        )
-        if result.returncode != 0 and "No tests were executed" not in result.stdout:
-            pytest.skip("Test not compilable or no matching test; skipping")
-        assert (
-            result.returncode == 0
-        ), "testFutureDate test must pass with 400 assertion"
-
-    def test_duplicate_entry_returns_409(self):
-        """Verify creating a duplicate resource returns HTTP 409 Conflict."""
-        mvnw = _path("mvnw")
-        if not os.path.isfile(mvnw):
-            pytest.skip("Maven wrapper not present; skipping integration test")
-        result = _run(
-            "./mvnw test -Dtest=*ControllerTest#testDuplicate* -pl .", timeout=300
-        )
-        if result.returncode != 0 and "No tests were executed" not in result.stdout:
-            pytest.skip("Test not compilable or no matching test; skipping")
-        assert result.returncode == 0, "testDuplicate test must pass with 409 assertion"
-
-    def test_nonexistent_resource_returns_404(self):
-        """Verify GET on a non-existent resource ID returns HTTP 404 Not Found."""
-        mvnw = _path("mvnw")
-        if not os.path.isfile(mvnw):
-            pytest.skip("Maven wrapper not present; skipping integration test")
-        result = _run(
-            "./mvnw test -Dtest=*ControllerTest#testNotFound* -pl .", timeout=300
-        )
-        if result.returncode != 0 and "No tests were executed" not in result.stdout:
-            pytest.skip("Test not compilable or no matching test; skipping")
-        assert result.returncode == 0, "testNotFound test must pass with 404 assertion"
-
-    def test_valid_resource_creation_returns_201(self):
-        """Verify POST with valid data returns HTTP 201 Created."""
-        mvnw = _path("mvnw")
-        if not os.path.isfile(mvnw):
-            pytest.skip("Maven wrapper not present; skipping integration test")
-        result = _run(
-            "./mvnw test -Dtest=*ControllerTest#testCreate* -pl .", timeout=300
-        )
-        if result.returncode != 0 and "No tests were executed" not in result.stdout:
-            pytest.skip("Test not compilable or no matching test; skipping")
-        assert result.returncode == 0, "testCreate test must pass with 201 assertion"
-
-    def test_all_unit_tests_pass(self):
-        """Verify all unit tests pass via ./mvnw test."""
-        mvnw = _path("mvnw")
-        if not os.path.isfile(mvnw):
-            pytest.skip("Maven wrapper not present; skipping full test suite")
-        result = _run("./mvnw test", timeout=600)
-        if result.returncode != 0:
-            pytest.skip(f"mvnw test failed (env not set up): {result.stderr[:300]}")
-        assert (
-            "BUILD SUCCESS" in result.stdout
-        ), "All tests must pass: BUILD SUCCESS required"
-        assert (
-            "Failures: 0" in result.stdout or "FAILURES" not in result.stdout
-        ), "Test run must have zero failures"
+            # Check if tests actually ran
+            if "BUILD FAILURE" in result.stdout and "No tests were executed" in result.stdout:
+                pytest.skip("No tests were executed (possible configuration issue)")
+            # Check for compilation errors specifically
+            assert "COMPILATION ERROR" not in result.stdout, \
+                f"Test compilation failed:\n{result.stdout[:2000]}"
+        assert result.returncode == 0, \
+            f"Vaccination tests failed:\n{result.stdout[:2000]}\n{result.stderr[:500]}"

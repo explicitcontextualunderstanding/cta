@@ -1,204 +1,271 @@
 """
 Tests for the add-malli-schemas skill.
-Verifies that the Metabase dashboard Malli schema implementation is correctly
-structured, namespace-declared, exports the required validation functions,
-and enforces validation rules for dashboard creation/update requests.
+
+Validates that Malli validation schemas were correctly implemented for
+Metabase Dashboard API endpoints, including dashboard CRUD schemas,
+parameter validation, card layout constraints, and validation functions.
+
+Repo: metabase (https://github.com/metabase/metabase)
 """
 
 import os
-import sys
-
-import pytest
+import re
+import subprocess
 
 REPO_DIR = "/workspace/metabase"
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
+class TestFilePathCheck:
+    """Verify that all required files were created."""
+
+    def test_dashboard_schema_file_exists(self):
+        path = os.path.join(REPO_DIR, "src", "metabase", "api", "dashboard", "schema.clj")
+        assert os.path.isfile(path), f"Expected schema file at {path}"
+
+    def test_dashboard_validators_file_exists(self):
+        path = os.path.join(REPO_DIR, "src", "metabase", "api", "dashboard", "validators.clj")
+        assert os.path.isfile(path), f"Expected validators file at {path}"
+
+    def test_dashboard_schema_test_file_exists(self):
+        path = os.path.join(REPO_DIR, "test", "metabase", "api", "dashboard", "schema_test.clj")
+        assert os.path.isfile(path), f"Expected schema test file at {path}"
 
 
-def _path(rel: str) -> str:
-    return os.path.join(REPO_DIR, rel)
+class TestSemanticSchemaDefinitions:
+    """Verify the Malli schemas are defined with correct types and constraints."""
 
+    def _read_schema_file(self):
+        path = os.path.join(REPO_DIR, "src", "metabase", "api", "dashboard", "schema.clj")
+        with open(path, "r") as f:
+            return f.read()
 
-def _read(rel: str) -> str:
-    full = _path(rel)
-    if not os.path.isfile(full):
-        pytest.skip(f"File not found: {full}")
-    with open(full, encoding="utf-8", errors="replace") as fh:
-        return fh.read()
+    def test_dashboard_schema_defined(self):
+        content = self._read_schema_file()
+        assert re.search(r":ms/Dashboard\b", content), (
+            "Expected :ms/Dashboard schema to be defined in schema.clj"
+        )
 
+    def test_dashboard_create_request_schema_defined(self):
+        content = self._read_schema_file()
+        assert re.search(r":ms/DashboardCreateRequest\b", content), (
+            "Expected :ms/DashboardCreateRequest schema to be defined"
+        )
 
-def _mock_validate_fn(rules: dict):
-    """
-    Build a lightweight Python-side mock of a Clojure validate function.
-    rules: dict mapping required string keys to their types.
-    Returns a callable that validates a dict input against those rules.
-    """
+    def test_dashboard_update_request_schema_defined(self):
+        content = self._read_schema_file()
+        assert re.search(r":ms/DashboardUpdateRequest\b", content), (
+            "Expected :ms/DashboardUpdateRequest schema to be defined"
+        )
 
-    def _validate(data: dict):
-        errors = []
-        for key, expected_type in rules.items():
-            val = data.get(key)
-            if val is None:
-                errors.append(f"Missing required key: {key}")
-            elif expected_type == "non-empty-string" and not isinstance(val, str):
-                errors.append(f"{key} must be a string")
-            elif (
-                expected_type == "non-empty-string"
-                and isinstance(val, str)
-                and not val.strip()
-            ):
-                errors.append(f"{key} must not be empty")
-        return {"valid": len(errors) == 0, "errors": errors}
+    def test_dashboard_parameter_schema_defined(self):
+        content = self._read_schema_file()
+        assert re.search(r":ms/DashboardParameter\b", content), (
+            "Expected :ms/DashboardParameter schema to be defined"
+        )
 
-    return _validate
+    def test_dashboard_card_schema_defined(self):
+        content = self._read_schema_file()
+        assert re.search(r":ms/DashboardCard\b", content), (
+            "Expected :ms/DashboardCard schema to be defined"
+        )
 
+    def test_parameter_mapping_schema_defined(self):
+        content = self._read_schema_file()
+        assert re.search(r":ms/ParameterMapping\b", content), (
+            "Expected :ms/ParameterMapping schema to be defined"
+        )
 
-# ---------------------------------------------------------------------------
-# File path checks
-# ---------------------------------------------------------------------------
+    def test_dashboard_fields_present(self):
+        """Check that key dashboard fields are referenced in the schema."""
+        content = self._read_schema_file()
+        for field in [":name", ":description", ":collection_id", ":parameters", ":cards"]:
+            assert field in content, f"Expected field {field} in Dashboard schema"
 
-
-class TestAddMalliSchemas:
-    """Test suite for the Metabase Malli schema implementation skill."""
-
-    def test_schema_file_exists(self):
-        """Verify dashboard schema file is created at the expected path."""
-        target = _path("src/metabase/api/dashboard/schema.clj")
-        assert os.path.isfile(target), f"Schema file not found: {target}"
-        assert os.path.getsize(target) > 0, "schema.clj must be non-empty"
-
-    def test_validators_file_exists(self):
-        """Verify dashboard validators file is created at the expected path."""
-        target = _path("src/metabase/api/dashboard/validators.clj")
-        assert os.path.isfile(target), f"Validators file not found: {target}"
-        assert os.path.getsize(target) > 0, "validators.clj must be non-empty"
-
-    # -----------------------------------------------------------------------
-    # Semantic checks
-    # -----------------------------------------------------------------------
-
-    def test_schema_ns_declaration(self):
-        """Verify schema.clj has correct namespace and requires malli.core."""
-        content = _read("src/metabase/api/dashboard/schema.clj")
-        assert (
-            "(ns metabase.api.dashboard.schema" in content
-        ), "schema.clj must declare namespace 'metabase.api.dashboard.schema'"
-        assert (
-            "malli.core" in content or "[malli" in content
-        ), "schema.clj must require malli.core"
-
-    def test_schema_defines_validate_functions(self):
-        """Verify schema.clj defines validate-create-request and validate-update-request."""
-        content = _read("src/metabase/api/dashboard/schema.clj")
-        assert (
-            "validate-create-request" in content
-        ), "schema.clj must define 'validate-create-request'"
-        assert (
-            "validate-update-request" in content
-        ), "schema.clj must define 'validate-update-request'"
-
-    def test_schema_defines_card_layout_validator(self):
-        """Verify schema.clj defines a card-layout schema or validator."""
-        content = _read("src/metabase/api/dashboard/schema.clj")
-        assert (
-            "card-layout" in content or "CardLayout" in content
-        ), "schema.clj must define a 'card-layout' or 'CardLayout' schema"
-
-    def test_schema_uses_malli_schema_types(self):
-        """Verify schema definitions use Malli types like :map, :string, :int."""
-        content = _read("src/metabase/api/dashboard/schema.clj")
-        assert ":map" in content, "schema.clj must use :map Malli schema type"
-        has_primitive = ":string" in content or ":int" in content
-        assert has_primitive, "schema.clj must use :string or :int Malli type keywords"
-
-    # -----------------------------------------------------------------------
-    # Functional checks (mocked - validate-* logic simulated in Python)
-    # -----------------------------------------------------------------------
-
-    def test_validate_create_request_empty_map_returns_invalid(self):
-        """Verify validate-create-request({}) returns {valid: false} with non-empty errors."""
-        validate = _mock_validate_fn({"name": "non-empty-string"})
-        result = validate({})
-        assert result["valid"] is False, "Empty map must fail validation"
-        assert (
-            len(result["errors"]) > 0
-        ), "Errors list must be non-empty for empty input"
-
-    def test_validate_create_request_valid_dashboard(self):
-        """Verify validate-create-request with valid params returns {valid: true}."""
-        validate = _mock_validate_fn({"name": "non-empty-string"})
-        result = validate({"name": "Sales Dashboard", "description": "Q4 metrics"})
-        assert result["valid"] is True, "Valid dashboard params must pass validation"
-
-    def test_validate_update_request_empty_name_rejected(self):
-        """Verify validate-update-request rejects update with empty string name."""
-        validate = _mock_validate_fn({"name": "non-empty-string"})
-        result = validate({"name": ""})
-        assert result["valid"] is False, "Empty string name must fail validation"
-
-    def test_card_layout_negative_size_rejected(self):
-        """Verify card layout with negative size_x is rejected."""
-
-        def validate_layout(layout: dict):
-            errors = []
-            if layout.get("size_x", 0) < 0:
-                errors.append("size_x must be positive")
-            if layout.get("size_y", 0) < 0:
-                errors.append("size_y must be positive")
-            return {"valid": len(errors) == 0, "errors": errors}
-
-        result = validate_layout({"col": 0, "row": 0, "size_x": -1, "size_y": 4})
-        assert result["valid"] is False, "Negative size_x must be rejected"
-
-    def test_card_layout_column_width_overflow_rejected(self):
-        """Verify card layout where col+size_x exceeds grid boundary is rejected."""
-
-        def validate_layout(layout: dict, max_cols: int = 24):
-            errors = []
-            if layout.get("col", 0) + layout.get("size_x", 0) > max_cols:
-                errors.append("Card exceeds grid boundary")
-            return {"valid": len(errors) == 0, "errors": errors}
-
-        result = validate_layout({"col": 22, "row": 0, "size_x": 4, "size_y": 2})
-        assert result["valid"] is False, "col+size_x > max_cols must be rejected"
-        assert any(
-            "grid" in e.lower() or "boundary" in e.lower() or "exceed" in e.lower()
-            for e in result["errors"]
-        ), "Error must reference grid boundary"
-
-    def test_overlapping_cards_detected(self):
-        """Verify validate-create-request detects overlapping card layouts in a dashboard."""
-
-        def cards_overlap(a: dict, b: dict) -> bool:
-            a_right = a["col"] + a["size_x"]
-            b_right = b["col"] + b["size_x"]
-            a_bottom = a["row"] + a["size_y"]
-            b_bottom = b["row"] + b["size_y"]
-            return not (
-                a_right <= b["col"]
-                or b_right <= a["col"]
-                or a_bottom <= b["row"]
-                or b_bottom <= a["row"]
+    def test_parameter_type_enum_values(self):
+        """Check that the parameter type enum includes required values."""
+        content = self._read_schema_file()
+        for ptype in ["date/single", "date/range", "string/=", "number/=", "category"]:
+            assert ptype in content, (
+                f"Expected parameter type enum value '{ptype}' in schema"
             )
 
-        card1 = {"col": 0, "row": 0, "size_x": 6, "size_y": 4}
-        card2 = {"col": 4, "row": 2, "size_x": 4, "size_y": 4}
-        assert cards_overlap(
-            card1, card2
-        ), "Overlap detection logic: card1 and card2 should be detected as overlapping"
+    def test_grid_column_constraint(self):
+        """Card col must be < 18 (0-17 for 18-column grid)."""
+        content = self._read_schema_file()
+        assert re.search(r"18|grid|col", content), (
+            "Expected grid column constraint (col < 18 or size_x <= 18) in DashboardCard schema"
+        )
 
-    def test_schema_clj_is_valid_clojure_syntax(self):
-        """Verify schema.clj contains valid Clojure s-expression structure (balanced parens)."""
-        content = _read("src/metabase/api/dashboard/schema.clj")
-        # Basic balance check
-        depth = 0
-        for ch in content:
-            if ch == "(":
-                depth += 1
-            elif ch == ")":
-                depth -= 1
-            assert depth >= 0, "schema.clj has unmatched closing parenthesis"
-        assert depth == 0, f"schema.clj has {depth} unclosed parentheses"
+    def test_card_grid_boundary_custom_validator(self):
+        """col + size_x <= 18 custom validator must exist."""
+        content = self._read_schema_file()
+        assert re.search(r"grid.boundary|col.*size_x|extends.beyond", content, re.IGNORECASE), (
+            "Expected custom validator for card grid boundary (col + size_x <= 18)"
+        )
+
+
+class TestSemanticValidatorFunctions:
+    """Verify validation function definitions in validators.clj."""
+
+    def _read_validators_file(self):
+        path = os.path.join(REPO_DIR, "src", "metabase", "api", "dashboard", "validators.clj")
+        with open(path, "r") as f:
+            return f.read()
+
+    def test_validate_create_request_function(self):
+        content = self._read_validators_file()
+        assert re.search(r"validate-create-request", content), (
+            "Expected validate-create-request function in validators.clj"
+        )
+
+    def test_validate_update_request_function(self):
+        content = self._read_validators_file()
+        assert re.search(r"validate-update-request", content), (
+            "Expected validate-update-request function in validators.clj"
+        )
+
+    def test_validate_card_layout_function(self):
+        content = self._read_validators_file()
+        assert re.search(r"validate-card-layout", content), (
+            "Expected validate-card-layout function in validators.clj"
+        )
+
+    def test_validation_returns_structured_result(self):
+        """Validation functions should return maps with :valid and :errors/:data keys."""
+        content = self._read_validators_file()
+        assert ":valid" in content, (
+            "Expected :valid key in validation result structure"
+        )
+        assert re.search(r":errors|:data", content), (
+            "Expected :errors or :data keys in validation result structure"
+        )
+
+    def test_coercion_logic_present(self):
+        """Validators should include type coercion (string→int, string→inst)."""
+        content = self._read_validators_file()
+        assert re.search(r"coer|transform|decode", content, re.IGNORECASE), (
+            "Expected type coercion logic in validators (coerce/transform/decode)"
+        )
+
+
+class TestSemanticCreateRequestExcludesServerFields:
+    """Create/Update request schemas should exclude server-managed fields."""
+
+    def _read_schema_file(self):
+        path = os.path.join(REPO_DIR, "src", "metabase", "api", "dashboard", "schema.clj")
+        with open(path, "r") as f:
+            return f.read()
+
+    def test_create_request_has_no_id_field(self):
+        """The DashboardCreateRequest schema should not include :id as a required/accepted field.
+        We check that :id is not associated with the create request definition."""
+        content = self._read_schema_file()
+        # Find the create request schema block and verify :id and timestamps are excluded
+        # This is a heuristic check — :id should not appear between CreateRequest and the next schema
+        create_match = re.search(
+            r":ms/DashboardCreateRequest(.*?)(?=:ms/|$)", content, re.DOTALL
+        )
+        if create_match:
+            block = create_match.group(1)
+            # :id should not be a direct field in the create request
+            # It may appear in nested schemas (DashboardCard), so check top level
+            assert not re.search(r'^\s*:id\b', block, re.MULTILINE), (
+                "DashboardCreateRequest should not include :id as a top-level field"
+            )
+
+    def test_namespace_declaration(self):
+        content = self._read_schema_file()
+        assert re.search(r"\(ns\s+metabase\.api\.dashboard\.schema", content), (
+            "Expected proper namespace declaration for metabase.api.dashboard.schema"
+        )
+
+
+class TestSemanticOverlapDetection:
+    """Card layout validation should detect overlapping positions."""
+
+    def _read_validators_file(self):
+        path = os.path.join(REPO_DIR, "src", "metabase", "api", "dashboard", "validators.clj")
+        with open(path, "r") as f:
+            return f.read()
+
+    def test_overlap_detection_logic_present(self):
+        content = self._read_validators_file()
+        assert re.search(r"overlap|intersect|collision", content, re.IGNORECASE), (
+            "Expected overlap/intersection detection logic in validate-card-layout"
+        )
+
+    def test_uses_malli_library(self):
+        """Schema file should require/use malli."""
+        path = os.path.join(REPO_DIR, "src", "metabase", "api", "dashboard", "schema.clj")
+        with open(path, "r") as f:
+            content = f.read()
+        assert re.search(r"malli", content, re.IGNORECASE), (
+            "Expected malli library usage in schema.clj"
+        )
+
+
+class TestFunctionalClojureSyntax:
+    """Validate Clojure files have valid syntax and can be parsed."""
+
+    def test_schema_file_balanced_parens(self):
+        path = os.path.join(REPO_DIR, "src", "metabase", "api", "dashboard", "schema.clj")
+        with open(path, "r") as f:
+            content = f.read()
+        open_count = content.count("(") + content.count("[") + content.count("{")
+        close_count = content.count(")") + content.count("]") + content.count("}")
+        assert open_count == close_count, (
+            f"Unbalanced delimiters in schema.clj: {open_count} opening vs {close_count} closing"
+        )
+
+    def test_validators_file_balanced_parens(self):
+        path = os.path.join(REPO_DIR, "src", "metabase", "api", "dashboard", "validators.clj")
+        with open(path, "r") as f:
+            content = f.read()
+        open_count = content.count("(") + content.count("[") + content.count("{")
+        close_count = content.count(")") + content.count("]") + content.count("}")
+        assert open_count == close_count, (
+            f"Unbalanced delimiters in validators.clj: {open_count} opening vs {close_count} closing"
+        )
+
+    def test_test_file_balanced_parens(self):
+        path = os.path.join(REPO_DIR, "test", "metabase", "api", "dashboard", "schema_test.clj")
+        with open(path, "r") as f:
+            content = f.read()
+        open_count = content.count("(") + content.count("[") + content.count("{")
+        close_count = content.count(")") + content.count("]") + content.count("}")
+        assert open_count == close_count, (
+            f"Unbalanced delimiters in schema_test.clj: {open_count} opening vs {close_count} closing"
+        )
+
+    def test_schema_test_uses_clojure_test(self):
+        path = os.path.join(REPO_DIR, "test", "metabase", "api", "dashboard", "schema_test.clj")
+        with open(path, "r") as f:
+            content = f.read()
+        assert re.search(r"clojure\.test", content), (
+            "Expected clojure.test to be required in schema_test.clj"
+        )
+
+    def test_schema_test_has_deftest(self):
+        path = os.path.join(REPO_DIR, "test", "metabase", "api", "dashboard", "schema_test.clj")
+        with open(path, "r") as f:
+            content = f.read()
+        assert re.search(r"\(deftest\s+", content), (
+            "Expected at least one deftest in schema_test.clj"
+        )
+
+    def test_schema_test_imports_schema_ns(self):
+        """The test file should require the schema namespace."""
+        path = os.path.join(REPO_DIR, "test", "metabase", "api", "dashboard", "schema_test.clj")
+        with open(path, "r") as f:
+            content = f.read()
+        assert re.search(r"metabase\.api\.dashboard\.schema", content), (
+            "Expected schema_test.clj to require metabase.api.dashboard.schema"
+        )
+
+    def test_validators_namespace_declaration(self):
+        path = os.path.join(REPO_DIR, "src", "metabase", "api", "dashboard", "validators.clj")
+        with open(path, "r") as f:
+            content = f.read()
+        assert re.search(r"\(ns\s+metabase\.api\.dashboard\.validators", content), (
+            "Expected proper namespace declaration for metabase.api.dashboard.validators"
+        )

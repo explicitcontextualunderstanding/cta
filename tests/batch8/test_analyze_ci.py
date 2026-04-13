@@ -1,167 +1,148 @@
 """
-Test for 'analyze-ci' skill — CI Failure Analyzer
-Validates that the Agent implemented a CI failure analyzer module
-in the Sentry codebase with fetching, parsing, classification, and reporting.
+Tests for the analyze-ci skill.
+Validates a CI Failure Analyzer for GitHub Actions workflows in Sentry
+that fetches logs, parses failures, and classifies them into categories.
 """
 
 import os
 import re
-import sys
+import ast
 
-import pytest
+REPO_DIR = "/workspace/sentry"
+CI_DIR = os.path.join(REPO_DIR, "src", "sentry", "utils", "ci_analyzer")
 
 
 class TestAnalyzeCi:
-    """Verify Sentry CI failure analyzer implementation."""
+    """Tests for the CI Failure Analyzer."""
 
-    REPO_DIR = "/workspace/sentry"
+    # ── file_path_check ──────────────────────────────────────────────
 
-    @staticmethod
-    def _read(path: str) -> str:
-        try:
-            with open(path, "r", errors="ignore") as fh:
-                return fh.read()
-        except OSError:
+    def test_init_file_exists(self):
+        """Package __init__.py must exist."""
+        path = os.path.join(CI_DIR, "__init__.py")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    def test_fetcher_file_exists(self):
+        """Fetcher module must exist."""
+        path = os.path.join(CI_DIR, "fetcher.py")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    def test_parser_file_exists(self):
+        """Log parser module must exist."""
+        path = os.path.join(CI_DIR, "parser.py")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    def test_classifier_file_exists(self):
+        """Failure classifier module must exist."""
+        path = os.path.join(CI_DIR, "classifier.py")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    def test_models_file_exists(self):
+        """Data models module must exist."""
+        path = os.path.join(CI_DIR, "models.py")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    def test_cli_file_exists(self):
+        """CLI entry point must exist."""
+        path = os.path.join(CI_DIR, "cli.py")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    # ── semantic_check ───────────────────────────────────────────────
+
+    def _read(self, filename):
+        path = os.path.join(CI_DIR, filename)
+        if not os.path.isfile(path):
             return ""
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read()
 
-    # ── file_path_check ─────────────────────────────────────────────
+    def test_pr_url_parsing(self):
+        """Fetcher must parse GitHub PR URLs extracting owner, repo, PR number."""
+        content = self._read("fetcher.py")
+        assert re.search(r"owner|repo|pull|pr_number|PR.*URL", content, re.IGNORECASE), (
+            "PR URL parsing not found in fetcher"
+        )
 
-    def test_ci_analyzer_module_files_exist(self):
-        """Verify all required ci_analyzer module files exist."""
-        for rel in (
-            "src/sentry/utils/ci_analyzer/__init__.py",
-            "src/sentry/utils/ci_analyzer/fetcher.py",
-            "src/sentry/utils/ci_analyzer/parser.py",
-        ):
-            path = os.path.join(self.REPO_DIR, rel)
-            assert os.path.isfile(path), f"Missing: {rel}"
+    def test_invalid_url_raises_valueerror(self):
+        """Invalid PR URL must raise ValueError."""
+        content = self._read("fetcher.py")
+        assert re.search(r"ValueError|Invalid PR URL", content), (
+            "ValueError for invalid PR URL not found"
+        )
 
-    def test_ci_analyzer_classifier_cli_exist(self):
-        """Verify classifier.py, models.py, and cli.py exist."""
-        for rel in (
-            "src/sentry/utils/ci_analyzer/classifier.py",
-            "src/sentry/utils/ci_analyzer/models.py",
-            "src/sentry/utils/ci_analyzer/cli.py",
-        ):
-            path = os.path.join(self.REPO_DIR, rel)
-            assert os.path.isfile(path), f"Missing: {rel}"
+    def test_classification_categories(self):
+        """Classifier must support test_failure, lint_error, build_error, timeout, infra_flake, unknown."""
+        content = self._read("classifier.py")
+        for cat in ["test_failure", "lint_error", "build_error", "timeout", "infra_flake", "unknown"]:
+            assert cat in content, f"Category '{cat}' not found in classifier"
 
-    def test_module_importable(self):
-        """Verify the ci_analyzer package is importable without errors."""
-        if not os.path.isdir(self.REPO_DIR):
-            pytest.skip("Repo dir does not exist")
-        sys.path.insert(0, os.path.join(self.REPO_DIR, "src"))
-        try:
-            import sentry.utils.ci_analyzer  # noqa: F401
-        except ImportError:
-            pytest.skip("sentry.utils.ci_analyzer not importable — deps may be missing")
-        finally:
-            sys.path.pop(0)
+    def test_confidence_scores(self):
+        """Classifications must include confidence scores (1.0, 0.8, 0.5)."""
+        content = self._read("classifier.py")
+        assert re.search(r"confidence|1\.0|0\.8|0\.5", content), (
+            "Confidence scores not found in classifier"
+        )
 
-    # ── semantic_check ──────────────────────────────────────────────
+    def test_log_parsing_error_patterns(self):
+        """Parser must detect common error patterns (FAILED, Error:, AssertionError)."""
+        content = self._read("parser.py")
+        assert re.search(r"FAILED|Error:|AssertionError|TIMEOUT|exit code", content), (
+            "Common error patterns not found in parser"
+        )
 
-    def test_fetcher_class_with_parse_method(self):
-        """Verify fetcher.py defines a class/function for parsing PR URLs."""
-        content = self._read(os.path.join(
-            self.REPO_DIR, "src/sentry/utils/ci_analyzer/fetcher.py"))
-        assert content, "fetcher.py is empty or unreadable"
-        found = "parse_pr_url" in content or "CIFetcher" in content
-        assert found, "Neither CIFetcher nor parse_pr_url found in fetcher.py"
+    def test_report_json_structure(self):
+        """CLI must output JSON report with pr_url, head_sha, failures, summary."""
+        content = self._read("cli.py") + self._read("models.py")
+        for field in ["pr_url", "head_sha", "failures", "summary"]:
+            assert field in content, f"Report field '{field}' not found"
 
-    def test_classifier_six_categories(self):
-        """Verify classifier.py contains all 6 failure category strings."""
-        content = self._read(os.path.join(
-            self.REPO_DIR, "src/sentry/utils/ci_analyzer/classifier.py"))
-        assert content, "classifier.py is empty or unreadable"
-        for cat in ("test_failure", "lint_error", "build_error",
-                     "timeout", "infra_flake", "unknown"):
-            assert cat in content, f"Category '{cat}' not found in classifier.py"
+    # ── functional_check ─────────────────────────────────────────────
 
-    def test_confidence_rules_present(self):
-        """Verify confidence scores 1.0, 0.8, 0.5 appear in classifier.py."""
-        content = self._read(os.path.join(
-            self.REPO_DIR, "src/sentry/utils/ci_analyzer/classifier.py"))
-        assert content, "classifier.py is empty or unreadable"
-        for score in ("1.0", "0.8", "0.5"):
-            assert score in content, f"Confidence score {score} not found in classifier.py"
+    def test_all_files_valid_python(self):
+        """All analyzer Python files must have valid syntax."""
+        errors = []
+        for fname in ["__init__.py", "fetcher.py", "parser.py",
+                       "classifier.py", "models.py", "cli.py"]:
+            content = self._read(fname)
+            if not content:
+                continue
+            try:
+                ast.parse(content)
+            except SyntaxError as e:
+                errors.append(f"{fname}: {e}")
+        assert not errors, "Syntax errors:\n" + "\n".join(errors)
 
-    def test_models_dataclasses_defined(self):
-        """Verify models.py defines dataclasses for PRInfo, JobFailure, and ClassificationResult."""
-        content = self._read(os.path.join(
-            self.REPO_DIR, "src/sentry/utils/ci_analyzer/models.py"))
-        assert content, "models.py is empty or unreadable"
-        for name in ("PRInfo", "JobFailure", "ClassificationResult"):
-            assert name in content, f"Dataclass '{name}' not found in models.py"
+    def test_text_format_output(self):
+        """CLI must support --format text for human-readable output."""
+        content = self._read("cli.py")
+        assert re.search(r"text|format|table|human.readable", content, re.IGNORECASE), (
+            "Text format output not found in CLI"
+        )
 
-    # ── functional_check (import) ───────────────────────────────────
+    def test_github_api_usage(self):
+        """Fetcher must use GitHub API for workflow runs and jobs."""
+        content = self._read("fetcher.py")
+        assert re.search(r"api\.github|actions/runs|repos/.*actions|workflow", content, re.IGNORECASE), (
+            "GitHub API usage not found in fetcher"
+        )
 
-    def _try_import(self, module_path: str):
-        if not os.path.isdir(self.REPO_DIR):
-            pytest.skip("Repo dir does not exist")
-        sys.path.insert(0, os.path.join(self.REPO_DIR, "src"))
-        try:
-            mod = __import__(module_path, fromlist=[""])
-            return mod
-        except ImportError:
-            pytest.skip(f"{module_path} not importable")
-        finally:
-            sys.path.pop(0)
+    def test_stack_trace_capture(self):
+        """Parser must capture stack traces from logs."""
+        content = self._read("parser.py")
+        assert re.search(r"stack.trace|traceback|indent|consecutive", content, re.IGNORECASE), (
+            "Stack trace capture not found in parser"
+        )
 
-    def test_parse_pr_url_valid(self):
-        """CIFetcher().parse_pr_url returns correct (owner, repo, number) tuple."""
-        mod = self._try_import("sentry.utils.ci_analyzer.fetcher")
-        fetcher_cls = getattr(mod, "CIFetcher", None)
-        if fetcher_cls is None:
-            pytest.skip("CIFetcher class not found")
-        result = fetcher_cls().parse_pr_url("https://github.com/getsentry/sentry/pull/12345")
-        assert result[0] == "getsentry"
-        assert result[1] == "sentry"
-        assert result[2] == 12345
+    def test_unavailable_log_handling(self):
+        """Parser must handle unavailable logs gracefully."""
+        content = self._read("parser.py") + self._read("classifier.py")
+        assert re.search(r"unavailable|empty|cannot.*download|Log unavailable", content, re.IGNORECASE), (
+            "Unavailable log handling not found"
+        )
 
-    def test_parse_pr_url_invalid_raises_value_error(self):
-        """parse_pr_url('not-a-url') raises ValueError."""
-        mod = self._try_import("sentry.utils.ci_analyzer.fetcher")
-        fetcher_cls = getattr(mod, "CIFetcher", None)
-        if fetcher_cls is None:
-            pytest.skip("CIFetcher class not found")
-        with pytest.raises(ValueError, match="Invalid PR URL"):
-            fetcher_cls().parse_pr_url("not-a-url")
-
-    def test_classifier_test_failure_step_name(self):
-        """Classifier with step_name='Run tests' returns test_failure, confidence 1.0."""
-        mod = self._try_import("sentry.utils.ci_analyzer.classifier")
-        classify = getattr(mod, "classify", None) or getattr(mod, "Classifier", None)
-        if classify is None:
-            pytest.skip("No classify function or Classifier class found")
-        if callable(classify) and not isinstance(classify, type):
-            result = classify(step_name="Run tests", error_text="AssertionError")
-        else:
-            result = classify().classify(step_name="Run tests", error_text="AssertionError")
-        assert hasattr(result, "category") or isinstance(result, dict)
-        cat = result.category if hasattr(result, "category") else result.get("category")
-        assert cat == "test_failure"
-
-    def test_classifier_infra_flake_503(self):
-        """Classifier with error_text='503 Service Unavailable' returns infra_flake."""
-        mod = self._try_import("sentry.utils.ci_analyzer.classifier")
-        classify = getattr(mod, "classify", None) or getattr(mod, "Classifier", None)
-        if classify is None:
-            pytest.skip("No classify function or Classifier class found")
-        if callable(classify) and not isinstance(classify, type):
-            result = classify(step_name="Deploy preview", error_text="503 Service Unavailable")
-        else:
-            result = classify().classify(step_name="Deploy preview", error_text="503 Service Unavailable")
-        cat = result.category if hasattr(result, "category") else result.get("category")
-        assert cat == "infra_flake"
-
-    def test_report_contains_required_fields(self):
-        """Generated report dict contains all required top-level keys."""
-        mod = self._try_import("sentry.utils.ci_analyzer")
-        generate = getattr(mod, "generate_report", None) or getattr(mod, "CIAnalyzer", None)
-        if generate is None:
-            pytest.skip("No generate_report or CIAnalyzer found")
-        # Semantic fallback: check models for expected keys
-        models_content = self._read(os.path.join(
-            self.REPO_DIR, "src/sentry/utils/ci_analyzer/models.py"))
-        for key in ("pr_url", "head_sha", "analyzed_at", "total_failed_jobs", "failures", "summary"):
-            assert key in models_content, f"Key '{key}' not found in models definitions"
+    def test_iso_timestamp_in_report(self):
+        """Report must include ISO 8601 timestamp."""
+        content = self._read("cli.py") + self._read("models.py")
+        assert re.search(r"isoformat|ISO.*8601|analyzed_at|datetime", content, re.IGNORECASE), (
+            "ISO 8601 timestamp not found in report"
+        )

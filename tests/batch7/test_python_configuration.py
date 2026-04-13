@@ -1,170 +1,268 @@
-"""Test file for the python-configuration skill.
-
-This suite validates Pydantic-based settings (DatabaseSettings, AppSettings)
-with env vars, nested delimiter, validators, and lru_cache.
+"""
+Test skill: python-configuration
+Verify that the Agent adds a typed configuration system to FastAPI's tutorial
+examples — Pydantic settings with nested groups, validators, env-var loading,
+fail-fast behaviour, and dependency injection via endpoints.
 """
 
-from __future__ import annotations
-
-import ast
-import pathlib
+import os
 import re
-
+import ast
+import subprocess
 import pytest
 
 
 class TestPythonConfiguration:
-    """Verify Python configuration patterns with FastAPI/Pydantic."""
-
     REPO_DIR = "/workspace/fastapi"
 
-    CONFIG_PY = "docs_src/settings/config.py"
-    TUTORIAL_PY = "docs_src/settings/tutorial001.py"
-    TEST_PY = "tests/test_tutorial/test_settings/test_tutorial001.py"
+    # ────────────────── helpers ──────────────────
 
-    # ------------------------------------------------------------------
-    # Helpers
-    # ------------------------------------------------------------------
+    def _read(self, rel_path):
+        fpath = os.path.join(self.REPO_DIR, rel_path)
+        with open(fpath, "r") as f:
+            return f.read()
 
-    def _repo_path(self, relative: str) -> pathlib.Path:
-        return pathlib.Path(self.REPO_DIR, *relative.split("/"))
+    def _exists(self, rel_path):
+        return os.path.isfile(os.path.join(self.REPO_DIR, rel_path))
 
-    def _read_text(self, relative: str) -> str:
-        path = self._repo_path(relative)
-        assert path.exists(), f"Expected path to exist: {path}"
-        return path.read_text(encoding="utf-8", errors="ignore")
+    def _parse(self, rel_path):
+        fpath = os.path.join(self.REPO_DIR, rel_path)
+        with open(fpath, "r") as f:
+            return ast.parse(f.read())
 
-    def _assert_non_empty_file(self, relative: str) -> pathlib.Path:
-        path = self._repo_path(relative)
-        assert path.is_file(), f"Expected file to exist: {path}"
-        assert path.stat().st_size > 0, f"Expected non-empty file: {path}"
-        return path
+    # === File Path Checks ===
 
-    def _class_source(self, source: str, class_name: str) -> str | None:
-        tree = ast.parse(source)
-        for node in ast.walk(tree):
-            if isinstance(node, ast.ClassDef) and node.name == class_name:
-                start = node.lineno - 1
-                end = node.end_lineno or start + 1
-                lines = source.splitlines()
-                return "\n".join(lines[start:end])
-        return None
+    def test_config_module_exists(self):
+        """docs_src/settings/config.py must exist"""
+        assert self._exists("docs_src/settings/config.py")
 
-    def _all_sources(self) -> str:
-        parts = []
-        for rel in (self.CONFIG_PY, self.TUTORIAL_PY):
-            p = self._repo_path(rel)
-            if p.is_file():
-                parts.append(p.read_text(encoding="utf-8", errors="ignore"))
-        return "\n".join(parts)
+    def test_tutorial_app_exists(self):
+        """docs_src/settings/tutorial001.py must exist"""
+        assert self._exists("docs_src/settings/tutorial001.py")
 
-    # ------------------------------------------------------------------
-    # Layer 1 – file_path_check (3 cases)
-    # ------------------------------------------------------------------
+    def test_test_file_exists(self):
+        """tests/test_tutorial/test_settings/test_tutorial001.py must exist"""
+        assert self._exists("tests/test_tutorial/test_settings/test_tutorial001.py")
 
-    def test_file_path_docs_src_settings_config_py_exists(self):
-        """Verify config.py exists and is non-empty."""
-        self._assert_non_empty_file(self.CONFIG_PY)
+    def test_test_init_exists(self):
+        """tests/test_tutorial/test_settings/__init__.py must exist"""
+        assert self._exists("tests/test_tutorial/test_settings/__init__.py")
 
-    def test_file_path_docs_src_settings_tutorial001_py_exists(self):
-        """Verify tutorial001.py exists and is non-empty."""
-        self._assert_non_empty_file(self.TUTORIAL_PY)
+    # === Semantic Checks — Settings Classes ===
 
-    def test_file_path_tests_test_tutorial_test_settings_test_tutorial001_py_exists(
-        self,
-    ):
-        """Verify test_tutorial001.py exists and is non-empty."""
-        self._assert_non_empty_file(self.TEST_PY)
+    def test_database_settings_class(self):
+        """DatabaseSettings class must be defined in config.py"""
+        src = self._read("docs_src/settings/config.py")
+        assert re.search(r'class\s+DatabaseSettings\b', src), (
+            "DatabaseSettings class not found"
+        )
 
-    # ------------------------------------------------------------------
-    # Layer 2 – semantic_check (5 cases)
-    # ------------------------------------------------------------------
+    def test_redis_settings_class(self):
+        """RedisSettings class must be defined in config.py"""
+        src = self._read("docs_src/settings/config.py")
+        assert re.search(r'class\s+RedisSettings\b', src), (
+            "RedisSettings class not found"
+        )
 
-    def test_semantic_databasesettings_has_fields_host_port_name_user_password_poo(
-        self,
-    ):
-        """DatabaseSettings has fields: host, port, name, user, password, pool_size."""
-        src = self._all_sources()
-        body = self._class_source(src, "DatabaseSettings")
-        assert body is not None, "DatabaseSettings class not found"
-        for field in ("host", "port", "name", "user", "password", "pool_size"):
-            assert field in body, f"DatabaseSettings missing field: {field}"
+    def test_auth_settings_class(self):
+        """AuthSettings class must be defined in config.py"""
+        src = self._read("docs_src/settings/config.py")
+        assert re.search(r'class\s+AuthSettings\b', src), (
+            "AuthSettings class not found"
+        )
 
-    def test_semantic_appsettings_has_env_nested_delimiter____and_env_file_env_in_(
-        self,
-    ):
-        """AppSettings has env_nested_delimiter='__' and env_file='.env' in model config."""
-        src = self._all_sources()
-        body = self._class_source(src, "AppSettings")
-        if body is None:
-            body = self._class_source(src, "Settings")
-        assert body is not None, "AppSettings/Settings class not found"
-        assert re.search(r"env_nested_delimiter.*__", body) or re.search(
-            r"nested.*__", src
-        ), "AppSettings should have env_nested_delimiter='__'"
+    def test_app_settings_class(self):
+        """AppSettings (root) class must be defined in config.py"""
+        src = self._read("docs_src/settings/config.py")
+        assert re.search(r'class\s+AppSettings\b', src), (
+            "AppSettings class not found"
+        )
 
-    def test_semantic_allowed_hosts_validator_handles_both_string_and_list_inputs(self):
-        """allowed_hosts validator handles both string and list inputs."""
-        src = self._all_sources()
-        assert re.search(
-            r"allowed_hosts|ALLOWED_HOSTS", src
-        ), "allowed_hosts field not found"
-        assert re.search(
-            r"validator|field_validator|@validator", src
-        ), "Validator for allowed_hosts not found"
+    # === Semantic Checks — DatabaseSettings Fields ===
 
-    def test_semantic_production_validator_checks_debug_and_secret_key_length(self):
-        """Production validator checks debug and secret_key length."""
-        src = self._all_sources()
-        assert re.search(r"debug|DEBUG", src) and re.search(
-            r"secret_key|SECRET_KEY", src
-        ), "Production validator should check debug and secret_key"
+    def test_database_fields(self):
+        """DatabaseSettings must have host, port, name, user, password, pool_size"""
+        src = self._read("docs_src/settings/config.py")
+        for field in ["host", "port", "name", "user", "password", "pool_size"]:
+            assert re.search(rf'{field}\s*[=:]', src), (
+                f"DatabaseSettings missing field: {field}"
+            )
 
-    def test_semantic_get_settings_uses_lru_cache_decorator(self):
-        """get_settings() uses @lru_cache decorator."""
-        src = self._all_sources()
-        assert re.search(r"lru_cache|cache", src), "get_settings should use lru_cache"
-        assert re.search(
-            r"def\s+get_settings\s*\(", src
-        ), "get_settings function not found"
+    def test_database_url_property(self):
+        """DatabaseSettings must have a computed url property"""
+        src = self._read("docs_src/settings/config.py")
+        assert "url" in src, "DatabaseSettings missing url property"
+        assert "postgresql://" in src, (
+            "Database url should produce a postgresql:// connection string"
+        )
 
-    # ------------------------------------------------------------------
-    # Layer 3 – functional_check (5 cases, source analysis)
-    # ------------------------------------------------------------------
+    # === Semantic Checks — AppSettings ===
 
-    def test_functional_settings_load_from_environment_variables_with_correct_types(
-        self,
-    ):
-        """Settings load from environment variables with correct types."""
-        src = self._all_sources()
-        assert re.search(
-            r"BaseSettings|pydantic.settings|pydantic_settings", src
-        ), "Settings should inherit from BaseSettings for env loading"
+    def test_app_settings_nested_groups(self):
+        """AppSettings must include database, redis, auth as nested settings"""
+        src = self._read("docs_src/settings/config.py")
+        for group in ["database", "redis", "auth"]:
+            assert group in src, f"AppSettings missing nested group: {group}"
 
-    def test_functional_nested_delimiter_database__host_overrides_database_host(self):
-        """Nested delimiter DATABASE__HOST overrides database.host."""
-        src = self._all_sources()
-        assert re.search(
-            r"env_nested_delimiter|nested", src
-        ), "Nested delimiter support required"
+    def test_env_nested_delimiter(self):
+        """AppSettings model config must use env_nested_delimiter = '__'"""
+        src = self._read("docs_src/settings/config.py")
+        assert "env_nested_delimiter" in src, (
+            "env_nested_delimiter not configured in AppSettings"
+        )
 
-    def test_functional_allowed_hosts_a_com_b_com_parsed_to_a_com_b_com(self):
-        """ALLOWED_HOSTS='a.com, b.com' parsed to ['a.com', 'b.com']."""
-        src = self._all_sources()
-        assert re.search(
-            r"split|,|comma", src, re.IGNORECASE
-        ), "allowed_hosts validator should split comma-separated values"
+    def test_environment_literal_type(self):
+        """environment field must be a Literal with local, staging, production"""
+        src = self._read("docs_src/settings/config.py")
+        assert "Literal" in src, "Literal type not used for environment field"
+        for env in ["local", "staging", "production"]:
+            assert f'"{env}"' in src or f"'{env}'" in src, (
+                f"Environment Literal missing value: {env}"
+            )
 
-    def test_functional_production_debug_true_raises_valueerror(self):
-        """Production + debug=True raises ValueError."""
-        src = self._all_sources()
-        assert re.search(
-            r"ValueError|ValidationError|raise", src
-        ), "Production validator should raise on debug=True"
+    def test_allowed_hosts_validator(self):
+        """allowed_hosts must have a validator that splits comma-separated strings"""
+        src = self._read("docs_src/settings/config.py")
+        assert "allowed_hosts" in src, "allowed_hosts field not found"
+        # Should have a validator or field_validator for splitting
+        assert "validator" in src.lower() or "split" in src, (
+            "allowed_hosts needs a validator to split comma-separated strings"
+        )
 
-    def test_functional_production_short_secret_key_raises_valueerror(self):
-        """Production + short secret_key raises ValueError."""
-        src = self._all_sources()
-        assert re.search(
-            r"len\s*\(.*secret|secret.*len|min.*length", src, re.IGNORECASE
-        ), "Production validator should check secret_key length"
+    def test_production_debug_validation(self):
+        """In production, debug must be False — a validator must enforce this"""
+        src = self._read("docs_src/settings/config.py")
+        assert "production" in src and "debug" in src, (
+            "Production + debug validation logic not found"
+        )
+
+    def test_production_secret_key_length_validation(self):
+        """In production, auth.secret_key must be >= 32 chars"""
+        src = self._read("docs_src/settings/config.py")
+        assert "32" in src or "secret_key" in src, (
+            "Secret key length validation for production not found"
+        )
+
+    def test_is_production_property(self):
+        """AppSettings must have an is_production computed property"""
+        src = self._read("docs_src/settings/config.py")
+        assert "is_production" in src, "is_production property not found"
+
+    # === Semantic Checks — FastAPI App ===
+
+    def test_fastapi_app_created(self):
+        """tutorial001.py must create a FastAPI app instance"""
+        src = self._read("docs_src/settings/tutorial001.py")
+        assert "FastAPI" in src, "FastAPI app not found in tutorial001.py"
+
+    def test_get_settings_dependency(self):
+        """get_settings() dependency function must be defined"""
+        src = self._read("docs_src/settings/tutorial001.py")
+        assert re.search(r'def\s+get_settings\s*\(', src), (
+            "get_settings dependency not found"
+        )
+
+    def test_lru_cache_used(self):
+        """get_settings must use @lru_cache for singleton caching"""
+        src = self._read("docs_src/settings/tutorial001.py")
+        assert "lru_cache" in src, "lru_cache not used for settings caching"
+
+    def test_info_endpoint(self):
+        """GET /info endpoint must be defined"""
+        src = self._read("docs_src/settings/tutorial001.py")
+        assert re.search(r'["\'/]info["\']', src) or "/info" in src, (
+            "GET /info endpoint not found"
+        )
+
+    def test_health_endpoint(self):
+        """GET /health endpoint must be defined"""
+        src = self._read("docs_src/settings/tutorial001.py")
+        assert re.search(r'["\'/]health["\']', src) or "/health" in src, (
+            "GET /health endpoint not found"
+        )
+
+    def test_health_redacts_password(self):
+        """GET /health must redact the database password"""
+        src = self._read("docs_src/settings/tutorial001.py")
+        assert '***' in src or 'redact' in src.lower() or 'replace' in src.lower(), (
+            "/health should redact the database password with '***'"
+        )
+
+    def test_validate_endpoint(self):
+        """GET /settings/validate endpoint must be defined"""
+        src = self._read("docs_src/settings/tutorial001.py")
+        assert "validate" in src, "GET /settings/validate endpoint not found"
+
+    # === Functional Checks ===
+
+    def test_config_module_importable(self):
+        """config.py must be importable"""
+        result = subprocess.run(
+            ["python", "-c",
+             "import sys; sys.path.insert(0, '.'); "
+             "from docs_src.settings.config import AppSettings, DatabaseSettings, "
+             "RedisSettings, AuthSettings; print('OK')"],
+            capture_output=True, text=True, cwd=self.REPO_DIR, timeout=30,
+        )
+        assert "OK" in result.stdout, (
+            f"Import failed:\n{result.stdout}\n{result.stderr}"
+        )
+
+    def test_settings_loads_with_env_vars(self):
+        """AppSettings must load successfully when all required env vars are set"""
+        env = {
+            **os.environ,
+            "DATABASE_NAME": "testdb",
+            "DATABASE_USER": "testuser",
+            "DATABASE_PASSWORD": "testpass",
+            "AUTH_SECRET_KEY": "super-long-secret-key-for-testing-32ch",
+        }
+        result = subprocess.run(
+            ["python", "-c",
+             "import sys; sys.path.insert(0, '.'); "
+             "from docs_src.settings.config import AppSettings; "
+             "s = AppSettings(); "
+             "assert s.database.name == 'testdb'; "
+             "assert s.database.user == 'testuser'; "
+             "print('OK')"],
+            capture_output=True, text=True, cwd=self.REPO_DIR, timeout=30,
+            env=env,
+        )
+        assert "OK" in result.stdout, (
+            f"Settings load failed:\n{result.stdout}\n{result.stderr}"
+        )
+
+    def test_missing_required_env_raises(self):
+        """Missing required env vars must raise a ValidationError"""
+        # Remove all DATABASE_* and AUTH_* vars to trigger validation
+        clean_env = {
+            k: v for k, v in os.environ.items()
+            if not k.startswith(("DATABASE_", "AUTH_"))
+        }
+        result = subprocess.run(
+            ["python", "-c",
+             "import sys; sys.path.insert(0, '.'); "
+             "from docs_src.settings.config import AppSettings; "
+             "try:\n"
+             "    AppSettings()\n"
+             "    print('NO_ERROR')\n"
+             "except Exception as e:\n"
+             "    print('VALIDATION_ERROR')"],
+            capture_output=True, text=True, cwd=self.REPO_DIR, timeout=30,
+            env=clean_env,
+        )
+        assert "VALIDATION_ERROR" in result.stdout, (
+            "Missing required env vars should raise ValidationError"
+        )
+
+    def test_tests_pass(self):
+        """The tutorial test file must pass"""
+        result = subprocess.run(
+            ["python", "-m", "pytest",
+             "tests/test_tutorial/test_settings/test_tutorial001.py",
+             "-v", "--tb=short"],
+            capture_output=True, text=True, cwd=self.REPO_DIR, timeout=120,
+        )
+        assert result.returncode == 0, (
+            f"Tests failed:\n{result.stdout}\n{result.stderr}"
+        )

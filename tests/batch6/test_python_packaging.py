@@ -1,216 +1,215 @@
 """
-Tests for 'python-packaging' skill.
-Generated from benchmark case definitions for python-packaging.
+Test skill: python-packaging
+Verify that the Agent builds a "version-inspector" CLI tool using Click
+with PEP 440 version parsing, comparison, and specifier range checking,
+packaged with pyproject.toml, src layout, and console script entry point.
 """
 
-import ast
-import base64
-import glob
-import json
 import os
-import py_compile
 import re
+import ast
+import json
 import subprocess
-import textwrap
-
 import pytest
 
 try:
-    import yaml
-except ModuleNotFoundError:
-    yaml = None
+    import tomllib
+except ImportError:
+    try:
+        import tomli as tomllib
+    except ImportError:
+        tomllib = None
 
 
 class TestPythonPackaging:
-    """Verify the python-packaging skill output."""
+    REPO_DIR = "/workspace/packaging"
 
-    REPO_DIR = '/workspace/packaging'
-
-
-    # ── helpers ──────────────────────────────────────────────
-
-    _SETUP_CACHE: dict = {}
-
-    @staticmethod
-    def _repo_path(rel: str) -> str:
-        return os.path.join(TestPythonPackaging.REPO_DIR, rel)
-
-    @staticmethod
-    def _safe_read(path: str) -> str:
-        with open(path, "r", encoding="utf-8", errors="ignore") as fh:
-            return fh.read()
-
-    @staticmethod
-    def _load_yaml(path: str):
-        if yaml is None:
-            pytest.skip("PyYAML not available")
-        with open(path, "r", encoding="utf-8", errors="ignore") as fh:
-            return yaml.safe_load(fh)
-
-    @staticmethod
-    def _load_json(path: str):
-        with open(path, "r", encoding="utf-8", errors="ignore") as fh:
-            return json.load(fh)
-
-    @classmethod
-    def _run_in_repo(cls, script: str, timeout: int = 120) -> subprocess.CompletedProcess:
-        return subprocess.run(
-            ["python", "-c", textwrap.dedent(script)],
-            cwd=cls.REPO_DIR,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-        )
-
-    @classmethod
-    def _run_cmd(cls, command, args=None, timeout=120):
-        args = args or []
-        if isinstance(command, str) and args:
-            return subprocess.run(
-                [command, *args],
-                cwd=cls.REPO_DIR,
-                capture_output=True,
-                text=True,
-                timeout=timeout,
-            )
-        return subprocess.run(
-            command if isinstance(command, list) else command,
-            cwd=cls.REPO_DIR,
-            shell=isinstance(command, str),
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-        )
-
-    @classmethod
-    def _ensure_setup(cls, label, setup_cmds, fallback):
-        if not setup_cmds:
-            return
-        key = tuple(setup_cmds)
-        if key in cls._SETUP_CACHE:
-            ok, msg = cls._SETUP_CACHE[key]
-            if ok:
-                return
-            if fallback == "skip_if_setup_fails":
-                pytest.skip(f"{label} setup failed: {msg}")
-            pytest.fail(f"{label} setup failed: {msg}")
-        for cmd in setup_cmds:
-            r = subprocess.run(cmd, cwd=cls.REPO_DIR, shell=True,
-                               capture_output=True, text=True, timeout=300)
-            if r.returncode != 0:
-                msg = (r.stderr or r.stdout or 'failed').strip()
-                cls._SETUP_CACHE[key] = (False, msg)
-                if fallback == "skip_if_setup_fails":
-                    pytest.skip(f"{label} setup failed: {msg}")
-                pytest.fail(f"{label} setup failed: {msg}")
-        cls._SETUP_CACHE[key] = (True, 'ok')
-
-
-    # ── file_path_check (static) ────────────────────────────────────────
-
-    def test_cli_module_exists(self):
-        """Verify CLI module exists"""
-        _p = self._repo_path('src/version_inspector/cli.py')
-        assert os.path.isfile(_p), f'Missing file: src/version_inspector/cli.py'
-        py_compile.compile(_p, doraise=True)
+    # === File Path Checks ===
 
     def test_pyproject_toml_exists(self):
-        """Verify pyproject.toml with entry point exists"""
-        _p = self._repo_path('pyproject.toml')
-        assert os.path.isfile(_p), f'Missing file: pyproject.toml'
+        path = os.path.join(self.REPO_DIR, "pyproject.toml")
+        assert os.path.exists(path), "pyproject.toml not found"
 
-    # ── semantic_check (static) ────────────────────────────────────────
+    def test_src_layout_exists(self):
+        base = os.path.join(self.REPO_DIR, "src")
+        assert os.path.isdir(base), "src/ directory not found"
+        # Should have a package directory inside src/
+        entries = os.listdir(base)
+        pkg_dirs = [e for e in entries if os.path.isdir(os.path.join(base, e))]
+        assert len(pkg_dirs) >= 1, "No package directory found inside src/"
 
-    def test_click_group_decorator(self):
-        """Verify @click.group() on main CLI function"""
-        _p = self._repo_path('src/version_inspector/cli.py')
-        assert os.path.exists(_p), f'Missing: src/version_inspector/cli.py'
-        _contents = self._safe_read(_p)
-        _all = _contents if isinstance(_contents, str) else ''
-        assert '@click.group' in _all, 'Missing: @click.group'
-        assert 'click.group' in _all, 'Missing: click.group'
+    def test_cli_module_exists(self):
+        """Verify that a CLI module exists (cli.py or __main__.py)"""
+        found = False
+        for root, _dirs, files in os.walk(os.path.join(self.REPO_DIR, "src")):
+            for f in files:
+                if f in ("cli.py", "__main__.py", "main.py"):
+                    found = True
+                    break
+        assert found, "No CLI module (cli.py or __main__.py) found under src/"
 
-    def test_subcommands_defined(self):
-        """Verify all 4 subcommands registered"""
-        _p = self._repo_path('src/version_inspector/cli.py')
-        assert os.path.exists(_p), f'Missing: src/version_inspector/cli.py'
-        _contents = self._safe_read(_p)
-        _all = _contents if isinstance(_contents, str) else ''
-        assert 'parse' in _all, 'Missing: parse'
-        assert 'validate' in _all, 'Missing: validate'
-        assert 'compare' in _all, 'Missing: compare'
-        assert 'bump' in _all, 'Missing: bump'
+    # === Semantic Checks ===
 
-    def test_entry_point_in_pyproject(self):
-        """Verify version-inspector entry point registered"""
-        _p = self._repo_path('pyproject.toml')
-        assert os.path.exists(_p), f'Missing: pyproject.toml'
-        _contents = self._safe_read(_p)
-        _all = _contents if isinstance(_contents, str) else ''
-        assert 'version-inspector' in _all, 'Missing: version-inspector'
-        assert 'project.scripts' in _all, 'Missing: project.scripts'
+    def test_pyproject_has_build_system(self):
+        """pyproject.toml should have a build-system section"""
+        path = os.path.join(self.REPO_DIR, "pyproject.toml")
+        with open(path) as f:
+            content = f.read()
+        assert "[build-system]" in content, "Missing [build-system] section"
+        assert re.search(r"build-backend", content), "Missing build-backend"
 
-    def test_semver_regex_or_library(self):
-        """Verify SemVer parsing uses regex or semver library"""
-        _p = self._repo_path('src/version_inspector/cli.py')
-        assert os.path.exists(_p), f'Missing: src/version_inspector/cli.py'
-        _contents = self._safe_read(_p)
-        _all = _contents if isinstance(_contents, str) else ''
-        assert 're.compile' in _all, 'Missing: re.compile'
-        assert 'semver' in _all, 'Missing: semver'
-        assert 'major' in _all, 'Missing: major'
-        assert 'minor' in _all, 'Missing: minor'
-        assert 'patch' in _all, 'Missing: patch'
-        assert 'prerelease' in _all, 'Missing: prerelease'
-        assert 'build' in _all, 'Missing: build'
-
-    # ── functional_check ────────────────────────────────────────
-
-    def test_parse_basic_version(self):
-        """Verify parse outputs correct JSON for basic version"""
-        self._ensure_setup('test_parse_basic_version', ['pip install -e .'], 'fail_if_missing')
-        result = self._run_cmd('version-inspector', args=['parse', '1.2.3'], timeout=120)
-        assert result.returncode == 0, (
-            f'test_parse_basic_version failed (exit {result.returncode})\n' + result.stderr[:500]
+    def test_pyproject_has_console_script(self):
+        """pyproject.toml should define a console_scripts entry point"""
+        path = os.path.join(self.REPO_DIR, "pyproject.toml")
+        with open(path) as f:
+            content = f.read()
+        assert re.search(
+            r"console.scripts|console_scripts|entry.points", content, re.IGNORECASE
+        ), "Missing console_scripts entry point"
+        assert "version-inspector" in content or "version_inspector" in content, (
+            "Console script should be named version-inspector"
         )
 
-    def test_parse_prerelease_and_build(self):
-        """Verify parse handles prerelease and build metadata"""
-        self._ensure_setup('test_parse_prerelease_and_build', ['pip install -e .'], 'fail_if_missing')
-        result = self._run_cmd('version-inspector', args=['parse', '1.2.3-alpha.1+build.42'], timeout=120)
-        assert result.returncode == 0, (
-            f'test_parse_prerelease_and_build failed (exit {result.returncode})\n' + result.stderr[:500]
+    def test_pyproject_depends_on_click(self):
+        """pyproject.toml should declare Click as a dependency"""
+        path = os.path.join(self.REPO_DIR, "pyproject.toml")
+        with open(path) as f:
+            content = f.read()
+        assert "click" in content.lower(), "Missing click dependency"
+
+    def test_cli_has_parse_subcommand(self):
+        """CLI should have a 'parse' subcommand"""
+        cli_path = self._find_cli_file()
+        assert cli_path, "CLI file not found"
+        with open(cli_path) as f:
+            content = f.read()
+        assert re.search(r"def\s+parse", content), "Missing 'parse' subcommand"
+
+    def test_cli_has_compare_subcommand(self):
+        """CLI should have a 'compare' subcommand"""
+        cli_path = self._find_cli_file()
+        assert cli_path, "CLI file not found"
+        with open(cli_path) as f:
+            content = f.read()
+        assert re.search(r"def\s+compare", content), "Missing 'compare' subcommand"
+
+    def test_cli_has_check_subcommand(self):
+        """CLI should have a 'check' subcommand for specifier matching"""
+        cli_path = self._find_cli_file()
+        assert cli_path, "CLI file not found"
+        with open(cli_path) as f:
+            content = f.read()
+        assert re.search(r"def\s+check", content), "Missing 'check' subcommand"
+
+    def test_cli_has_range_subcommand(self):
+        """CLI should have a 'range' subcommand"""
+        cli_path = self._find_cli_file()
+        assert cli_path, "CLI file not found"
+        with open(cli_path) as f:
+            content = f.read()
+        assert re.search(r"def\s+range", content), "Missing 'range' subcommand"
+
+    def test_cli_uses_click(self):
+        """CLI should use Click for command parsing"""
+        cli_path = self._find_cli_file()
+        assert cli_path, "CLI file not found"
+        with open(cli_path) as f:
+            content = f.read()
+        assert "import click" in content or "from click" in content, (
+            "CLI should use Click"
+        )
+        assert "@click" in content, "CLI should use Click decorators"
+
+    def test_cli_has_json_format_option(self):
+        """CLI should support --format json|table option"""
+        cli_path = self._find_cli_file()
+        assert cli_path, "CLI file not found"
+        with open(cli_path) as f:
+            content = f.read()
+        assert "format" in content.lower(), "CLI should support --format option"
+        assert "json" in content.lower(), "CLI should support JSON output format"
+
+    def test_cli_handles_invalid_versions(self):
+        """CLI should have error handling for invalid versions"""
+        cli_path = self._find_cli_file()
+        assert cli_path, "CLI file not found"
+        with open(cli_path) as f:
+            content = f.read()
+        content_lower = content.lower()
+        assert (
+            "invalidversion" in content_lower
+            or "invalid" in content_lower
+            or "error" in content_lower
+            or "exception" in content_lower
+        ), "CLI should handle invalid versions gracefully"
+
+    def test_uses_pep440_parsing(self):
+        """Code should use PEP 440 version parsing (packaging.version)"""
+        cli_path = self._find_cli_file()
+        assert cli_path, "CLI file not found"
+        with open(cli_path) as f:
+            content = f.read()
+        assert re.search(r"from packaging|import packaging", content), (
+            "Should use packaging library for PEP 440 version parsing"
         )
 
-    def test_validate_valid_and_invalid(self):
-        """Verify validate returns correct exit codes"""
-        self._ensure_setup('test_validate_valid_and_invalid', ['pip install -e .'], 'fail_if_missing')
-        result = self._run_cmd('python', args=['-c', "import subprocess, sys; r1=subprocess.run(['version-inspector','validate','1.2.3']); r2=subprocess.run(['version-inspector','validate','1.2']); assert r1.returncode==0; assert r2.returncode==1; print('PASS')"], timeout=120)
+    # === Functional Checks ===
+
+    def test_all_python_files_parse(self):
+        """Verify all Python files in src/ parse without syntax errors"""
+        src_dir = os.path.join(self.REPO_DIR, "src")
+        if not os.path.isdir(src_dir):
+            pytest.skip("src/ directory not found")
+        for root, _dirs, files in os.walk(src_dir):
+            for fname in files:
+                if fname.endswith(".py"):
+                    filepath = os.path.join(root, fname)
+                    with open(filepath) as f:
+                        source = f.read()
+                    try:
+                        ast.parse(source)
+                    except SyntaxError as e:
+                        pytest.fail(f"{filepath} has syntax error: {e}")
+
+    def test_pyproject_toml_is_valid(self):
+        """Verify pyproject.toml is valid TOML"""
+        if tomllib is None:
+            pytest.skip("No TOML parser available")
+        path = os.path.join(self.REPO_DIR, "pyproject.toml")
+        with open(path, "rb") as f:
+            data = tomllib.load(f)
+        assert "build-system" in data, "Missing build-system in pyproject.toml"
+        assert "project" in data, "Missing project table in pyproject.toml"
+
+    def test_package_is_installable(self):
+        """Verify the package can be installed with pip"""
+        result = subprocess.run(
+            ["pip", "install", "-e", "."],
+            capture_output=True, text=True, cwd=self.REPO_DIR, timeout=120
+        )
         assert result.returncode == 0, (
-            f'test_validate_valid_and_invalid failed (exit {result.returncode})\n' + result.stderr[:500]
+            f"pip install -e . failed:\n{result.stderr}"
         )
 
-    def test_compare_ordering(self):
-        """Verify compare outputs correct ordering"""
-        self._ensure_setup('test_compare_ordering', ['pip install -e .'], 'fail_if_missing')
-        result = self._run_cmd('python', args=['-c', "import subprocess; r=subprocess.run(['version-inspector','compare','2.0.0','1.9.9'],capture_output=True,text=True); assert r.stdout.strip()=='greater'; r2=subprocess.run(['version-inspector','compare','1.0.0','1.0.0'],capture_output=True,text=True); assert r2.stdout.strip()=='equal'; print('PASS')"], timeout=120)
+    def test_version_inspector_cli_help(self):
+        """Verify the CLI entry point works and shows help"""
+        result = subprocess.run(
+            ["version-inspector", "--help"],
+            capture_output=True, text=True, cwd=self.REPO_DIR, timeout=30
+        )
         assert result.returncode == 0, (
-            f'test_compare_ordering failed (exit {result.returncode})\n' + result.stderr[:500]
+            f"version-inspector --help failed:\n{result.stderr}"
+        )
+        assert "parse" in result.stdout.lower() or "Usage" in result.stdout, (
+            "Help output should list subcommands"
         )
 
-    def test_bump_minor_resets_patch(self):
-        """Verify bump minor resets patch to 0"""
-        self._ensure_setup('test_bump_minor_resets_patch', ['pip install -e .'], 'fail_if_missing')
-        result = self._run_cmd('python', args=['-c', "import subprocess; r=subprocess.run(['version-inspector','bump','1.2.3','--part','minor'],capture_output=True,text=True); assert r.stdout.strip()=='1.3.0'; r2=subprocess.run(['version-inspector','bump','1.2.3','--part','major'],capture_output=True,text=True); assert r2.stdout.strip()=='2.0.0'; print('PASS')"], timeout=120)
-        assert result.returncode == 0, (
-            f'test_bump_minor_resets_patch failed (exit {result.returncode})\n' + result.stderr[:500]
-        )
+    # --- Helpers ---
 
-    def test_compare_prerelease_less_than_release(self):
-        """Verify prerelease version is less than release per SemVer spec"""
-        self._ensure_setup('test_compare_prerelease_less_than_release', ['pip install -e .'], 'fail_if_missing')
-        result = self._run_cmd('python', args=['-c', "import subprocess; r=subprocess.run(['version-inspector','compare','1.0.0-alpha','1.0.0'],capture_output=True,text=True); assert r.stdout.strip()=='less'; print('PASS')"], timeout=120)
-        assert result.returncode == 0, (
-            f'test_compare_prerelease_less_than_release failed (exit {result.returncode})\n' + result.stderr[:500]
-        )
-
+    def _find_cli_file(self):
+        """Find the CLI module file under src/"""
+        for root, _dirs, files in os.walk(os.path.join(self.REPO_DIR, "src")):
+            for f in files:
+                if f in ("cli.py", "__main__.py", "main.py"):
+                    return os.path.join(root, f)
+        return None

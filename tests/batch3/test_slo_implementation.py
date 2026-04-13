@@ -1,228 +1,235 @@
 """
-Tests for slo-implementation skill.
-REPO_DIR: /workspace/slo-generator
+Tests for the slo-implementation skill.
+
+Validates that SLO configuration validation, burn rate calculation,
+and error budget tracking were implemented for slo-generator.
+
+Repo: slo-generator (https://github.com/google/slo-generator)
 """
 
 import os
+import re
+import subprocess
 import sys
-import importlib
-import pytest
 
 REPO_DIR = "/workspace/slo-generator"
 
 
-def _path(rel):
-    return os.path.join(REPO_DIR, rel)
+class TestFilePathCheck:
+    """Verify all required files were created."""
 
+    def test_burn_rate_exists(self):
+        path = os.path.join(REPO_DIR, "slo_generator", "burn_rate.py")
+        assert os.path.isfile(path), f"Expected burn_rate.py at {path}"
 
-def _read(rel):
-    with open(_path(rel), encoding="utf-8") as f:
-        return f.read()
+    def test_error_budget_exists(self):
+        path = os.path.join(REPO_DIR, "slo_generator", "error_budget.py")
+        assert os.path.isfile(path), f"Expected error_budget.py at {path}"
 
-
-class TestSloImplementation:
-    # ── file_path_check ────────────────────────────────────────────────────
-    def test_slo_generator_module_exists(self):
-        """Verify slo_generator package directory exists."""
-        assert os.path.isdir(
-            _path("slo_generator")
-        ), "slo_generator/ package directory must exist"
-
-    def test_burn_rate_module_exists(self):
-        """Verify slo_generator/burn_rate.py exists and is non-empty."""
-        fpath = _path("slo_generator/burn_rate.py")
-        assert os.path.isfile(fpath), "slo_generator/burn_rate.py must exist"
-        assert (
-            os.path.getsize(fpath) > 0
-        ), "slo_generator/burn_rate.py must be non-empty"
-
-    # ── semantic_check ─────────────────────────────────────────────────────
-    def test_slo_config_validator_defined(self):
-        """Verify SLOConfigValidator class and SLOConfigError are defined."""
-        validator_path = _path("slo_generator/slo_config_validator.py")
-        assert os.path.isfile(
-            validator_path
-        ), "slo_generator/slo_config_validator.py must exist"
-        content = _read("slo_generator/slo_config_validator.py")
-        assert (
-            "class SLOConfigValidator" in content
-        ), "SLOConfigValidator class must be defined"
-        assert "SLOConfigError" in content, "SLOConfigError must be defined"
-        assert (
-            "def validate_slo_config" in content or "def validate" in content
-        ), "validate_slo_config or validate method must be present"
-
-    def test_burn_rate_calculator_defined(self):
-        """Verify BurnRateCalculator class is defined with calculate method."""
-        content = _read("slo_generator/burn_rate.py")
-        assert (
-            "class BurnRateCalculator" in content
-        ), "BurnRateCalculator class must be defined"
-        assert (
-            "def calculate" in content or "def burn_rate" in content
-        ), "calculate or burn_rate method must be present"
-        assert (
-            "error_budget" in content or "slo_target" in content
-        ), "error_budget or slo_target must be referenced"
-
-    def test_dual_window_alert_defined(self):
-        """Verify dual-window alerting (5m and 1h windows) is defined for multi-window burn rate."""
-        content = _read("slo_generator/burn_rate.py")
-        keywords = [
-            "short_window",
-            "long_window",
-            "5m",
-            "1h",
-            "dual_window",
-            "MultiWindowAlert",
-        ]
-        found = any(k in content for k in keywords)
-        assert (
-            found
-        ), "short_window/long_window or 5m/1h dual-window alert patterns must be defined"
-
-    def test_budget_exhaustion_date_defined(self):
-        """Verify exhaustion_date calculation is defined in burn_rate module."""
-        content = _read("slo_generator/burn_rate.py")
-        patterns = [
-            "exhaustion_date",
-            "exhaustion",
-            "days_remaining",
-            "time_to_exhaustion",
-        ]
-        found = any(p in content for p in patterns)
-        assert (
-            found
-        ), "exhaustion_date or days_remaining calculation must be implemented"
-
-    # ── functional_check (import/mocked) ──────────────────────────────────
-    def _get_slo_module(self):
-        """Try to import from slo_generator; skip if unavailable."""
-        sys.path.insert(0, REPO_DIR)
-        try:
-            slo_mod = importlib.import_module("slo_generator.slo_config_validator")
-            return slo_mod
-        except Exception:
-            pytest.skip("slo_generator.slo_config_validator not importable")
-
-    def _get_burn_rate_module(self):
-        sys.path.insert(0, REPO_DIR)
-        try:
-            br_mod = importlib.import_module("slo_generator.burn_rate")
-            return br_mod
-        except Exception:
-            pytest.skip("slo_generator.burn_rate not importable")
-
-    def test_slo_target_1_0_raises_config_error(self):
-        """Verify SLO target of 1.0 (100%) raises SLOConfigError."""
-
-        # Mocked implementation matching the expected contract
-        class SLOConfigError(Exception):
-            pass
-
-        def validate_slo_config(config):
-            target = config.get("target", 0)
-            if target >= 1.0:
-                raise SLOConfigError(
-                    f"SLO target {target} must be < 1.0 (cannot achieve 100% availability)"
-                )
-            if target < 0.9:
-                raise SLOConfigError(
-                    f"SLO target {target} is unreasonably low (minimum 0.9)"
-                )
-            return True
-
-        with pytest.raises(SLOConfigError):
-            validate_slo_config({"target": 1.0, "window_days": 30})
-
-    def test_slo_availability_0_5_raises_config_error(self):
-        """Verify SLO availability of 0.5 (50%) raises SLOConfigError as unreasonably low."""
-
-        class SLOConfigError(Exception):
-            pass
-
-        def validate_slo_config(config):
-            target = config.get("target", 0)
-            if target >= 1.0:
-                raise SLOConfigError("SLO target must be < 1.0")
-            if target < 0.9:
-                raise SLOConfigError(
-                    f"SLO target {target} is below minimum threshold of 0.9"
-                )
-            return True
-
-        with pytest.raises(SLOConfigError):
-            validate_slo_config({"target": 0.5, "window_days": 30})
-
-    def test_burn_rate_0_0144_target_0_999_equals_14_4(self):
-        """Verify burn_rate(error_rate=0.0144, slo_target=0.999) = 14.4."""
-
-        class BurnRateCalculator:
-            def __init__(self, slo_target):
-                self.slo_target = slo_target
-                self.error_budget = 1.0 - slo_target
-
-            def calculate(self, current_error_rate):
-                if self.error_budget == 0:
-                    return float("inf")
-                return current_error_rate / self.error_budget
-
-        calc = BurnRateCalculator(slo_target=0.999)
-        rate = calc.calculate(current_error_rate=0.0144)
-        assert abs(rate - 14.4) < 0.01, f"Expected 14.4 ± 0.01, got {rate}"
-
-    def test_both_windows_trigger_alert(self):
-        """Verify alert fires when both 5m and 1h burn rate windows are exceeded."""
-
-        class BurnRateCalculator:
-            def __init__(self, slo_target):
-                self.slo_target = slo_target
-                self.error_budget = 1.0 - slo_target
-
-            def should_alert(self, short_window_rate, long_window_rate, threshold):
-                return short_window_rate > threshold and long_window_rate > threshold
-
-        calc = BurnRateCalculator(slo_target=0.999)
-        alert = calc.should_alert(
-            short_window_rate=15.0, long_window_rate=12.0, threshold=14.4
+    def test_config_validator_exists(self):
+        path = os.path.join(
+            REPO_DIR, "slo_generator", "slo_config_validator.py",
         )
-        assert alert is True, "Alert must fire when both windows exceed threshold"
+        assert os.path.isfile(path), f"Expected slo_config_validator.py"
 
-    def test_only_short_window_no_alert(self):
-        """Verify alert does NOT fire when only the 5m window is exceeded (not sustained)."""
+    def test_burn_rate_test_exists(self):
+        path = os.path.join(REPO_DIR, "tests", "unit", "test_burn_rate.py")
+        assert os.path.isfile(path), f"Expected test_burn_rate.py"
 
-        class BurnRateCalculator:
-            def __init__(self, slo_target):
-                self.slo_target = slo_target
+    def test_error_budget_test_exists(self):
+        path = os.path.join(REPO_DIR, "tests", "unit", "test_error_budget.py")
+        assert os.path.isfile(path), f"Expected test_error_budget.py"
 
-            def should_alert(self, short_window_rate, long_window_rate, threshold):
-                return short_window_rate > threshold and long_window_rate > threshold
 
-        calc = BurnRateCalculator(slo_target=0.999)
-        alert = calc.should_alert(
-            short_window_rate=15.0, long_window_rate=5.0, threshold=14.4
+class TestSemanticConfigValidator:
+    """Verify SLO configuration schema validation."""
+
+    def _read(self):
+        path = os.path.join(
+            REPO_DIR, "slo_generator", "slo_config_validator.py",
         )
-        assert (
-            alert is False
-        ), "Alert must NOT fire when only the short window exceeds the threshold"
+        with open(path, "r") as f:
+            return f.read()
 
-    def test_zero_burn_rate_exhaustion_none(self):
-        """Verify exhaustion_date is None when burn rate is 0 (infinite budget)."""
+    def test_schema_fields(self):
+        content = self._read()
+        for field in ["name", "service", "target", "window"]:
+            assert field in content, f"Expected field '{field}' in config schema"
 
-        class BurnRateCalculator:
-            def __init__(self, slo_target):
-                self.slo_target = slo_target
-                self.error_budget = 1.0 - slo_target
+    def test_sli_types(self):
+        content = self._read()
+        for sli in ["availability", "latency"]:
+            assert sli in content, f"Expected sli_type '{sli}'"
 
-            def exhaustion_date(self, current_error_rate):
-                if current_error_rate == 0:
-                    return None
-                burn = current_error_rate / self.error_budget
-                # Simplified: would compute actual date
-                return burn
+    def test_target_validation(self):
+        content = self._read()
+        assert re.search(r"0\.0.*1\.0|target|exclusive", content), (
+            "Expected target validation (0.0-1.0 exclusive)"
+        )
 
-        calc = BurnRateCalculator(slo_target=0.999)
-        date = calc.exhaustion_date(current_error_rate=0.0)
-        assert (
-            date is None
-        ), "exhaustion_date must be None when error_rate=0 (budget never exhausts)"
+    def test_availability_minimum(self):
+        content = self._read()
+        assert re.search(r"0\.9|availability.*target", content), (
+            "Expected availability SLI minimum target >= 0.9"
+        )
+
+    def test_slo_config_error(self):
+        content = self._read()
+        assert re.search(r"SLOConfigError|SloConfigError", content), (
+            "Expected SLOConfigError exception class"
+        )
+
+    def test_window_options(self):
+        content = self._read()
+        for window in ["rolling_7d", "rolling_28d", "rolling_30d"]:
+            assert window in content, f"Expected window option '{window}'"
+
+
+class TestSemanticBurnRate:
+    """Verify burn rate calculation and multi-window alerting."""
+
+    def _read(self):
+        path = os.path.join(REPO_DIR, "slo_generator", "burn_rate.py")
+        with open(path, "r") as f:
+            return f.read()
+
+    def test_class_definition(self):
+        content = self._read()
+        assert re.search(r"class\s+BurnRateCalculator", content), (
+            "Expected BurnRateCalculator class"
+        )
+
+    def test_burn_rate_formula(self):
+        content = self._read()
+        assert re.search(r"error_rate|error_budget_rate|burn.*rate", content), (
+            "Expected burn_rate = error_rate / error_budget_rate"
+        )
+
+    def test_multi_window(self):
+        content = self._read()
+        assert re.search(r"short.*window|long.*window|multi.*window", content, re.IGNORECASE), (
+            "Expected multi-window burn rate (short + long)"
+        )
+
+    def test_critical_severity(self):
+        content = self._read()
+        assert re.search(r"critical|14\.4", content, re.IGNORECASE), (
+            "Expected critical severity with burn_rate_threshold=14.4"
+        )
+
+    def test_warning_severity(self):
+        content = self._read()
+        assert re.search(r"warning|6\.0", content, re.IGNORECASE), (
+            "Expected warning severity with burn_rate_threshold=6.0"
+        )
+
+    def test_ticket_severity(self):
+        content = self._read()
+        assert re.search(r"ticket|3\.0", content, re.IGNORECASE), (
+            "Expected ticket severity with burn_rate_threshold=3.0"
+        )
+
+    def test_evaluate_alerts(self):
+        content = self._read()
+        assert re.search(r"def\s+evaluate_alerts", content), (
+            "Expected evaluate_alerts method"
+        )
+
+    def test_both_windows_must_exceed(self):
+        content = self._read()
+        assert re.search(r"both|and|short.*long", content, re.IGNORECASE), (
+            "Expected both windows must exceed thresholds for alert to fire"
+        )
+
+
+class TestSemanticErrorBudget:
+    """Verify error budget tracking."""
+
+    def _read(self):
+        path = os.path.join(REPO_DIR, "slo_generator", "error_budget.py")
+        with open(path, "r") as f:
+            return f.read()
+
+    def test_class_definition(self):
+        content = self._read()
+        assert re.search(r"class\s+ErrorBudgetTracker", content), (
+            "Expected ErrorBudgetTracker class"
+        )
+
+    def test_total_budget(self):
+        content = self._read()
+        assert re.search(r"total_budget|total", content), (
+            "Expected total_budget calculation"
+        )
+
+    def test_consumed_budget(self):
+        content = self._read()
+        assert re.search(r"consumed_budget|consumed", content), (
+            "Expected consumed_budget tracking"
+        )
+
+    def test_remaining_budget(self):
+        content = self._read()
+        assert re.search(r"remaining_budget|remaining", content), (
+            "Expected remaining_budget calculation"
+        )
+
+    def test_remaining_percentage(self):
+        content = self._read()
+        assert re.search(r"remaining_percentage|percent", content), (
+            "Expected remaining_percentage computation"
+        )
+
+    def test_consumption_rate(self):
+        content = self._read()
+        assert re.search(r"consumption_rate", content), (
+            "Expected consumption_rate (budget consumed per hour)"
+        )
+
+    def test_exhaustion_date(self):
+        content = self._read()
+        assert re.search(r"exhaustion_date|exhaustion", content), (
+            "Expected exhaustion_date projection (None if rate <= 0)"
+        )
+
+
+class TestFunctionalPythonSyntax:
+    """Validate Python files compile and tests pass."""
+
+    def test_burn_rate_syntax(self):
+        path = os.path.join(REPO_DIR, "slo_generator", "burn_rate.py")
+        with open(path, "r") as f:
+            content = f.read()
+        compile(content, path, "exec")
+
+    def test_error_budget_syntax(self):
+        path = os.path.join(REPO_DIR, "slo_generator", "error_budget.py")
+        with open(path, "r") as f:
+            content = f.read()
+        compile(content, path, "exec")
+
+    def test_config_validator_syntax(self):
+        path = os.path.join(
+            REPO_DIR, "slo_generator", "slo_config_validator.py",
+        )
+        with open(path, "r") as f:
+            content = f.read()
+        compile(content, path, "exec")
+
+    def test_agent_tests_pass(self):
+        test_paths = [
+            os.path.join(REPO_DIR, "tests", "unit", "test_burn_rate.py"),
+            os.path.join(REPO_DIR, "tests", "unit", "test_error_budget.py"),
+        ]
+        existing = [p for p in test_paths if os.path.isfile(p)]
+        if existing:
+            result = subprocess.run(
+                [sys.executable, "-m", "pytest"] + existing + ["-v", "--tb=short"],
+                cwd=REPO_DIR,
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+            assert result.returncode == 0, (
+                f"Agent tests failed:\n{result.stdout[-1000:]}\n{result.stderr[-500:]}"
+            )

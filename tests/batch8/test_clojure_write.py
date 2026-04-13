@@ -1,129 +1,170 @@
 """
-Test for 'clojure-write' skill — Metabase Catalog Registry & Search
-Validates that the Agent implemented registry, search/core, and catalog API
-modules in the Metabase Clojure codebase.
+Tests for the clojure-write skill.
+Validates implementation of a Data Catalog namespace for Metabase's
+internal metadata registry with search, stats, and public API functions.
 """
 
 import os
 import re
-import subprocess
 
-import pytest
+REPO_DIR = "/workspace/metabase"
 
 
 class TestClojureWrite:
-    """Verify Metabase catalog registry and search implementation."""
+    """Tests for the Metabase Data Catalog namespace implementation."""
 
-    REPO_DIR = "/workspace/metabase"
+    # ── file_path_check ──────────────────────────────────────────────
 
-    @staticmethod
-    def _read(path: str) -> str:
-        try:
-            with open(path, "r", errors="ignore") as fh:
-                return fh.read()
-        except OSError:
+    def test_catalog_core_exists(self):
+        """Core namespace file must exist."""
+        path = os.path.join(REPO_DIR, "src", "metabase", "catalog", "core.clj")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    def test_catalog_registry_exists(self):
+        """Registry namespace file must exist."""
+        path = os.path.join(REPO_DIR, "src", "metabase", "catalog", "registry.clj")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    def test_catalog_search_exists(self):
+        """Search namespace file must exist."""
+        path = os.path.join(REPO_DIR, "src", "metabase", "catalog", "search.clj")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    def test_catalog_stats_exists(self):
+        """Stats namespace file must exist."""
+        path = os.path.join(REPO_DIR, "src", "metabase", "catalog", "stats.clj")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    # ── semantic_check ───────────────────────────────────────────────
+
+    def _read_ns(self, rel_path):
+        """Read a namespace file and return its content."""
+        path = os.path.join(REPO_DIR, rel_path)
+        if not os.path.isfile(path):
             return ""
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read()
 
-    # ── file_path_check ─────────────────────────────────────────────
-
-    def test_registry_clj_exists(self):
-        """Verify metabase registry source file exists."""
-        found = any(
-            os.path.isfile(os.path.join(self.REPO_DIR, p))
-            for p in ("src/metabase/models/registry.clj",
-                       "src/metabase/models/registry.cljs")
+    def test_registry_build_catalog_defined(self):
+        """registry/build-catalog function must be defined."""
+        content = self._read_ns("src/metabase/catalog/registry.clj")
+        assert re.search(r"defn\s+build-catalog", content), (
+            "build-catalog function not defined in registry.clj"
         )
-        assert found, "Neither registry.clj nor registry.cljs exists"
 
-    def test_search_core_and_catalog_api_exist(self):
-        """Verify search/core.clj and api/catalog.clj exist."""
-        for rel in ("src/metabase/search/core.clj", "src/metabase/api/catalog.clj"):
-            path = os.path.join(self.REPO_DIR, rel)
-            assert os.path.isfile(path), f"Missing: {rel}"
+    def test_registry_update_catalog_defined(self):
+        """registry/update-catalog function must be defined for incremental updates."""
+        content = self._read_ns("src/metabase/catalog/registry.clj")
+        assert re.search(r"defn\s+update-catalog", content), (
+            "update-catalog function not defined in registry.clj"
+        )
 
-    def test_test_files_exist(self):
-        """Verify test files for registry and search core exist."""
-        for rel in ("test/metabase/models/registry_test.clj",
-                     "test/metabase/search/core_test.clj"):
-            path = os.path.join(self.REPO_DIR, rel)
-            assert os.path.isfile(path), f"Missing: {rel}"
+    def test_search_find_tables_defined(self):
+        """search/find-tables function must be defined."""
+        content = self._read_ns("src/metabase/catalog/search.clj")
+        assert re.search(r"defn\s+find-tables", content), (
+            "find-tables function not defined in search.clj"
+        )
 
-    # ── semantic_check ──────────────────────────────────────────────
+    def test_search_find_fields_defined(self):
+        """search/find-fields function must be defined."""
+        content = self._read_ns("src/metabase/catalog/search.clj")
+        assert re.search(r"defn\s+find-fields", content), (
+            "find-fields function not defined in search.clj"
+        )
 
-    def test_build_catalog_function_defined(self):
-        """Verify build-catalog function is defined in registry.clj with docstring."""
-        content = ""
-        for candidate in ("src/metabase/models/registry.clj",
-                          "src/metabase/models/registry.cljs"):
-            content = self._read(os.path.join(self.REPO_DIR, candidate))
-            if content:
-                break
-        assert content, "registry source file is empty or unreadable"
-        assert "defn build-catalog" in content, \
-            "build-catalog function not found in registry source"
+    def test_stats_database_summary_defined(self):
+        """stats/database-summary function must be defined."""
+        content = self._read_ns("src/metabase/catalog/stats.clj")
+        assert re.search(r"defn\s+database-summary", content), (
+            "database-summary function not defined in stats.clj"
+        )
 
-    def test_find_tables_with_ilike_filter(self):
-        """Verify find-tables applies ILIKE or case-insensitive filter on table name."""
-        content = self._read(os.path.join(self.REPO_DIR, "src/metabase/search/core.clj"))
-        assert content, "search/core.clj is empty or unreadable"
-        found = any(kw in content for kw in ("ilike", "ILIKE", "like", "find-tables"))
-        assert found, "No case-insensitive filter pattern found in search/core.clj"
+    def test_stats_table_detail_defined(self):
+        """stats/table-detail function must be defined."""
+        content = self._read_ns("src/metabase/catalog/stats.clj")
+        assert re.search(r"defn\s+table-detail", content), (
+            "table-detail function not defined in stats.clj"
+        )
 
-    def test_catalog_endpoint_route_defined(self):
-        """Verify catalog API defines GET route using defendpoint or compojure."""
-        content = self._read(os.path.join(self.REPO_DIR, "src/metabase/api/catalog.clj"))
-        assert content, "api/catalog.clj is empty or unreadable"
-        found = any(kw in content for kw in ("defendpoint", "GET", "/catalog"))
-        assert found, "No GET route definition found in catalog.clj"
+    def test_core_public_api_functions(self):
+        """core namespace must expose get-catalog, search, database-stats, refresh-database."""
+        content = self._read_ns("src/metabase/catalog/core.clj")
+        expected = ["get-catalog", "search", "database-stats", "refresh-database"]
+        for fn_name in expected:
+            assert re.search(rf"defn\s+{re.escape(fn_name)}", content), (
+                f"Public function {fn_name} not defined in core.clj"
+            )
 
-    # ── functional_check (command) ──────────────────────────────────
+    def test_search_result_limit(self):
+        """Search functions must enforce a 50-result cap."""
+        content = self._read_ns("src/metabase/catalog/search.clj")
+        assert re.search(r"50|take\s+50|:limit\s+50", content), (
+            "50-result cap not found in search.clj"
+        )
 
-    def _skip_unless_lein_ready(self):
-        if not os.path.isdir(self.REPO_DIR):
-            pytest.skip("Repo dir does not exist")
-        if not os.path.isfile(os.path.join(self.REPO_DIR, "project.clj")):
-            pytest.skip("project.clj missing")
+    # ── functional_check ─────────────────────────────────────────────
 
-    def test_build_catalog_returns_map(self):
-        """build-catalog returns a Clojure map with :databases and :tables keys."""
-        self._skip_unless_lein_ready()
-        # Semantic fallback: verify the function signature in source
-        content = ""
-        for candidate in ("src/metabase/models/registry.clj",
-                          "src/metabase/models/registry.cljs"):
-            content = self._read(os.path.join(self.REPO_DIR, candidate))
-            if content:
-                break
-        assert "build-catalog" in content, "build-catalog not found"
-        assert ":databases" in content or ":tables" in content, \
-            "build-catalog does not reference :databases or :tables keys"
+    def test_registry_excludes_audit_databases(self):
+        """Registry must filter out audit databases (is_audit check)."""
+        content = self._read_ns("src/metabase/catalog/registry.clj")
+        assert re.search(r"is[_-]audit|:is_audit|audit", content, re.IGNORECASE), (
+            "No audit database filtering found in registry.clj"
+        )
 
-    def test_find_tables_name_filter(self):
-        """find-tables with name filter returns only matching tables case-insensitively."""
-        self._skip_unless_lein_ready()
-        content = self._read(os.path.join(self.REPO_DIR, "src/metabase/search/core.clj"))
-        assert "find-tables" in content, "find-tables function not found"
-        # Check test file for filter verification
-        test_content = self._read(os.path.join(
-            self.REPO_DIR, "test/metabase/search/core_test.clj"))
-        assert test_content, "core_test.clj is empty"
-        assert "find-tables" in test_content, "find-tables not tested in core_test.clj"
+    def test_registry_excludes_hidden_tables(self):
+        """Registry must filter out hidden/technical tables (visibility_type)."""
+        content = self._read_ns("src/metabase/catalog/registry.clj")
+        assert re.search(r"visibility[_-]type|hidden|technical", content, re.IGNORECASE), (
+            "No hidden/technical table filtering found in registry.clj"
+        )
 
-    def test_find_tables_unknown_db_returns_empty(self):
-        """find-tables with non-existent :db-id returns empty seq, not exception."""
-        self._skip_unless_lein_ready()
-        test_content = self._read(os.path.join(
-            self.REPO_DIR, "test/metabase/search/core_test.clj"))
-        assert test_content, "core_test.clj is empty"
-        assert "find-tables" in test_content or "db-id" in test_content, \
-            "No edge case test for unknown db-id in core_test.clj"
+    def test_search_handles_blank_input(self):
+        """Search must handle nil/blank query string returning empty vector."""
+        content = self._read_ns("src/metabase/catalog/search.clj")
+        assert re.search(r"blank\?|nil\?|empty\?|str/blank", content), (
+            "No nil/blank input handling found in search.clj"
+        )
 
-    def test_catalog_api_unauthenticated_returns_401(self):
-        """GET /api/catalog without authentication returns 401 Unauthorized."""
-        self._skip_unless_lein_ready()
-        content = self._read(os.path.join(self.REPO_DIR, "src/metabase/api/catalog.clj"))
-        assert content, "catalog.clj is empty"
-        # Check for auth middleware or 401 handling
-        assert "authenticated" in content.lower() or "auth" in content.lower() or \
-               "defendpoint" in content, \
-            "No authentication handling found in catalog.clj"
+    def test_all_files_have_balanced_parens(self):
+        """All Clojure files must have balanced parentheses/brackets."""
+        for rel in [
+            "src/metabase/catalog/core.clj",
+            "src/metabase/catalog/registry.clj",
+            "src/metabase/catalog/search.clj",
+            "src/metabase/catalog/stats.clj",
+        ]:
+            content = self._read_ns(rel)
+            if not content:
+                continue
+            opens = content.count("(") + content.count("[") + content.count("{")
+            closes = content.count(")") + content.count("]") + content.count("}")
+            assert opens == closes, (
+                f"Unbalanced brackets in {rel}: {opens} opens vs {closes} closes"
+            )
+
+    def test_core_test_file_exists(self):
+        """Test file for core namespace must exist."""
+        path = os.path.join(REPO_DIR, "test", "metabase", "catalog", "core_test.clj")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    def test_search_test_file_exists(self):
+        """Test file for search namespace must exist."""
+        path = os.path.join(REPO_DIR, "test", "metabase", "catalog", "search_test.clj")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    def test_namespace_declarations_correct(self):
+        """Each file must have a proper (ns ...) declaration matching its path."""
+        ns_map = {
+            "src/metabase/catalog/core.clj": "metabase.catalog.core",
+            "src/metabase/catalog/registry.clj": "metabase.catalog.registry",
+            "src/metabase/catalog/search.clj": "metabase.catalog.search",
+            "src/metabase/catalog/stats.clj": "metabase.catalog.stats",
+        }
+        for rel, expected_ns in ns_map.items():
+            content = self._read_ns(rel)
+            if not content:
+                assert False, f"{rel} not found"
+            assert re.search(rf"\(ns\s+{re.escape(expected_ns)}", content), (
+                f"{rel} lacks correct (ns {expected_ns} ...) declaration"
+            )

@@ -1,151 +1,241 @@
 """
-Test for 'add-uint-support' skill — PyTorch Unsigned Integer Support
-Validates CUDA kernels for uint32/uint64 in bitwise, shift, and minmax operations.
+Test skill: add-uint-support
+Verify that the Agent correctly adds uint32/uint64 operator support
+to six CUDA kernel files in the PyTorch codebase.
 """
 
 import os
 import re
 import subprocess
-
 import pytest
 
 
 class TestAddUintSupport:
-    """Verify PyTorch unsigned integer CUDA kernel support."""
-
     REPO_DIR = "/workspace/pytorch"
 
-    # ── file_path_check ─────────────────────────────────────────────────────
+    BITWISE_OPS_FILE = "aten/src/ATen/native/cuda/BinaryBitwiseOpsKernels.cu"
+    SHIFT_OPS_FILE = "aten/src/ATen/native/cuda/BinaryShiftOpsKernels.cu"
+    MAXMIN_FILE = "aten/src/ATen/native/cuda/MaxMinElementwiseKernel.cu"
 
-    def test_cuda_kernel_files_exist(self):
-        """Verify CUDA kernel .cu files exist for bitwise, shift, and minmax."""
-        aten_dir = os.path.join(self.REPO_DIR, "aten", "src", "ATen", "native", "cuda")
-        if not os.path.isdir(aten_dir):
-            pytest.skip("ATen CUDA native directory not found")
-        cu_files = [f for f in os.listdir(aten_dir) if f.endswith(".cu")]
-        keywords = ["bitwise", "shift", "max", "min"]
-        matches = [f for f in cu_files if any(k in f.lower() for k in keywords)]
-        assert (
-            len(matches) >= 2
-        ), f"Expected ≥2 CUDA kernel files for bitwise/shift/minmax, found: {matches}"
+    def _read_file(self, rel_path):
+        """Helper to read a file from the repo."""
+        filepath = os.path.join(self.REPO_DIR, rel_path)
+        with open(filepath) as f:
+            return f.read()
 
-    def test_dispatch_header_exists(self):
-        """Verify AT_DISPATCH macros header or dispatch files exist."""
-        found = False
-        for dirpath, _, fnames in os.walk(os.path.join(self.REPO_DIR, "aten")):
-            for f in fnames:
-                if "dispatch" in f.lower() and (f.endswith(".h") or f.endswith(".cu")):
-                    found = True
-                    break
-            if found:
-                break
-        assert found, "No dispatch header/file found in aten/"
+    def _strip_comments(self, content):
+        """Remove C/C++ single-line and multi-line comments."""
+        content = re.sub(r'//.*?$', '', content, flags=re.MULTILINE)
+        content = re.sub(r'/\*.*?\*/', '', content, flags=re.DOTALL)
+        return content
 
-    # ── semantic_check ──────────────────────────────────────────────────────
+    def _extract_kernel_function(self, content, func_name):
+        """Extract a kernel function body by matching function name and braces."""
+        pattern = rf'{func_name}\s*\('
+        match = re.search(pattern, content)
+        if not match:
+            return None
+        brace_start = content.find('{', match.end())
+        if brace_start == -1:
+            return None
+        depth = 0
+        for i in range(brace_start, len(content)):
+            if content[i] == '{':
+                depth += 1
+            elif content[i] == '}':
+                depth -= 1
+                if depth == 0:
+                    return content[match.start():i + 1]
+        return content[match.start():]
 
-    def test_at_dispatch_macro_includes_uint(self):
-        """Verify AT_DISPATCH macro call includes uint32 or uint64 types."""
-        cu_files = self._find_cu_files(["bitwise", "shift", "max", "min"])
-        assert cu_files, "No relevant CUDA kernel files found"
-        found_uint = False
-        for fpath in cu_files:
-            content = self._read(fpath)
-            if re.search(
-                r"uint32|uint64|kUInt32|kUInt64|AT_DISPATCH.*uint",
-                content,
-                re.IGNORECASE,
-            ):
-                found_uint = True
-                break
-        assert found_uint, "No CUDA kernel dispatches uint32/uint64 types"
+    # === File Path Checks ===
 
-    def test_bitwise_kernel_dispatches_uint(self):
-        """Verify the bitwise kernel specifically dispatches unsigned types."""
-        cu_files = self._find_cu_files(["bitwise"])
-        if not cu_files:
-            pytest.skip("No bitwise CUDA kernel file found")
-        content = self._read(cu_files[0])
-        assert re.search(
-            r"uint|unsigned", content, re.IGNORECASE
-        ), "Bitwise kernel does not reference unsigned types"
+    def test_bitwise_ops_kernel_file_exists(self):
+        """Verify BinaryBitwiseOpsKernels.cu exists at the expected path"""
+        filepath = os.path.join(self.REPO_DIR, self.BITWISE_OPS_FILE)
+        assert os.path.exists(filepath), f"File not found: {filepath}"
 
-    def test_shift_kernel_dispatches_uint(self):
-        """Verify the shift kernel dispatches unsigned types."""
-        cu_files = self._find_cu_files(["shift"])
-        if not cu_files:
-            pytest.skip("No shift CUDA kernel file found")
-        content = self._read(cu_files[0])
-        assert re.search(
-            r"uint|unsigned", content, re.IGNORECASE
-        ), "Shift kernel does not reference unsigned types"
+    def test_shift_ops_kernel_file_exists(self):
+        """Verify BinaryShiftOpsKernels.cu exists at the expected path"""
+        filepath = os.path.join(self.REPO_DIR, self.SHIFT_OPS_FILE)
+        assert os.path.exists(filepath), f"File not found: {filepath}"
 
-    def test_signed_types_preserved(self):
-        """Verify existing signed type dispatches are not removed."""
-        cu_files = self._find_cu_files(["bitwise", "shift", "max", "min"])
-        assert cu_files, "No relevant kernel files"
-        for fpath in cu_files:
-            content = self._read(fpath)
-            if re.search(r"int32|int64|kInt|kLong|AT_DISPATCH_ALL_TYPES", content):
-                return  # pass – signed types still present
-        pytest.fail("No kernel file preserves standard signed type dispatch")
+    def test_maxmin_kernel_file_exists(self):
+        """Verify MaxMinElementwiseKernel.cu exists at the expected path"""
+        filepath = os.path.join(self.REPO_DIR, self.MAXMIN_FILE)
+        assert os.path.exists(filepath), f"File not found: {filepath}"
 
-    # ── functional_check ────────────────────────────────────────────────────
+    # === Semantic Checks ===
 
-    def test_cuda_files_compile_syntax(self):
-        """Verify each CUDA file has balanced braces (basic syntax check)."""
-        cu_files = self._find_cu_files(["bitwise", "shift", "max", "min"])
-        assert cu_files, "No kernel files found"
-        for fpath in cu_files:
-            content = self._read(fpath)
-            opens = content.count("{")
-            closes = content.count("}")
-            assert opens == closes, f"Unbalanced braces in {os.path.basename(fpath)}"
+    def test_bitwise_and_dispatches_uint32(self):
+        """Verify bitwise_and_kernel_cuda dispatch includes uint32 type"""
+        content = self._read_file(self.BITWISE_OPS_FILE)
+        func = self._extract_kernel_function(content, "bitwise_and_kernel_cuda")
+        assert func is not None, "Could not find bitwise_and_kernel_cuda function"
+        clean = self._strip_comments(func)
+        assert re.search(r'(kUInt32|uint32_t|at::kUInt32|ScalarType::UInt32)', clean), \
+            "bitwise_and_kernel_cuda does not dispatch uint32 type"
 
-    def test_maxmin_kernel_has_uint_support(self):
-        """Verify maxmin kernel handles unsigned types."""
-        cu_files = self._find_cu_files(["max", "min"])
-        if not cu_files:
-            pytest.skip("No minmax CUDA kernel files found")
-        content = self._read(cu_files[0])
-        assert re.search(
-            r"uint|unsigned", content, re.IGNORECASE
-        ), "Max/min kernel missing uint support"
+    def test_bitwise_and_dispatches_uint64(self):
+        """Verify bitwise_and_kernel_cuda dispatch includes uint64 type"""
+        content = self._read_file(self.BITWISE_OPS_FILE)
+        func = self._extract_kernel_function(content, "bitwise_and_kernel_cuda")
+        assert func is not None, "Could not find bitwise_and_kernel_cuda function"
+        clean = self._strip_comments(func)
+        assert re.search(r'(kUInt64|uint64_t|at::kUInt64|ScalarType::UInt64)', clean), \
+            "bitwise_and_kernel_cuda does not dispatch uint64 type"
 
-    def test_kernel_files_include_required_headers(self):
-        """Verify CUDA kernel files include ATen headers."""
-        cu_files = self._find_cu_files(["bitwise", "shift", "max", "min"])
-        assert cu_files, "No kernel files"
-        for fpath in cu_files:
-            content = self._read(fpath)
-            if "#include" in content and "ATen" in content:
-                return  # pass
-        pytest.fail("No kernel file includes ATen headers")
+    def test_bitwise_or_dispatches_uint_types(self):
+        """Verify bitwise_or_kernel_cuda dispatch includes both uint32 and uint64"""
+        content = self._read_file(self.BITWISE_OPS_FILE)
+        func = self._extract_kernel_function(content, "bitwise_or_kernel_cuda")
+        assert func is not None, "Could not find bitwise_or_kernel_cuda function"
+        clean = self._strip_comments(func)
+        has_uint32 = bool(re.search(r'(kUInt32|uint32_t|at::kUInt32|ScalarType::UInt32)', clean))
+        has_uint64 = bool(re.search(r'(kUInt64|uint64_t|at::kUInt64|ScalarType::UInt64)', clean))
+        assert has_uint32 and has_uint64, \
+            f"bitwise_or_kernel_cuda missing uint dispatch: uint32={has_uint32}, uint64={has_uint64}"
 
-    def test_no_duplicate_dispatch_entries(self):
-        """Verify AT_DISPATCH calls do not list the same type twice."""
-        cu_files = self._find_cu_files(["bitwise", "shift", "max", "min"])
-        assert cu_files, "No kernel files"
-        for fpath in cu_files:
-            content = self._read(fpath)
-            for m in re.finditer(r"AT_DISPATCH\w+\(([^)]+)\)", content):
-                types_str = m.group(1)
-                tokens = re.findall(r"\b(k\w+)\b", types_str)
-                assert len(tokens) == len(
-                    set(tokens)
-                ), f"Duplicate type in dispatch macro in {os.path.basename(fpath)}"
+    def test_bitwise_xor_dispatches_uint_types(self):
+        """Verify bitwise_xor_kernel_cuda dispatch includes both uint32 and uint64"""
+        content = self._read_file(self.BITWISE_OPS_FILE)
+        func = self._extract_kernel_function(content, "bitwise_xor_kernel_cuda")
+        assert func is not None, "Could not find bitwise_xor_kernel_cuda function"
+        clean = self._strip_comments(func)
+        has_uint32 = bool(re.search(r'(kUInt32|uint32_t|at::kUInt32|ScalarType::UInt32)', clean))
+        has_uint64 = bool(re.search(r'(kUInt64|uint64_t|at::kUInt64|ScalarType::UInt64)', clean))
+        assert has_uint32 and has_uint64, \
+            f"bitwise_xor_kernel_cuda missing uint dispatch: uint32={has_uint32}, uint64={has_uint64}"
 
-    # ── helpers ──────────────────────────────────────────────────────────────
+    def test_lshift_dispatches_uint_types(self):
+        """Verify lshift_kernel_cuda dispatch includes uint32 and uint64"""
+        content = self._read_file(self.SHIFT_OPS_FILE)
+        func = self._extract_kernel_function(content, "lshift_kernel_cuda")
+        assert func is not None, "Could not find lshift_kernel_cuda function"
+        clean = self._strip_comments(func)
+        has_uint32 = bool(re.search(r'(kUInt32|uint32_t|at::kUInt32|ScalarType::UInt32)', clean))
+        has_uint64 = bool(re.search(r'(kUInt64|uint64_t|at::kUInt64|ScalarType::UInt64)', clean))
+        assert has_uint32 and has_uint64, \
+            f"lshift_kernel_cuda missing uint dispatch: uint32={has_uint32}, uint64={has_uint64}"
 
-    def _find_cu_files(self, keywords):
-        aten_dir = os.path.join(self.REPO_DIR, "aten", "src", "ATen", "native", "cuda")
-        if not os.path.isdir(aten_dir):
-            return []
-        results = []
-        for f in os.listdir(aten_dir):
-            if f.endswith(".cu") and any(k in f.lower() for k in keywords):
-                results.append(os.path.join(aten_dir, f))
-        return results
+    def test_rshift_dispatches_uint_types(self):
+        """Verify rshift_kernel_cuda dispatch includes uint32 and uint64"""
+        content = self._read_file(self.SHIFT_OPS_FILE)
+        func = self._extract_kernel_function(content, "rshift_kernel_cuda")
+        assert func is not None, "Could not find rshift_kernel_cuda function"
+        clean = self._strip_comments(func)
+        has_uint32 = bool(re.search(r'(kUInt32|uint32_t|at::kUInt32|ScalarType::UInt32)', clean))
+        has_uint64 = bool(re.search(r'(kUInt64|uint64_t|at::kUInt64|ScalarType::UInt64)', clean))
+        assert has_uint32 and has_uint64, \
+            f"rshift_kernel_cuda missing uint dispatch: uint32={has_uint32}, uint64={has_uint64}"
 
-    def _read(self, path):
-        with open(path, "r", errors="ignore") as fh:
-            return fh.read()
+    def test_maximum_dispatches_uint_types(self):
+        """Verify maximum_kernel_cuda dispatch includes uint32 and uint64"""
+        content = self._read_file(self.MAXMIN_FILE)
+        func = self._extract_kernel_function(content, "maximum_kernel_cuda")
+        assert func is not None, "Could not find maximum_kernel_cuda function"
+        clean = self._strip_comments(func)
+        has_uint32 = bool(re.search(r'(kUInt32|uint32_t|at::kUInt32|ScalarType::UInt32)', clean))
+        has_uint64 = bool(re.search(r'(kUInt64|uint64_t|at::kUInt64|ScalarType::UInt64)', clean))
+        assert has_uint32 and has_uint64, \
+            f"maximum_kernel_cuda missing uint dispatch: uint32={has_uint32}, uint64={has_uint64}"
+
+    def test_minimum_dispatches_uint_types(self):
+        """Verify minimum_kernel_cuda dispatch includes uint32 and uint64"""
+        content = self._read_file(self.MAXMIN_FILE)
+        func = self._extract_kernel_function(content, "minimum_kernel_cuda")
+        assert func is not None, "Could not find minimum_kernel_cuda function"
+        clean = self._strip_comments(func)
+        has_uint32 = bool(re.search(r'(kUInt32|uint32_t|at::kUInt32|ScalarType::UInt32)', clean))
+        has_uint64 = bool(re.search(r'(kUInt64|uint64_t|at::kUInt64|ScalarType::UInt64)', clean))
+        assert has_uint32 and has_uint64, \
+            f"minimum_kernel_cuda missing uint dispatch: uint32={has_uint32}, uint64={has_uint64}"
+
+    # === Functional Checks ===
+
+    def test_bitwise_ops_preserves_bool_dispatch(self):
+        """Verify bitwise ops still dispatch for bool type (existing behavior preserved)"""
+        content = self._read_file(self.BITWISE_OPS_FILE)
+        clean = self._strip_comments(content)
+        assert re.search(r'kBool|ScalarType::Bool', clean), \
+            "Bitwise ops file lost bool type dispatch - existing behavior broken"
+
+    def test_bitwise_ops_preserves_signed_int_dispatch(self):
+        """Verify bitwise ops still dispatch for signed integer types"""
+        content = self._read_file(self.BITWISE_OPS_FILE)
+        clean = self._strip_comments(content)
+        has_integral = bool(re.search(r'AT_DISPATCH.*INTEGRAL|AT_DISPATCH_ALL_TYPES', clean))
+        assert has_integral, \
+            "Bitwise ops lost integral type dispatch macro - signed types no longer supported"
+
+    def test_shift_ops_preserves_signed_int_dispatch(self):
+        """Verify shift ops still dispatch for signed integer types"""
+        content = self._read_file(self.SHIFT_OPS_FILE)
+        clean = self._strip_comments(content)
+        has_integral = bool(re.search(r'AT_DISPATCH.*INTEGRAL|AT_DISPATCH_ALL_TYPES', clean))
+        assert has_integral, \
+            "Shift ops lost integral type dispatch macro - signed types no longer supported"
+
+    def test_maxmin_preserves_signed_int_dispatch(self):
+        """Verify max/min ops still dispatch for signed integer types"""
+        content = self._read_file(self.MAXMIN_FILE)
+        clean = self._strip_comments(content)
+        has_integral = bool(re.search(r'AT_DISPATCH.*INTEGRAL|AT_DISPATCH_ALL_TYPES', clean))
+        assert has_integral, \
+            "Max/min ops lost integral type dispatch macro - signed types no longer supported"
+
+    def test_bitwise_uint_references_in_code_not_comments(self):
+        """Verify uint type references in bitwise ops are in actual code, not just comments"""
+        content = self._read_file(self.BITWISE_OPS_FILE)
+        clean = self._strip_comments(content)
+        uint_refs = re.findall(r'(kUInt32|kUInt64|uint32_t|uint64_t)', clean)
+        assert len(uint_refs) >= 6, \
+            f"Expected at least 6 uint type references in bitwise ops code " \
+            f"(3 kernels x 2 types), found {len(uint_refs)}"
+
+    def test_shift_uint_references_in_code_not_comments(self):
+        """Verify uint type references in shift ops are in actual code, not just comments"""
+        content = self._read_file(self.SHIFT_OPS_FILE)
+        clean = self._strip_comments(content)
+        uint_refs = re.findall(r'(kUInt32|kUInt64|uint32_t|uint64_t)', clean)
+        assert len(uint_refs) >= 4, \
+            f"Expected at least 4 uint type references in shift ops code " \
+            f"(2 kernels x 2 types), found {len(uint_refs)}"
+
+    def test_maxmin_uint_references_in_code_not_comments(self):
+        """Verify uint type references in max/min ops are in actual code, not just comments"""
+        content = self._read_file(self.MAXMIN_FILE)
+        clean = self._strip_comments(content)
+        uint_refs = re.findall(r'(kUInt32|kUInt64|uint32_t|uint64_t)', clean)
+        assert len(uint_refs) >= 4, \
+            f"Expected at least 4 uint type references in max/min ops code " \
+            f"(2 kernels x 2 types), found {len(uint_refs)}"
+
+    def test_all_seven_kernels_have_uint_dispatch(self):
+        """Verify all 7 kernel functions have been modified to include uint types"""
+        kernels_and_files = [
+            (self.BITWISE_OPS_FILE, "bitwise_and_kernel_cuda"),
+            (self.BITWISE_OPS_FILE, "bitwise_or_kernel_cuda"),
+            (self.BITWISE_OPS_FILE, "bitwise_xor_kernel_cuda"),
+            (self.SHIFT_OPS_FILE, "lshift_kernel_cuda"),
+            (self.SHIFT_OPS_FILE, "rshift_kernel_cuda"),
+            (self.MAXMIN_FILE, "maximum_kernel_cuda"),
+            (self.MAXMIN_FILE, "minimum_kernel_cuda"),
+        ]
+
+        missing = []
+        for rel_path, kernel_name in kernels_and_files:
+            content = self._read_file(rel_path)
+            func = self._extract_kernel_function(content, kernel_name)
+            if func is None:
+                missing.append(f"{kernel_name} (function not found)")
+                continue
+            clean = self._strip_comments(func)
+            has_uint = bool(re.search(
+                r'(kUInt32|kUInt64|uint32_t|uint64_t|UInt32|UInt64)', clean
+            ))
+            if not has_uint:
+                missing.append(f"{kernel_name} (no uint dispatch)")
+
+        assert len(missing) == 0, \
+            f"Kernels not updated with uint types: {', '.join(missing)}"

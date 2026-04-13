@@ -1,182 +1,219 @@
 """
-Tests for the add-admin-api-endpoint skill.
-Verifies that the Ghost Admin API bookmark endpoint implementation
-is correctly structured, includes proper schema, routing, controller
-exports, and E2E test coverage.
+Test skill: add-admin-api-endpoint
+Verify that the Agent correctly adds a Bookmarks Admin API endpoint to Ghost CMS.
 """
 
 import os
+import json
+import re
 import subprocess
-import sys
-
 import pytest
-
-REPO_DIR = "/workspace/Ghost"
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
-def _path(rel: str) -> str:
-    return os.path.join(REPO_DIR, rel)
-
-
-def _read(rel: str) -> str:
-    full = _path(rel)
-    if not os.path.isfile(full):
-        pytest.skip(f"File not found: {full}")
-    with open(full, encoding="utf-8", errors="replace") as fh:
-        return fh.read()
-
-
-def _run(
-    cmd: list, cwd: str = REPO_DIR, timeout: int = 120
-) -> subprocess.CompletedProcess:
-    return subprocess.run(
-        cmd,
-        cwd=cwd,
-        capture_output=True,
-        text=True,
-        timeout=timeout,
-    )
-
-
-def _node_available() -> bool:
-    try:
-        r = subprocess.run(["node", "--version"], capture_output=True, timeout=10)
-        return r.returncode == 0
-    except (FileNotFoundError, subprocess.TimeoutExpired):
-        return False
-
-
-# ---------------------------------------------------------------------------
-# File path checks
-# ---------------------------------------------------------------------------
 
 
 class TestAddAdminApiEndpoint:
-    """Test suite for the Ghost Admin API bookmark endpoint skill."""
+    REPO_DIR = "/workspace/Ghost"
 
-    def test_bookmarks_controller_file_exists(self):
-        """Verify bookmarks endpoint handler file is created at the expected path."""
-        target = _path("ghost/core/core/server/api/endpoints/bookmarks.js")
-        assert os.path.isfile(target), f"Controller file not found: {target}"
-        assert os.path.getsize(target) > 0, "bookmarks.js must be non-empty"
+    # === File Path Checks ===
 
-    def test_bookmark_model_and_test_files_exist(self):
-        """Verify bookmark model and E2E test file are created."""
-        model = _path("ghost/core/core/server/models/bookmark.js")
-        e2e = _path("ghost/core/test/e2e-api/admin/bookmarks.test.js")
-        assert os.path.isfile(model), f"Model file not found: {model}"
-        assert os.path.isfile(e2e), f"E2E test file not found: {e2e}"
-
-    def test_schema_contains_bookmarks_table(self):
-        """Verify schema.js is modified to include bookmarks table definition."""
-        content = _read("ghost/core/core/server/data/schema/schema.js")
-        assert "bookmarks" in content, "schema.js must contain 'bookmarks' table entry"
-        assert "user_id" in content, "schema.js must define 'user_id' column"
-        assert "post_id" in content, "schema.js must define 'post_id' column"
-
-    # -----------------------------------------------------------------------
-    # Semantic checks
-    # -----------------------------------------------------------------------
-
-    def test_schema_bookmarks_table_has_unique_constraint(self):
-        """Verify the bookmarks schema includes a unique constraint on (user_id, post_id)."""
-        content = _read("ghost/core/core/server/data/schema/schema.js")
-        lower = content.lower()
-        has_unique = (
-            "unique" in lower or "uniquecombination" in lower or "uniqueindex" in lower
+    def test_bookmarks_controller_exists(self):
+        """Verify the bookmarks API controller file was created"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "ghost/core/core/server/api/endpoints/bookmarks.js"
         )
-        assert (
-            has_unique
-        ), "schema.js must contain a unique constraint referencing user_id and post_id in the bookmarks table"
+        assert os.path.exists(path), f"Bookmarks controller not found at {path}"
 
-    def test_controller_exports_crud_actions(self):
-        """Verify bookmarks controller exports browse, read, add, and destroy actions."""
-        content = _read("ghost/core/core/server/api/endpoints/bookmarks.js")
-        for action in ("browse", "read", "add", "destroy"):
-            assert (
-                action in content
-            ), f"bookmarks.js must define/export '{action}' action"
+    def test_bookmark_model_exists(self):
+        """Verify the bookmark model file was created"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "ghost/core/core/server/models/bookmark.js"
+        )
+        assert os.path.exists(path), f"Bookmark model not found at {path}"
+
+    def test_bookmarks_e2e_tests_exist(self):
+        """Verify e2e tests were created for the bookmarks API"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "ghost/core/test/e2e-api/admin/bookmarks.test.js"
+        )
+        assert os.path.exists(path), f"Bookmarks e2e tests not found at {path}"
+
+    # === Semantic Checks ===
+
+    def test_schema_has_bookmarks_table(self):
+        """Verify the database schema includes a bookmarks table definition"""
+        schema_path = os.path.join(
+            self.REPO_DIR,
+            "ghost/core/core/server/data/schema/schema.js"
+        )
+        assert os.path.exists(schema_path), f"Schema file not found at {schema_path}"
+        with open(schema_path) as f:
+            content = f.read()
+        assert "bookmarks" in content, \
+            "Schema.js does not contain a 'bookmarks' table definition"
+
+    def test_schema_bookmarks_table_has_required_columns(self):
+        """Verify bookmarks table schema has required columns: id, user_id, post_id, created_at, note"""
+        schema_path = os.path.join(
+            self.REPO_DIR,
+            "ghost/core/core/server/data/schema/schema.js"
+        )
+        with open(schema_path) as f:
+            content = f.read()
+        required_columns = ["user_id", "post_id", "created_at", "note"]
+        for col in required_columns:
+            assert col in content, \
+                f"bookmarks schema missing column: {col}"
+
+    def test_controller_has_crud_actions(self):
+        """Verify bookmarks controller implements browse, read, add, destroy"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "ghost/core/core/server/api/endpoints/bookmarks.js"
+        )
+        with open(path) as f:
+            content = f.read()
+        actions = ["browse", "read", "add", "destroy"]
+        for action in actions:
+            assert action in content, \
+                f"Bookmarks controller missing action: {action}"
+
+    def test_controller_has_jsdoc(self):
+        """Verify controller methods have JSDoc documentation"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "ghost/core/core/server/api/endpoints/bookmarks.js"
+        )
+        with open(path) as f:
+            content = f.read()
+        # JSDoc should contain @param or @returns or @description
+        jsdoc_patterns = ["@param", "@returns", "@description"]
+        found = sum(1 for p in jsdoc_patterns if p in content)
+        assert found >= 1, \
+            "Controller should have JSDoc documentation with @param, @returns, or @description"
 
     def test_routes_register_bookmark_endpoints(self):
-        """Verify routes.js registers /bookmarks/ route and references the bookmarks controller."""
-        content = _read("ghost/core/core/server/web/api/endpoints/admin/routes.js")
-        assert "bookmarks" in content, "routes.js must register a 'bookmarks' route"
+        """Verify routes.js registers bookmark endpoints"""
+        routes_path = os.path.join(
+            self.REPO_DIR,
+            "ghost/core/core/server/web/api/endpoints/admin/routes.js"
+        )
+        assert os.path.exists(routes_path), f"Admin routes file not found at {routes_path}"
+        with open(routes_path) as f:
+            content = f.read()
+        assert "bookmark" in content.lower(), \
+            "Admin routes.js does not reference bookmarks endpoints"
 
-    def test_controller_has_jsdoc_comments(self):
-        """Verify JSDoc comments are present on controller method exports."""
-        content = _read("ghost/core/core/server/api/endpoints/bookmarks.js")
-        assert (
-            "/**" in content
-        ), "bookmarks.js must contain JSDoc-style block comments ('/**')"
+    def test_model_has_correct_structure(self):
+        """Verify bookmark model defines tableName, relationships, and permittedAttributes"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "ghost/core/core/server/models/bookmark.js"
+        )
+        with open(path) as f:
+            content = f.read()
+        assert "bookmarks" in content, \
+            "Model should define tableName 'bookmarks'"
+        # Check for relationship definitions
+        has_relationships = (
+            "belongsTo" in content or
+            "Post" in content or
+            "User" in content
+        )
+        assert has_relationships, \
+            "Model should define relationships to Post and User"
 
-    # -----------------------------------------------------------------------
-    # Functional checks (command)
-    # -----------------------------------------------------------------------
+    def test_model_permitted_attributes(self):
+        """Verify model defines permittedAttributes with required fields"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "ghost/core/core/server/models/bookmark.js"
+        )
+        with open(path) as f:
+            content = f.read()
+        assert "permittedAttributes" in content, \
+            "Model should define permittedAttributes"
+        expected_attrs = ["user_id", "post_id", "note"]
+        for attr in expected_attrs:
+            assert attr in content, \
+                f"permittedAttributes should include '{attr}'"
 
-    def test_schema_js_is_parseable_javascript(self):
-        """Verify schema.js is syntactically valid JavaScript using node --check."""
-        if not _node_available():
-            pytest.skip("node not available in this environment")
-        rel = "ghost/core/core/server/data/schema/schema.js"
-        target = _path(rel)
-        if not os.path.isfile(target):
-            pytest.skip(f"File not found: {target}")
-        result = _run(["node", "--check", target])
-        assert (
-            result.returncode == 0
-        ), f"schema.js has syntax errors:\nstdout: {result.stdout}\nstderr: {result.stderr}"
+    # === Functional Checks ===
 
-    def test_bookmarks_controller_is_parseable_javascript(self):
-        """Verify bookmarks.js controller is syntactically valid JavaScript."""
-        if not _node_available():
-            pytest.skip("node not available in this environment")
-        rel = "ghost/core/core/server/api/endpoints/bookmarks.js"
-        target = _path(rel)
-        if not os.path.isfile(target):
-            pytest.skip(f"File not found: {target}")
-        result = _run(["node", "--check", target])
-        assert (
-            result.returncode == 0
-        ), f"bookmarks.js has syntax errors:\nstdout: {result.stdout}\nstderr: {result.stderr}"
+    def test_controller_file_is_valid_js(self):
+        """Verify the controller file is valid JavaScript by parsing with node"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "ghost/core/core/server/api/endpoints/bookmarks.js"
+        )
+        result = subprocess.run(
+            ["node", "-e", f"require('{path}')"],
+            cwd=self.REPO_DIR,
+            capture_output=True, text=True, timeout=30
+        )
+        # May fail due to missing deps, but shouldn't be a syntax error
+        if result.returncode != 0:
+            assert "SyntaxError" not in result.stderr, \
+                f"Bookmarks controller has JavaScript syntax errors: {result.stderr[:500]}"
 
-    def test_route_registration_syntax_check(self):
-        """Verify routes.js is syntactically valid after modification."""
-        if not _node_available():
-            pytest.skip("node not available in this environment")
-        rel = "ghost/core/core/server/web/api/endpoints/admin/routes.js"
-        target = _path(rel)
-        if not os.path.isfile(target):
-            pytest.skip(f"File not found: {target}")
-        result = _run(["node", "--check", target])
-        assert (
-            result.returncode == 0
-        ), f"routes.js has syntax errors:\nstdout: {result.stdout}\nstderr: {result.stderr}"
+    def test_model_file_is_valid_js(self):
+        """Verify the bookmark model file has valid JavaScript syntax"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "ghost/core/core/server/models/bookmark.js"
+        )
+        result = subprocess.run(
+            ["node", "-e", f"require('{path}')"],
+            cwd=self.REPO_DIR,
+            capture_output=True, text=True, timeout=30
+        )
+        if result.returncode != 0:
+            assert "SyntaxError" not in result.stderr, \
+                f"Bookmark model has JavaScript syntax errors: {result.stderr[:500]}"
 
-    def test_note_field_length_in_schema(self):
-        """Verify schema.js definition for note field specifies a max length."""
-        content = _read("ghost/core/core/server/data/schema/schema.js")
-        lower = content.lower()
-        assert (
-            "maxlength" in lower or "max_length" in lower or "varchar" in lower
-        ), "The 'note' field in the bookmarks table must specify a max length constraint"
+    def test_e2e_tests_file_is_valid_js(self):
+        """Verify the e2e test file has valid JavaScript syntax"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "ghost/core/test/e2e-api/admin/bookmarks.test.js"
+        )
+        result = subprocess.run(
+            ["node", "--check", path],
+            cwd=self.REPO_DIR,
+            capture_output=True, text=True, timeout=30
+        )
+        assert result.returncode == 0, \
+            f"E2E test file has syntax errors: {result.stderr[:500]}"
 
-    def test_e2e_test_file_covers_duplicate_rejection(self):
-        """Verify E2E test file includes test case for 422 on duplicate bookmark."""
-        content = _read("ghost/core/test/e2e-api/admin/bookmarks.test.js")
-        has_422 = "422" in content
-        has_already_exists = "already exists" in content.lower()
-        assert (
-            has_422 or has_already_exists
-        ), "E2E test file must include a test case for duplicate bookmark (422 or 'already exists')"
+    def test_e2e_tests_cover_crud_operations(self):
+        """Verify e2e tests cover all CRUD operations"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "ghost/core/test/e2e-api/admin/bookmarks.test.js"
+        )
+        with open(path) as f:
+            content = f.read()
+        # Check for test coverage of key operations
+        crud_indicators = {
+            "GET": ["GET", "get", "browse", "list", "read"],
+            "POST": ["POST", "post", "add", "create"],
+            "DELETE": ["DELETE", "delete", "destroy", "remove"],
+        }
+        for method, indicators in crud_indicators.items():
+            found = any(ind in content for ind in indicators)
+            assert found, \
+                f"E2E tests should cover {method} operations for bookmarks"
 
-    def test_e2e_test_file_covers_authorization(self):
-        """Verify E2E test file includes test case for 404 when accessing another user's bookmark."""
-        content = _read("ghost/core/test/e2e-api/admin/bookmarks.test.js")
-        assert (
-            "404" in content
-        ), "E2E test file must test that accessing another user's bookmark returns 404"
+    def test_e2e_tests_cover_error_scenarios(self):
+        """Verify e2e tests check error scenarios (404, 422)"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "ghost/core/test/e2e-api/admin/bookmarks.test.js"
+        )
+        with open(path) as f:
+            content = f.read()
+        error_indicators = ["404", "422", "not found", "already exists", "duplicate", "invalid"]
+        found = sum(1 for ind in error_indicators if ind.lower() in content.lower())
+        assert found >= 2, \
+            f"E2E tests should cover error scenarios (404, 422). Only found {found} error indicators"

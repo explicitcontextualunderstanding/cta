@@ -1,169 +1,307 @@
 """
-Test for 'bazel-build-optimization' skill — Bazel Build Optimization
-Validates that the Agent optimized Bazel build configuration with WORKSPACE,
-BUILD files, graph.py analysis, and config validator.
+Test skill: bazel-build-optimization
+Verify that the Agent correctly implements a Bazel build configuration
+generator with remote cache validation and dependency analysis.
 """
 
 import os
 import re
-
+import ast
+import subprocess
 import pytest
 
 
 class TestBazelBuildOptimization:
-    """Verify Bazel build optimization implementation."""
-
     REPO_DIR = "/workspace/bazel"
 
-    def test_workspace_file_exists(self):
-        """WORKSPACE or WORKSPACE.bazel file must exist."""
-        candidates = [
-            os.path.join(self.REPO_DIR, "WORKSPACE"),
-            os.path.join(self.REPO_DIR, "WORKSPACE.bazel"),
-        ]
-        assert any(os.path.isfile(p) for p in candidates), (
-            "WORKSPACE file not found"
-        )
+    # === File Path Checks ===
 
-    def test_build_files_exist(self):
-        """At least one BUILD or BUILD.bazel file must exist."""
-        found = False
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            for f in files:
-                if f in ("BUILD", "BUILD.bazel"):
-                    found = True
-                    break
-            if found:
-                break
-        assert found, "No BUILD files found"
+    def test_workspace_bazel_exists(self):
+        """Verify WORKSPACE.bazel was created"""
+        path = os.path.join(self.REPO_DIR, "examples/python-bazel/WORKSPACE.bazel")
+        assert os.path.exists(path), "WORKSPACE.bazel not found"
+
+    def test_bazelrc_exists(self):
+        """Verify .bazelrc was created"""
+        path = os.path.join(self.REPO_DIR, "examples/python-bazel/.bazelrc")
+        assert os.path.exists(path), ".bazelrc not found"
+
+    def test_root_build_exists(self):
+        """Verify root BUILD.bazel was created"""
+        path = os.path.join(self.REPO_DIR, "examples/python-bazel/BUILD.bazel")
+        assert os.path.exists(path), "Root BUILD.bazel not found"
+
+    def test_lib_build_exists(self):
+        """Verify src/lib/BUILD.bazel was created"""
+        path = os.path.join(self.REPO_DIR, "examples/python-bazel/src/lib/BUILD.bazel")
+        assert os.path.exists(path), "src/lib/BUILD.bazel not found"
 
     def test_graph_py_exists(self):
-        """graph.py dependency analysis module must exist."""
-        found = False
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            for f in files:
-                if f == "graph.py" or (f.endswith(".py") and "graph" in f.lower()):
-                    found = True
-                    break
-            if found:
-                break
-        assert found, "graph.py module not found"
+        """Verify graph.py was created"""
+        path = os.path.join(self.REPO_DIR, "examples/python-bazel/src/lib/graph.py")
+        assert os.path.exists(path), "graph.py not found"
 
-    def test_config_validator_exists(self):
-        """Config validator module must exist."""
-        found = False
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            for f in files:
-                if f.endswith(".py") and ("config" in f.lower() and "valid" in f.lower()):
-                    found = True
-                    break
-            if found:
-                break
-        assert found, "Config validator not found"
+    def test_config_validator_py_exists(self):
+        """Verify config_validator.py was created"""
+        path = os.path.join(
+            self.REPO_DIR, "examples/python-bazel/src/lib/config_validator.py"
+        )
+        assert os.path.exists(path), "config_validator.py not found"
 
-    def test_build_rule_optimization(self):
-        """BUILD files must contain optimized rules (e.g., remote caching, config)."""
-        found = False
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            for f in files:
-                if f in ("BUILD", "BUILD.bazel", ".bazelrc"):
-                    path = os.path.join(root, f)
-                    with open(path, "r", errors="ignore") as fh:
-                        content = fh.read()
-                    if re.search(r"remote_cache|disk_cache|--config|optimization", content, re.IGNORECASE):
-                        found = True
-                        break
-            if found:
-                break
-        assert found, "No build optimization configuration found"
+    def test_bin_build_exists(self):
+        """Verify src/bin/BUILD.bazel was created"""
+        path = os.path.join(self.REPO_DIR, "examples/python-bazel/src/bin/BUILD.bazel")
+        assert os.path.exists(path), "src/bin/BUILD.bazel not found"
 
-    def test_dependency_visibility_properly_set(self):
-        """BUILD files must set visibility appropriately."""
-        found = False
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            for f in files:
-                if f in ("BUILD", "BUILD.bazel"):
-                    path = os.path.join(root, f)
-                    with open(path, "r", errors="ignore") as fh:
-                        content = fh.read()
-                    if re.search(r"visibility\s*=", content):
-                        found = True
-                        break
-            if found:
-                break
-        assert found, "No visibility settings in BUILD files"
+    def test_analyzer_py_exists(self):
+        """Verify analyzer.py was created"""
+        path = os.path.join(self.REPO_DIR, "examples/python-bazel/src/bin/analyzer.py")
+        assert os.path.exists(path), "analyzer.py not found"
 
-    def test_graph_analysis_detects_cycles(self):
-        """graph.py should have cycle detection logic."""
-        found = False
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            for f in files:
-                if f.endswith(".py") and "graph" in f.lower():
-                    path = os.path.join(root, f)
-                    with open(path, "r", errors="ignore") as fh:
-                        content = fh.read()
-                    if re.search(r"cycle|circular|topological|DFS|dfs", content, re.IGNORECASE):
-                        found = True
-                        break
-            if found:
-                break
-        assert found, "graph.py has no cycle detection"
+    def test_tests_build_exists(self):
+        """Verify tests/BUILD.bazel was created"""
+        path = os.path.join(self.REPO_DIR, "examples/python-bazel/tests/BUILD.bazel")
+        assert os.path.exists(path), "tests/BUILD.bazel not found"
 
-    def test_bazelrc_optimization_flags(self):
-        """.bazelrc should contain optimization flags."""
-        bazelrc = os.path.join(self.REPO_DIR, ".bazelrc")
-        if not os.path.isfile(bazelrc):
-            pytest.skip(".bazelrc not found")
-        with open(bazelrc, "r", errors="ignore") as fh:
-            content = fh.read()
-        assert re.search(r"--jobs|--local_cpu|--remote|--disk_cache|--repository_cache", content), (
-            ".bazelrc does not contain optimization flags"
+    def test_test_graph_py_exists(self):
+        """Verify tests/test_graph.py was created"""
+        path = os.path.join(
+            self.REPO_DIR, "examples/python-bazel/tests/test_graph.py"
+        )
+        assert os.path.exists(path), "tests/test_graph.py not found"
+
+    def test_test_config_validator_py_exists(self):
+        """Verify tests/test_config_validator.py was created"""
+        path = os.path.join(
+            self.REPO_DIR, "examples/python-bazel/tests/test_config_validator.py"
+        )
+        assert os.path.exists(path), "tests/test_config_validator.py not found"
+
+    # === Semantic Checks: WORKSPACE ===
+
+    def test_workspace_has_name(self):
+        """Verify workspace declaration with name"""
+        path = os.path.join(self.REPO_DIR, "examples/python-bazel/WORKSPACE.bazel")
+        with open(path) as f:
+            content = f.read()
+        assert "python_bazel_example" in content, (
+            "Workspace should be named python_bazel_example"
         )
 
-    def test_external_dependencies_pinned(self):
-        """External dependencies in WORKSPACE should be pinned to specific versions."""
-        workspace = None
-        for name in ["WORKSPACE", "WORKSPACE.bazel"]:
-            path = os.path.join(self.REPO_DIR, name)
-            if os.path.isfile(path):
-                workspace = path
-                break
-        if workspace is None:
-            pytest.skip("WORKSPACE file not found")
-        with open(workspace, "r", errors="ignore") as fh:
-            content = fh.read()
-        assert re.search(r"sha256|commit|tag|version", content), (
-            "External deps not pinned in WORKSPACE"
+    def test_workspace_has_rules_python(self):
+        """Verify rules_python http_archive"""
+        path = os.path.join(self.REPO_DIR, "examples/python-bazel/WORKSPACE.bazel")
+        with open(path) as f:
+            content = f.read()
+        assert "rules_python" in content, "Should load rules_python"
+        assert "http_archive" in content, "Should use http_archive"
+
+    def test_workspace_has_sha256(self):
+        """Verify http_archive has sha256"""
+        path = os.path.join(self.REPO_DIR, "examples/python-bazel/WORKSPACE.bazel")
+        with open(path) as f:
+            content = f.read()
+        assert "sha256" in content, "http_archive should have sha256"
+
+    def test_workspace_has_toolchain(self):
+        """Verify python_register_toolchains call"""
+        path = os.path.join(self.REPO_DIR, "examples/python-bazel/WORKSPACE.bazel")
+        with open(path) as f:
+            content = f.read()
+        assert "python_register_toolchains" in content, (
+            "Should call python_register_toolchains"
         )
 
-    def test_test_targets_defined(self):
-        """BUILD files should define test targets."""
-        found = False
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            for f in files:
-                if f in ("BUILD", "BUILD.bazel"):
-                    path = os.path.join(root, f)
-                    with open(path, "r", errors="ignore") as fh:
-                        content = fh.read()
-                    if re.search(r"_test\(|test_suite\(", content):
-                        found = True
-                        break
-            if found:
-                break
-        assert found, "No test targets defined in BUILD files"
+    # === Semantic Checks: .bazelrc ===
 
-    def test_config_validator_validates_build_files(self):
-        """Config validator should validate BUILD file structure."""
-        found = False
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            for f in files:
-                if f.endswith(".py") and "config" in f.lower() and "valid" in f.lower():
-                    path = os.path.join(root, f)
-                    with open(path, "r", errors="ignore") as fh:
-                        content = fh.read()
-                    if re.search(r"BUILD|validate|check|parse", content, re.IGNORECASE):
-                        found = True
-                        break
-            if found:
-                break
-        assert found, "Config validator does not validate BUILD files"
+    def test_bazelrc_jobs_auto(self):
+        """Verify build --jobs=auto"""
+        path = os.path.join(self.REPO_DIR, "examples/python-bazel/.bazelrc")
+        with open(path) as f:
+            content = f.read()
+        assert "--jobs=auto" in content, "Should set --jobs=auto"
+
+    def test_bazelrc_disk_cache(self):
+        """Verify disk cache setting"""
+        path = os.path.join(self.REPO_DIR, "examples/python-bazel/.bazelrc")
+        with open(path) as f:
+            content = f.read()
+        assert "--disk_cache" in content, "Should set --disk_cache"
+
+    def test_bazelrc_remote_cache_grpcs(self):
+        """Verify remote cache uses grpcs://"""
+        path = os.path.join(self.REPO_DIR, "examples/python-bazel/.bazelrc")
+        with open(path) as f:
+            content = f.read()
+        assert "grpcs://" in content, "Remote cache should use grpcs://"
+
+    def test_bazelrc_ci_config(self):
+        """Verify CI config profile"""
+        path = os.path.join(self.REPO_DIR, "examples/python-bazel/.bazelrc")
+        with open(path) as f:
+            content = f.read()
+        assert "build:ci" in content, "Should define CI config"
+
+    def test_bazelrc_try_import(self):
+        """Verify try-import for user.bazelrc"""
+        path = os.path.join(self.REPO_DIR, "examples/python-bazel/.bazelrc")
+        with open(path) as f:
+            content = f.read()
+        assert "try-import" in content, "Should have try-import"
+        assert "user.bazelrc" in content, "Should import user.bazelrc"
+
+    # === Semantic Checks: graph.py ===
+
+    def test_dependency_graph_class(self):
+        """Verify DependencyGraph class is defined"""
+        path = os.path.join(self.REPO_DIR, "examples/python-bazel/src/lib/graph.py")
+        with open(path) as f:
+            content = f.read()
+        assert "class DependencyGraph" in content, (
+            "DependencyGraph class should be defined"
+        )
+
+    def test_add_target_method(self):
+        """Verify add_target method"""
+        path = os.path.join(self.REPO_DIR, "examples/python-bazel/src/lib/graph.py")
+        with open(path) as f:
+            content = f.read()
+        assert "def add_target(" in content, "Should have add_target method"
+
+    def test_resolve_order_method(self):
+        """Verify resolve_order method with topological sort"""
+        path = os.path.join(self.REPO_DIR, "examples/python-bazel/src/lib/graph.py")
+        with open(path) as f:
+            content = f.read()
+        assert "def resolve_order(" in content, "Should have resolve_order method"
+
+    def test_cyclic_dependency_error(self):
+        """Verify CyclicDependencyError is defined"""
+        path = os.path.join(self.REPO_DIR, "examples/python-bazel/src/lib/graph.py")
+        with open(path) as f:
+            content = f.read()
+        assert "CyclicDependencyError" in content, (
+            "CyclicDependencyError should be defined"
+        )
+
+    def test_invalid_label_error(self):
+        """Verify InvalidLabelError is defined"""
+        path = os.path.join(self.REPO_DIR, "examples/python-bazel/src/lib/graph.py")
+        with open(path) as f:
+            content = f.read()
+        assert "InvalidLabelError" in content, (
+            "InvalidLabelError should be defined"
+        )
+
+    def test_query_deps_method(self):
+        """Verify query_deps method for transitive deps"""
+        path = os.path.join(self.REPO_DIR, "examples/python-bazel/src/lib/graph.py")
+        with open(path) as f:
+            content = f.read()
+        assert "query_deps" in content, "Should have query_deps method"
+
+    def test_query_rdeps_method(self):
+        """Verify query_rdeps method for reverse deps"""
+        path = os.path.join(self.REPO_DIR, "examples/python-bazel/src/lib/graph.py")
+        with open(path) as f:
+            content = f.read()
+        assert "query_rdeps" in content, "Should have query_rdeps method"
+
+    # === Semantic Checks: config_validator.py ===
+
+    def test_validate_bazelrc_function(self):
+        """Verify validate_bazelrc function"""
+        path = os.path.join(
+            self.REPO_DIR, "examples/python-bazel/src/lib/config_validator.py"
+        )
+        with open(path) as f:
+            content = f.read()
+        assert "def validate_bazelrc(" in content, (
+            "Should have validate_bazelrc function"
+        )
+
+    def test_validate_workspace_function(self):
+        """Verify validate_workspace function"""
+        path = os.path.join(
+            self.REPO_DIR, "examples/python-bazel/src/lib/config_validator.py"
+        )
+        with open(path) as f:
+            content = f.read()
+        assert "def validate_workspace(" in content, (
+            "Should have validate_workspace function"
+        )
+
+    def test_config_issue_class(self):
+        """Verify ConfigIssue class with line, severity, message"""
+        path = os.path.join(
+            self.REPO_DIR, "examples/python-bazel/src/lib/config_validator.py"
+        )
+        with open(path) as f:
+            content = f.read()
+        assert "ConfigIssue" in content, "ConfigIssue should be defined"
+
+    # === Semantic Checks: BUILD files ===
+
+    def test_lib_build_has_py_library(self):
+        """Verify src/lib/BUILD.bazel has py_library rule"""
+        path = os.path.join(
+            self.REPO_DIR, "examples/python-bazel/src/lib/BUILD.bazel"
+        )
+        with open(path) as f:
+            content = f.read()
+        assert "py_library" in content, "Should define py_library rule"
+
+    def test_bin_build_has_py_binary(self):
+        """Verify src/bin/BUILD.bazel has py_binary rule"""
+        path = os.path.join(
+            self.REPO_DIR, "examples/python-bazel/src/bin/BUILD.bazel"
+        )
+        with open(path) as f:
+            content = f.read()
+        assert "py_binary" in content, "Should define py_binary rule"
+
+    def test_tests_build_has_py_test(self):
+        """Verify tests/BUILD.bazel has py_test rules"""
+        path = os.path.join(
+            self.REPO_DIR, "examples/python-bazel/tests/BUILD.bazel"
+        )
+        with open(path) as f:
+            content = f.read()
+        assert "py_test" in content, "Should define py_test rules"
+
+    # === Functional Checks ===
+
+    def test_graph_py_parses(self):
+        """Verify graph.py has valid Python syntax"""
+        path = os.path.join(self.REPO_DIR, "examples/python-bazel/src/lib/graph.py")
+        with open(path) as f:
+            source = f.read()
+        try:
+            ast.parse(source)
+        except SyntaxError as e:
+            pytest.fail(f"graph.py has syntax error: {e}")
+
+    def test_config_validator_parses(self):
+        """Verify config_validator.py has valid Python syntax"""
+        path = os.path.join(
+            self.REPO_DIR, "examples/python-bazel/src/lib/config_validator.py"
+        )
+        with open(path) as f:
+            source = f.read()
+        try:
+            ast.parse(source)
+        except SyntaxError as e:
+            pytest.fail(f"config_validator.py has syntax error: {e}")
+
+    def test_bazel_build(self):
+        """Verify bazel build //... succeeds"""
+        result = subprocess.run(
+            ["bazel", "build", "//..."],
+            cwd=os.path.join(self.REPO_DIR, "examples/python-bazel"),
+            capture_output=True,
+            text=True,
+            timeout=600,
+        )
+        assert result.returncode == 0, (
+            f"bazel build failed:\n{result.stderr[-2000:]}"
+        )

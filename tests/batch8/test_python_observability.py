@@ -1,118 +1,146 @@
 """
-Test for 'python-observability' skill — OpenTelemetry Observability
-Validates that the Agent implemented OTel-based tracing, metrics, and
-structured JSON logging with trace context propagation.
+Tests for the python-observability skill.
+Validates an instrumented HTTP service example with OpenTelemetry traces,
+metrics, structured logging, and correlation ID propagation.
 """
 
 import os
 import re
-import sys
+import ast
 
-import pytest
+REPO_DIR = "/workspace/opentelemetry-python"
+EXAMPLE_DIR = os.path.join(REPO_DIR, "docs", "examples", "instrumented_service")
 
 
 class TestPythonObservability:
-    """Verify OTel observability implementation."""
+    """Tests for the OpenTelemetry instrumented service example."""
 
-    REPO_DIR = "/workspace/opentelemetry-python"
+    # ── file_path_check ──────────────────────────────────────────────
 
-    @staticmethod
-    def _read(path: str) -> str:
-        try:
-            with open(path, "r", errors="ignore") as fh:
-                return fh.read()
-        except OSError:
+    def test_app_exists(self):
+        """HTTP service app module must exist."""
+        path = os.path.join(EXAMPLE_DIR, "app.py")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    def test_instrumentation_exists(self):
+        """Instrumentation setup module must exist."""
+        path = os.path.join(EXAMPLE_DIR, "instrumentation.py")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    def test_metrics_exists(self):
+        """Custom metrics module must exist."""
+        path = os.path.join(EXAMPLE_DIR, "metrics.py")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    def test_middleware_exists(self):
+        """Request middleware module must exist."""
+        path = os.path.join(EXAMPLE_DIR, "middleware.py")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    def test_readme_exists(self):
+        """README.md documentation must exist."""
+        path = os.path.join(EXAMPLE_DIR, "README.md")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    # ── semantic_check ───────────────────────────────────────────────
+
+    def _read(self, filename):
+        path = os.path.join(EXAMPLE_DIR, filename)
+        if not os.path.isfile(path):
             return ""
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read()
 
-    # ── file_path_check ─────────────────────────────────────────────
+    def test_metric_instruments(self):
+        """Metrics module must define request counter, latency histogram, active gauge, error counter."""
+        content = self._read("metrics.py")
+        assert re.search(r"http_requests_total|requests_total", content), (
+            "http_requests_total counter not found"
+        )
+        assert re.search(r"http_request_duration|request_duration", content), (
+            "http_request_duration histogram not found"
+        )
+        assert re.search(r"http_requests_active|requests_active|UpDownCounter", content), (
+            "Active requests UpDownCounter not found"
+        )
+        assert re.search(r"http_errors_total|errors_total", content), (
+            "http_errors_total counter not found"
+        )
 
-    def test_tracing_metrics_files_exist(self):
-        """Verify app/tracing.py and app/metrics.py exist."""
-        for rel in ("app/tracing.py", "app/metrics.py"):
-            path = os.path.join(self.REPO_DIR, rel)
-            assert os.path.isfile(path), f"Missing: {rel}"
+    def test_histogram_buckets(self):
+        """Latency histogram must use explicit bucket boundaries."""
+        content = self._read("metrics.py")
+        assert re.search(r"0\.005|0\.01|0\.025|0\.05|0\.1|0\.25", content), (
+            "Explicit histogram bucket boundaries not found"
+        )
 
-    def test_logging_config_exists(self):
-        """Verify app/logging_config.py exists."""
-        path = os.path.join(self.REPO_DIR, "app/logging_config.py")
-        assert os.path.isfile(path), "Missing: app/logging_config.py"
+    def test_span_attributes(self):
+        """Middleware must set span attributes: http.method, http.url, http.status_code."""
+        content = self._read("middleware.py")
+        for attr in ["http.method", "http.status_code"]:
+            assert attr in content, f"Span attribute '{attr}' not found"
 
-    # ── semantic_check ──────────────────────────────────────────────
+    def test_structured_logging_json(self):
+        """Structured logging must produce JSON with trace_id and span_id."""
+        all_content = self._read("instrumentation.py") + self._read("middleware.py")
+        assert re.search(r"trace_id|trace\.id", all_content), "trace_id not found in logs"
+        assert re.search(r"span_id|span\.id", all_content), "span_id not found in logs"
+        assert re.search(r"json|JSON", all_content, re.IGNORECASE), "JSON logging not found"
 
-    def test_tracer_provider_and_otlp_exporter(self):
-        """Verify tracing.py uses TracerProvider with OTLPSpanExporter."""
-        content = self._read(os.path.join(self.REPO_DIR, "app/tracing.py"))
-        assert content, "app/tracing.py is empty or unreadable"
-        assert "TracerProvider" in content, "TracerProvider not found"
-        assert "OTLPSpanExporter" in content, "OTLPSpanExporter not found"
+    def test_correlation_id_propagation(self):
+        """Correlation ID must propagate via X-Correlation-ID header and contextvars."""
+        all_content = self._read("middleware.py") + self._read("instrumentation.py")
+        assert re.search(r"X-Correlation-ID|correlation.id", all_content, re.IGNORECASE), (
+            "Correlation ID header not found"
+        )
+        assert re.search(r"contextvars|ContextVar", all_content), (
+            "contextvars usage not found for correlation ID propagation"
+        )
 
-    def test_metrics_counter_and_histogram_names(self):
-        """Verify http_requests_total counter and http_request_duration_ms histogram."""
-        content = self._read(os.path.join(self.REPO_DIR, "app/metrics.py"))
-        assert content, "app/metrics.py is empty or unreadable"
-        assert "http_requests_total" in content, "http_requests_total not found"
-        assert "http_request_duration_ms" in content, "http_request_duration_ms not found"
+    def test_error_span_recording(self):
+        """Error requests must set StatusCode.ERROR and record exception."""
+        content = self._read("middleware.py") + self._read("app.py")
+        assert re.search(r"StatusCode\.ERROR|set_status|record_exception", content), (
+            "Error span recording not found"
+        )
 
-    def test_json_log_format_defined(self):
-        """Verify logging_config.py outputting JSON with trace_id and span_id."""
-        content = self._read(os.path.join(self.REPO_DIR, "app/logging_config.py"))
-        assert content, "app/logging_config.py is empty or unreadable"
-        for kw in ("trace_id", "span_id", "json"):
-            assert kw in content.lower(), f"'{kw}' not found in logging_config.py"
+    def test_bounded_cardinality(self):
+        """Route metric attribute must use templates, not actual paths."""
+        content = self._read("middleware.py") + self._read("app.py")
+        assert re.search(r"\{id\}|route.*template|parameterized", content, re.IGNORECASE), (
+            "Bounded cardinality route template not found"
+        )
 
-    def test_trace_context_w3c_propagation(self):
-        """Verify W3C traceparent propagation is configured in tracing setup."""
-        content = self._read(os.path.join(self.REPO_DIR, "app/tracing.py"))
-        assert content, "app/tracing.py is empty or unreadable"
-        found = any(kw in content for kw in (
-            "traceparent", "TraceContextTextMapPropagator", "set_text_map_propagator"))
-        assert found, "W3C trace context propagator not configured"
+    # ── functional_check ─────────────────────────────────────────────
 
-    # ── functional_check (import) ───────────────────────────────────
+    def test_all_files_valid_python(self):
+        """All instrumented service Python files must have valid syntax."""
+        errors = []
+        for fname in ["app.py", "instrumentation.py", "metrics.py", "middleware.py"]:
+            content = self._read(fname)
+            if not content:
+                continue
+            try:
+                ast.parse(content)
+            except SyntaxError as e:
+                errors.append(f"{fname}: {e}")
+        assert not errors, "Syntax errors:\n" + "\n".join(errors)
 
-    def _skip_unless_importable(self):
-        if not os.path.isdir(self.REPO_DIR):
-            pytest.skip("Repo dir does not exist")
-        if self.REPO_DIR not in sys.path:
-            sys.path.insert(0, self.REPO_DIR)
+    def test_endpoints_defined(self):
+        """App must define /items, /items/{id}, /error, /slow endpoints."""
+        content = self._read("app.py")
+        for endpoint in ["/items", "/error", "/slow"]:
+            assert endpoint in content, f"Endpoint '{endpoint}' not found"
 
-    def test_tracing_init_does_not_raise(self):
-        """TracingSetup.init() with mock OTLP endpoint does not raise."""
-        self._skip_unless_importable()
-        try:
-            from app.tracing import TracingSetup
-        except Exception as exc:
-            pytest.skip(f"Cannot import app.tracing: {exc}")
-        TracingSetup.init("test-service", "http://localhost:4317")
+    def test_tracer_provider_setup(self):
+        """Instrumentation must set up TracerProvider and MeterProvider."""
+        content = self._read("instrumentation.py")
+        assert re.search(r"TracerProvider", content), "TracerProvider not found"
+        assert re.search(r"MeterProvider", content), "MeterProvider not found"
 
-    def test_record_request_does_not_raise(self):
-        """MetricsRecorder.record_request() with valid args does not raise."""
-        self._skip_unless_importable()
-        try:
-            from app.metrics import MetricsRecorder
-        except Exception as exc:
-            pytest.skip(f"Cannot import app.metrics: {exc}")
-        MetricsRecorder().record_request("GET", "/health", 200, 45)
-
-    def test_structured_log_is_valid_json(self):
-        """StructuredLogger.log() output is parseable JSON with trace_id and span_id."""
-        self._skip_unless_importable()
-        import json as _json
-        try:
-            from app.logging_config import StructuredLogger
-        except Exception as exc:
-            pytest.skip(f"Cannot import app.logging_config: {exc}")
-        log_line = StructuredLogger().log("INFO", "hello")
-        log_dict = _json.loads(log_line)
-        assert "trace_id" in log_dict, "trace_id missing from log output"
-        assert "span_id" in log_dict, "span_id missing from log output"
-
-    def test_invalid_otlp_endpoint_raises_configuration_error(self):
-        """TracingSetup.init() with 'not-a-url' raises ConfigurationError."""
-        self._skip_unless_importable()
-        try:
-            from app.tracing import TracingSetup, ConfigurationError
-        except Exception as exc:
-            pytest.skip(f"Cannot import app.tracing: {exc}")
-        with pytest.raises(ConfigurationError):
-            TracingSetup.init("svc", "not-a-url")
+    def test_test_file_exists(self):
+        """Test file must exist."""
+        path = os.path.join(REPO_DIR, "tests", "test_instrumented_service.py")
+        if not os.path.isfile(path):
+            path = os.path.join(REPO_DIR, "tests", "test_python_observability.py")
+        assert os.path.isfile(path), f"Missing test file"

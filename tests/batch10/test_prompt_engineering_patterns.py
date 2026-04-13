@@ -1,177 +1,287 @@
 """
-Test for 'prompt-engineering-patterns' skill — Prompt engineering patterns in langchain
-Validates that the Agent implemented prompt engineering patterns like
-chain-of-thought, few-shot, and structured output within langchain.
+Test skill: prompt-engineering-patterns
+Verify that the Agent correctly implements few-shot, chain-of-thought,
+and system prompt template patterns for LangChain.
 """
 
 import os
 import re
-
+import ast
+import subprocess
 import pytest
 
 
 class TestPromptEngineeringPatterns:
-    """Verify prompt engineering pattern implementations in langchain."""
-
     REPO_DIR = "/workspace/langchain"
 
-    def test_chain_of_thought_prompt(self):
-        """Chain-of-thought prompt pattern must exist."""
-        found = False
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            for f in files:
-                if f.endswith(".py"):
-                    path = os.path.join(root, f)
-                    with open(path, "r", errors="ignore") as fh:
-                        content = fh.read()
-                    if re.search(r"chain.of.thought|CoT|step.by.step|think.*step|reasoning", content, re.IGNORECASE):
-                        found = True
-                        break
-            if found:
-                break
-        assert found, "No chain-of-thought prompt found"
+    # === File Path Checks ===
 
-    def test_few_shot_prompt(self):
-        """Few-shot prompt pattern must exist."""
-        found = False
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            for f in files:
-                if f.endswith(".py"):
-                    path = os.path.join(root, f)
-                    with open(path, "r", errors="ignore") as fh:
-                        content = fh.read()
-                    if re.search(r"[Ff]ew.?[Ss]hot|FewShotPrompt|examples|example_prompt", content):
-                        found = True
-                        break
-            if found:
-                break
-        assert found, "No few-shot prompt pattern found"
+    def test_advanced_templates_exists(self):
+        """Verify advanced_templates.py was created"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "libs/langchain/langchain/prompts/advanced_templates.py",
+        )
+        assert os.path.exists(path), f"advanced_templates.py not found at {path}"
 
-    def test_prompt_template_usage(self):
-        """PromptTemplate or ChatPromptTemplate must be used."""
-        found = False
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            for f in files:
-                if f.endswith(".py"):
-                    path = os.path.join(root, f)
-                    with open(path, "r", errors="ignore") as fh:
-                        content = fh.read()
-                    if re.search(r"PromptTemplate|ChatPromptTemplate|SystemMessage|HumanMessage", content):
-                        found = True
-                        break
-            if found:
-                break
-        assert found, "No PromptTemplate usage found"
+    def test_example_selector_exists(self):
+        """Verify example_selector.py was created"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "libs/langchain/langchain/prompts/example_selector.py",
+        )
+        assert os.path.exists(path), f"example_selector.py not found at {path}"
 
-    def test_structured_output(self):
-        """Structured output pattern must exist."""
-        found = False
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            for f in files:
-                if f.endswith(".py"):
-                    path = os.path.join(root, f)
-                    with open(path, "r", errors="ignore") as fh:
-                        content = fh.read()
-                    if re.search(r"[Ss]tructured[Oo]utput|output_parser|[Pp]ydantic|JSON|json_schema|with_structured_output", content):
-                        found = True
-                        break
-            if found:
-                break
-        assert found, "No structured output pattern found"
+    def test_test_file_exists(self):
+        """Verify test file was created"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "libs/core/tests/unit_tests/prompts/test_advanced_templates.py",
+        )
+        assert os.path.exists(path), f"test_advanced_templates.py not found at {path}"
 
-    def test_system_prompt_defined(self):
-        """System prompt or instruction must be defined."""
-        found = False
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            for f in files:
-                if f.endswith(".py"):
-                    path = os.path.join(root, f)
-                    with open(path, "r", errors="ignore") as fh:
-                        content = fh.read()
-                    if re.search(r"system.*prompt|SystemMessage|system_template|role.*system", content, re.IGNORECASE):
-                        found = True
-                        break
-            if found:
-                break
-        assert found, "No system prompt defined"
+    # === Semantic Checks: FewShotPromptTemplate ===
 
-    def test_chain_composition(self):
-        """Prompts should be composed in chains (LCEL or Chains)."""
-        found = False
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            for f in files:
-                if f.endswith(".py"):
-                    path = os.path.join(root, f)
-                    with open(path, "r", errors="ignore") as fh:
-                        content = fh.read()
-                    if re.search(r"RunnableSequence|\|.*invoke|LLMChain|chain\s*=|pipe\(", content):
-                        found = True
-                        break
-            if found:
-                break
-        assert found, "No chain composition found"
+    def test_few_shot_template_class_defined(self):
+        """Verify FewShotPromptTemplate class is defined"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "libs/langchain/langchain/prompts/advanced_templates.py",
+        )
+        with open(path) as f:
+            content = f.read()
+        assert "class FewShotPromptTemplate" in content, (
+            "FewShotPromptTemplate class should be defined"
+        )
 
-    def test_output_parser(self):
-        """An output parser must be implemented."""
-        found = False
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            for f in files:
-                if f.endswith(".py"):
-                    path = os.path.join(root, f)
-                    with open(path, "r", errors="ignore") as fh:
-                        content = fh.read()
-                    if re.search(r"OutputParser|StrOutputParser|JsonOutputParser|PydanticOutputParser|output_parser", content):
-                        found = True
-                        break
-            if found:
-                break
-        assert found, "No output parser found"
+    def test_few_shot_has_format_method(self):
+        """Verify FewShotPromptTemplate has format method"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "libs/langchain/langchain/prompts/advanced_templates.py",
+        )
+        with open(path) as f:
+            content = f.read()
+        assert "def format(" in content, (
+            "FewShotPromptTemplate should have format method"
+        )
 
-    def test_variable_substitution(self):
-        """Prompts must use variable substitution."""
-        found = False
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            for f in files:
-                if f.endswith(".py"):
-                    path = os.path.join(root, f)
-                    with open(path, "r", errors="ignore") as fh:
-                        content = fh.read()
-                    if re.search(r"\{[a-zA-Z_]+\}|input_variables|partial_variables|format_prompt", content):
-                        if re.search(r"[Pp]rompt|[Tt]emplate", content):
-                            found = True
-                            break
-            if found:
-                break
-        assert found, "No variable substitution in prompts"
+    def test_few_shot_has_max_examples(self):
+        """Verify FewShotPromptTemplate respects max_examples"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "libs/langchain/langchain/prompts/advanced_templates.py",
+        )
+        with open(path) as f:
+            content = f.read()
+        assert "max_examples" in content, (
+            "FewShotPromptTemplate should have max_examples parameter"
+        )
 
-    def test_example_selector(self):
-        """Few-shot patterns should use an example selector."""
-        found = False
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            for f in files:
-                if f.endswith(".py"):
-                    path = os.path.join(root, f)
-                    with open(path, "r", errors="ignore") as fh:
-                        content = fh.read()
-                    if re.search(r"ExampleSelector|SemanticSimilarityExampleSelector|example_selector|select_examples", content):
-                        found = True
-                        break
-            if found:
-                break
-        assert found, "No example selector found"
+    def test_few_shot_has_example_separator(self):
+        """Verify FewShotPromptTemplate has example_separator"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "libs/langchain/langchain/prompts/advanced_templates.py",
+        )
+        with open(path) as f:
+            content = f.read()
+        assert "example_separator" in content, (
+            "FewShotPromptTemplate should have example_separator"
+        )
 
-    def test_model_invocation(self):
-        """Code must invoke an LLM model."""
-        found = False
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            for f in files:
-                if f.endswith(".py"):
-                    path = os.path.join(root, f)
-                    with open(path, "r", errors="ignore") as fh:
-                        content = fh.read()
-                    if re.search(r"ChatOpenAI|OpenAI|llm\.invoke|model\.invoke|ChatModel|BaseChatModel", content):
-                        found = True
-                        break
-            if found:
-                break
-        assert found, "No LLM model invocation found"
+    def test_few_shot_raises_key_error_on_missing_kwargs(self):
+        """Verify missing template variables raise KeyError"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "libs/langchain/langchain/prompts/advanced_templates.py",
+        )
+        with open(path) as f:
+            content = f.read()
+        assert "KeyError" in content, (
+            "Should raise KeyError for missing template variables"
+        )
+
+    # === Semantic Checks: Example Selectors ===
+
+    def test_semantic_similarity_selector_defined(self):
+        """Verify SemanticSimilaritySelector class is defined"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "libs/langchain/langchain/prompts/example_selector.py",
+        )
+        with open(path) as f:
+            content = f.read()
+        assert "class SemanticSimilaritySelector" in content, (
+            "SemanticSimilaritySelector class should be defined"
+        )
+
+    def test_diversity_selector_defined(self):
+        """Verify DiversitySelector class is defined"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "libs/langchain/langchain/prompts/example_selector.py",
+        )
+        with open(path) as f:
+            content = f.read()
+        assert "class DiversitySelector" in content, (
+            "DiversitySelector class should be defined"
+        )
+
+    def test_selectors_have_select_method(self):
+        """Verify both selectors have select method"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "libs/langchain/langchain/prompts/example_selector.py",
+        )
+        with open(path) as f:
+            content = f.read()
+        assert "def select(" in content, (
+            "Selectors should have select method"
+        )
+
+    def test_cosine_similarity_used(self):
+        """Verify cosine similarity is computed for semantic selection"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "libs/langchain/langchain/prompts/example_selector.py",
+        )
+        with open(path) as f:
+            content = f.read()
+        assert "cosine" in content.lower() or "dot" in content.lower(), (
+            "Should compute cosine similarity for example selection"
+        )
+
+    def test_diversity_selector_has_lambda(self):
+        """Verify DiversitySelector uses lambda_param for MMR"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "libs/langchain/langchain/prompts/example_selector.py",
+        )
+        with open(path) as f:
+            content = f.read()
+        assert "lambda" in content, (
+            "DiversitySelector should use lambda_param for MMR"
+        )
+
+    # === Semantic Checks: ChainOfThoughtTemplate ===
+
+    def test_cot_template_class_defined(self):
+        """Verify ChainOfThoughtTemplate class is defined"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "libs/langchain/langchain/prompts/advanced_templates.py",
+        )
+        with open(path) as f:
+            content = f.read()
+        assert "class ChainOfThoughtTemplate" in content, (
+            "ChainOfThoughtTemplate class should be defined"
+        )
+
+    def test_cot_has_reasoning_prefix(self):
+        """Verify ChainOfThoughtTemplate has reasoning_prefix"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "libs/langchain/langchain/prompts/advanced_templates.py",
+        )
+        with open(path) as f:
+            content = f.read()
+        assert "reasoning_prefix" in content, (
+            "Should have reasoning_prefix parameter"
+        )
+        assert "step by step" in content.lower(), (
+            "Default reasoning_prefix should include 'step by step'"
+        )
+
+    def test_cot_has_answer_prefix(self):
+        """Verify ChainOfThoughtTemplate has answer_prefix"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "libs/langchain/langchain/prompts/advanced_templates.py",
+        )
+        with open(path) as f:
+            content = f.read()
+        assert "answer_prefix" in content, "Should have answer_prefix parameter"
+
+    # === Semantic Checks: SystemPromptComposer ===
+
+    def test_system_prompt_composer_defined(self):
+        """Verify SystemPromptComposer class is defined"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "libs/langchain/langchain/prompts/advanced_templates.py",
+        )
+        with open(path) as f:
+            content = f.read()
+        assert "class SystemPromptComposer" in content, (
+            "SystemPromptComposer class should be defined"
+        )
+
+    def test_composer_has_compose_method(self):
+        """Verify SystemPromptComposer has compose method"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "libs/langchain/langchain/prompts/advanced_templates.py",
+        )
+        with open(path) as f:
+            content = f.read()
+        assert "def compose(" in content, (
+            "SystemPromptComposer should have compose method"
+        )
+
+    def test_composer_has_constraints_section(self):
+        """Verify compose outputs Constraints section"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "libs/langchain/langchain/prompts/advanced_templates.py",
+        )
+        with open(path) as f:
+            content = f.read()
+        assert "Constraints" in content, (
+            "compose should output a 'Constraints:' section"
+        )
+
+    # === Functional Checks ===
+
+    def test_advanced_templates_parses(self):
+        """Verify advanced_templates.py has valid Python syntax"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "libs/langchain/langchain/prompts/advanced_templates.py",
+        )
+        with open(path) as f:
+            source = f.read()
+        try:
+            ast.parse(source)
+        except SyntaxError as e:
+            pytest.fail(f"advanced_templates.py has syntax error: {e}")
+
+    def test_example_selector_parses(self):
+        """Verify example_selector.py has valid Python syntax"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "libs/langchain/langchain/prompts/example_selector.py",
+        )
+        with open(path) as f:
+            source = f.read()
+        try:
+            ast.parse(source)
+        except SyntaxError as e:
+            pytest.fail(f"example_selector.py has syntax error: {e}")
+
+    def test_unit_tests_pass(self):
+        """Verify unit tests pass"""
+        result = subprocess.run(
+            [
+                "python", "-m", "pytest",
+                "libs/core/tests/unit_tests/prompts/test_advanced_templates.py",
+                "-v", "--tb=short",
+            ],
+            cwd=self.REPO_DIR,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        assert result.returncode == 0, (
+            f"Unit tests failed:\n{result.stdout}\n{result.stderr}"
+        )

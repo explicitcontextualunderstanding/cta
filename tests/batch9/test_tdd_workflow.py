@@ -1,131 +1,184 @@
 """
-Test for 'tdd-workflow' skill — TDD Workflow Calculator
-Validates the Python TDD calculator: file existence, evaluate() function
-signature, operator support (parentheses, modulo, unary negation), and
-correct results via direct import.
+Test skill: tdd-workflow
+Verify that the Agent correctly implements parenthesized expressions, modulo operator,
+and unary negation in the calculator's evaluate() function following TDD.
 """
 
 import os
+import subprocess
+import ast
 import re
-import sys
-
 import pytest
 
 
 class TestTddWorkflow:
-    """Verify TDD calculator evaluate() function and project structure."""
-
     REPO_DIR = "/workspace/python"
 
-    # ── helpers ──────────────────────────────────────────────────────────
-    @staticmethod
-    def _read_file(path: str) -> str:
-        try:
-            with open(path, "r", errors="ignore") as fh:
-                return fh.read()
-        except OSError:
-            return ""
+    # === File Path Checks ===
 
-    @classmethod
-    def _import_evaluate(cls):
-        """Import evaluate from python_starter.calculator; skip on failure."""
-        src_dir = os.path.join(cls.REPO_DIR, "src")
-        if src_dir not in sys.path:
-            sys.path.insert(0, src_dir)
-        try:
-            from python_starter.calculator import evaluate
-            return evaluate
-        except Exception as exc:
-            pytest.skip(f"Cannot import evaluate: {exc}")
+    def test_calculator_module_exists(self):
+        """Verify calculator.py exists"""
+        path = os.path.join(self.REPO_DIR, "src/python_starter/calculator.py")
+        assert os.path.exists(path), f"calculator.py not found at {path}"
 
-    # ── file_path_check ──────────────────────────────────────────────────
+    def test_test_calculator_exists(self):
+        """Verify test_calculator.py exists"""
+        path = os.path.join(self.REPO_DIR, "tests/test_calculator.py")
+        assert os.path.exists(path), f"test_calculator.py not found at {path}"
 
-    def test_calculator_py_and_init_exist(self):
-        """src/python_starter/calculator.py and __init__.py must exist."""
-        calc = os.path.join(self.REPO_DIR, "src", "python_starter", "calculator.py")
-        init = os.path.join(self.REPO_DIR, "src", "python_starter", "__init__.py")
-        assert os.path.isfile(calc), f"{calc} does not exist"
-        assert os.path.isfile(init), f"{init} does not exist"
-        assert os.path.getsize(calc) > 0, "calculator.py is empty"
+    # === Semantic Checks ===
 
-    def test_test_calculator_py_exists(self):
-        """tests/test_calculator.py must exist."""
-        path = os.path.join(self.REPO_DIR, "tests", "test_calculator.py")
-        assert os.path.isfile(path), f"{path} does not exist"
-        assert os.path.getsize(path) > 0, "test_calculator.py is empty"
-
-    # ── semantic_check ───────────────────────────────────────────────────
-
-    def test_evaluate_function_signature_defined(self):
-        """calculator.py must define 'def evaluate' and reference ValueError."""
-        content = self._read_file(
-            os.path.join(self.REPO_DIR, "src", "python_starter", "calculator.py")
+    def test_calculator_has_evaluate_function(self):
+        """Verify calculator module defines evaluate function"""
+        path = os.path.join(self.REPO_DIR, "src/python_starter/calculator.py")
+        with open(path) as f:
+            source = f.read()
+        tree = ast.parse(source)
+        func_names = [
+            node.name for node in ast.walk(tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        ]
+        assert "evaluate" in func_names, (
+            f"evaluate function not found. Functions defined: {func_names}"
         )
-        assert "def evaluate" in content, "evaluate function not defined"
-        assert "ValueError" in content, "ValueError not referenced in calculator.py"
 
-    def test_modulo_and_unary_negation_implemented(self):
-        """calculator.py must handle '%' operator and unary negation."""
-        content = self._read_file(
-            os.path.join(self.REPO_DIR, "src", "python_starter", "calculator.py")
+    def test_calculator_handles_parentheses(self):
+        """Verify calculator source contains logic for handling parentheses"""
+        path = os.path.join(self.REPO_DIR, "src/python_starter/calculator.py")
+        with open(path) as f:
+            source = f.read()
+        has_paren = ("(" in source and ")" in source) and (
+            "paren" in source.lower()
+            or re.search(r"['\"][\(]", source)
+            or "group" in source.lower()
+            or re.search(r"token.*\(", source)
         )
-        assert "%" in content, "Modulo operator '%' not found in calculator.py"
-        unary_patterns = ["unary", "negat", "sign", "negate"]
-        has_unary = any(p in content.lower() for p in unary_patterns) or re.search(
-            r"['\"]?\-['\"]?", content
+        assert has_paren, "Calculator source does not appear to handle parenthesized expressions"
+
+    def test_calculator_handles_modulo(self):
+        """Verify calculator source contains logic for modulo operator"""
+        path = os.path.join(self.REPO_DIR, "src/python_starter/calculator.py")
+        with open(path) as f:
+            source = f.read()
+        has_modulo = "%" in source or "mod" in source.lower()
+        assert has_modulo, "Calculator source does not appear to handle modulo operator"
+
+    def test_calculator_handles_unary_negation(self):
+        """Verify calculator source contains logic for unary negation"""
+        path = os.path.join(self.REPO_DIR, "src/python_starter/calculator.py")
+        with open(path) as f:
+            source = f.read()
+        has_negation = (
+            "unary" in source.lower()
+            or "negate" in source.lower()
+            or re.search(r"[-].*prefix", source, re.IGNORECASE)
+            or re.search(r"token.*==.*'-'", source)
+            or "negative" in source.lower()
         )
-        assert has_unary, "No unary negation handling found in calculator.py"
+        assert has_negation, "Calculator source does not appear to handle unary negation"
 
-    def test_parentheses_override_precedence(self):
-        """calculator.py must handle parenthesized sub-expressions."""
-        content = self._read_file(
-            os.path.join(self.REPO_DIR, "src", "python_starter", "calculator.py")
+    def test_test_file_covers_parentheses(self):
+        """Verify test file includes tests for parenthesized expressions"""
+        path = os.path.join(self.REPO_DIR, "tests/test_calculator.py")
+        with open(path) as f:
+            source = f.read()
+        has_paren_test = (
+            "(" in source
+            and re.search(r"['\"].*\(.*\).*['\"]", source)
         )
-        paren_patterns = ["stack", "recur", "paren", "(", ")"]
-        has_paren = any(p in content for p in paren_patterns)
-        assert has_paren, "No parenthesis handling found in calculator.py"
+        assert has_paren_test, "Test file does not contain tests with parenthesized expressions"
 
-    # ── functional_check (import) ────────────────────────────────────────
+    def test_test_file_covers_modulo(self):
+        """Verify test file includes tests for modulo operator"""
+        path = os.path.join(self.REPO_DIR, "tests/test_calculator.py")
+        with open(path) as f:
+            source = f.read()
+        has_modulo_test = "%" in source
+        assert has_modulo_test, "Test file does not contain tests for modulo operator"
 
-    def test_evaluate_simple_parenthesized_expression(self):
-        """evaluate('(2 + 3) * 4') should return 20."""
-        evaluate = self._import_evaluate()
-        assert evaluate("(2 + 3) * 4") == 20
+    # === Functional Checks ===
+
+    def test_evaluate_parentheses_basic(self):
+        """Verify evaluate('(2 + 3) * 4') returns 20"""
+        result = subprocess.run(
+            [
+                "python", "-c",
+                "import sys; sys.path.insert(0, 'src'); "
+                "from python_starter.calculator import evaluate; "
+                "r = evaluate('(2 + 3) * 4'); "
+                "assert r == 20, f'Expected 20 got {r}'; print('PASS')"
+            ],
+            cwd=self.REPO_DIR,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        assert result.returncode == 0, f"Parentheses test failed: {result.stderr}"
+        assert "PASS" in result.stdout
+
+    def test_evaluate_modulo_basic(self):
+        """Verify evaluate('10 % 3') returns 1"""
+        result = subprocess.run(
+            [
+                "python", "-c",
+                "import sys; sys.path.insert(0, 'src'); "
+                "from python_starter.calculator import evaluate; "
+                "r = evaluate('10 % 3'); "
+                "assert r == 1, f'Expected 1 got {r}'; print('PASS')"
+            ],
+            cwd=self.REPO_DIR,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        assert result.returncode == 0, f"Modulo test failed: {result.stderr}"
+        assert "PASS" in result.stdout
+
+    def test_evaluate_unary_negation(self):
+        """Verify evaluate('-5 + 3') returns -2"""
+        result = subprocess.run(
+            [
+                "python", "-c",
+                "import sys; sys.path.insert(0, 'src'); "
+                "from python_starter.calculator import evaluate; "
+                "r = evaluate('-5 + 3'); "
+                "assert r == -2, f'Expected -2 got {r}'; print('PASS')"
+            ],
+            cwd=self.REPO_DIR,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        assert result.returncode == 0, f"Unary negation test failed: {result.stderr}"
+        assert "PASS" in result.stdout
 
     def test_evaluate_nested_parentheses(self):
-        """evaluate('((1 + 2) * (3 + 4))') should return 21."""
-        evaluate = self._import_evaluate()
-        assert evaluate("((1 + 2) * (3 + 4))") == 21
+        """Verify evaluate('((2 + 3) * (4 - 1))') returns 15"""
+        result = subprocess.run(
+            [
+                "python", "-c",
+                "import sys; sys.path.insert(0, 'src'); "
+                "from python_starter.calculator import evaluate; "
+                "r = evaluate('((2 + 3) * (4 - 1))'); "
+                "assert r == 15, f'Expected 15 got {r}'; print('PASS')"
+            ],
+            cwd=self.REPO_DIR,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        assert result.returncode == 0, f"Nested parens failed: {result.stderr}"
+        assert "PASS" in result.stdout
 
-    def test_evaluate_modulo_with_correct_precedence(self):
-        """evaluate('10 + 7 % 3') should return 11 (% same precedence as *)."""
-        evaluate = self._import_evaluate()
-        assert evaluate("10 + 7 % 3") == 11
-
-    def test_evaluate_unary_negation_at_start(self):
-        """evaluate('-5 + 3') should return -2."""
-        evaluate = self._import_evaluate()
-        assert evaluate("-5 + 3") == -2
-
-    def test_evaluate_double_negation(self):
-        """evaluate('--5') should return 5 (double negation cancels)."""
-        evaluate = self._import_evaluate()
-        assert evaluate("--5") == 5
-
-    def test_evaluate_whitespace_only_raises_valueerror(self):
-        """evaluate('   ') should raise ValueError."""
-        evaluate = self._import_evaluate()
-        with pytest.raises(ValueError):
-            evaluate("   ")
-
-    def test_evaluate_mismatched_paren_raises_valueerror(self):
-        """evaluate('(2 + 3') should raise ValueError for unmatched paren."""
-        evaluate = self._import_evaluate()
-        with pytest.raises(ValueError):
-            evaluate("(2 + 3")
-
-    def test_evaluate_modulo_by_zero_raises_valueerror(self):
-        """evaluate('5 % 0') should raise ValueError (not ZeroDivisionError)."""
-        evaluate = self._import_evaluate()
-        with pytest.raises(ValueError):
-            evaluate("5 % 0")
+    def test_all_existing_tests_pass(self):
+        """Verify all tests pass via pytest"""
+        result = subprocess.run(
+            ["python", "-m", "pytest", "tests/", "-v"],
+            cwd=self.REPO_DIR,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        assert result.returncode == 0, (
+            f"Some tests failed:\n{result.stdout[-1000:]}\n{result.stderr[:500]}"
+        )

@@ -1,313 +1,252 @@
 """
-Test for 'analyze-ci' skill — Analyze CI
-Validates analyze_ci function and CIAnalysisReport with anti-pattern detection,
-security issue scanning, optimization suggestions, and metrics extraction.
+Tests for skill: analyze-ci
+Repo: getsentry/sentry
+Image: zhangyiiiiii/swe-skills-bench-python
+Task: Build a CI failure analyzer module for Sentry that fetches GitHub
+      Actions logs, parses errors, classifies failures, and generates reports.
 """
 
+import ast
 import os
 import re
-import sys
-import glob
-import json
-import tempfile
+import subprocess
+
 import pytest
 
-import yaml
+REPO_DIR = "/workspace/sentry"
+CI_DIR = os.path.join(REPO_DIR, "src", "sentry", "ci_analysis")
+
+INIT_FILE = os.path.join(CI_DIR, "__init__.py")
+FETCHER_FILE = os.path.join(CI_DIR, "log_fetcher.py")
+PARSER_FILE = os.path.join(CI_DIR, "log_parser.py")
+CLASSIFIER_FILE = os.path.join(CI_DIR, "failure_classifier.py")
+REPORTER_FILE = os.path.join(CI_DIR, "reporter.py")
+TEST_FILE = os.path.join(REPO_DIR, "tests", "sentry", "ci_analysis", "test_ci_analysis.py")
 
 
-class TestAnalyzeCi:
-    """Tests for CI analysis tool in the sentry repo."""
+# ---------------------------------------------------------------------------
+# Layer 1 — file_path_check
+# ---------------------------------------------------------------------------
 
-    REPO_DIR = "/workspace/sentry"
+class TestFilePathCheck:
+    """Verify all required CI analysis files were created."""
 
-    def _read(self, relpath):
-        full = os.path.join(self.REPO_DIR, relpath)
-        with open(full, "r", errors="ignore") as f:
-            return f.read()
+    def test_init_exists(self):
+        assert os.path.isfile(INIT_FILE), f"Expected {INIT_FILE}"
 
-    def _find_analyze_ci(self):
-        """Find analyze_ci.py in common locations."""
-        candidates = [
-            "src/sentry/utils/analyze_ci.py",
-            "tools/analyze_ci.py",
-            "scripts/analyze_ci.py",
-            "analyze_ci.py",
-        ]
-        for c in candidates:
-            path = os.path.join(self.REPO_DIR, c)
-            if os.path.exists(path):
-                return c
-        return None
+    def test_fetcher_exists(self):
+        assert os.path.isfile(FETCHER_FILE), f"Expected {FETCHER_FILE}"
 
-    def _get_module_dir(self):
-        """Get directory containing analyze_ci.py for sys.path insertion."""
-        found = self._find_analyze_ci()
-        assert found is not None, "analyze_ci.py not found in any expected location"
-        return os.path.join(self.REPO_DIR, os.path.dirname(found))
+    def test_parser_exists(self):
+        assert os.path.isfile(PARSER_FILE), f"Expected {PARSER_FILE}"
 
-    def _write_temp_yaml(self, config):
-        """Write a YAML config to a temp file and return the path."""
-        fd, path = tempfile.mkstemp(suffix=".yml")
-        with os.fdopen(fd, "w") as f:
-            yaml.dump(config, f)
-        return path
+    def test_classifier_exists(self):
+        assert os.path.isfile(CLASSIFIER_FILE), f"Expected {CLASSIFIER_FILE}"
 
-    # --- File Path Checks ---
+    def test_reporter_exists(self):
+        assert os.path.isfile(REPORTER_FILE), f"Expected {REPORTER_FILE}"
 
-    def test_src_sentry_utils_analyze_ci_py_exists(self):
-        """Verifies that src/sentry/utils/analyze_ci.py exists."""
-        path = os.path.join(self.REPO_DIR, "src", "sentry", "utils", "analyze_ci.py")
-        assert os.path.exists(path), f"Expected file not found: {path}"
+    def test_test_file_exists(self):
+        assert os.path.isfile(TEST_FILE), f"Expected {TEST_FILE}"
 
-    def test_tools_analyze_ci_py_exists(self):
-        """Verifies that tools/analyze_ci.py exists."""
-        path = os.path.join(self.REPO_DIR, "tools", "analyze_ci.py")
-        assert os.path.exists(path), f"Expected file not found: {path}"
 
-    def test_scripts_analyze_ci_py_exists(self):
-        """Verifies that scripts/analyze_ci.py exists."""
-        path = os.path.join(self.REPO_DIR, "scripts", "analyze_ci.py")
-        assert os.path.exists(path), f"Expected file not found: {path}"
+# ---------------------------------------------------------------------------
+# Layer 2 — semantic_check
+# ---------------------------------------------------------------------------
 
-    def test_analyze_ci_py_exists(self):
-        """Verifies that analyze_ci.py exists at repo root."""
-        path = os.path.join(self.REPO_DIR, "analyze_ci.py")
-        assert os.path.exists(path), f"Expected file not found: {path}"
+class TestSemanticLogFetcher:
+    """Verify LogFetcher class."""
 
-    # --- Semantic Checks ---
+    @pytest.fixture(autouse=True)
+    def _load_source(self):
+        with open(FETCHER_FILE, "r", encoding="utf-8") as f:
+            self.src = f.read()
+        self.tree = ast.parse(self.src)
 
-    def test_sem_import_analyze_ci_and_report(self):
-        """from analyze_ci import analyze_ci, CIAnalysisReport — importable."""
-        module_dir = self._get_module_dir()
-        old_path = sys.path[:]
-        sys.path.insert(0, module_dir)
+    def test_class_defined(self):
+        classes = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.ClassDef)]
+        assert "LogFetcher" in classes, f"Expected LogFetcher; found: {classes}"
+
+    def test_fetch_failed_jobs_method(self):
+        funcs = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.FunctionDef)]
+        assert "fetch_failed_jobs" in funcs, "Expected fetch_failed_jobs() method"
+
+    def test_fetch_job_log_method(self):
+        funcs = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.FunctionDef)]
+        assert "fetch_job_log" in funcs, "Expected fetch_job_log() method"
+
+    def test_github_api_usage(self):
+        """Must call GitHub Actions API."""
+        has_api = (
+            "api.github.com" in self.src
+            or "github" in self.src.lower()
+            or "actions" in self.src
+        )
+        assert has_api, "Expected GitHub Actions API usage"
+
+    def test_timeout_configured(self):
+        assert "timeout" in self.src, "Expected request timeout configuration"
+
+    def test_error_handling(self):
+        """Must handle 404 and 403 HTTP errors."""
+        has_error_handling = "404" in self.src or "403" in self.src
+        assert has_error_handling, "Expected HTTP 404/403 error handling"
+
+
+class TestSemanticLogParser:
+    """Verify LogParser class."""
+
+    @pytest.fixture(autouse=True)
+    def _load_source(self):
+        with open(PARSER_FILE, "r", encoding="utf-8") as f:
+            self.src = f.read()
+        self.tree = ast.parse(self.src)
+
+    def test_class_defined(self):
+        classes = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.ClassDef)]
+        assert "LogParser" in classes, f"Expected LogParser; found: {classes}"
+
+    def test_parse_method(self):
+        funcs = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.FunctionDef)]
+        assert "parse" in funcs, "Expected parse() method"
+
+    def test_parse_result_structure(self):
+        """ParseResult must have errors, failed_tests, stack_traces."""
+        for field in ["errors", "failed_tests", "stack_traces"]:
+            assert field in self.src, f"Expected ParseResult field '{field}'"
+
+    def test_exit_code_extraction(self):
+        assert "exit_code" in self.src, "Expected exit_code extraction"
+
+    def test_pytest_pattern_support(self):
+        """Must support pytest FAILED patterns."""
+        has_pytest = "FAILED" in self.src or "pytest" in self.src.lower()
+        assert has_pytest, "Expected pytest failure pattern matching"
+
+    def test_jest_pattern_support(self):
+        """Must support jest FAIL patterns."""
+        has_jest = "FAIL" in self.src or "jest" in self.src.lower()
+        assert has_jest, "Expected jest failure pattern matching"
+
+
+class TestSemanticFailureClassifier:
+    """Verify FailureClassifier class."""
+
+    @pytest.fixture(autouse=True)
+    def _load_source(self):
+        with open(CLASSIFIER_FILE, "r", encoding="utf-8") as f:
+            self.src = f.read()
+        self.tree = ast.parse(self.src)
+
+    def test_class_defined(self):
+        classes = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.ClassDef)]
+        assert "FailureClassifier" in classes, (
+            f"Expected FailureClassifier; found: {classes}"
+        )
+
+    def test_classify_method(self):
+        funcs = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.FunctionDef)]
+        assert "classify" in funcs, "Expected classify() method"
+
+    def test_categories_defined(self):
+        """All 7 failure categories must be defined."""
+        categories = ["test_failure", "build_error", "lint_error", "timeout",
+                       "infrastructure", "dependency", "unknown"]
+        found = [c for c in categories if c in self.src]
+        assert len(found) >= 6, (
+            f"Expected at least 6 of 7 categories; found: {found}"
+        )
+
+    def test_confidence_score(self):
+        assert "confidence" in self.src, "Expected confidence score in classification"
+
+    def test_timeout_detection(self):
+        """Must detect timeout via exit code 124 or timeout keywords."""
+        assert "124" in self.src or "timeout" in self.src.lower(), (
+            "Expected timeout detection (exit code 124 or timeout keywords)"
+        )
+
+
+class TestSemanticReporter:
+    """Verify FailureReporter class."""
+
+    @pytest.fixture(autouse=True)
+    def _load_source(self):
+        with open(REPORTER_FILE, "r", encoding="utf-8") as f:
+            self.src = f.read()
+        self.tree = ast.parse(self.src)
+
+    def test_class_defined(self):
+        classes = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.ClassDef)]
+        assert "FailureReporter" in classes, (
+            f"Expected FailureReporter; found: {classes}"
+        )
+
+    def test_generate_report_method(self):
+        funcs = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.FunctionDef)]
+        assert "generate_report" in funcs, "Expected generate_report() method"
+
+    def test_report_fields(self):
+        """Report must contain summary, failed_jobs, root_cause."""
+        for field in ["summary", "failed_jobs", "root_cause"]:
+            assert field in self.src, f"Expected report field '{field}'"
+
+
+# ---------------------------------------------------------------------------
+# Layer 3 — functional_check
+# ---------------------------------------------------------------------------
+
+class TestFunctionalAnalyzeCI:
+    """Functional checks — syntax and structure validation."""
+
+    def _parse(self, filepath):
+        with open(filepath, "r", encoding="utf-8") as f:
+            src = f.read()
         try:
-            from analyze_ci import analyze_ci, CIAnalysisReport
+            ast.parse(src)
+            return True, None
+        except SyntaxError as e:
+            return False, str(e)
 
-            assert analyze_ci is not None
-            assert CIAnalysisReport is not None
-        finally:
-            sys.path[:] = old_path
+    def test_fetcher_valid_python(self):
+        ok, err = self._parse(FETCHER_FILE)
+        assert ok, f"log_fetcher.py syntax error: {err}"
 
-    def test_sem_analyze_ci_accepts_config_path(self):
-        """analyze_ci function accepts config_path string parameter."""
-        found = self._find_analyze_ci()
-        assert found is not None
-        content = self._read(found)
-        assert re.search(
-            r"def\s+analyze_ci\s*\(", content
-        ), "analyze_ci function not defined"
-        assert (
-            "config_path" in content or "path" in content
-        ), "config_path parameter not found"
+    def test_parser_valid_python(self):
+        ok, err = self._parse(PARSER_FILE)
+        assert ok, f"log_parser.py syntax error: {err}"
 
-    def test_sem_report_has_required_attributes(self):
-        """CIAnalysisReport has attributes: anti_patterns, security_issues, optimization_suggestions, metrics."""
-        found = self._find_analyze_ci()
-        assert found is not None
-        content = self._read(found)
-        for attr in [
-            "anti_patterns",
-            "security_issues",
-            "optimization_suggestions",
-            "metrics",
-        ]:
-            assert attr in content, f"Attribute '{attr}' not found in analyze_ci.py"
+    def test_classifier_valid_python(self):
+        ok, err = self._parse(CLASSIFIER_FILE)
+        assert ok, f"failure_classifier.py syntax error: {err}"
 
-    def test_sem_report_has_to_json_and_to_markdown(self):
-        """CIAnalysisReport has to_json() and to_markdown() methods."""
-        found = self._find_analyze_ci()
-        assert found is not None
-        content = self._read(found)
-        assert re.search(r"def\s+to_json\s*\(", content), "to_json method not found"
-        assert re.search(
-            r"def\s+to_markdown\s*\(", content
-        ), "to_markdown method not found"
+    def test_reporter_valid_python(self):
+        ok, err = self._parse(REPORTER_FILE)
+        assert ok, f"reporter.py syntax error: {err}"
 
-    # --- Functional Checks (import) ---
+    def test_test_file_valid_python(self):
+        ok, err = self._parse(TEST_FILE)
+        assert ok, f"test_ci_analysis.py syntax error: {err}"
 
-    def test_func_analyze_basic_config_returns_report(self):
-        """analyze_ci with basic GH config returns CIAnalysisReport instance."""
-        module_dir = self._get_module_dir()
-        old_path = sys.path[:]
-        sys.path.insert(0, module_dir)
-        try:
-            from analyze_ci import analyze_ci, CIAnalysisReport
+    def test_parser_importable(self):
+        """LogParser must be importable."""
+        result = subprocess.run(
+            f"python -c \"import sys; sys.path.insert(0, '{CI_DIR}'); "
+            f"from log_parser import LogParser; print('OK')\"",
+            shell=True, capture_output=True, text=True, timeout=30,
+            cwd=REPO_DIR,
+        )
+        if "OK" not in result.stdout:
+            pytest.skip(f"LogParser not importable: {result.stderr[:300]}")
 
-            gh_config = {
-                "on": {"push": {"branches": ["main"]}},
-                "jobs": {
-                    "test": {
-                        "runs-on": "ubuntu-latest",
-                        "steps": [{"run": "pip install -r requirements.txt"}],
-                    }
-                },
-            }
-            fp = self._write_temp_yaml(gh_config)
-            try:
-                report = analyze_ci(fp)
-                assert isinstance(report, CIAnalysisReport)
-            finally:
-                os.unlink(fp)
-        finally:
-            sys.path[:] = old_path
-
-    def test_func_report_metrics_num_jobs(self):
-        """report.metrics.get('num_jobs', 0) >= 1 for config with one job."""
-        module_dir = self._get_module_dir()
-        old_path = sys.path[:]
-        sys.path.insert(0, module_dir)
-        try:
-            from analyze_ci import analyze_ci, CIAnalysisReport
-
-            gh_config = {
-                "on": {"push": {"branches": ["main"]}},
-                "jobs": {
-                    "test": {
-                        "runs-on": "ubuntu-latest",
-                        "steps": [{"run": "pip install -r requirements.txt"}],
-                    }
-                },
-            }
-            fp = self._write_temp_yaml(gh_config)
-            try:
-                report = analyze_ci(fp)
-                assert report.metrics.get("num_jobs", 0) >= 1
-            finally:
-                os.unlink(fp)
-        finally:
-            sys.path[:] = old_path
-
-    def test_func_malicious_config_detects_security_issues(self):
-        """Config with inline password produces security_issues >= 1."""
-        module_dir = self._get_module_dir()
-        old_path = sys.path[:]
-        sys.path.insert(0, module_dir)
-        try:
-            from analyze_ci import analyze_ci, CIAnalysisReport
-
-            malicious_config = {
-                "jobs": {"build": {"steps": [{"run": "docker login -p mypassword123"}]}}
-            }
-            fp = self._write_temp_yaml(malicious_config)
-            try:
-                report2 = analyze_ci(fp)
-                assert (
-                    len(report2.security_issues) >= 1
-                ), "Expected at least 1 security issue"
-            finally:
-                os.unlink(fp)
-        finally:
-            sys.path[:] = old_path
-
-    def test_func_security_issue_mentions_password(self):
-        """Security issues mention password/credential/secret for inline password config."""
-        module_dir = self._get_module_dir()
-        old_path = sys.path[:]
-        sys.path.insert(0, module_dir)
-        try:
-            from analyze_ci import analyze_ci, CIAnalysisReport
-
-            malicious_config = {
-                "jobs": {"build": {"steps": [{"run": "docker login -p mypassword123"}]}}
-            }
-            fp = self._write_temp_yaml(malicious_config)
-            try:
-                report2 = analyze_ci(fp)
-                assert any(
-                    "password" in str(i).lower()
-                    or "credential" in str(i).lower()
-                    or "secret" in str(i).lower()
-                    for i in report2.security_issues
-                ), "No security issue mentions password/credential/secret"
-            finally:
-                os.unlink(fp)
-        finally:
-            sys.path[:] = old_path
-
-    def test_func_no_cache_config_detects_anti_patterns(self):
-        """Config with heavy pip install without cache produces anti_patterns >= 1."""
-        module_dir = self._get_module_dir()
-        old_path = sys.path[:]
-        sys.path.insert(0, module_dir)
-        try:
-            from analyze_ci import analyze_ci, CIAnalysisReport
-
-            no_cache_config = {
-                "jobs": {"test": {"steps": [{"run": "pip install pandas numpy torch"}]}}
-            }
-            fp = self._write_temp_yaml(no_cache_config)
-            try:
-                report3 = analyze_ci(fp)
-                assert (
-                    len(report3.anti_patterns) >= 1
-                ), "Expected at least 1 anti-pattern"
-            finally:
-                os.unlink(fp)
-        finally:
-            sys.path[:] = old_path
-
-    def test_func_anti_pattern_mentions_cache(self):
-        """Anti-patterns mention 'cache' for pip install without caching config."""
-        module_dir = self._get_module_dir()
-        old_path = sys.path[:]
-        sys.path.insert(0, module_dir)
-        try:
-            from analyze_ci import analyze_ci, CIAnalysisReport
-
-            no_cache_config = {
-                "jobs": {"test": {"steps": [{"run": "pip install pandas numpy torch"}]}}
-            }
-            fp = self._write_temp_yaml(no_cache_config)
-            try:
-                report3 = analyze_ci(fp)
-                assert any(
-                    "cache" in str(p).lower() for p in report3.anti_patterns
-                ), "No anti-pattern mentions cache"
-            finally:
-                os.unlink(fp)
-        finally:
-            sys.path[:] = old_path
-
-    def test_func_nonexistent_file_raises_error(self):
-        """analyze_ci('definitely_nonexistent_file.yml') raises FileNotFoundError."""
-        module_dir = self._get_module_dir()
-        old_path = sys.path[:]
-        sys.path.insert(0, module_dir)
-        try:
-            from analyze_ci import analyze_ci
-
-            with pytest.raises(FileNotFoundError):
-                analyze_ci("definitely_nonexistent_file.yml")
-        finally:
-            sys.path[:] = old_path
-
-    def test_func_report_to_json(self):
-        """report.to_json() returns valid JSON with 'metrics' key."""
-        module_dir = self._get_module_dir()
-        old_path = sys.path[:]
-        sys.path.insert(0, module_dir)
-        try:
-            from analyze_ci import analyze_ci, CIAnalysisReport
-
-            gh_config = {
-                "on": {"push": {"branches": ["main"]}},
-                "jobs": {
-                    "test": {
-                        "runs-on": "ubuntu-latest",
-                        "steps": [{"run": "pip install -r requirements.txt"}],
-                    }
-                },
-            }
-            fp = self._write_temp_yaml(gh_config)
-            try:
-                report = analyze_ci(fp)
-                json_out = report.to_json()
-                parsed = json.loads(json_out)
-                assert (
-                    "metrics" in parsed
-                ), f"'metrics' not in JSON output: {list(parsed.keys())}"
-            finally:
-                os.unlink(fp)
-        finally:
-            sys.path[:] = old_path
+    def test_error_pattern_regex(self):
+        """Parser must define error patterns as regex."""
+        with open(PARSER_FILE, "r", encoding="utf-8") as f:
+            src = f.read()
+        has_patterns = (
+            "re.compile" in src
+            or "re.search" in src
+            or "re.match" in src
+            or "ERROR" in src
+        )
+        assert has_patterns, "Expected regex-based error pattern matching in parser"

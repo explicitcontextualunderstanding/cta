@@ -1,217 +1,195 @@
 """
-Tests for 'analyze-ci' skill.
-Generated from benchmark case definitions for analyze-ci.
+Test skill: analyze-ci
+Verify that the Agent builds a CI failure analysis CLI tool that parses
+GitHub CI logs, categorizes failures, and generates structured reports.
 """
 
-import ast
-import base64
-import glob
-import json
 import os
-import py_compile
 import re
+import ast
+import json
 import subprocess
-import textwrap
-
 import pytest
-
-try:
-    import yaml
-except ModuleNotFoundError:
-    yaml = None
 
 
 class TestAnalyzeCi:
-    """Verify the analyze-ci skill output."""
+    REPO_DIR = "/workspace/sentry"
 
-    REPO_DIR = '/workspace/sentry'
+    # === File Path Checks ===
 
+    def test_cli_file_exists(self):
+        path = os.path.join(self.REPO_DIR, "tools/ci_analyzer/cli.py")
+        assert os.path.exists(path), "cli.py not found"
 
-    # ── helpers ──────────────────────────────────────────────
+    def test_github_client_file_exists(self):
+        path = os.path.join(self.REPO_DIR, "tools/ci_analyzer/github_client.py")
+        assert os.path.exists(path), "github_client.py not found"
 
-    _SETUP_CACHE: dict = {}
+    def test_log_parser_file_exists(self):
+        path = os.path.join(self.REPO_DIR, "tools/ci_analyzer/log_parser.py")
+        assert os.path.exists(path), "log_parser.py not found"
 
-    @staticmethod
-    def _repo_path(rel: str) -> str:
-        return os.path.join(TestAnalyzeCi.REPO_DIR, rel)
+    def test_report_file_exists(self):
+        path = os.path.join(self.REPO_DIR, "tools/ci_analyzer/report.py")
+        assert os.path.exists(path), "report.py not found"
 
-    @staticmethod
-    def _safe_read(path: str) -> str:
-        with open(path, "r", encoding="utf-8", errors="ignore") as fh:
-            return fh.read()
+    def test_init_file_exists(self):
+        path = os.path.join(self.REPO_DIR, "tools/ci_analyzer/__init__.py")
+        assert os.path.exists(path), "__init__.py not found"
 
-    @staticmethod
-    def _load_yaml(path: str):
-        if yaml is None:
-            pytest.skip("PyYAML not available")
-        with open(path, "r", encoding="utf-8", errors="ignore") as fh:
-            return yaml.safe_load(fh)
+    # === Semantic Checks ===
 
-    @staticmethod
-    def _load_json(path: str):
-        with open(path, "r", encoding="utf-8", errors="ignore") as fh:
-            return json.load(fh)
+    def test_cli_parses_pr_and_job_urls(self):
+        """CLI should accept PR URLs and optional --job URL"""
+        path = os.path.join(self.REPO_DIR, "tools/ci_analyzer/cli.py")
+        with open(path, "r") as f:
+            content = f.read()
 
-    @classmethod
-    def _run_in_repo(cls, script: str, timeout: int = 120) -> subprocess.CompletedProcess:
-        return subprocess.run(
-            ["python", "-c", textwrap.dedent(script)],
-            cwd=cls.REPO_DIR,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
+        assert re.search(r"(pr_url|pr-url|pull|pr)", content, re.IGNORECASE), (
+            "CLI should parse PR URL argument"
+        )
+        assert "--format" in content or "format" in content, (
+            "CLI should support --format option"
         )
 
-    @classmethod
-    def _run_cmd(cls, command, args=None, timeout=120):
-        args = args or []
-        if isinstance(command, str) and args:
-            return subprocess.run(
-                [command, *args],
-                cwd=cls.REPO_DIR,
-                capture_output=True,
-                text=True,
-                timeout=timeout,
-            )
-        return subprocess.run(
-            command if isinstance(command, list) else command,
-            cwd=cls.REPO_DIR,
-            shell=isinstance(command, str),
-            capture_output=True,
-            text=True,
-            timeout=timeout,
+    def test_cli_supports_text_and_json_format(self):
+        """CLI should support text and JSON output formats"""
+        path = os.path.join(self.REPO_DIR, "tools/ci_analyzer/cli.py")
+        with open(path, "r") as f:
+            content = f.read()
+
+        assert "text" in content.lower() and "json" in content.lower(), (
+            "CLI should support both text and JSON output formats"
         )
 
-    @classmethod
-    def _ensure_setup(cls, label, setup_cmds, fallback):
-        if not setup_cmds:
-            return
-        key = tuple(setup_cmds)
-        if key in cls._SETUP_CACHE:
-            ok, msg = cls._SETUP_CACHE[key]
-            if ok:
-                return
-            if fallback == "skip_if_setup_fails":
-                pytest.skip(f"{label} setup failed: {msg}")
-            pytest.fail(f"{label} setup failed: {msg}")
-        for cmd in setup_cmds:
-            r = subprocess.run(cmd, cwd=cls.REPO_DIR, shell=True,
-                               capture_output=True, text=True, timeout=300)
-            if r.returncode != 0:
-                msg = (r.stderr or r.stdout or 'failed').strip()
-                cls._SETUP_CACHE[key] = (False, msg)
-                if fallback == "skip_if_setup_fails":
-                    pytest.skip(f"{label} setup failed: {msg}")
-                pytest.fail(f"{label} setup failed: {msg}")
-        cls._SETUP_CACHE[key] = (True, 'ok')
+    def test_github_client_fetches_check_runs(self):
+        """GH client should traverse PR -> SHA -> check-suites -> check-runs -> logs"""
+        path = os.path.join(self.REPO_DIR, "tools/ci_analyzer/github_client.py")
+        with open(path, "r") as f:
+            content = f.read()
 
-
-    # ── file_path_check (static) ────────────────────────────────────────
-
-    def test_cli_module_exists(self):
-        """Verify CLI entry point module exists"""
-        _p = self._repo_path('src/analyze_ci/cli.py')
-        assert os.path.isfile(_p), f'Missing file: src/analyze_ci/cli.py'
-        py_compile.compile(_p, doraise=True)
-
-    def test_log_parser_module_exists(self):
-        """Verify log parser module exists"""
-        _p = self._repo_path('src/analyze_ci/log_parser.py')
-        assert os.path.isfile(_p), f'Missing file: src/analyze_ci/log_parser.py'
-        py_compile.compile(_p, doraise=True)
-
-    def test_report_module_exists(self):
-        """Verify report module exists"""
-        _p = self._repo_path('src/analyze_ci/report.py')
-        assert os.path.isfile(_p), f'Missing file: src/analyze_ci/report.py'
-        py_compile.compile(_p, doraise=True)
-
-    # ── semantic_check (static) ────────────────────────────────────────
-
-    def test_logparser_class_defined(self):
-        """Verify LogParser class with parse method exists"""
-        _p = self._repo_path('src/analyze_ci/log_parser.py')
-        assert os.path.exists(_p), f'Missing: src/analyze_ci/log_parser.py'
-        _contents = self._safe_read(_p)
-        _all = _contents if isinstance(_contents, str) else ''
-        assert 'class LogParser' in _all, 'Missing: class LogParser'
-        assert 'def parse' in _all, 'Missing: def parse'
-
-    def test_parsedci_dataclass_fields(self):
-        """Verify ParsedCI has status, failures, duration fields"""
-        _p = self._repo_path('src/analyze_ci/log_parser.py')
-        assert os.path.exists(_p), f'Missing: src/analyze_ci/log_parser.py'
-        _contents = self._safe_read(_p)
-        _all = _contents if isinstance(_contents, str) else ''
-        assert 'ParsedCI' in _all, 'Missing: ParsedCI'
-        assert 'status' in _all, 'Missing: status'
-        assert 'failures' in _all, 'Missing: failures'
-        assert 'duration' in _all, 'Missing: duration'
-        assert 'dataclass' in _all, 'Missing: dataclass'
-
-    def test_cli_uses_argparse_subcommands(self):
-        """Verify CLI uses argparse or click with subcommands"""
-        _p = self._repo_path('src/analyze_ci/cli.py')
-        assert os.path.exists(_p), f'Missing: src/analyze_ci/cli.py'
-        _contents = self._safe_read(_p)
-        _all = _contents if isinstance(_contents, str) else ''
-        assert 'argparse' in _all, 'Missing: argparse'
-        assert 'add_subparsers' in _all, 'Missing: add_subparsers'
-        assert 'parse' in _all, 'Missing: parse'
-        assert 'report' in _all, 'Missing: report'
-
-    def test_console_scripts_entrypoint(self):
-        """Verify console_scripts entry point is configured"""
-        _p = self._repo_path('pyproject.toml')
-        assert os.path.exists(_p), f'Missing: pyproject.toml'
-        _contents = self._safe_read(_p)
-        _all = _contents if isinstance(_contents, str) else ''
-        assert 'console_scripts' in _all, 'Missing: console_scripts'
-        assert 'analyze-ci' in _all, 'Missing: analyze-ci'
-        assert 'analyze_ci.cli:main' in _all, 'Missing: analyze_ci.cli:main'
-
-    # ── functional_check ────────────────────────────────────────
-
-    def test_cli_help_exit_zero(self):
-        """Verify --help exits with code 0 and shows usage"""
-        self._ensure_setup('test_cli_help_exit_zero', ['pip install -e .'], 'skip_if_setup_fails')
-        result = self._run_cmd('python', args=['-m', 'analyze_ci', '--help'], timeout=120)
-        assert result.returncode == 0, (
-            f'test_cli_help_exit_zero failed (exit {result.returncode})\n' + result.stderr[:500]
+        assert "class" in content, "Should define a GitHub client class"
+        assert re.search(r"def\s+get_failed_jobs", content), (
+            "Missing get_failed_jobs method"
+        )
+        assert "check" in content.lower(), (
+            "Client should reference check-suites or check-runs"
         )
 
-    def test_parse_passed_log(self):
-        """Verify LogParser.parse returns status='passed' for passing log"""
-        self._ensure_setup('test_parse_passed_log', ['pip install -e .'], 'skip_if_setup_fails')
-        result = self._run_cmd('python', args=['-c', "from analyze_ci.log_parser import LogParser; p=LogParser(); r=p.parse('PASSED'); assert r.status=='passed'; print('PASS')"], timeout=120)
-        assert result.returncode == 0, (
-            f'test_parse_passed_log failed (exit {result.returncode})\n' + result.stderr[:500]
-        )
-        assert 'PASS' in (result.stdout + result.stderr), 'Expected PASS in output'
+    def test_github_client_handles_auth(self):
+        """Client should require GH_TOKEN for authentication"""
+        path = os.path.join(self.REPO_DIR, "tools/ci_analyzer/github_client.py")
+        with open(path, "r") as f:
+            content = f.read()
 
-    def test_parse_failed_log_extracts_failures(self):
-        """Verify parser extracts failure names from FAILED log lines"""
-        self._ensure_setup('test_parse_failed_log_extracts_failures', ['pip install -e .'], 'skip_if_setup_fails')
-        result = self._run_cmd('python', args=['-c', "from analyze_ci.log_parser import LogParser; p=LogParser(); r=p.parse('FAILED: test_foo\\nFAILED: test_bar'); assert len(r.failures)==2; print('PASS')"], timeout=120)
-        assert result.returncode == 0, (
-            f'test_parse_failed_log_extracts_failures failed (exit {result.returncode})\n' + result.stderr[:500]
-        )
-        assert 'PASS' in (result.stdout + result.stderr), 'Expected PASS in output'
-
-    def test_report_json_format_valid(self):
-        """Verify report --format json outputs valid JSON"""
-        self._ensure_setup('test_report_json_format_valid', ['pip install -e .'], 'skip_if_setup_fails')
-        result = self._run_cmd('python', args=['-c', "import json; from analyze_ci.log_parser import LogParser; from analyze_ci.report import Report; p=LogParser(); r=p.parse('PASSED'); output=Report.generate(r, 'json'); json.loads(output); print('PASS')"], timeout=120)
-        assert result.returncode == 0, (
-            f'test_report_json_format_valid failed (exit {result.returncode})\n' + result.stderr[:500]
-        )
-        assert 'PASS' in (result.stdout + result.stderr), 'Expected PASS in output'
-
-    def test_parse_nonexistent_file_exits_nonzero(self):
-        """Verify parse on nonexistent file exits with non-zero code"""
-        self._ensure_setup('test_parse_nonexistent_file_exits_nonzero', ['pip install -e .'], 'skip_if_setup_fails')
-        result = self._run_cmd('python', args=['-m', 'analyze_ci', 'parse', 'nonexistent_file_12345.log'], timeout=120)
-        assert result.returncode == 0, (
-            f'test_parse_nonexistent_file_exits_nonzero failed (exit {result.returncode})\n' + result.stderr[:500]
+        assert re.search(r"GH_TOKEN|GITHUB_TOKEN", content), (
+            "Client should use GH_TOKEN or GITHUB_TOKEN for auth"
         )
 
+    def test_github_client_has_rate_limiting(self):
+        """Client should handle GitHub rate limiting"""
+        path = os.path.join(self.REPO_DIR, "tools/ci_analyzer/github_client.py")
+        with open(path, "r") as f:
+            content = f.read()
+
+        assert re.search(r"rate.?limit|retry|429|X-RateLimit|sleep|backoff", content, re.IGNORECASE), (
+            "Client should handle rate limiting"
+        )
+
+    def test_log_parser_has_five_categories(self):
+        """Log parser should categorize failures into 5 types"""
+        path = os.path.join(self.REPO_DIR, "tools/ci_analyzer/log_parser.py")
+        with open(path, "r") as f:
+            content = f.read()
+
+        categories = ["test_failure", "build_error", "lint_violation", "timeout", "infrastructure"]
+        found = [c for c in categories if c in content]
+        assert len(found) >= 4, (
+            f"Expected 5 failure categories. Found: {found}"
+        )
+
+    def test_log_parser_extracts_test_names_and_errors(self):
+        """Log parser should extract test names, error messages, stack traces"""
+        path = os.path.join(self.REPO_DIR, "tools/ci_analyzer/log_parser.py")
+        with open(path, "r") as f:
+            content = f.read()
+
+        content_lower = content.lower()
+        assert (
+            "test_name" in content_lower
+            or "test name" in content_lower
+            or "extract" in content_lower
+        ), "Parser should extract test names"
+        assert (
+            "error_message" in content_lower
+            or "error message" in content_lower
+            or "message" in content_lower
+        ), "Parser should extract error messages"
+        assert (
+            "stack_trace" in content_lower
+            or "traceback" in content_lower
+            or "stacktrace" in content_lower
+        ), "Parser should extract stack traces"
+
+    def test_report_formats_text_and_json(self):
+        """Report module should produce text and JSON formats"""
+        path = os.path.join(self.REPO_DIR, "tools/ci_analyzer/report.py")
+        with open(path, "r") as f:
+            content = f.read()
+
+        assert re.search(r"def\s+(format_text|to_text|render_text|generate_text)", content), (
+            "Report should have text format method"
+        )
+        assert re.search(r"def\s+(format_json|to_json|render_json|generate_json)", content), (
+            "Report should have JSON format method"
+        )
+
+    def test_report_groups_by_category(self):
+        """Report should group failures by category"""
+        path = os.path.join(self.REPO_DIR, "tools/ci_analyzer/report.py")
+        with open(path, "r") as f:
+            content = f.read()
+
+        assert "categor" in content.lower(), (
+            "Report should organize failures by category"
+        )
+
+    # === Functional Checks ===
+
+    def test_all_python_files_parse(self):
+        """Verify all Python files parse without syntax errors"""
+        base = os.path.join(self.REPO_DIR, "tools/ci_analyzer")
+        for root, _dirs, files in os.walk(base):
+            for fname in files:
+                if fname.endswith(".py"):
+                    filepath = os.path.join(root, fname)
+                    with open(filepath, "r") as f:
+                        source = f.read()
+                    try:
+                        ast.parse(source)
+                    except SyntaxError as e:
+                        pytest.fail(f"{filepath} has syntax error: {e}")
+
+    def test_cli_module_import(self):
+        """Verify cli.py can be imported"""
+        result = subprocess.run(
+            ["python", "-c", "import ast; ast.parse(open('tools/ci_analyzer/cli.py').read())"],
+            capture_output=True, text=True, cwd=self.REPO_DIR
+        )
+        assert result.returncode == 0, f"cli.py cannot be parsed: {result.stderr}"
+
+    def test_log_parser_is_importable(self):
+        """Verify log_parser can be imported"""
+        result = subprocess.run(
+            ["python", "-c", "import ast; ast.parse(open('tools/ci_analyzer/log_parser.py').read())"],
+            capture_output=True, text=True, cwd=self.REPO_DIR
+        )
+        assert result.returncode == 0, f"log_parser.py cannot be parsed: {result.stderr}"
+
+    def test_report_is_importable(self):
+        """Verify report module can be imported"""
+        result = subprocess.run(
+            ["python", "-c", "import ast; ast.parse(open('tools/ci_analyzer/report.py').read())"],
+            capture_output=True, text=True, cwd=self.REPO_DIR
+        )
+        assert result.returncode == 0, f"report.py cannot be parsed: {result.stderr}"

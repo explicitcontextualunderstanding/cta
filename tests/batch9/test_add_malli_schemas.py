@@ -1,186 +1,133 @@
 """
-Test for 'add-malli-schemas' skill — Clojure Malli Schema Definitions
-Validates Malli schema source files, deps.edn dependency, validation middleware,
-schema syntax (:map, :optional), humanize error formatting, coercion transformers,
-and test file assertions.
+Test skill: add-malli-schemas
+Verify that the Agent adds Malli schemas to Metabase Collection API endpoints.
 """
 
-import glob
 import os
 import re
-
 import pytest
 
 
 class TestAddMalliSchemas:
-    """Verify Malli schema definitions, middleware, and test coverage in a Clojure project."""
-
     REPO_DIR = "/workspace/metabase"
 
-    # ── helpers ──────────────────────────────────────────────────────────
+    # === File Path Checks ===
 
-    @staticmethod
-    def _read_file(path: str) -> str:
-        try:
-            with open(path, "r", errors="ignore") as fh:
-                return fh.read()
-        except OSError:
-            return ""
-
-    def _find_schema_file(self) -> str:
-        """Locate the Malli schema source file."""
+    def test_collection_api_clj_exists(self):
+        """Verify collection API Clojure file exists"""
         candidates = [
-            os.path.join(self.REPO_DIR, "src", "myapp", "schemas.cljc"),
-            os.path.join(self.REPO_DIR, "src", "myapp", "schemas.clj"),
+            os.path.join(self.REPO_DIR, "src/metabase/api/collection.clj"),
         ]
-        # Also search recursively for any schemas.cljc
-        found = glob.glob(os.path.join(self.REPO_DIR, "src", "**", "schemas.cljc"), recursive=True)
-        found += glob.glob(os.path.join(self.REPO_DIR, "src", "**", "schemas.clj"), recursive=True)
-        for c in candidates + found:
-            if os.path.isfile(c):
-                return c
-        return candidates[0]  # return expected path for assertion
+        found = any(os.path.exists(c) for c in candidates)
+        assert found, "Collection API file not found"
 
-    def _find_validation_middleware(self) -> str:
-        """Locate validation middleware file."""
-        candidates = [
-            os.path.join(self.REPO_DIR, "src", "myapp", "middleware", "validation.clj"),
-        ]
-        found = glob.glob(os.path.join(self.REPO_DIR, "src", "**", "validation.clj"), recursive=True)
-        for c in candidates + found:
-            if os.path.isfile(c):
-                return c
-        return candidates[0]
+    # === Semantic Checks ===
 
-    # ── file_path_check ──────────────────────────────────────────────────
-
-    def test_schemas_source_file_exists(self):
-        """Malli schema source file must exist."""
-        schema_file = self._find_schema_file()
-        assert os.path.isfile(schema_file), f"Schema file not found (tried {schema_file})"
-        assert os.path.getsize(schema_file) > 0
-
-    def test_deps_edn_with_malli_dependency(self):
-        """deps.edn must exist and include metosin/malli dependency."""
-        deps_path = os.path.join(self.REPO_DIR, "deps.edn")
-        if not os.path.isfile(deps_path):
-            # Try project.clj as alternative
-            deps_path = os.path.join(self.REPO_DIR, "project.clj")
-        assert os.path.isfile(deps_path), "Neither deps.edn nor project.clj found"
-        content = self._read_file(deps_path)
-        assert "metosin/malli" in content, "metosin/malli dependency not found"
-
-    def test_validation_middleware_file_exists(self):
-        """Validation middleware file must exist for ring request validation."""
-        path = self._find_validation_middleware()
-        assert os.path.isfile(path), f"{path} does not exist"
-        assert os.path.getsize(path) > 0
-
-    # ── semantic_check ───────────────────────────────────────────────────
-
-    def test_schema_uses_malli_map_syntax(self):
-        """Schema must use [:map ...] syntax with malli.core namespace import."""
-        schema_file = self._find_schema_file()
-        if not os.path.isfile(schema_file):
-            pytest.skip("schema file not found")
-        content = self._read_file(schema_file)
-        assert "malli.core" in content or "malli.core :as m" in content, \
-            "malli.core namespace import not found"
-        assert "[:map" in content, "[:map schema definition pattern not found"
-
-    def test_humanize_error_formatting_present(self):
-        """Middleware must use me/humanize for human-readable error messages."""
-        path = self._find_validation_middleware()
-        if not os.path.isfile(path):
-            pytest.skip("validation middleware not found")
-        content = self._read_file(path)
-        assert "malli.error" in content, "malli.error namespace not imported"
-        assert "humanize" in content, "humanize function not referenced"
-
-    def test_coercion_transformer_configured(self):
-        """Validation middleware must configure malli.transform for coercion."""
-        path = self._find_validation_middleware()
-        if not os.path.isfile(path):
-            pytest.skip("validation middleware not found")
-        content = self._read_file(path)
-        assert "malli.transform" in content or "mt/" in content, \
-            "malli.transform import or transformer reference not found"
-        has_transformer = (
-            "transformer" in content
-            or "string-transformer" in content
-            or "json-transformer" in content
+    def test_malli_schema_imports(self):
+        """Verify Malli schema namespace is required"""
+        path = os.path.join(self.REPO_DIR, "src/metabase/api/collection.clj")
+        with open(path) as f:
+            content = f.read()
+        has_malli = (
+            "malli" in content
+            or "mu/defn" in content
+            or ":> " in content
+            or "ms/" in content
+            or "metabase.util.malli" in content
         )
-        assert has_transformer, "No transformer instantiation found"
+        assert has_malli, "No Malli schema imports found in collection.clj"
 
-    def test_schema_registry_defined(self):
-        """Schema file should define registry for reusable schema references."""
-        schema_file = self._find_schema_file()
-        if not os.path.isfile(schema_file):
-            pytest.skip("schema file not found")
-        content = self._read_file(schema_file)
-        has_registry = (
-            "registry" in content
-            or "mu/merge" in content
-            or "def " in content  # def schema definition
+    def test_get_collection_has_schema(self):
+        """Verify GET /api/collection endpoint has Malli schema"""
+        path = os.path.join(self.REPO_DIR, "src/metabase/api/collection.clj")
+        with open(path) as f:
+            content = f.read()
+        # Look for schema annotations on the GET collection endpoint
+        has_schema = (
+            ":> " in content
+            or "defendpoint" in content.lower()
+            or "mu/defn" in content
+            or "schema" in content.lower()
         )
-        assert has_registry, "No schema registry or named schema definition found"
+        assert has_schema, "GET /api/collection lacks Malli schema definition"
 
-    # ── functional_check (static source inspection) ──────────────────────
-
-    def test_schema_has_required_typed_fields(self):
-        """Schema [:map] must have at least one strongly-typed required field."""
-        schema_file = self._find_schema_file()
-        if not os.path.isfile(schema_file):
-            pytest.skip("schema file not found")
-        content = self._read_file(schema_file)
-        assert "[:map" in content, "[:map definition not found"
-        # Check for Malli primitive types
-        types = [":string", ":int", ":uuid", ":boolean", ":keyword", ":double"]
-        found = any(t in content for t in types)
-        assert found, "No Malli primitive types found in schema fields"
-
-    def test_missing_required_key_fails_validation(self):
-        """Schema must have at least one required field (without {:optional true})."""
-        schema_file = self._find_schema_file()
-        if not os.path.isfile(schema_file):
-            pytest.skip("schema file not found")
-        content = self._read_file(schema_file)
-        lines = content.splitlines()
-        map_section = False
-        has_required = False
-        for line in lines:
-            if "[:map" in line:
-                map_section = True
-            if map_section and re.search(r"\[:\w+", line):
-                if "{:optional true}" not in line:
-                    has_required = True
-                    break
-        assert has_required, "No required fields found in :map schema (all are optional)"
-
-    def test_optional_key_present(self):
-        """At least one field should be marked {:optional true}."""
-        schema_file = self._find_schema_file()
-        if not os.path.isfile(schema_file):
-            pytest.skip("schema file not found")
-        content = self._read_file(schema_file)
-        assert "{:optional true}" in content, \
-            "No {:optional true} field annotation found in schema"
-
-    def test_test_file_has_validate_assertions(self):
-        """Test file must contain m/validate or m/explain assertions."""
-        candidates = [
-            os.path.join(self.REPO_DIR, "test", "myapp", "schemas_test.clj"),
-            os.path.join(self.REPO_DIR, "test", "myapp", "schemas_test.cljc"),
-        ]
-        found_files = glob.glob(
-            os.path.join(self.REPO_DIR, "test", "**", "*schemas*test*"), recursive=True
+    def test_post_collection_has_schema(self):
+        """Verify POST /api/collection endpoint has request body schema"""
+        path = os.path.join(self.REPO_DIR, "src/metabase/api/collection.clj")
+        with open(path) as f:
+            content = f.read()
+        # POST endpoint should have body schema validation
+        has_post_schema = "POST" in content and (
+            ":body" in content
+            or "body" in content.lower()
         )
-        all_candidates = candidates + found_files
-        found = False
-        for path in all_candidates:
-            if os.path.isfile(path):
-                content = self._read_file(path)
-                if "validate" in content and "(is " in content:
-                    found = True
-                    break
-        assert found, "No test file with m/validate assertions found"
+        assert has_post_schema, "POST /api/collection lacks request body schema"
+
+    def test_put_collection_has_schema(self):
+        """Verify PUT /api/collection/:id endpoint has schema"""
+        path = os.path.join(self.REPO_DIR, "src/metabase/api/collection.clj")
+        with open(path) as f:
+            content = f.read()
+        has_put = "PUT" in content
+        assert has_put, "PUT endpoint not found in collection.clj"
+
+    def test_collection_items_endpoint_has_schema(self):
+        """Verify GET /api/collection/:id/items has response schema"""
+        path = os.path.join(self.REPO_DIR, "src/metabase/api/collection.clj")
+        with open(path) as f:
+            content = f.read()
+        has_items = "items" in content
+        assert has_items, "/items endpoint not found in collection.clj"
+
+    def test_schemas_define_required_fields(self):
+        """Verify schemas define expected fields like name, description"""
+        path = os.path.join(self.REPO_DIR, "src/metabase/api/collection.clj")
+        with open(path) as f:
+            content = f.read()
+        content_lower = content.lower()
+        has_name = ":name" in content or "name" in content_lower
+        has_desc = ":description" in content or "description" in content_lower
+        assert has_name and has_desc, "Schemas missing required fields (:name, :description)"
+
+    # === Functional Checks ===
+
+    def test_collection_clj_valid_syntax(self):
+        """Verify collection.clj has balanced parentheses (basic Clojure validation)"""
+        path = os.path.join(self.REPO_DIR, "src/metabase/api/collection.clj")
+        with open(path) as f:
+            content = f.read()
+        # Remove strings and comments
+        cleaned = re.sub(r'"[^"]*"', '', content)
+        cleaned = re.sub(r';[^\n]*', '', cleaned)
+        opens = cleaned.count('(') + cleaned.count('[') + cleaned.count('{')
+        closes = cleaned.count(')') + cleaned.count(']') + cleaned.count('}')
+        assert opens == closes, (
+            f"Unbalanced delimiters: opens={opens}, closes={closes}"
+        )
+
+    def test_clojure_namespace_declaration_present(self):
+        """Verify the ns declaration is valid"""
+        path = os.path.join(self.REPO_DIR, "src/metabase/api/collection.clj")
+        with open(path) as f:
+            content = f.read()
+        assert content.strip().startswith("(ns ") or "(ns " in content[:500], (
+            "File does not start with a proper (ns ...) declaration"
+        )
+
+    def test_no_broken_requires(self):
+        """Verify no require references to non-existent namespaces"""
+        path = os.path.join(self.REPO_DIR, "src/metabase/api/collection.clj")
+        with open(path) as f:
+            content = f.read()
+        # Extract required namespaces
+        requires = re.findall(r'\[(\S+)', content[:2000])
+        # Filter to metabase namespaces
+        mb_requires = [r for r in requires if r.startswith("metabase.")]
+        # Check at least some of them resolve to files
+        checked = 0
+        for ns in mb_requires[:5]:
+            ns_path = ns.replace(".", "/").replace("-", "_") + ".clj"
+            full_path = os.path.join(self.REPO_DIR, "src", ns_path)
+            if os.path.exists(full_path):
+                checked += 1
+        assert checked > 0, "No required metabase namespaces resolve to files"

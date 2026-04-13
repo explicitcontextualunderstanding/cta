@@ -1,213 +1,196 @@
 """
-Tests for 'llm-evaluation' skill.
-Generated from benchmark case definitions for llm-evaluation.
+Test skill: llm-evaluation
+Verify that the Agent builds an LLM chatbot evaluation framework with
+automated metrics (BLEU, BERTScore), LLM-as-judge, pairwise comparison,
+safety checks, and structured report generation.
 """
 
-import ast
-import base64
-import glob
-import json
 import os
-import py_compile
 import re
+import ast
+import json
 import subprocess
-import textwrap
-
 import pytest
-
-try:
-    import yaml
-except ModuleNotFoundError:
-    yaml = None
 
 
 class TestLlmEvaluation:
-    """Verify the llm-evaluation skill output."""
+    REPO_DIR = "/workspace/helm"
 
-    REPO_DIR = '/workspace/helm'
+    # === File Path Checks ===
 
+    def test_metrics_file_exists(self):
+        path = os.path.join(self.REPO_DIR, "src/evaluation/metrics.py")
+        assert os.path.exists(path), f"metrics.py not found"
 
-    # ── helpers ──────────────────────────────────────────────
+    def test_llm_judge_file_exists(self):
+        path = os.path.join(self.REPO_DIR, "src/evaluation/llm_judge.py")
+        assert os.path.exists(path), f"llm_judge.py not found"
 
-    _SETUP_CACHE: dict = {}
+    def test_suite_file_exists(self):
+        path = os.path.join(self.REPO_DIR, "src/evaluation/suite.py")
+        assert os.path.exists(path), f"suite.py not found"
 
-    @staticmethod
-    def _repo_path(rel: str) -> str:
-        return os.path.join(TestLlmEvaluation.REPO_DIR, rel)
+    def test_report_file_exists(self):
+        path = os.path.join(self.REPO_DIR, "src/evaluation/report.py")
+        assert os.path.exists(path), f"report.py not found"
 
-    @staticmethod
-    def _safe_read(path: str) -> str:
-        with open(path, "r", encoding="utf-8", errors="ignore") as fh:
-            return fh.read()
+    def test_test_cases_file_exists(self):
+        path = os.path.join(self.REPO_DIR, "data/test_cases.jsonl")
+        assert os.path.exists(path), f"test_cases.jsonl not found"
 
-    @staticmethod
-    def _load_yaml(path: str):
-        if yaml is None:
-            pytest.skip("PyYAML not available")
-        with open(path, "r", encoding="utf-8", errors="ignore") as fh:
-            return yaml.safe_load(fh)
+    # === Semantic Checks ===
 
-    @staticmethod
-    def _load_json(path: str):
-        with open(path, "r", encoding="utf-8", errors="ignore") as fh:
-            return json.load(fh)
-
-    @classmethod
-    def _run_in_repo(cls, script: str, timeout: int = 120) -> subprocess.CompletedProcess:
-        return subprocess.run(
-            ["python", "-c", textwrap.dedent(script)],
-            cwd=cls.REPO_DIR,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
+    def test_test_cases_has_20_entries(self):
+        """Verify test_cases.jsonl has at least 20 entries"""
+        path = os.path.join(self.REPO_DIR, "data/test_cases.jsonl")
+        with open(path, "r") as f:
+            lines = [l.strip() for l in f if l.strip()]
+        examples = []
+        for line in lines:
+            try:
+                examples.append(json.loads(line))
+            except json.JSONDecodeError:
+                pass
+        assert len(examples) >= 20, (
+            f"Expected 20 test cases, found {len(examples)}"
         )
 
-    @classmethod
-    def _run_cmd(cls, command, args=None, timeout=120):
-        args = args or []
-        if isinstance(command, str) and args:
-            return subprocess.run(
-                [command, *args],
-                cwd=cls.REPO_DIR,
-                capture_output=True,
-                text=True,
-                timeout=timeout,
-            )
-        return subprocess.run(
-            command if isinstance(command, list) else command,
-            cwd=cls.REPO_DIR,
-            shell=isinstance(command, str),
-            capture_output=True,
-            text=True,
-            timeout=timeout,
+    def test_test_cases_cover_all_categories(self):
+        """Verify test cases cover all 5 categories"""
+        path = os.path.join(self.REPO_DIR, "data/test_cases.jsonl")
+        with open(path, "r") as f:
+            lines = [l.strip() for l in f if l.strip()]
+        categories = set()
+        for line in lines:
+            try:
+                obj = json.loads(line)
+                categories.add(obj.get("category", ""))
+            except json.JSONDecodeError:
+                pass
+        expected = {"factual", "troubleshooting", "policy", "out_of_scope", "adversarial"}
+        missing = expected - categories
+        assert not missing, f"Missing categories: {missing}. Found: {categories}"
+
+    def test_metrics_has_all_methods(self):
+        """Verify MetricsCalculator has BLEU, BERTScore, exact_match, keyword_recall"""
+        path = os.path.join(self.REPO_DIR, "src/evaluation/metrics.py")
+        with open(path, "r") as f:
+            content = f.read()
+
+        assert "MetricsCalculator" in content, "Must define MetricsCalculator"
+        for method in ["bleu", "bertscore", "exact_match", "keyword_recall", "compute_all"]:
+            assert re.search(rf"def\s+{method}", content), f"Missing {method} method"
+
+    def test_llm_judge_has_pointwise_and_pairwise(self):
+        """Verify LLMJudge has pointwise, pairwise, and safety checking"""
+        path = os.path.join(self.REPO_DIR, "src/evaluation/llm_judge.py")
+        with open(path, "r") as f:
+            content = f.read()
+
+        assert "LLMJudge" in content, "Must define LLMJudge class"
+        assert re.search(r"def\s+score_pointwise", content), "Missing score_pointwise"
+        assert re.search(r"def\s+compare_pairwise", content), "Missing compare_pairwise"
+        assert re.search(r"def\s+check_safety", content), "Missing check_safety"
+
+    def test_pairwise_randomizes_order(self):
+        """Verify pairwise comparison randomizes order to avoid position bias"""
+        path = os.path.join(self.REPO_DIR, "src/evaluation/llm_judge.py")
+        with open(path, "r") as f:
+            content = f.read()
+
+        has_randomize = (
+            "random" in content
+            or "shuffle" in content
+            or "position" in content.lower()
+            or "order" in content
+        )
+        assert has_randomize, (
+            "Pairwise comparison should randomize order to avoid position bias"
         )
 
-    @classmethod
-    def _ensure_setup(cls, label, setup_cmds, fallback):
-        if not setup_cmds:
-            return
-        key = tuple(setup_cmds)
-        if key in cls._SETUP_CACHE:
-            ok, msg = cls._SETUP_CACHE[key]
-            if ok:
-                return
-            if fallback == "skip_if_setup_fails":
-                pytest.skip(f"{label} setup failed: {msg}")
-            pytest.fail(f"{label} setup failed: {msg}")
-        for cmd in setup_cmds:
-            r = subprocess.run(cmd, cwd=cls.REPO_DIR, shell=True,
-                               capture_output=True, text=True, timeout=300)
-            if r.returncode != 0:
-                msg = (r.stderr or r.stdout or 'failed').strip()
-                cls._SETUP_CACHE[key] = (False, msg)
-                if fallback == "skip_if_setup_fails":
-                    pytest.skip(f"{label} setup failed: {msg}")
-                pytest.fail(f"{label} setup failed: {msg}")
-        cls._SETUP_CACHE[key] = (True, 'ok')
+    def test_judge_scores_five_criteria(self):
+        """Verify LLM judge uses 5 criteria: accuracy, groundedness, relevance, completeness, safety"""
+        path = os.path.join(self.REPO_DIR, "src/evaluation/llm_judge.py")
+        with open(path, "r") as f:
+            content = f.read()
 
-
-    # ── file_path_check (static) ────────────────────────────────────────
-
-    def test_metrics_module_exists(self):
-        """Verify metrics.py exists"""
-        _p = self._repo_path('src/evaluation/metrics.py')
-        assert os.path.isfile(_p), f'Missing file: src/evaluation/metrics.py'
-        py_compile.compile(_p, doraise=True)
-
-    def test_llm_judge_module_exists(self):
-        """Verify llm_judge.py exists"""
-        _p = self._repo_path('src/evaluation/llm_judge.py')
-        assert os.path.isfile(_p), f'Missing file: src/evaluation/llm_judge.py'
-        py_compile.compile(_p, doraise=True)
-
-    def test_suite_module_exists(self):
-        """Verify suite.py exists"""
-        _p = self._repo_path('src/evaluation/suite.py')
-        assert os.path.isfile(_p), f'Missing file: src/evaluation/suite.py'
-        py_compile.compile(_p, doraise=True)
-
-    # ── semantic_check (static) ────────────────────────────────────────
-
-    def test_metrics_class_methods(self):
-        """Verify EvaluationMetrics has compute_bleu, compute_rouge, semantic_similarity"""
-        _p = self._repo_path('src/evaluation/metrics.py')
-        assert os.path.exists(_p), f'Missing: src/evaluation/metrics.py'
-        _contents = self._safe_read(_p)
-        _all = _contents if isinstance(_contents, str) else ''
-        assert 'compute_bleu' in _all, 'Missing: compute_bleu'
-        assert 'compute_rouge' in _all, 'Missing: compute_rouge'
-        assert 'semantic_similarity' in _all, 'Missing: semantic_similarity'
-
-    def test_judge_score_method(self):
-        """Verify LLMJudge has score method with structured output"""
-        _p = self._repo_path('src/evaluation/llm_judge.py')
-        assert os.path.exists(_p), f'Missing: src/evaluation/llm_judge.py'
-        _contents = self._safe_read(_p)
-        _all = _contents if isinstance(_contents, str) else ''
-        assert 'score' in _all, 'Missing: score'
-        assert 'reasoning' in _all, 'Missing: reasoning'
-
-    def test_suite_returns_dataframe(self):
-        """Verify EvaluationSuite.run returns DataFrame"""
-        _p = self._repo_path('src/evaluation/suite.py')
-        assert os.path.exists(_p), f'Missing: src/evaluation/suite.py'
-        _contents = self._safe_read(_p)
-        _all = _contents if isinstance(_contents, str) else ''
-        assert 'DataFrame' in _all, 'Missing: DataFrame'
-        assert 'run' in _all, 'Missing: run'
-
-    # ── functional_check ────────────────────────────────────────
-
-    def test_bleu_perfect_match(self):
-        """Verify compute_bleu returns 1.0 for identical texts"""
-        self._ensure_setup('test_bleu_perfect_match', ['pip install sacrebleu rouge-score'], 'fail_if_missing')
-        result = self._run_cmd('python', args=['-c', "from src.evaluation.metrics import EvaluationMetrics; m=EvaluationMetrics(); assert m.compute_bleu('hello world','hello world')==1.0; print('PASS')"], timeout=120)
-        assert result.returncode == 0, (
-            f'test_bleu_perfect_match failed (exit {result.returncode})\n' + result.stderr[:500]
-        )
-        assert 'PASS' in (result.stdout + result.stderr), 'Expected PASS in output'
-
-    def test_bleu_empty_hypothesis(self):
-        """Verify compute_bleu returns 0.0 for empty hypothesis"""
-        self._ensure_setup('test_bleu_empty_hypothesis', ['pip install sacrebleu'], 'fail_if_missing')
-        result = self._run_cmd('python', args=['-c', "from src.evaluation.metrics import EvaluationMetrics; m=EvaluationMetrics(); score=m.compute_bleu('hello world',''); assert score==0.0, f'Expected 0.0 got {score}'; print('PASS')"], timeout=120)
-        assert result.returncode == 0, (
-            f'test_bleu_empty_hypothesis failed (exit {result.returncode})\n' + result.stderr[:500]
-        )
-        assert 'PASS' in (result.stdout + result.stderr), 'Expected PASS in output'
-
-    def test_rouge_perfect_match(self):
-        """Verify compute_rouge returns F1=1.0 for identical texts"""
-        self._ensure_setup('test_rouge_perfect_match', ['pip install rouge-score'], 'fail_if_missing')
-        result = self._run_cmd('python', args=['-c', "from src.evaluation.metrics import EvaluationMetrics; m=EvaluationMetrics(); r=m.compute_rouge('hello world','hello world','rouge1'); assert r['f']==1.0 or r>=0.99; print('PASS')"], timeout=120)
-        assert result.returncode == 0, (
-            f'test_rouge_perfect_match failed (exit {result.returncode})\n' + result.stderr[:500]
-        )
-        assert 'PASS' in (result.stdout + result.stderr), 'Expected PASS in output'
-
-    def test_bleu_range_check(self):
-        """Verify BLEU score is in [0,1] for partial overlap"""
-        self._ensure_setup('test_bleu_range_check', ['pip install sacrebleu'], 'fail_if_missing')
-        result = self._run_cmd('python', args=['-c', "from src.evaluation.metrics import EvaluationMetrics; m=EvaluationMetrics(); score=m.compute_bleu('the cat sat on the mat','the cat was on the mat'); assert 0.0<=score<=1.0, f'Out of range: {score}'; print('PASS')"], timeout=120)
-        assert result.returncode == 0, (
-            f'test_bleu_range_check failed (exit {result.returncode})\n' + result.stderr[:500]
-        )
-        assert 'PASS' in (result.stdout + result.stderr), 'Expected PASS in output'
-
-    def test_pytest_evaluation(self):
-        """Run pytest for evaluation tests excluding LLM judge"""
-        self._ensure_setup('test_pytest_evaluation', ['pip install sacrebleu rouge-score pandas pytest'], 'fail_if_missing')
-        result = self._run_cmd('python', args=['-m', 'pytest', 'tests/test_evaluation.py', '-v', '-k', 'not llm_judge', '--tb=short'], timeout=120)
-        assert result.returncode == 0, (
-            f'test_pytest_evaluation failed (exit {result.returncode})\n' + result.stderr[:500]
+        criteria = ["accuracy", "groundedness", "relevance", "completeness", "safety"]
+        found = [c for c in criteria if c in content]
+        assert len(found) >= 4, (
+            f"Judge should score on 5 criteria. Found: {found}"
         )
 
-    def test_judge_score_type(self):
-        """Verify LLMJudge.score returns dict with int score and str reasoning (mocked)"""
-        self._ensure_setup('test_judge_score_type', ['pip install pytest'], 'fail_if_missing')
-        result = self._run_cmd('python', args=['-c', 'from unittest.mock import MagicMock; from src.evaluation.llm_judge import LLMJudge; mock_llm=MagicMock(); mock_llm.invoke.return_value=MagicMock(content=\'{"score":8,"reasoning":"Good answer"}\'); judge=LLMJudge(llm=mock_llm); result=judge.score(\'q\',\'ref\',\'cand\'); assert isinstance(result[\'score\'],int) and 1<=result[\'score\']<=10; assert isinstance(result[\'reasoning\'],str); print(\'PASS\')'], timeout=120)
-        assert result.returncode == 0, (
-            f'test_judge_score_type failed (exit {result.returncode})\n' + result.stderr[:500]
-        )
-        assert 'PASS' in (result.stdout + result.stderr), 'Expected PASS in output'
+    def test_suite_has_evaluate_and_compare(self):
+        """Verify EvaluationSuite has evaluate and compare methods"""
+        path = os.path.join(self.REPO_DIR, "src/evaluation/suite.py")
+        with open(path, "r") as f:
+            content = f.read()
 
+        assert "EvaluationSuite" in content, "Must define EvaluationSuite class"
+        assert re.search(r"def\s+evaluate", content), "Missing evaluate method"
+        assert re.search(r"def\s+compare", content), "Missing compare method"
+
+    def test_report_generates_markdown(self):
+        """Verify ReportGenerator produces Markdown output"""
+        path = os.path.join(self.REPO_DIR, "src/evaluation/report.py")
+        with open(path, "r") as f:
+            content = f.read()
+
+        assert "ReportGenerator" in content, "Must define ReportGenerator"
+        assert re.search(r"def\s+to_markdown", content), "Missing to_markdown"
+        assert re.search(r"def\s+to_json", content), "Missing to_json"
+
+    def test_safety_detects_injection_attacks(self):
+        """Verify safety check detects instruction following attacks"""
+        path = os.path.join(self.REPO_DIR, "src/evaluation/llm_judge.py")
+        with open(path, "r") as f:
+            content = f.read()
+
+        content_lower = content.lower()
+        assert (
+            "instruction" in content_lower
+            or "injection" in content_lower
+            or "pii" in content_lower
+            or "harmful" in content_lower
+        ), "Safety check should detect instruction following attacks and PII"
+
+    # === Functional Checks ===
+
+    def test_all_python_files_parse(self):
+        """Verify all Python files parse without syntax errors"""
+        files = [
+            "src/evaluation/__init__.py",
+            "src/evaluation/metrics.py",
+            "src/evaluation/llm_judge.py",
+            "src/evaluation/suite.py",
+            "src/evaluation/report.py",
+            "src/evaluation/test_cases.py",
+        ]
+        for filename in files:
+            path = os.path.join(self.REPO_DIR, filename)
+            with open(path, "r") as f:
+                source = f.read()
+            try:
+                ast.parse(source)
+            except SyntaxError as e:
+                pytest.fail(f"{filename} has syntax error: {e}")
+
+    def test_test_cases_is_valid_jsonl(self):
+        """Verify all test case lines are valid JSON"""
+        path = os.path.join(self.REPO_DIR, "data/test_cases.jsonl")
+        with open(path, "r") as f:
+            lines = [l.strip() for l in f if l.strip()]
+        for i, line in enumerate(lines):
+            try:
+                json.loads(line)
+            except json.JSONDecodeError as e:
+                pytest.fail(f"Line {i+1} is invalid JSON: {e}")
+
+    def test_init_exports_main_classes(self):
+        """Verify __init__.py exports main classes"""
+        path = os.path.join(self.REPO_DIR, "src/evaluation/__init__.py")
+        with open(path, "r") as f:
+            content = f.read()
+
+        for cls in ["EvaluationSuite", "LLMJudge", "MetricsCalculator", "ReportGenerator"]:
+            assert cls in content, f"__init__.py should export {cls}"

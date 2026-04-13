@@ -1,155 +1,179 @@
-"""Test file for the vector-index-tuning skill.
-
-This suite validates HNSW auto-tuning in faiss: HNSWAutoTuner,
-parameter sets, tuning results, Pareto frontier, and recall/QPS queries.
+"""
+Test skill: vector-index-tuning
+Verify that the Agent implements an HNSW Auto-Tuning Utility for FAISS —
+C++ HNSWAutoTuner class, Pareto frontier, best-for-recall/QPS selectors,
+Python wrapper, and CMake integration.
 """
 
-from __future__ import annotations
-
-import pathlib
+import os
 import re
-
+import subprocess
 import pytest
 
 
 class TestVectorIndexTuning:
-    """Verify HNSW auto-tuning in faiss."""
-
     REPO_DIR = "/workspace/faiss"
 
-    AUTOTUNE_H = "faiss/AutoTuneHNSW.h"
-    AUTOTUNE_CPP = "faiss/AutoTuneHNSW.cpp"
-    EXTRA_WRAPPERS_PY = "faiss/python/extra_wrappers.py"
+    # ────────────────── helpers ──────────────────
 
-    # ------------------------------------------------------------------
-    # Helpers
-    # ------------------------------------------------------------------
+    def _read(self, rel_path):
+        fpath = os.path.join(self.REPO_DIR, rel_path)
+        with open(fpath, "r") as f:
+            return f.read()
 
-    def _repo_path(self, relative: str) -> pathlib.Path:
-        return pathlib.Path(self.REPO_DIR, *relative.split("/"))
+    def _exists(self, rel_path):
+        return os.path.isfile(os.path.join(self.REPO_DIR, rel_path))
 
-    def _read_text(self, relative: str) -> str:
-        path = self._repo_path(relative)
-        assert path.exists(), f"Expected path to exist: {path}"
-        return path.read_text(encoding="utf-8", errors="ignore")
+    # === File Path Checks ===
 
-    def _assert_non_empty_file(self, relative: str) -> pathlib.Path:
-        path = self._repo_path(relative)
-        assert path.is_file(), f"Expected file to exist: {path}"
-        assert path.stat().st_size > 0, f"Expected non-empty file: {path}"
-        return path
+    def test_autotune_header_exists(self):
+        """faiss/AutoTuneHNSW.h must exist"""
+        assert self._exists("faiss/AutoTuneHNSW.h")
 
-    def _cpp_class_body(self, source: str, class_name: str) -> str:
-        """Extract the body of a C++ class/struct definition."""
-        pattern = rf"(?:class|struct)\s+{class_name}\s*[^{{]*\{{([^}}]+)\}}"
-        m = re.search(pattern, source, re.DOTALL)
-        return m.group(1) if m else ""
+    def test_autotune_impl_exists(self):
+        """faiss/AutoTuneHNSW.cpp must exist"""
+        assert self._exists("faiss/AutoTuneHNSW.cpp")
 
-    # ------------------------------------------------------------------
-    # Layer 1 – file_path_check (3 cases)
-    # ------------------------------------------------------------------
+    def test_python_test_exists(self):
+        """tests/test_autotune_hnsw.py must exist"""
+        assert self._exists("tests/test_autotune_hnsw.py")
 
-    def test_file_path_faiss_autotunehnsw_h_exists(self):
-        """Verify faiss/AutoTuneHNSW.h exists."""
-        self._assert_non_empty_file(self.AUTOTUNE_H)
+    # === Semantic Checks — C++ Structs ===
 
-    def test_file_path_faiss_autotunehnsw_cpp_exists(self):
-        """Verify faiss/AutoTuneHNSW.cpp exists."""
-        self._assert_non_empty_file(self.AUTOTUNE_CPP)
-
-    def test_file_path_faiss_python_extra_wrappers_py_modified(self):
-        """Verify faiss/python/extra_wrappers.py modified."""
-        self._assert_non_empty_file(self.EXTRA_WRAPPERS_PY)
-
-    # ------------------------------------------------------------------
-    # Layer 2 – semantic_check (5 cases)
-    # ------------------------------------------------------------------
-
-    def test_semantic_hnswautotuner_class_with_tune_pareto_bestfor_methods(self):
-        """HNSWAutoTuner class with tune, paretoFrontier, bestForRecall, bestForQPS methods."""
-        header = self._read_text(self.AUTOTUNE_H)
-        assert re.search(
-            r"class\s+HNSWAutoTuner", header
-        ), "HNSWAutoTuner class should be declared"
-        for method in ["tune", "paretoFrontier", "bestForRecall", "bestForQPS"]:
-            assert method in header, f"HNSWAutoTuner should have {method} method"
-
-    def test_semantic_hnswparameterset_has_m_efconstruction_efsearch(self):
-        """HNSWParameterSet has M, efConstruction, efSearch fields."""
-        header = self._read_text(self.AUTOTUNE_H)
-        body = self._cpp_class_body(header, "HNSWParameterSet")
-        if not body:
-            body = header
+    def test_hnsw_parameter_set_struct(self):
+        """HNSWParameterSet struct must be defined with M, efConstruction, efSearch"""
+        src = self._read("faiss/AutoTuneHNSW.h")
+        assert re.search(r'struct\s+HNSWParameterSet', src), (
+            "HNSWParameterSet struct not found"
+        )
         for field in ["M", "efConstruction", "efSearch"]:
-            assert field in body, f"HNSWParameterSet should have {field} field"
+            assert field in src, f"HNSWParameterSet missing field: {field}"
 
-    def test_semantic_hnswtuningresult_has_recall_qps_build_time_memory(self):
-        """HNSWTuningResult has recall_at_1, recall_at_10, qps, index_build_time, memory_usage_mb."""
-        header = self._read_text(self.AUTOTUNE_H)
-        body = self._cpp_class_body(header, "HNSWTuningResult")
-        if not body:
-            body = header
-        for field in [
-            "recall_at_1",
-            "recall_at_10",
-            "qps",
-            "index_build_time",
-            "memory_usage_mb",
-        ]:
-            assert field in body, f"HNSWTuningResult should have {field} field"
+    def test_hnsw_tuning_result_struct(self):
+        """HNSWTuningResult struct must be defined"""
+        src = self._read("faiss/AutoTuneHNSW.h")
+        assert re.search(r'struct\s+HNSWTuningResult', src), (
+            "HNSWTuningResult struct not found"
+        )
+        for field in ["recall_at_1", "recall_at_10", "qps",
+                       "index_build_time", "memory_usage_mb"]:
+            assert field in src, f"HNSWTuningResult missing field: {field}"
 
-    def test_semantic_default_parameter_ranges(self):
-        """Default parameter ranges: M={8,16,32,48,64}, etc."""
-        src = self._read_text(self.AUTOTUNE_H)
-        cpp = self._read_text(self.AUTOTUNE_CPP)
-        combined = src + "\n" + cpp
-        for val in ["8", "16", "32", "48", "64"]:
-            assert val in combined, f"Default M range should include {val}"
-        for val in ["40", "100", "200", "400"]:
-            assert val in combined, f"Default efConstruction range should include {val}"
+    # === Semantic Checks — HNSWAutoTuner Class ===
 
-    def test_semantic_pareto_frontier_filters_dominated_solutions(self):
-        """Pareto frontier filters dominated solutions."""
-        cpp = self._read_text(self.AUTOTUNE_CPP)
-        assert re.search(
-            r"pareto|dominated|frontier", cpp, re.IGNORECASE
-        ), "paretoFrontier should filter dominated solutions"
+    def test_auto_tuner_class(self):
+        """HNSWAutoTuner class must be defined"""
+        src = self._read("faiss/AutoTuneHNSW.h")
+        assert re.search(r'class\s+HNSWAutoTuner', src), (
+            "HNSWAutoTuner class not found"
+        )
 
-    # ------------------------------------------------------------------
-    # Layer 3 – functional_check (5 cases)
-    # ------------------------------------------------------------------
+    def test_tune_method(self):
+        """HNSWAutoTuner must have a tune() method"""
+        src = self._read("faiss/AutoTuneHNSW.h")
+        assert "tune" in src, "tune() method not found"
 
-    def test_functional_10k_vectors_tune_evaluates_all_combos(self):
-        """10K 128-dim vectors → tune evaluates all parameter combos."""
-        cpp = self._read_text(self.AUTOTUNE_CPP)
-        assert re.search(
-            r"tune|for.*M|for.*efConstruction", cpp
-        ), "tune should iterate over parameter combinations"
+    def test_pareto_frontier_method(self):
+        """HNSWAutoTuner must have a paretoFrontier() method"""
+        src = self._read("faiss/AutoTuneHNSW.h")
+        assert "paretoFrontier" in src, "paretoFrontier() method not found"
 
-    def test_functional_higher_m_higher_recall(self):
-        """Higher M → higher recall in results."""
-        cpp = self._read_text(self.AUTOTUNE_CPP)
-        assert re.search(r"recall|recall_at", cpp), "Should compute recall metrics"
+    def test_best_for_recall_method(self):
+        """HNSWAutoTuner must have a bestForRecall() method"""
+        src = self._read("faiss/AutoTuneHNSW.h")
+        assert "bestForRecall" in src, "bestForRecall() method not found"
 
-    def test_functional_paretofrontier_returns_non_dominated_subset(self):
-        """paretoFrontier returns non-dominated subset."""
-        cpp = self._read_text(self.AUTOTUNE_CPP)
-        assert re.search(
-            r"paretoFrontier|pareto_frontier", cpp
-        ), "paretoFrontier should be implemented"
+    def test_best_for_qps_method(self):
+        """HNSWAutoTuner must have a bestForQPS() method"""
+        src = self._read("faiss/AutoTuneHNSW.h")
+        assert "bestForQPS" in src, "bestForQPS() method not found"
 
-    def test_functional_bestforrecall_095_returns_fastest_config(self):
-        """bestForRecall(0.95) returns fastest config with >=95% recall."""
-        cpp = self._read_text(self.AUTOTUNE_CPP)
-        assert re.search(r"bestForRecall", cpp), "bestForRecall should be implemented"
+    def test_set_range_methods(self):
+        """HNSWAutoTuner must have setMRange, setEfConstructionRange, setEfSearchRange"""
+        src = self._read("faiss/AutoTuneHNSW.h")
+        for method in ["setMRange", "setEfConstructionRange", "setEfSearchRange"]:
+            assert method in src, f"{method}() method not found"
 
-    def test_functional_cmake_build_succeeds(self):
-        """cmake build succeeds (source analysis)."""
-        header = self._read_text(self.AUTOTUNE_H)
-        assert re.search(
-            r"#pragma\s+once|#ifndef|#define", header
-        ), "Header should have include guards"
-        cpp = self._read_text(self.AUTOTUNE_CPP)
-        assert re.search(
-            r'#include\s+"AutoTuneHNSW', cpp
-        ), "CPP should include its header"
+    # === Semantic Checks — Implementation ===
+
+    def test_uses_index_hnsw_flat(self):
+        """Implementation must build IndexHNSWFlat indexes"""
+        src = self._read("faiss/AutoTuneHNSW.cpp")
+        assert "IndexHNSWFlat" in src, "IndexHNSWFlat not used in implementation"
+
+    def test_pareto_dominance_logic(self):
+        """Pareto frontier must filter dominated configurations"""
+        src = self._read("faiss/AutoTuneHNSW.cpp")
+        assert "recall" in src.lower() and "qps" in src.lower(), (
+            "Pareto frontier must compare recall and QPS"
+        )
+
+    # === Semantic Checks — Python Wrapper ===
+
+    def test_python_wrapper_function(self):
+        """extra_wrappers.py must have auto_tune_hnsw function"""
+        src = self._read("faiss/python/extra_wrappers.py")
+        assert re.search(r'def\s+auto_tune_hnsw\s*\(', src), (
+            "auto_tune_hnsw function not found in extra_wrappers.py"
+        )
+
+    def test_python_pareto_frontier_function(self):
+        """extra_wrappers.py must have pareto_frontier function"""
+        src = self._read("faiss/python/extra_wrappers.py")
+        assert re.search(r'def\s+pareto_frontier\s*\(', src), (
+            "pareto_frontier function not found in extra_wrappers.py"
+        )
+
+    def test_python_best_for_recall_function(self):
+        """extra_wrappers.py must have best_for_recall function"""
+        src = self._read("faiss/python/extra_wrappers.py")
+        assert re.search(r'def\s+best_for_recall\s*\(', src), (
+            "best_for_recall function not found in extra_wrappers.py"
+        )
+
+    # === Semantic Checks — CMake ===
+
+    def test_cmake_includes_autotune(self):
+        """faiss/CMakeLists.txt must include AutoTuneHNSW.cpp"""
+        src = self._read("faiss/CMakeLists.txt")
+        assert "AutoTuneHNSW" in src, (
+            "AutoTuneHNSW.cpp not added to faiss/CMakeLists.txt"
+        )
+
+    # === Functional Checks ===
+
+    def test_cmake_configure(self):
+        """CMake configuration must succeed"""
+        build_dir = os.path.join(self.REPO_DIR, "build")
+        os.makedirs(build_dir, exist_ok=True)
+        result = subprocess.run(
+            ["cmake", "..", "-DCMAKE_BUILD_TYPE=Release",
+             "-DFAISS_ENABLE_GPU=OFF"],
+            capture_output=True, text=True, cwd=build_dir, timeout=120,
+        )
+        assert result.returncode == 0, (
+            f"CMake configure failed:\n{result.stdout}\n{result.stderr}"
+        )
+
+    def test_build_compiles(self):
+        """Project must compile with new files"""
+        build_dir = os.path.join(self.REPO_DIR, "build")
+        result = subprocess.run(
+            ["cmake", "--build", ".", "--parallel", "4"],
+            capture_output=True, text=True, cwd=build_dir, timeout=600,
+        )
+        assert result.returncode == 0, (
+            f"Build failed:\n{result.stdout[-2000:]}\n{result.stderr[-2000:]}"
+        )
+
+    def test_python_tests_pass(self):
+        """Python tests for autotune HNSW must pass"""
+        result = subprocess.run(
+            ["python", "-m", "pytest",
+             "tests/test_autotune_hnsw.py",
+             "-v", "--tb=short"],
+            capture_output=True, text=True, cwd=self.REPO_DIR, timeout=300,
+        )
+        assert result.returncode == 0, (
+            f"Tests failed:\n{result.stdout}\n{result.stderr}"
+        )

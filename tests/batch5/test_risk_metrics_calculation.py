@@ -1,185 +1,176 @@
 """
-Test for 'risk-metrics-calculation' skill — pyfolio Risk Metrics
-Validates VaR/CVaR calculations, Sortino ratio, max_drawdown,
-and portfolio risk analysis.
+Test skill: risk-metrics-calculation
+Verify that the Agent correctly implements portfolio risk metrics
+(VaR, CVaR, Sortino, max drawdown duration, risk parity) for pyfolio.
 """
 
 import os
 import re
+import ast
 import sys
-
 import pytest
 
 
 class TestRiskMetricsCalculation:
-    """Verify risk metrics calculations in pyfolio."""
-
     REPO_DIR = "/workspace/pyfolio"
 
-    # ── file_path_check ─────────────────────────────────────────────────────
+    METRICS = "pyfolio/risk_metrics.py"
+    TESTS = "pyfolio/tests/test_risk_metrics.py"
 
-    def test_pyfolio_source_exists(self):
-        """Verify pyfolio source directory exists."""
-        pkg = os.path.join(self.REPO_DIR, "pyfolio")
-        assert os.path.isdir(pkg), "pyfolio/ package not found"
+    def _read_file(self, rel_path):
+        filepath = os.path.join(self.REPO_DIR, rel_path)
+        with open(filepath) as f:
+            return f.read()
 
-    def test_risk_module_exists(self):
-        """Verify risk/metrics related modules exist."""
-        found = False
-        for dirpath, _, fnames in os.walk(self.REPO_DIR):
-            if ".git" in dirpath:
-                continue
-            for f in fnames:
-                if f.endswith(".py") and (
-                    "risk" in f.lower()
-                    or "metric" in f.lower()
-                    or "timeseries" in f.lower()
-                ):
-                    found = True
-                    break
-            if found:
-                break
-        assert found, "No risk/metrics module found"
+    # === File Path Checks ===
 
-    # ── semantic_check ──────────────────────────────────────────────────────
+    def test_risk_metrics_module_exists(self):
+        filepath = os.path.join(self.REPO_DIR, self.METRICS)
+        assert os.path.exists(filepath), f"risk_metrics.py not found at {filepath}"
 
-    def test_var_calculation(self):
-        """Verify Value at Risk (VaR) calculation."""
-        py_files = self._find_py_files()
-        for fpath in py_files:
-            content = self._read(fpath)
-            if re.search(
-                r"(value.?at.?risk|VaR|var_|var_cov|percentile|quantile)",
-                content,
-                re.IGNORECASE,
-            ):
-                return
-        pytest.fail("No VaR calculation found")
+    def test_tests_file_exists(self):
+        filepath = os.path.join(self.REPO_DIR, self.TESTS)
+        assert os.path.exists(filepath), f"test_risk_metrics.py not found at {filepath}"
 
-    def test_cvar_calculation(self):
-        """Verify Conditional VaR (CVaR/Expected Shortfall)."""
-        py_files = self._find_py_files()
-        for fpath in py_files:
-            content = self._read(fpath)
-            if re.search(
-                r"(CVaR|cvar|conditional.?var|expected.?shortfall)",
-                content,
-                re.IGNORECASE,
-            ):
-                return
-        pytest.fail("No CVaR/Expected Shortfall found")
+    # === Semantic Checks ===
 
-    def test_sortino_ratio(self):
-        """Verify Sortino ratio calculation."""
-        py_files = self._find_py_files()
-        for fpath in py_files:
-            content = self._read(fpath)
-            if re.search(
-                r"(sortino|downside.?deviation|downside_risk)", content, re.IGNORECASE
-            ):
-                return
-        pytest.fail("No Sortino ratio found")
+    def test_historical_var_defined(self):
+        """Verify historical_var function is defined"""
+        content = self._read_file(self.METRICS)
+        assert "def historical_var" in content, "Missing historical_var function"
+        assert "confidence" in content, "historical_var missing confidence parameter"
 
-    def test_max_drawdown(self):
-        """Verify max drawdown calculation."""
-        py_files = self._find_py_files()
-        for fpath in py_files:
-            content = self._read(fpath)
-            if re.search(
-                r"(max.?drawdown|maximum.?drawdown|drawdown)", content, re.IGNORECASE
-            ):
-                return
-        pytest.fail("No max drawdown calculation found")
+    def test_parametric_var_defined(self):
+        """Verify parametric_var function with normal distribution approach"""
+        content = self._read_file(self.METRICS)
+        assert "def parametric_var" in content, "Missing parametric_var function"
+        has_normal = bool(re.search(r'(norm\.ppf|z_score|scipy|stats)', content))
+        assert has_normal, "parametric_var missing normal distribution calculation"
 
-    def test_sharpe_ratio(self):
-        """Verify Sharpe ratio calculation."""
-        py_files = self._find_py_files()
-        for fpath in py_files:
-            content = self._read(fpath)
-            if re.search(r"(sharpe|risk_free|excess_return)", content, re.IGNORECASE):
-                return
-        pytest.fail("No Sharpe ratio found")
+    def test_historical_cvar_defined(self):
+        """Verify historical_cvar (Expected Shortfall) function"""
+        content = self._read_file(self.METRICS)
+        assert "def historical_cvar" in content, "Missing historical_cvar function"
 
-    # ── functional_check ────────────────────────────────────────────────────
+    def test_sortino_ratio_defined(self):
+        """Verify sortino_ratio with downside deviation and annualization"""
+        content = self._read_file(self.METRICS)
+        assert "def sortino_ratio" in content, "Missing sortino_ratio function"
+        assert "annualization" in content or "252" in content, \
+            "sortino_ratio missing annualization factor"
+        assert "downside" in content.lower(), \
+            "sortino_ratio missing downside deviation calculation"
 
-    def test_source_files_parse(self):
-        """Verify source files are syntactically valid."""
-        import ast
+    def test_max_drawdown_duration_defined(self):
+        """Verify max_drawdown_duration function"""
+        content = self._read_file(self.METRICS)
+        assert "def max_drawdown_duration" in content, \
+            "Missing max_drawdown_duration function"
+        assert "peak" in content.lower() or "cummax" in content, \
+            "max_drawdown_duration missing peak tracking logic"
 
-        py_files = self._find_py_files()
-        for fpath in py_files[:15]:
-            content = self._read(fpath)
+    def test_rolling_variants_defined(self):
+        """Verify rolling_var and rolling_sortino functions"""
+        content = self._read_file(self.METRICS)
+        assert "def rolling_var" in content, "Missing rolling_var function"
+        assert "def rolling_sortino" in content, "Missing rolling_sortino function"
+        assert "window" in content, "Rolling functions missing window parameter"
+
+    def test_risk_parity_weights_defined(self):
+        """Verify risk_parity_weights with iterative optimization"""
+        content = self._read_file(self.METRICS)
+        assert "def risk_parity_weights" in content, \
+            "Missing risk_parity_weights function"
+        has_optim = bool(re.search(
+            r'(optimize|minimize|iteration|converge|scipy)',
+            content,
+            re.IGNORECASE,
+        ))
+        assert has_optim, "risk_parity_weights missing iterative optimization"
+
+    def test_edge_case_empty_series(self):
+        """Verify ValueError for empty or single-element returns"""
+        content = self._read_file(self.METRICS)
+        assert "ValueError" in content, "Missing ValueError for empty input"
+        has_length_check = bool(re.search(
+            r'(len\(.*\)\s*<\s*2|at least 2|insufficient)',
+            content,
+            re.IGNORECASE,
+        ))
+        assert has_length_check, "Missing length check for minimum 2 data points"
+
+    def test_sortino_returns_inf_for_all_positive(self):
+        """Verify sortino_ratio returns inf when all returns above target"""
+        content = self._read_file(self.METRICS)
+        has_inf = bool(re.search(r'(np\.inf|float\([\'"]inf|math\.inf|inf)', content))
+        assert has_inf, "sortino_ratio missing inf return for all-positive case"
+
+    # === Functional Checks ===
+
+    def test_module_valid_python(self):
+        """Verify risk_metrics.py is valid Python syntax"""
+        filepath = os.path.join(self.REPO_DIR, self.METRICS)
+        with open(filepath) as f:
             try:
-                ast.parse(content, filename=fpath)
+                ast.parse(f.read())
             except SyntaxError as e:
-                pytest.fail(f"SyntaxError in {os.path.basename(fpath)}: {e}")
+                pytest.fail(f"risk_metrics.py syntax error: {e}")
 
-    def test_import_timeseries(self):
-        """Verify timeseries module can be imported."""
-        ts_mod = os.path.join(self.REPO_DIR, "pyfolio", "timeseries.py")
-        if not os.path.exists(ts_mod):
-            pytest.skip("timeseries.py not found")
-        if self.REPO_DIR not in sys.path:
-            sys.path.insert(0, self.REPO_DIR)
+    def test_functional_historical_var(self):
+        """Verify historical_var produces correct result for known data"""
+        sys.path.insert(0, self.REPO_DIR)
         try:
-            import importlib
+            import pandas as pd
+            import numpy as np
+            from pyfolio.risk_metrics import historical_var
+            returns = pd.Series(
+                [-0.02, -0.01, 0.01, 0.03, -0.05, 0.02, -0.03, 0.01, 0.02, -0.01]
+            )
+            var = historical_var(returns, confidence=0.95)
+            assert var < 0, "VaR should be negative (represents loss)"
+            assert -0.06 < var < -0.03, \
+                f"VaR at 95% should be ~-0.042, got {var}"
+        except ImportError:
+            pytest.skip("Cannot import risk_metrics module")
+        finally:
+            if self.REPO_DIR in sys.path:
+                sys.path.remove(self.REPO_DIR)
 
-            spec = importlib.util.spec_from_file_location("pyfolio.timeseries", ts_mod)
-            mod = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(mod)
-            assert (
-                hasattr(mod, "max_drawdown")
-                or hasattr(mod, "sharpe_ratio")
-                or hasattr(mod, "sortino_ratio")
-            ), "timeseries missing expected functions"
-        except Exception as e:
-            pytest.skip(f"Cannot import timeseries: {e}")
+    def test_functional_risk_parity_equal_variance(self):
+        """Verify risk parity gives equal weights for identical uncorrelated assets"""
+        sys.path.insert(0, self.REPO_DIR)
+        try:
+            import pandas as pd
+            import numpy as np
+            from pyfolio.risk_metrics import risk_parity_weights
+            cov = pd.DataFrame(
+                np.eye(3) * 0.04,
+                index=["A", "B", "C"],
+                columns=["A", "B", "C"],
+            )
+            weights = risk_parity_weights(cov)
+            assert abs(weights.sum() - 1.0) < 1e-3, \
+                f"Weights should sum to 1.0, got {weights.sum()}"
+            for w in weights:
+                assert abs(w - 1.0 / 3) < 0.05, \
+                    f"Equal variance assets should get ~equal weight, got {w}"
+        except ImportError:
+            pytest.skip("Cannot import risk_metrics module")
+        finally:
+            if self.REPO_DIR in sys.path:
+                sys.path.remove(self.REPO_DIR)
 
-    def test_returns_based_analysis(self):
-        """Verify returns-based analysis (daily/monthly returns)."""
-        py_files = self._find_py_files()
-        for fpath in py_files:
-            content = self._read(fpath)
-            if re.search(
-                r"(daily_return|monthly_return|annual_return|aggregate_returns|pct_change)",
-                content,
-                re.IGNORECASE,
-            ):
-                return
-        pytest.fail("No returns-based analysis found")
-
-    def test_statistical_functions(self):
-        """Verify statistical functions (std, mean, etc.)."""
-        py_files = self._find_py_files()
-        for fpath in py_files:
-            content = self._read(fpath)
-            if re.search(r"(\.std\(|\.mean\(|np\.std|np\.mean|scipy\.stats)", content):
-                return
-        pytest.fail("No statistical functions found")
-
-    def test_plotting_functions(self):
-        """Verify plotting / visualization functions."""
-        py_files = self._find_py_files()
-        for fpath in py_files:
-            content = self._read(fpath)
-            if re.search(r"(plot|matplotlib|plt\.|ax\.|figure)", content):
-                return
-        pytest.fail("No plotting functions found")
-
-    # ── helpers ──────────────────────────────────────────────────────────────
-
-    def _find_py_files(self):
-        results = []
-        pkg = os.path.join(self.REPO_DIR, "pyfolio")
-        search = pkg if os.path.isdir(pkg) else self.REPO_DIR
-        for dirpath, _, fnames in os.walk(search):
-            if ".git" in dirpath:
-                continue
-            for f in fnames:
-                if f.endswith(".py"):
-                    results.append(os.path.join(dirpath, f))
-        return results
-
-    def _read(self, path):
-        with open(path, "r", errors="ignore") as fh:
-            return fh.read()
+    def test_tests_cover_all_functions(self):
+        """Verify test file covers VaR, CVaR, Sortino, drawdown, risk parity"""
+        content = self._read_file(self.TESTS)
+        tree = ast.parse(content)
+        test_funcs = [
+            n.name for n in ast.walk(tree)
+            if isinstance(n, ast.FunctionDef) and n.name.startswith("test_")
+        ]
+        assert len(test_funcs) >= 6, \
+            f"Expected at least 6 tests, found {len(test_funcs)}"
+        content_lower = content.lower()
+        assert "var" in content_lower, "Tests missing VaR coverage"
+        assert "sortino" in content_lower, "Tests missing Sortino coverage"
+        assert "drawdown" in content_lower, "Tests missing drawdown coverage"

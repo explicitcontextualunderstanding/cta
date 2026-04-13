@@ -1,172 +1,315 @@
 """
-Tests for rag-implementation skill.
-Validates HybridRetriever, RRF fusion, Reranker, RecursiveChunker in langchain repository.
+Tests for the rag-implementation skill.
+
+Validates that a hybrid RAG retrieval pipeline with reranking was implemented
+for LangChain, including HybridRetriever with RRF, MultiQueryRetriever,
+Reranker, citation tracking, and RecursiveChunker.
+
+Repo: langchain (https://github.com/langchain-ai/langchain)
 """
 
+import ast
 import os
 import re
-import glob
-import pytest
+import subprocess
+import sys
 
 REPO_DIR = "/workspace/langchain"
 
 
-def _path(rel: str) -> str:
-    return os.path.join(REPO_DIR, rel)
-
-
-def _read(rel: str) -> str:
-    with open(_path(rel), encoding="utf-8", errors="ignore") as f:
-        return f.read()
-
-
-class TestRagImplementation:
-
-    # ── file_path_check ──────────────────────────────────────────────────────
+class TestFilePathCheck:
+    """Verify that all required files were created."""
 
     def test_hybrid_retriever_file_exists(self):
-        """libs/core/langchain_core/retrievers/hybrid_retriever.py must exist."""
-        rel = "libs/core/langchain_core/retrievers/hybrid_retriever.py"
-        assert os.path.isfile(_path(rel)), f"{rel} not found"
-        assert os.path.getsize(_path(rel)) > 0, "hybrid_retriever.py is empty"
-
-    def test_retrievers_module_has_multiple_files(self):
-        """langchain_core/retrievers must contain >= 2 Python files."""
-        pattern = os.path.join(REPO_DIR, "libs/core/langchain_core/retrievers", "*.py")
-        files = glob.glob(pattern)
-        assert (
-            len(files) >= 2
-        ), f"Expected >= 2 Python files in retrievers/, found {len(files)}"
-
-    # ── semantic_check ───────────────────────────────────────────────────────
-
-    def test_hybrid_retriever_class_defined(self):
-        """HybridRetriever must define dense_retriever and sparse_retriever attributes."""
-        content = _read("libs/core/langchain_core/retrievers/hybrid_retriever.py")
-        assert "class HybridRetriever" in content, "HybridRetriever class not defined"
-        assert "dense" in content, "dense_retriever attribute not found"
-        assert "sparse" in content, "sparse_retriever attribute not found"
-
-    def test_rrf_fusion_algorithm(self):
-        """hybrid_retriever.py must implement RRF scoring formula 1/(k+rank)."""
-        content = _read("libs/core/langchain_core/retrievers/hybrid_retriever.py")
-        has_rrf = (
-            "rrf" in content.lower()
-            or "reciprocal" in content.lower()
-            or "1.0 / (" in content
-            or "1/(k" in content
-            or "k + rank" in content
-            or "60" in content
+        path = os.path.join(
+            REPO_DIR, "libs", "core", "langchain_core", "retrievers", "hybrid_retriever.py"
         )
-        assert has_rrf, "RRF fusion algorithm not found in hybrid_retriever.py"
+        assert os.path.isfile(path), f"Expected hybrid_retriever.py at {path}"
 
-    def test_recursive_chunker_class_defined(self):
-        """RecursiveChunker must define chunk_size and overlap parameters."""
-        content = _read("libs/core/langchain_core/retrievers/hybrid_retriever.py")
-        assert "RecursiveChunker" in content, "RecursiveChunker class not defined"
-        assert "chunk_size" in content, "chunk_size parameter not found"
-        assert "overlap" in content, "overlap parameter not found"
+    def test_multi_query_file_exists(self):
+        path = os.path.join(
+            REPO_DIR, "libs", "core", "langchain_core", "retrievers", "multi_query.py"
+        )
+        assert os.path.isfile(path), f"Expected multi_query.py at {path}"
 
-    def test_reranker_min_score_filter(self):
-        """Reranker must define min_score parameter for filtering."""
-        content = _read("libs/core/langchain_core/retrievers/hybrid_retriever.py")
-        assert (
-            "min_score" in content
-        ), "min_score parameter not found in hybrid_retriever.py"
-        assert (
-            "Reranker" in content or "rerank" in content
-        ), "No Reranker class found in hybrid_retriever.py"
+    def test_reranker_file_exists(self):
+        path = os.path.join(
+            REPO_DIR, "libs", "core", "langchain_core", "retrievers", "reranker.py"
+        )
+        assert os.path.isfile(path), f"Expected reranker.py at {path}"
 
-    # ── functional_check ─────────────────────────────────────────────────────
+    def test_test_file_exists(self):
+        path = os.path.join(
+            REPO_DIR, "libs", "core", "tests", "unit_tests", "retrievers",
+            "test_hybrid_retriever.py",
+        )
+        assert os.path.isfile(path), f"Expected test_hybrid_retriever.py at {path}"
 
-    def test_dense_sparse_rrf_b_ranks_highest(self):
-        """B appearing in both dense and sparse must have highest RRF score (mocked)."""
 
-        def rrf_score(rank: int, k: int = 60) -> float:
-            return 1.0 / (k + rank)
+class TestSemanticHybridRetriever:
+    """Verify HybridRetriever with Reciprocal Rank Fusion."""
 
-        def fuse(dense: list, sparse: list) -> list:
-            scores = {}
-            for i, doc in enumerate(dense):
-                scores[doc] = scores.get(doc, 0) + rrf_score(i + 1)
-            for i, doc in enumerate(sparse):
-                scores[doc] = scores.get(doc, 0) + rrf_score(i + 1)
-            return sorted(scores.keys(), key=lambda d: scores[d], reverse=True)
+    def _read_hybrid(self):
+        path = os.path.join(
+            REPO_DIR, "libs", "core", "langchain_core", "retrievers", "hybrid_retriever.py"
+        )
+        with open(path, "r") as f:
+            return f.read()
 
-        ranked = fuse(dense=["A", "B", "C"], sparse=["B", "D", "E"])
-        assert ranked[0] == "B", f"Expected B to rank first, got {ranked[0]}"
+    def test_hybrid_retriever_class(self):
+        content = self._read_hybrid()
+        assert re.search(r"class\s+HybridRetriever", content), (
+            "Expected HybridRetriever class"
+        )
 
-    def test_document_b_deduplicated(self):
-        """Document B must appear only once in RRF fused results (mocked)."""
+    def test_dense_retriever_parameter(self):
+        content = self._read_hybrid()
+        assert re.search(r"dense_retriever|dense", content), (
+            "Expected dense_retriever parameter"
+        )
 
-        def fuse_unique(dense: list, sparse: list) -> list:
-            scores = {}
-            for i, doc in enumerate(dense):
-                scores[doc] = scores.get(doc, 0) + 1.0 / (60 + i + 1)
-            for i, doc in enumerate(sparse):
-                scores[doc] = scores.get(doc, 0) + 1.0 / (60 + i + 1)
-            return sorted(scores.keys(), key=lambda d: scores[d], reverse=True)
+    def test_sparse_retriever_parameter(self):
+        content = self._read_hybrid()
+        assert re.search(r"sparse_retriever|sparse", content), (
+            "Expected sparse_retriever parameter"
+        )
 
-        results = fuse_unique(dense=["A", "B", "C"], sparse=["B", "D", "E"])
-        assert (
-            results.count("B") == 1
-        ), f"Expected B to appear exactly once, appeared {results.count('B')} times"
+    def test_rrf_implementation(self):
+        """Reciprocal Rank Fusion: score = sum(1/(k + rank))."""
+        content = self._read_hybrid()
+        assert re.search(r"rrf|reciprocal.*rank|1\s*/\s*\(.*k.*\+.*rank", content, re.IGNORECASE), (
+            "Expected Reciprocal Rank Fusion (RRF) implementation"
+        )
 
-    def test_reranker_min_score_0_5_filters(self):
-        """Reranker(min_score=0.5) must exclude documents with score < 0.5 (mocked)."""
+    def test_rrf_k_parameter(self):
+        """RRF constant k should default to 60."""
+        content = self._read_hybrid()
+        assert "60" in content, (
+            "Expected RRF k constant default of 60"
+        )
 
-        def rerank_and_filter(docs_with_scores: dict, min_score: float) -> list:
-            return [
-                doc for doc, score in docs_with_scores.items() if score >= min_score
-            ]
+    def test_deduplication(self):
+        """Documents from both retrievers should be deduplicated."""
+        content = self._read_hybrid()
+        assert re.search(r"dedup|deduplicate|hash|seen|unique", content, re.IGNORECASE), (
+            "Expected document deduplication logic"
+        )
 
-        result = rerank_and_filter({"A": 0.8, "B": 0.3, "C": 0.6}, min_score=0.5)
-        assert "A" in result and "C" in result
-        assert "B" not in result, f"B with score 0.3 should be filtered out"
+    def test_retrieval_method_metadata(self):
+        content = self._read_hybrid()
+        assert re.search(r"retrieval_method|dense|sparse|hybrid", content), (
+            "Expected retrieval_method metadata on documents"
+        )
 
-    def test_rerank_score_in_metadata(self):
-        """Each result must have rerank_score in its metadata (mocked)."""
 
-        class Document:
-            def __init__(self, id, score):
-                self.id = id
-                self.metadata = {"rerank_score": score}
+class TestSemanticMultiQuery:
+    """Verify MultiQueryRetriever with query expansion."""
 
-        docs = [Document("A", 0.9), Document("C", 0.7)]
-        for doc in docs:
-            assert (
-                "rerank_score" in doc.metadata
-            ), f"rerank_score missing from metadata of doc {doc.id}"
-            assert 0.0 <= doc.metadata["rerank_score"] <= 1.0
+    def _read_multi(self):
+        path = os.path.join(
+            REPO_DIR, "libs", "core", "langchain_core", "retrievers", "multi_query.py"
+        )
+        with open(path, "r") as f:
+            return f.read()
 
-    def test_format_citations_with_source_and_score(self):
-        """format_citations must output '[1] source (score: X.XX)' format (mocked)."""
+    def test_multi_query_retriever_class(self):
+        content = self._read_multi()
+        assert re.search(r"class\s+MultiQueryRetriever", content), (
+            "Expected MultiQueryRetriever class"
+        )
 
-        def format_citations(docs: list) -> str:
-            lines = []
-            for i, doc in enumerate(docs, 1):
-                lines.append(f"[{i}] {doc['source']} (score: {doc['score']:.2f})")
-            return "\n".join(lines)
+    def test_query_generator_parameter(self):
+        content = self._read_multi()
+        assert re.search(r"query_generator|generate.*quer", content, re.IGNORECASE), (
+            "Expected query_generator parameter or method"
+        )
 
-        result = format_citations([{"source": "wiki.md", "score": 0.92}])
-        assert (
-            "[1] wiki.md (score: 0.92)" in result
-        ), f"Citation format incorrect: {result!r}"
+    def test_merge_results(self):
+        content = self._read_multi()
+        assert re.search(r"merge|rrf|fusion|combine", content, re.IGNORECASE), (
+            "Expected result merging logic in MultiQueryRetriever"
+        )
 
-    def test_recursive_chunker_250chars_3_chunks(self):
-        """RecursiveChunker(chunk_size=100, overlap=20) on 250-char text must yield 3 chunks (mocked)."""
+    def test_default_num_queries(self):
+        """Should generate 3 query variations by default."""
+        content = self._read_multi()
+        assert "3" in content, (
+            "Expected default of 3 query variations"
+        )
 
-        def chunk(text: str, chunk_size: int, overlap: int) -> list:
-            chunks = []
-            start = 0
-            while start < len(text):
-                end = start + chunk_size
-                chunks.append(text[start:end])
-                start += chunk_size - overlap
-            return chunks
 
-        text = "a" * 250
-        chunks = chunk(text, chunk_size=100, overlap=20)
-        assert (
-            len(chunks) == 3
-        ), f"Expected 3 chunks for 250 chars with size=100/overlap=20, got {len(chunks)}"
+class TestSemanticReranker:
+    """Verify Reranker class with scoring and filtering."""
+
+    def _read_reranker(self):
+        path = os.path.join(
+            REPO_DIR, "libs", "core", "langchain_core", "retrievers", "reranker.py"
+        )
+        with open(path, "r") as f:
+            return f.read()
+
+    def test_reranker_class(self):
+        content = self._read_reranker()
+        assert re.search(r"class\s+Reranker", content), (
+            "Expected Reranker class"
+        )
+
+    def test_scoring_function_parameter(self):
+        content = self._read_reranker()
+        assert re.search(r"scoring_function|scorer|score_fn", content), (
+            "Expected scoring_function parameter in Reranker"
+        )
+
+    def test_min_score_threshold(self):
+        content = self._read_reranker()
+        assert re.search(r"min_score", content), (
+            "Expected min_score threshold parameter"
+        )
+
+    def test_rerank_score_metadata(self):
+        content = self._read_reranker()
+        assert re.search(r"rerank_score", content), (
+            "Expected rerank_score attached to document metadata"
+        )
+
+
+class TestSemanticCitationTracking:
+    """Verify citation formatting and metadata."""
+
+    def _read_all_sources(self):
+        content = ""
+        for fname in ["hybrid_retriever.py", "reranker.py"]:
+            path = os.path.join(
+                REPO_DIR, "libs", "core", "langchain_core", "retrievers", fname
+            )
+            if os.path.isfile(path):
+                with open(path, "r") as f:
+                    content += f.read()
+        return content
+
+    def test_format_citations_function(self):
+        content = self._read_all_sources()
+        assert re.search(r"def\s+format_citations", content), (
+            "Expected format_citations function"
+        )
+
+    def test_source_metadata(self):
+        content = self._read_all_sources()
+        assert re.search(r'source|metadata\[.*source', content), (
+            "Expected source metadata on documents"
+        )
+
+    def test_rrf_score_metadata(self):
+        content = self._read_all_sources()
+        assert re.search(r"rrf_score", content), (
+            "Expected rrf_score in document metadata"
+        )
+
+
+class TestSemanticChunker:
+    """Verify RecursiveChunker implementation."""
+
+    def _read_all_sources(self):
+        content = ""
+        for fname in ["hybrid_retriever.py", "multi_query.py", "reranker.py"]:
+            path = os.path.join(
+                REPO_DIR, "libs", "core", "langchain_core", "retrievers", fname
+            )
+            if os.path.isfile(path):
+                with open(path, "r") as f:
+                    content += f.read()
+        return content
+
+    def test_recursive_chunker_class(self):
+        content = self._read_all_sources()
+        assert re.search(r"class\s+RecursiveChunker", content), (
+            "Expected RecursiveChunker class"
+        )
+
+    def test_chunk_size_parameter(self):
+        content = self._read_all_sources()
+        assert re.search(r"chunk_size", content), (
+            "Expected chunk_size parameter in RecursiveChunker"
+        )
+
+    def test_chunk_overlap_parameter(self):
+        content = self._read_all_sources()
+        assert re.search(r"chunk_overlap|overlap", content), (
+            "Expected chunk_overlap parameter"
+        )
+
+    def test_chunk_metadata(self):
+        """Each chunk should have chunk_index, start_char, end_char."""
+        content = self._read_all_sources()
+        assert re.search(r"chunk_index|start_char|end_char", content), (
+            "Expected chunk metadata (chunk_index, start_char, end_char)"
+        )
+
+
+class TestFunctionalPythonSyntax:
+    """Validate Python syntax of all created files."""
+
+    def _check_syntax(self, filepath):
+        with open(filepath, "r") as f:
+            source = f.read()
+        ast.parse(source)
+
+    def test_hybrid_retriever_syntax(self):
+        self._check_syntax(
+            os.path.join(
+                REPO_DIR, "libs", "core", "langchain_core", "retrievers",
+                "hybrid_retriever.py",
+            )
+        )
+
+    def test_multi_query_syntax(self):
+        self._check_syntax(
+            os.path.join(
+                REPO_DIR, "libs", "core", "langchain_core", "retrievers", "multi_query.py"
+            )
+        )
+
+    def test_reranker_syntax(self):
+        self._check_syntax(
+            os.path.join(
+                REPO_DIR, "libs", "core", "langchain_core", "retrievers", "reranker.py"
+            )
+        )
+
+    def test_test_file_syntax(self):
+        self._check_syntax(
+            os.path.join(
+                REPO_DIR, "libs", "core", "tests", "unit_tests", "retrievers",
+                "test_hybrid_retriever.py",
+            )
+        )
+
+
+class TestFunctionalAgentTests:
+    """Verify the agent's own tests pass."""
+
+    def test_sufficient_test_count(self):
+        path = os.path.join(
+            REPO_DIR, "libs", "core", "tests", "unit_tests", "retrievers",
+            "test_hybrid_retriever.py",
+        )
+        with open(path, "r") as f:
+            content = f.read()
+        test_count = len(re.findall(r"def\s+test_", content))
+        assert test_count >= 5, (
+            f"Expected at least 5 test functions, found {test_count}"
+        )
+
+    def test_agent_tests_pass(self):
+        result = subprocess.run(
+            [sys.executable, "-m", "pytest",
+             "libs/core/tests/unit_tests/retrievers/test_hybrid_retriever.py",
+             "-v", "--tb=short"],
+            cwd=REPO_DIR,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        assert result.returncode == 0, (
+            f"Agent's RAG tests failed:\n{result.stdout[-1000:]}\n{result.stderr[-500:]}"
+        )

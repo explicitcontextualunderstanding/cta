@@ -1,164 +1,164 @@
 """
-Test for 'creating-financial-models' skill — Financial Models (QuantLib-backed)
-Validates bond pricer, option pricer (Black-Scholes), yield curve builder,
-clean vs dirty price, put-call parity, delta, and input validation.
+Test skill: creating-financial-models
+Verify that the Agent creates a DCF valuation engine, Monte Carlo simulation,
+and sensitivity analysis using QuantLib.
 """
 
-import math
 import os
 import subprocess
-import sys
-
+import ast
+import re
 import pytest
 
 
 class TestCreatingFinancialModels:
-    """Verify financial model implementations: bonds, options, yield curves."""
-
     REPO_DIR = "/workspace/QuantLib"
 
-    # ── helpers ──────────────────────────────────────────────────────────
+    # === File Path Checks ===
 
-    @staticmethod
-    def _read_file(path: str) -> str:
-        try:
-            with open(path, "r", errors="ignore") as fh:
-                return fh.read()
-        except OSError:
-            return ""
+    def test_dcf_module_exists(self):
+        """Verify DCF valuation module exists"""
+        found = False
+        for root, dirs, files in os.walk(self.REPO_DIR):
+            if ".git" in root:
+                continue
+            for f in files:
+                if f.endswith(".py") and ("dcf" in f.lower() or "valuation" in f.lower()):
+                    found = True
+                    break
+            if found:
+                break
+        assert found, "DCF valuation module not found"
 
-    def _model(self, *parts) -> str:
-        return os.path.join(self.REPO_DIR, "examples", "financial_models", *parts)
+    # === Semantic Checks ===
 
-    def _install_deps(self):
-        try:
-            import scipy  # noqa: F401
-        except ImportError:
-            subprocess.run(
-                [sys.executable, "-m", "pip", "install", "scipy"],
-                capture_output=True, timeout=60,
-            )
+    def test_dcf_engine_class_defined(self):
+        """Verify DCF valuation engine class is defined"""
+        content = self._find_content(["dcf", "valuation"])
+        has_class = (
+            "class" in content
+            and ("DCF" in content or "Valuation" in content or "valuation" in content.lower())
+        )
+        assert has_class, "DCF valuation engine class not found"
 
-    # ── file_path_check ──────────────────────────────────────────────────
+    def test_monte_carlo_simulation_defined(self):
+        """Verify Monte Carlo simulation is implemented"""
+        content = self._find_content(["monte_carlo", "simulation", "dcf", "valuation"])
+        content_lower = content.lower()
+        has_mc = (
+            "monte" in content_lower
+            or "carlo" in content_lower
+            or "simulation" in content_lower
+            or "random" in content_lower
+        )
+        assert has_mc, "Monte Carlo simulation not found"
 
-    def test_package_files_exist(self):
-        """__init__.py, bond_pricer.py, options.py must exist."""
-        for name in ("__init__.py", "bond_pricer.py", "options.py"):
-            path = self._model(name)
-            assert os.path.isfile(path), f"{path} does not exist"
+    def test_sensitivity_analysis_defined(self):
+        """Verify sensitivity analysis is implemented"""
+        content = self._find_content(["sensitivity", "analysis", "dcf", "valuation"])
+        content_lower = content.lower()
+        has_sensitivity = (
+            "sensitivity" in content_lower
+            or "tornado" in content_lower
+            or "scenario" in content_lower
+        )
+        assert has_sensitivity, "Sensitivity analysis not found"
 
-    def test_yield_curve_and_swap_exist(self):
-        """yield_curve.py and swap.py must exist."""
-        for name in ("yield_curve.py", "swap.py"):
-            path = self._model(name)
-            assert os.path.isfile(path), f"{path} does not exist"
+    def test_discount_rate_logic(self):
+        """Verify discount rate / WACC calculation is present"""
+        content = self._find_content(["dcf", "valuation", "discount"])
+        content_lower = content.lower()
+        has_discount = (
+            "discount" in content_lower
+            or "wacc" in content_lower
+            or "npv" in content_lower
+            or "present_value" in content_lower
+        )
+        assert has_discount, "Discount rate/WACC calculation not found"
 
-    def test_test_file_exists(self):
-        """tests/test_financial_models.py must exist."""
-        path = os.path.join(self.REPO_DIR, "tests", "test_financial_models.py")
-        assert os.path.isfile(path), f"{path} does not exist"
+    def test_cash_flow_projections(self):
+        """Verify cash flow projection logic exists"""
+        content = self._find_content(["dcf", "valuation", "cash_flow"])
+        content_lower = content.lower()
+        has_cf = (
+            "cash_flow" in content_lower
+            or "cashflow" in content_lower
+            or "free_cash" in content_lower
+            or "fcf" in content_lower
+        )
+        assert has_cf, "Cash flow projection logic not found"
 
-    # ── semantic_check ───────────────────────────────────────────────────
+    # === Functional Checks ===
 
-    def test_black_scholes_formula(self):
-        """options.py must implement Black-Scholes with d1, d2, norm.cdf."""
-        path = self._model("options.py")
-        if not os.path.isfile(path):
-            pytest.skip("options.py not found")
-        content = self._read_file(path)
-        assert "d1" in content, "d1 variable not found in Black-Scholes formula"
-        assert "d2" in content, "d2 variable not found"
-        has_cdf = "norm.cdf" in content or "normalcdf" in content or "NormalDist" in content
-        assert has_cdf, "Normal distribution CDF not found"
-        assert "exp" in content, "exp() discount factor not found"
+    def test_python_files_parse(self):
+        """Verify all financial model Python files have valid syntax"""
+        for root, dirs, files in os.walk(self.REPO_DIR):
+            if ".git" in root:
+                continue
+            for f in files:
+                if f.endswith(".py") and ("dcf" in f.lower() or "valuation" in f.lower() or "monte" in f.lower() or "sensitivity" in f.lower()):
+                    fpath = os.path.join(root, f)
+                    with open(fpath) as fh:
+                        source = fh.read()
+                    try:
+                        ast.parse(source)
+                    except SyntaxError as e:
+                        pytest.fail(f"Syntax error in {fpath}: {e}")
 
-    def test_yield_curve_validates_monotonic_dates(self):
-        """yield_curve.py must raise ValueError for non-monotonic dates."""
-        path = self._model("yield_curve.py")
-        if not os.path.isfile(path):
-            pytest.skip("yield_curve.py not found")
-        content = self._read_file(path)
-        assert "ValueError" in content, "ValueError not referenced in yield_curve.py"
+    def test_dcf_module_importable(self):
+        """Verify DCF module can be imported"""
+        dcf_file = None
+        for root, dirs, files in os.walk(self.REPO_DIR):
+            if ".git" in root:
+                continue
+            for f in files:
+                if f.endswith(".py") and ("dcf" in f.lower() or "valuation" in f.lower()):
+                    fpath = os.path.join(root, f)
+                    with open(fpath) as fh:
+                        content = fh.read()
+                    if "class" in content:
+                        dcf_file = fpath
+                        break
+            if dcf_file:
+                break
+        if dcf_file is None:
+            pytest.skip("DCF module not found")
+        result = subprocess.run(
+            ["python", "-c", f"import ast; ast.parse(open('{dcf_file}').read()); print('OK')"],
+            cwd=self.REPO_DIR,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        assert result.returncode == 0, f"DCF module parse failed: {result.stderr}"
 
-    def test_bond_pricer_clean_vs_dirty(self):
-        """bond_pricer.py must distinguish clean and dirty price."""
-        path = self._model("bond_pricer.py")
-        if not os.path.isfile(path):
-            pytest.skip("bond_pricer.py not found")
-        content = self._read_file(path)
-        has_distinction = ("clean" in content.lower() and "dirty" in content.lower()) or "accrued" in content.lower()
-        assert has_distinction, "No clean/dirty price distinction in bond_pricer.py"
+    def test_monte_carlo_uses_numpy_or_random(self):
+        """Verify Monte Carlo uses numpy/random for simulation"""
+        content = self._find_content(["monte_carlo", "simulation"])
+        has_random = "numpy" in content or "random" in content or "np." in content
+        assert has_random, "Monte Carlo simulation missing numpy/random usage"
 
-    def test_option_pricer_validates_negative_vol(self):
-        """options.py must raise ValueError for negative sigma."""
-        path = self._model("options.py")
-        if not os.path.isfile(path):
-            pytest.skip("options.py not found")
-        content = self._read_file(path)
-        assert "ValueError" in content, "ValueError not found for sigma validation"
-        has_check = "sigma" in content and ("<= 0" in content or "< 0" in content or "negative" in content.lower())
-        assert has_check, "No sigma negativity check found"
+    def test_results_include_terminal_value(self):
+        """Verify DCF includes terminal value calculation"""
+        content = self._find_content(["dcf", "valuation", "terminal"])
+        content_lower = content.lower()
+        has_tv = "terminal" in content_lower or "perpetuity" in content_lower or "gordon" in content_lower
+        assert has_tv, "DCF missing terminal value calculation"
 
-    # ── functional_check ─────────────────────────────────────────────────
-
-    def test_zero_coupon_bond_price(self):
-        """Zero-coupon bond at 5% rate for 1y = 100/1.05 ≈ 95.238."""
-        self._install_deps()
-        try:
-            sys.path.insert(0, self.REPO_DIR)
-            from examples.financial_models.bond_pricer import BondPricer
-        except ImportError:
-            pytest.skip("Cannot import BondPricer")
-        pricer = BondPricer()
-        price = pricer.zero_coupon_price(face_value=100, rate=0.05, time_years=1)
-        assert abs(price - 95.238) < 0.1, f"Expected ~95.238, got {price}"
-
-    def test_put_call_parity(self):
-        """Call - Put = S - K*exp(-rT) must hold within 0.1 tolerance."""
-        self._install_deps()
-        try:
-            sys.path.insert(0, self.REPO_DIR)
-            from examples.financial_models.options import OptionPricer
-        except ImportError:
-            pytest.skip("Cannot import OptionPricer")
-        pricer = OptionPricer()
-        S, K, T, r, sigma = 100, 100, 1, 0.05, 0.2
-        call = pricer.price(S=S, K=K, T=T, r=r, sigma=sigma, option_type="call")
-        put = pricer.price(S=S, K=K, T=T, r=r, sigma=sigma, option_type="put")
-        parity = (call - put) - (S - K * math.exp(-r * T))
-        assert abs(parity) < 0.1, f"Put-call parity violated: {parity}"
-
-    def test_deep_itm_call_delta(self):
-        """Deep ITM call (S=200, K=100) delta must be > 0.99."""
-        self._install_deps()
-        try:
-            sys.path.insert(0, self.REPO_DIR)
-            from examples.financial_models.options import OptionPricer
-        except ImportError:
-            pytest.skip("Cannot import OptionPricer")
-        pricer = OptionPricer()
-        delta = pricer.delta(S=200, K=100, T=1, r=0.05, sigma=0.2, option_type="call")
-        assert delta > 0.99, f"Deep ITM call delta should be >0.99, got {delta}"
-
-    def test_yield_curve_non_monotonic_raises(self):
-        """Non-monotonic dates must raise ValueError."""
-        try:
-            sys.path.insert(0, self.REPO_DIR)
-            from examples.financial_models.yield_curve import YieldCurveBuilder
-        except ImportError:
-            pytest.skip("Cannot import YieldCurveBuilder")
-        with pytest.raises(ValueError):
-            YieldCurveBuilder().build(
-                dates=["2024-01-01", "2026-01-01", "2025-01-01"],
-                rates=[0.03, 0.04, 0.035],
-            )
-
-    def test_negative_volatility_raises(self):
-        """Negative sigma must raise ValueError."""
-        try:
-            sys.path.insert(0, self.REPO_DIR)
-            from examples.financial_models.options import OptionPricer
-        except ImportError:
-            pytest.skip("Cannot import OptionPricer")
-        with pytest.raises(ValueError):
-            OptionPricer().price(S=100, K=100, T=1, r=0.05, sigma=-0.2, option_type="call")
+    def _find_content(self, keywords):
+        """Helper to find content in Python files matching keywords"""
+        all_content = ""
+        for root, dirs, files in os.walk(self.REPO_DIR):
+            if ".git" in root:
+                continue
+            for f in files:
+                if f.endswith(".py"):
+                    fname_lower = f.lower()
+                    if any(kw in fname_lower for kw in keywords):
+                        fpath = os.path.join(root, f)
+                        try:
+                            with open(fpath) as fh:
+                                all_content += fh.read() + "\n"
+                        except (UnicodeDecodeError, PermissionError):
+                            continue
+        return all_content

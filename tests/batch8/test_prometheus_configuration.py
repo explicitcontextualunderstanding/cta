@@ -1,136 +1,250 @@
 """
-Test for 'prometheus-configuration' skill — Prometheus Config Generator
-Validates that the Agent created a Python package for generating Prometheus
-scrape configs, alert rules, and alertmanager configs with validation.
+Test skill: prometheus-configuration
+Verify that the Agent correctly builds a Prometheus configuration generator
+and validator with scrape configs, recording/alerting rules, relabeling,
+and config validation.
 """
 
 import os
-import re
+import subprocess
 import sys
-
+import ast
+import inspect
 import pytest
 
 
 class TestPrometheusConfiguration:
-    """Verify Prometheus configuration generator implementation."""
-
     REPO_DIR = "/workspace/prometheus"
 
-    @staticmethod
-    def _read(path: str) -> str:
+    # === File Path Checks ===
+
+    def test_config_generator_exists(self):
+        """Verify that config_generator.py exists"""
+        filepath = os.path.join(self.REPO_DIR, "documentation/examples/config_generator.py")
+        assert os.path.exists(filepath), f"config_generator.py not found at {filepath}"
+
+    def test_rule_generator_exists(self):
+        """Verify that rule_generator.py exists"""
+        filepath = os.path.join(self.REPO_DIR, "documentation/examples/rule_generator.py")
+        assert os.path.exists(filepath), f"rule_generator.py not found at {filepath}"
+
+    def test_relabel_engine_exists(self):
+        """Verify that relabel_engine.py exists"""
+        filepath = os.path.join(self.REPO_DIR, "documentation/examples/relabel_engine.py")
+        assert os.path.exists(filepath), f"relabel_engine.py not found at {filepath}"
+
+    def test_config_validator_exists(self):
+        """Verify that config_validator.py exists"""
+        filepath = os.path.join(self.REPO_DIR, "documentation/examples/config_validator.py")
+        assert os.path.exists(filepath), f"config_validator.py not found at {filepath}"
+
+    def test_all_modules_valid_python(self):
+        """Verify all modules are valid Python syntax"""
+        modules = [
+            "documentation/examples/config_generator.py",
+            "documentation/examples/rule_generator.py",
+            "documentation/examples/relabel_engine.py",
+            "documentation/examples/config_validator.py",
+        ]
+        for mod in modules:
+            filepath = os.path.join(self.REPO_DIR, mod)
+            if os.path.exists(filepath):
+                with open(filepath) as f:
+                    content = f.read()
+                try:
+                    ast.parse(content)
+                except SyntaxError as e:
+                    pytest.fail(f"{mod} has syntax errors: {e}")
+
+    # === Semantic Checks ===
+
+    def test_config_generator_class_exists(self):
+        """Verify PrometheusConfigGenerator class is defined"""
+        sys.path.insert(0, os.path.join(self.REPO_DIR, "documentation/examples"))
         try:
-            with open(path, "r", errors="ignore") as fh:
-                return fh.read()
-        except OSError:
-            return ""
-
-    # ── file_path_check ─────────────────────────────────────────────
-
-    def test_prometheus_config_package_exists(self):
-        """Verify __init__.py and generator.py exist under src/prometheus_config/."""
-        for rel in ("src/prometheus_config/__init__.py", "src/prometheus_config/generator.py"):
-            path = os.path.join(self.REPO_DIR, rel)
-            assert os.path.isfile(path), f"Missing: {rel}"
-
-    def test_rules_alertmanager_models_exist(self):
-        """Verify rules.py, alertmanager.py, and models.py exist."""
-        for rel in ("src/prometheus_config/rules.py",
-                     "src/prometheus_config/alertmanager.py",
-                     "src/prometheus_config/models.py"):
-            path = os.path.join(self.REPO_DIR, rel)
-            assert os.path.isfile(path), f"Missing: {rel}"
-
-    def test_classes_importable(self):
-        """PrometheusConfigGenerator, RuleGenerator, AlertmanagerConfigBuilder importable."""
-        if not os.path.isdir(self.REPO_DIR):
-            pytest.skip("Repo dir does not exist")
-        sys.path.insert(0, os.path.join(self.REPO_DIR, "src"))
-        try:
-            from prometheus_config.generator import PrometheusConfigGenerator  # noqa: F401
-            from prometheus_config.rules import RuleGenerator  # noqa: F401
-            from prometheus_config.alertmanager import AlertmanagerConfigBuilder  # noqa: F401
-        except ImportError:
-            pytest.skip("prometheus_config not importable")
+            from config_generator import PrometheusConfigGenerator
+            assert inspect.isclass(PrometheusConfigGenerator), (
+                "PrometheusConfigGenerator must be a class"
+            )
+        except ImportError as e:
+            pytest.fail(f"Cannot import PrometheusConfigGenerator: {e}")
         finally:
             sys.path.pop(0)
 
-    # ── semantic_check ──────────────────────────────────────────────
-
-    def test_rule_generator_methods_defined(self):
-        """Verify generate_alert_rule() and generate_recording_rule() are defined."""
-        content = self._read(os.path.join(self.REPO_DIR, "src/prometheus_config/rules.py"))
-        assert content, "rules.py is empty or unreadable"
-        for method in ("generate_alert_rule", "generate_recording_rule"):
-            assert method in content, f"'{method}' not found in rules.py"
-
-    def test_validation_error_for_invalid_inputs(self):
-        """Verify rules.py raises ValidationError for empty expr, bad severity."""
-        content = self._read(os.path.join(self.REPO_DIR, "src/prometheus_config/rules.py"))
-        assert content, "rules.py is empty or unreadable"
-        for kw in ("ValidationError", "critical", "warning", "info"):
-            assert kw in content, f"'{kw}' not found in rules.py"
-
-    def test_duration_pattern_validation(self):
-        """Verify rules.py uses regex to validate duration format (digits + s/m/h/d)."""
-        content = self._read(os.path.join(self.REPO_DIR, "src/prometheus_config/rules.py"))
-        assert content, "rules.py is empty or unreadable"
-        found = any(kw in content for kw in ("re.match", "re.fullmatch", "[smhd]"))
-        assert found, "Duration regex validation not found in rules.py"
-
-    # ── functional_check (import) ───────────────────────────────────
-
-    def _import(self, dotpath: str):
-        if not os.path.isdir(self.REPO_DIR):
-            pytest.skip("Repo dir does not exist")
-        sys.path.insert(0, os.path.join(self.REPO_DIR, "src"))
+    def test_rule_generator_has_required_methods(self):
+        """Verify RuleGenerator has required methods"""
+        sys.path.insert(0, os.path.join(self.REPO_DIR, "documentation/examples"))
         try:
-            return __import__(dotpath, fromlist=[""])
-        except ImportError:
-            pytest.skip(f"{dotpath} not importable")
+            from rule_generator import RuleGenerator
+            required_methods = [
+                "recording_rule", "alerting_rule",
+                "sli_recording_rules", "burn_rate_alerts",
+                "rule_group", "to_yaml"
+            ]
+            for method in required_methods:
+                assert hasattr(RuleGenerator, method) or hasattr(RuleGenerator(), method), (
+                    f"RuleGenerator missing method '{method}'"
+                )
+        except ImportError as e:
+            pytest.fail(f"Cannot import RuleGenerator: {e}")
         finally:
             sys.path.pop(0)
 
-    def test_prometheus_yml_has_scrape_configs(self):
-        """generate() with 2 scrape jobs produces YAML with 2 scrape_configs entries."""
-        import yaml
-        gen = self._import("prometheus_config.generator")
-        models = self._import("prometheus_config.models")
-        config = models.PrometheusConfig(scrape_configs=[
-            models.ScrapeConfig("job1", ["localhost:9090"]),
-            models.ScrapeConfig("job2", ["localhost:9091"]),
-        ])
-        out = yaml.safe_load(gen.PrometheusConfigGenerator().generate(config))
-        assert len(out["scrape_configs"]) == 2
+    def test_relabel_engine_has_required_methods(self):
+        """Verify RelabelEngine has required methods"""
+        sys.path.insert(0, os.path.join(self.REPO_DIR, "documentation/examples"))
+        try:
+            from relabel_engine import RelabelEngine
+            required_methods = [
+                "keep_by_label", "drop_by_label", "rename_label",
+                "extract_from_label", "drop_metric", "kubernetes_pod_relabels"
+            ]
+            for method in required_methods:
+                assert hasattr(RelabelEngine, method) or hasattr(RelabelEngine(), method), (
+                    f"RelabelEngine missing method '{method}'"
+                )
+        except ImportError as e:
+            pytest.fail(f"Cannot import RelabelEngine: {e}")
+        finally:
+            sys.path.pop(0)
 
-    def test_default_scrape_interval_15s(self):
-        """Config without scrape_interval defaults to global.scrape_interval='15s'."""
-        import yaml
-        gen = self._import("prometheus_config.generator")
-        models = self._import("prometheus_config.models")
-        out = yaml.safe_load(gen.PrometheusConfigGenerator().generate(models.PrometheusConfig()))
-        assert out["global"]["scrape_interval"] == "15s"
+    # === Functional Checks ===
 
-    def test_alert_rule_yaml_has_required_fields(self):
-        """generate_alert_rule() returns YAML with alert, expr, for, labels, annotations."""
-        import yaml
-        rules = self._import("prometheus_config.rules")
-        rule_yaml = rules.RuleGenerator().generate_alert_rule(
-            "HighCPU", "cpu_usage>80", "5m", "critical", {}, {})
-        rule = yaml.safe_load(rule_yaml)["groups"][0]["rules"][0]
-        for key in ("alert", "expr", "for", "labels", "annotations"):
-            assert key in rule, f"'{key}' not found in alert rule"
+    def test_config_generator_produces_valid_yaml(self):
+        """Verify PrometheusConfigGenerator.to_yaml() produces valid YAML"""
+        sys.path.insert(0, os.path.join(self.REPO_DIR, "documentation/examples"))
+        try:
+            import yaml
+            from config_generator import PrometheusConfigGenerator
+            gen = PrometheusConfigGenerator()
+            gen.add_scrape_config("test-job", targets=["localhost:9090"])
+            yaml_str = gen.to_yaml()
+            data = yaml.safe_load(yaml_str)
+            assert data is not None, "Generated YAML is empty"
+            assert "scrape_configs" in data, "Generated config missing 'scrape_configs'"
+        except ImportError as e:
+            pytest.skip(f"Cannot import: {e}")
+        finally:
+            sys.path.pop(0)
 
-    def test_empty_expr_raises_validation_error(self):
-        """generate_alert_rule() with empty expr raises ValidationError."""
-        rules = self._import("prometheus_config.rules")
-        models = self._import("prometheus_config.models")
-        with pytest.raises(models.ValidationError):
-            rules.RuleGenerator().generate_alert_rule("N", "", "5m", "critical", {}, {})
+    def test_config_generator_rejects_duplicate_job(self):
+        """Verify PrometheusConfigGenerator raises ValueError for duplicate job names"""
+        sys.path.insert(0, os.path.join(self.REPO_DIR, "documentation/examples"))
+        try:
+            from config_generator import PrometheusConfigGenerator
+            gen = PrometheusConfigGenerator()
+            gen.add_scrape_config("my-job", targets=["localhost:9090"])
+            with pytest.raises(ValueError) as exc_info:
+                gen.add_scrape_config("my-job", targets=["localhost:9091"])
+            assert "Duplicate" in str(exc_info.value) or "duplicate" in str(exc_info.value), (
+                f"Expected 'Duplicate job name' error, got: {exc_info.value}"
+            )
+        except ImportError as e:
+            pytest.skip(f"Cannot import: {e}")
+        finally:
+            sys.path.pop(0)
 
-    def test_invalid_severity_raises_validation_error(self):
-        """generate_alert_rule() with severity='urgent' raises ValidationError."""
-        rules = self._import("prometheus_config.rules")
-        models = self._import("prometheus_config.models")
-        with pytest.raises(models.ValidationError):
-            rules.RuleGenerator().generate_alert_rule(
-                "N", "cpu>80", "5m", "urgent", {}, {})
+    def test_sli_recording_rules_produces_4_rules(self):
+        """Verify sli_recording_rules produces 4 multi-window recording rules"""
+        sys.path.insert(0, os.path.join(self.REPO_DIR, "documentation/examples"))
+        try:
+            from rule_generator import RuleGenerator
+            rg = RuleGenerator()
+            rules = rg.sli_recording_rules("api", "http_errors_total", "http_requests_total")
+            assert isinstance(rules, list), f"Expected list, got {type(rules)}"
+            assert len(rules) == 4, f"Expected 4 recording rules, got {len(rules)}"
+            # Verify windows are present
+            windows = ["5m", "30m", "1h", "6h"]
+            rule_strs = str(rules)
+            for window in windows:
+                assert window in rule_strs, (
+                    f"Missing {window} window in SLI recording rules"
+                )
+        except ImportError as e:
+            pytest.skip(f"Cannot import: {e}")
+        finally:
+            sys.path.pop(0)
+
+    def test_burn_rate_alerts_produces_page_and_ticket(self):
+        """Verify burn_rate_alerts produces page and ticket alerts with correct thresholds"""
+        sys.path.insert(0, os.path.join(self.REPO_DIR, "documentation/examples"))
+        try:
+            from rule_generator import RuleGenerator
+            rg = RuleGenerator()
+            alerts = rg.burn_rate_alerts("api", 0.999)
+            assert isinstance(alerts, list), f"Expected list, got {type(alerts)}"
+            assert len(alerts) >= 2, f"Expected at least 2 alerts (page + ticket), got {len(alerts)}"
+
+            # Check for severity labels
+            severities = [a.get("labels", {}).get("severity", "") for a in alerts]
+            assert "critical" in severities, "Missing page alert with severity 'critical'"
+            assert "warning" in severities, "Missing ticket alert with severity 'warning'"
+        except ImportError as e:
+            pytest.skip(f"Cannot import: {e}")
+        finally:
+            sys.path.pop(0)
+
+    def test_relabel_keep_by_label(self):
+        """Verify RelabelEngine.keep_by_label produces correct relabel config"""
+        sys.path.insert(0, os.path.join(self.REPO_DIR, "documentation/examples"))
+        try:
+            from relabel_engine import RelabelEngine
+            engine = RelabelEngine()
+            config = engine.keep_by_label("__meta_kubernetes_namespace", "production")
+            assert isinstance(config, dict), f"Expected dict, got {type(config)}"
+            assert config.get("action") == "keep", f"Expected action 'keep', got {config.get('action')}"
+            assert "source_labels" in config, "Missing source_labels in relabel config"
+            assert "regex" in config, "Missing regex in relabel config"
+        except ImportError as e:
+            pytest.skip(f"Cannot import: {e}")
+        finally:
+            sys.path.pop(0)
+
+    def test_config_validator_catches_invalid_scheme(self):
+        """Verify ConfigValidator catches invalid scheme in scrape config"""
+        sys.path.insert(0, os.path.join(self.REPO_DIR, "documentation/examples"))
+        try:
+            from config_validator import ConfigValidator
+            validator = ConfigValidator()
+            config = {
+                "scrape_configs": [{
+                    "job_name": "test",
+                    "scheme": "ftp",
+                    "static_configs": [{"targets": ["localhost:9090"]}]
+                }]
+            }
+            errors = validator.validate_config(config)
+            assert isinstance(errors, list), f"Expected list of errors, got {type(errors)}"
+            assert len(errors) > 0, "Validator should catch invalid scheme 'ftp'"
+            error_str = str(errors).lower()
+            assert "scheme" in error_str or "ftp" in error_str, (
+                f"Expected error about invalid scheme, got: {errors}"
+            )
+        except ImportError as e:
+            pytest.skip(f"Cannot import: {e}")
+        finally:
+            sys.path.pop(0)
+
+    def test_config_validator_catches_missing_expr(self):
+        """Verify ConfigValidator catches missing expr in rules"""
+        sys.path.insert(0, os.path.join(self.REPO_DIR, "documentation/examples"))
+        try:
+            from config_validator import ConfigValidator
+            validator = ConfigValidator()
+            rule_file = {
+                "groups": [{
+                    "name": "test",
+                    "rules": [{"record": "test_metric"}]
+                }]
+            }
+            errors = validator.validate_rules(rule_file)
+            assert isinstance(errors, list), f"Expected list of errors, got {type(errors)}"
+            assert len(errors) > 0, "Validator should catch missing 'expr' in rule"
+            error_str = str(errors).lower()
+            assert "expr" in error_str, (
+                f"Expected error about missing expr, got: {errors}"
+            )
+        except ImportError as e:
+            pytest.skip(f"Cannot import: {e}")
+        finally:
+            sys.path.pop(0)

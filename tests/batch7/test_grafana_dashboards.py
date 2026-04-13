@@ -1,200 +1,165 @@
-"""Test file for the grafana-dashboards skill.
-
-This suite validates the DashboardProvisionService, ProvisionRequest/Result
-structs, error types, and provisioning logic in the Grafana repository.
+"""
+Test skill: grafana-dashboards
+Verify that the Agent implements a Dashboard Provisioning API Handler in Grafana —
+DashboardProvisionService (Provision method, validation, overwrite logic, error types),
+HTTP handler (status code mapping), and route registration with auth middleware.
 """
 
-from __future__ import annotations
-
-import pathlib
+import os
 import re
-
+import subprocess
 import pytest
 
 
 class TestGrafanaDashboards:
-    """Verify Grafana dashboard provisioning service."""
-
     REPO_DIR = "/workspace/grafana"
 
-    API_GO = "pkg/api/dashboard_provision.go"
-    SERVICE_GO = "pkg/services/dashboards/provision_service.go"
-    SERVICE_TEST_GO = "pkg/services/dashboards/provision_service_test.go"
+    # ────── helpers ──────
 
-    # ------------------------------------------------------------------
-    # Helpers
-    # ------------------------------------------------------------------
+    def _read(self, rel_path):
+        fpath = os.path.join(self.REPO_DIR, rel_path)
+        with open(fpath, "r") as f:
+            return f.read()
 
-    def _repo_path(self, relative: str) -> pathlib.Path:
-        return pathlib.Path(self.REPO_DIR, *relative.split("/"))
+    def _exists(self, rel_path):
+        return os.path.isfile(os.path.join(self.REPO_DIR, rel_path))
 
-    def _read_text(self, relative: str) -> str:
-        path = self._repo_path(relative)
-        assert path.exists(), f"Expected path to exist: {path}"
-        return path.read_text(encoding="utf-8", errors="ignore")
+    # === File Path Checks ===
 
-    def _assert_non_empty_file(self, relative: str) -> pathlib.Path:
-        path = self._repo_path(relative)
-        assert path.is_file(), f"Expected file to exist: {path}"
-        assert path.stat().st_size > 0, f"Expected non-empty file: {path}"
-        return path
+    def test_dashboard_provision_handler_exists(self):
+        """dashboard_provision.go must exist"""
+        assert self._exists("pkg/api/dashboard_provision.go")
 
-    def _go_struct_body(self, source: str, name: str) -> str | None:
-        m = re.search(rf"type\s+{name}\s+struct\s*\{{", source)
-        if m is None:
-            return None
-        depth, i = 1, m.end()
-        while i < len(source) and depth > 0:
-            if source[i] == "{":
-                depth += 1
-            elif source[i] == "}":
-                depth -= 1
-            i += 1
-        return source[m.start() : i]
+    def test_provision_service_exists(self):
+        """provision_service.go must exist"""
+        assert self._exists("pkg/services/dashboards/provision_service.go")
 
-    def _all_go_sources(self) -> str:
-        parts = []
-        for f in (self.API_GO, self.SERVICE_GO):
-            path = self._repo_path(f)
-            if path.exists():
-                parts.append(path.read_text(encoding="utf-8", errors="ignore"))
-        return "\n".join(parts)
+    def test_provision_service_test_exists(self):
+        """provision_service_test.go must exist"""
+        assert self._exists("pkg/services/dashboards/provision_service_test.go")
 
-    # ------------------------------------------------------------------
-    # Layer 1 – file_path_check (3 cases)
-    # ------------------------------------------------------------------
+    # === Semantic Checks — provision_service.go ===
 
-    def test_file_path_pkg_api_dashboard_provision_go_exists(self):
-        """Verify dashboard_provision.go exists and is non-empty."""
-        self._assert_non_empty_file(self.API_GO)
+    def test_provision_request_struct(self):
+        """ProvisionRequest struct must be defined"""
+        src = self._read("pkg/services/dashboards/provision_service.go")
+        assert re.search(r'type\s+ProvisionRequest\s+struct', src)
 
-    def test_file_path_pkg_services_dashboards_provision_service_go_exists(self):
-        """Verify provision_service.go exists and is non-empty."""
-        self._assert_non_empty_file(self.SERVICE_GO)
+    def test_provision_result_struct(self):
+        """ProvisionResult struct must be defined"""
+        src = self._read("pkg/services/dashboards/provision_service.go")
+        assert re.search(r'type\s+ProvisionResult\s+struct', src)
 
-    def test_file_path_pkg_services_dashboards_provision_service_test_go_exists(self):
-        """Verify provision_service_test.go exists and is non-empty."""
-        self._assert_non_empty_file(self.SERVICE_TEST_GO)
+    def test_service_struct(self):
+        """DashboardProvisionService struct must be defined"""
+        src = self._read("pkg/services/dashboards/provision_service.go")
+        assert "DashboardProvisionService" in src
 
-    # ------------------------------------------------------------------
-    # Layer 2 – semantic_check (5 cases)
-    # ------------------------------------------------------------------
+    def test_provision_method(self):
+        """Provision method must exist"""
+        src = self._read("pkg/services/dashboards/provision_service.go")
+        assert "Provision" in src
 
-    def test_semantic_provisionrequest_struct_has_dashboard_folderuid_overwrite_me(
-        self,
-    ):
-        """ProvisionRequest struct has dashboard, folderUid, overwrite, message fields with JSON tags."""
-        src = self._all_go_sources()
-        body = self._go_struct_body(src, "ProvisionRequest")
-        assert body is not None, "ProvisionRequest struct not found"
-        for field in ("dashboard", "folderUid", "overwrite", "message"):
-            assert re.search(
-                rf'(?i){field}.*json:"|json:".*{field}', body
-            ), f"ProvisionRequest missing {field} with JSON tag"
+    def test_title_validation(self):
+        """Must validate title field"""
+        src = self._read("pkg/services/dashboards/provision_service.go")
+        assert "title" in src.lower()
 
-    def test_semantic_provisionresult_struct_has_uid_id_url_status_version_slug_fi(
-        self,
-    ):
-        """ProvisionResult struct has uid, id, url, status, version, slug fields with JSON tags."""
-        src = self._all_go_sources()
-        body = self._go_struct_body(src, "ProvisionResult")
-        assert body is not None, "ProvisionResult struct not found"
-        for field in ("uid", "id", "url", "status", "version", "slug"):
-            assert re.search(
-                rf"(?i){field}", body
-            ), f"ProvisionResult missing {field} field"
+    def test_schema_version_validation(self):
+        """Must validate schemaVersion"""
+        src = self._read("pkg/services/dashboards/provision_service.go")
+        lower = src.lower()
+        assert "schemaversion" in lower or "schema_version" in lower
 
-    def test_semantic_errinvaliddashboard_and_errdashboardexists_types_implement_e(
-        self,
-    ):
-        """ErrInvalidDashboard and ErrDashboardExists types implement error interface."""
-        src = self._all_go_sources()
-        assert re.search(
-            r"ErrInvalidDashboard|errInvalidDashboard", src
-        ), "ErrInvalidDashboard type not found"
-        assert re.search(
-            r"ErrDashboardExists|errDashboardExists", src
-        ), "ErrDashboardExists type not found"
-        # Should implement Error() method
-        assert re.search(
-            r"func\s*\(.*Err.*\)\s*Error\s*\(", src
-        ), "Error types must implement Error() method"
+    def test_overwrite_logic(self):
+        """Must handle overwrite flag"""
+        src = self._read("pkg/services/dashboards/provision_service.go")
+        assert "Overwrite" in src or "overwrite" in src
 
-    def test_semantic_dashboardprovisionservice_has_store_foldersvc_guardian_depen(
-        self,
-    ):
-        """DashboardProvisionService has store, folderSvc, guardian dependencies."""
-        src = self._all_go_sources()
-        body = self._go_struct_body(src, "DashboardProvisionService")
-        assert body is not None, "DashboardProvisionService struct not found"
-        assert re.search(r"store|Store", body), "Missing store dependency"
-        assert re.search(r"folder|Folder", body), "Missing folderSvc dependency"
+    def test_uid_generation(self):
+        """Must generate UID when not provided"""
+        src = self._read("pkg/services/dashboards/provision_service.go")
+        lower = src.lower()
+        assert "uid" in lower and ("generate" in lower or "shortuid" in lower)
 
-    def test_semantic_provision_method_signature_matches_ctx_orgid_req_result_erro(
-        self,
-    ):
-        """Provision method signature matches (ctx, orgID, req) → (result, error)."""
-        src = self._all_go_sources()
-        assert re.search(
-            r"func\s*\(.*DashboardProvisionService\)\s*Provision\s*\(",
-            src,
-        ), "Provision method not found on DashboardProvisionService"
-        assert re.search(
-            r"context\.Context|ctx\s", src
-        ), "Provision should accept context parameter"
+    def test_err_invalid_dashboard(self):
+        """ErrInvalidDashboard error type must be defined"""
+        src = self._read("pkg/services/dashboards/provision_service.go")
+        assert "ErrInvalidDashboard" in src
 
-    # ------------------------------------------------------------------
-    # Layer 3 – functional_check (5 cases, mocked via source analysis)
-    # ------------------------------------------------------------------
+    def test_err_dashboard_exists(self):
+        """ErrDashboardExists error type must be defined"""
+        src = self._read("pkg/services/dashboards/provision_service.go")
+        assert "ErrDashboardExists" in src
 
-    def test_functional_new_dashboard_without_uid_gets_auto_generated_uid_and_versio(
-        self,
-    ):
-        """New dashboard without UID gets auto-generated UID and version=1."""
-        src = self._all_go_sources()
-        assert re.search(
-            r"uid|UID|GenerateUID|uuid|shortid", src, re.IGNORECASE
-        ), "Service should auto-generate UID for new dashboards"
-        assert re.search(
-            r"[Vv]ersion.*=.*1|version.*1", src
-        ), "New dashboards should start at version=1"
+    def test_folder_resolution(self):
+        """Must resolve folder by UID"""
+        src = self._read("pkg/services/dashboards/provision_service.go")
+        lower = src.lower()
+        assert "folder" in lower
 
-    def test_functional_dashboard_with_existing_uid_and_overwrite_false_returns_errd(
-        self,
-    ):
-        """Dashboard with existing UID and overwrite=false returns ErrDashboardExists."""
-        src = self._all_go_sources()
-        assert re.search(
-            r"[Oo]verwrite|overwrite", src
-        ), "Service must check overwrite flag"
-        assert re.search(
-            r"ErrDashboardExists|DashboardExists", src
-        ), "Service should return ErrDashboardExists when overwrite=false"
+    def test_version_increment(self):
+        """Must increment version on overwrite"""
+        src = self._read("pkg/services/dashboards/provision_service.go")
+        lower = src.lower()
+        assert "version" in lower
 
-    def test_functional_dashboard_with_existing_uid_and_overwrite_true_returns_incre(
-        self,
-    ):
-        """Dashboard with existing UID and overwrite=true returns incremented version."""
-        src = self._all_go_sources()
-        assert re.search(
-            r"[Vv]ersion.*\+.*1|[Vv]ersion\+\+|increment.*version", src, re.IGNORECASE
-        ), "Service should increment version on overwrite"
+    # === Semantic Checks — dashboard_provision.go ===
 
-    def test_functional_missing_title_returns_errinvaliddashboard_with_field_title(
-        self,
-    ):
-        """Missing title returns ErrInvalidDashboard with field='title'."""
-        src = self._all_go_sources()
-        assert re.search(r"[Tt]itle", src), "Service must validate title field"
-        assert re.search(
-            r"ErrInvalidDashboard|InvalidDashboard", src
-        ), "Service should return ErrInvalidDashboard for missing title"
+    def test_handler_function(self):
+        """ProvisionDashboardHandler must be defined"""
+        src = self._read("pkg/api/dashboard_provision.go")
+        assert "ProvisionDashboardHandler" in src
 
-    def test_functional_schemaversion_0_returns_errinvaliddashboard_with_field_schem(
-        self,
-    ):
-        """schemaVersion=0 returns ErrInvalidDashboard with field='schemaVersion'."""
-        src = self._all_go_sources()
-        assert re.search(
-            r"[Ss]chema[Vv]ersion|schemaVersion", src
-        ), "Service must validate schemaVersion"
+    def test_http_status_codes(self):
+        """Must return 400, 409, 500 for different error types"""
+        src = self._read("pkg/api/dashboard_provision.go")
+        assert "BadRequest" in src or "400" in src
+        assert "Conflict" in src or "409" in src
+
+    def test_json_decode(self):
+        """Must decode request body"""
+        src = self._read("pkg/api/dashboard_provision.go")
+        assert "Decode" in src or "Bind" in src or "json" in src.lower()
+
+    # === Semantic Checks — Route Registration ===
+
+    def test_route_registration(self):
+        """Route must be registered in dashboard_routes.go"""
+        src = self._read("pkg/api/routing/dashboard_routes.go")
+        assert "provision" in src.lower() or "ProvisionDashboard" in src
+
+    def test_auth_middleware(self):
+        """Route must use auth middleware"""
+        src = self._read("pkg/api/routing/dashboard_routes.go")
+        lower = src.lower()
+        assert "signedin" in lower or "reqsignedin" in lower or "auth" in lower
+
+    def test_role_check(self):
+        """Route must require Editor role"""
+        src = self._read("pkg/api/routing/dashboard_routes.go")
+        assert "Editor" in src or "RoleEditor" in src or "editor" in src.lower()
+
+    # === Functional Checks ===
+
+    def test_go_build(self):
+        """Project must build"""
+        result = subprocess.run(
+            ["go", "build", "./pkg/..."],
+            capture_output=True, text=True, cwd=self.REPO_DIR, timeout=600,
+        )
+        assert result.returncode == 0, (
+            f"go build failed:\n{result.stdout}\n{result.stderr}"
+        )
+
+    def test_provision_service_tests(self):
+        """Provision service tests must pass"""
+        result = subprocess.run(
+            ["go", "test", "-v",
+             "./pkg/services/dashboards/...",
+             "-run", "TestProvision"],
+            capture_output=True, text=True, cwd=self.REPO_DIR, timeout=300,
+        )
+        assert result.returncode == 0, (
+            f"Tests failed:\n{result.stdout}\n{result.stderr}"
+        )

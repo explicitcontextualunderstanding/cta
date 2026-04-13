@@ -1,166 +1,167 @@
-"""Test file for the python-observability skill.
-
-This suite validates OTLP exporter observability metrics (counters,
-histograms, gauges), structured logging, and retry behavior.
+"""
+Test skill: python-observability
+Verify that the Agent adds OpenTelemetry self-instrumentation to the OTLP HTTP
+exporter — Prometheus metrics (counter/histogram/gauge), structured logging via
+structlog, and signal type detection on exporter subclasses.
 """
 
-from __future__ import annotations
-
-import ast
-import pathlib
+import os
 import re
-
+import subprocess
 import pytest
 
 
 class TestPythonObservability:
-    """Verify OTLP exporter observability in opentelemetry-python."""
-
     REPO_DIR = "/workspace/opentelemetry-python"
 
-    METRICS_PY = "exporter/opentelemetry-exporter-otlp-proto-http/src/opentelemetry/exporter/otlp/proto/http/metrics.py"
-    TEST_PY = "exporter/opentelemetry-exporter-otlp-proto-http/tests/test_exporter_observability.py"
-    EXPORTER_PY = "exporter/opentelemetry-exporter-otlp-proto-http/src/opentelemetry/exporter/otlp/proto/http/exporter.py"
+    # ────── helpers ──────
 
-    # ------------------------------------------------------------------
-    # Helpers
-    # ------------------------------------------------------------------
+    def _read(self, rel_path):
+        fpath = os.path.join(self.REPO_DIR, rel_path)
+        with open(fpath, "r") as f:
+            return f.read()
 
-    def _repo_path(self, relative: str) -> pathlib.Path:
-        return pathlib.Path(self.REPO_DIR, *relative.split("/"))
+    def _exists(self, rel_path):
+        return os.path.isfile(os.path.join(self.REPO_DIR, rel_path))
 
-    def _read_text(self, relative: str) -> str:
-        path = self._repo_path(relative)
-        assert path.exists(), f"Expected path to exist: {path}"
-        return path.read_text(encoding="utf-8", errors="ignore")
+    _BASE = (
+        "exporter/opentelemetry-exporter-otlp-proto-http/"
+        "src/opentelemetry/exporter/otlp/proto/http"
+    )
 
-    def _assert_non_empty_file(self, relative: str) -> pathlib.Path:
-        path = self._repo_path(relative)
-        assert path.is_file(), f"Expected file to exist: {path}"
-        assert path.stat().st_size > 0, f"Expected non-empty file: {path}"
-        return path
+    # === File Path Checks ===
 
-    def _all_sources(self) -> str:
-        parts = []
-        for rel in (self.METRICS_PY, self.EXPORTER_PY):
-            p = self._repo_path(rel)
-            if p.is_file():
-                parts.append(p.read_text(encoding="utf-8", errors="ignore"))
-        return "\n".join(parts)
+    def test_metrics_module_exists(self):
+        """metrics.py must exist"""
+        assert self._exists(f"{self._BASE}/metrics.py")
 
-    # ------------------------------------------------------------------
-    # Layer 1 – file_path_check (3 cases)
-    # ------------------------------------------------------------------
+    def test_observability_test_exists(self):
+        """test_exporter_observability.py must exist"""
+        assert self._exists(
+            "exporter/opentelemetry-exporter-otlp-proto-http/"
+            "tests/test_exporter_observability.py"
+        )
 
-    def test_file_path_exporter_opentelemetry_exporter_otlp_proto_http_src_opentele(
-        self,
-    ):
-        """Verify metrics.py exists and is non-empty."""
-        self._assert_non_empty_file(self.METRICS_PY)
+    # === Semantic Checks — metrics.py ===
 
-    def test_file_path_exporter_opentelemetry_exporter_otlp_proto_http_tests_test_e(
-        self,
-    ):
-        """Verify test_exporter_observability.py exists and is non-empty."""
-        self._assert_non_empty_file(self.TEST_PY)
+    def test_export_requests_total_counter(self):
+        """OTLP_EXPORT_REQUESTS_TOTAL counter must be defined"""
+        src = self._read(f"{self._BASE}/metrics.py")
+        assert "OTLP_EXPORT_REQUESTS_TOTAL" in src or "otlp_exporter_export_requests_total" in src
 
-    def test_file_path_exporter_opentelemetry_exporter_otlp_proto_http_src_opentele_1(
-        self,
-    ):
-        """Verify exporter.py exists (modified)."""
-        self._assert_non_empty_file(self.EXPORTER_PY)
+    def test_export_duration_histogram(self):
+        """OTLP_EXPORT_DURATION_SECONDS histogram must be defined"""
+        src = self._read(f"{self._BASE}/metrics.py")
+        assert "OTLP_EXPORT_DURATION_SECONDS" in src or "otlp_exporter_export_duration_seconds" in src
 
-    # ------------------------------------------------------------------
-    # Layer 2 – semantic_check (5 cases)
-    # ------------------------------------------------------------------
+    def test_export_items_counter(self):
+        """OTLP_EXPORT_ITEMS_TOTAL counter must be defined"""
+        src = self._read(f"{self._BASE}/metrics.py")
+        assert "OTLP_EXPORT_ITEMS_TOTAL" in src or "otlp_exporter_items_exported_total" in src
 
-    def test_semantic_otlp_export_requests_total_is_a_counter_with_labelnames_expo(
-        self,
-    ):
-        """OTLP_EXPORT_REQUESTS_TOTAL is a Counter with labelnames."""
-        src = self._all_sources()
-        assert re.search(
-            r"OTLP_EXPORT_REQUESTS_TOTAL|export_requests_total", src
-        ), "OTLP_EXPORT_REQUESTS_TOTAL counter not found"
-        assert re.search(r"Counter\s*\(", src), "Counter metric required"
+    def test_export_queue_size_gauge(self):
+        """OTLP_EXPORT_QUEUE_SIZE gauge must be defined"""
+        src = self._read(f"{self._BASE}/metrics.py")
+        assert "OTLP_EXPORT_QUEUE_SIZE" in src or "otlp_exporter_queue_size" in src
 
-    def test_semantic_otlp_export_duration_seconds_is_a_histogram_with_specified_b(
-        self,
-    ):
-        """OTLP_EXPORT_DURATION_SECONDS is a Histogram with specified buckets."""
-        src = self._all_sources()
-        assert re.search(
-            r"OTLP_EXPORT_DURATION_SECONDS|export_duration", src
-        ), "OTLP_EXPORT_DURATION_SECONDS histogram not found"
-        assert re.search(r"Histogram\s*\(", src), "Histogram metric required"
+    def test_prometheus_client_imports(self):
+        """Must import from prometheus_client"""
+        src = self._read(f"{self._BASE}/metrics.py")
+        assert "prometheus_client" in src or "Counter" in src
 
-    def test_semantic_otlp_export_items_total_is_a_counter_with_correct_labels(self):
-        """OTLP_EXPORT_ITEMS_TOTAL is a Counter with correct labels."""
-        src = self._all_sources()
-        assert re.search(
-            r"OTLP_EXPORT_ITEMS_TOTAL|export_items_total", src
-        ), "OTLP_EXPORT_ITEMS_TOTAL counter not found"
+    def test_label_names(self):
+        """Metrics must include exporter_type, signal, status labels"""
+        src = self._read(f"{self._BASE}/metrics.py")
+        for label in ["exporter_type", "signal"]:
+            assert label in src, f"Missing label: {label}"
 
-    def test_semantic_otlp_export_queue_size_is_a_gauge_with_correct_labels(self):
-        """OTLP_EXPORT_QUEUE_SIZE is a Gauge with correct labels."""
-        src = self._all_sources()
-        assert re.search(
-            r"OTLP_EXPORT_QUEUE_SIZE|export_queue_size", src
-        ), "OTLP_EXPORT_QUEUE_SIZE gauge not found"
-        assert re.search(r"Gauge\s*\(", src), "Gauge metric required"
+    def test_histogram_buckets(self):
+        """Duration histogram must define custom buckets"""
+        src = self._read(f"{self._BASE}/metrics.py")
+        assert "buckets" in src.lower()
 
-    def test_semantic_structlog_get_logger___name___used_not_root_logger(self):
-        """structlog.get_logger(__name__) used (not root logger)."""
-        src = self._all_sources()
-        assert re.search(
-            r"structlog\.get_logger|getLogger\(__name__\)|logger.*__name__", src
-        ), "Should use structlog.get_logger(__name__) or getLogger(__name__)"
+    # === Semantic Checks — exporter.py modifications ===
 
-    # ------------------------------------------------------------------
-    # Layer 3 – functional_check (5 cases, source analysis)
-    # ------------------------------------------------------------------
+    def test_exporter_import_metrics(self):
+        """exporter.py must import metrics"""
+        src = self._read(f"{self._BASE}/exporter.py")
+        assert "metrics" in src.lower() or "OTLP_EXPORT" in src
 
-    def test_functional_export_100_spans_requests_total_success_1_items_total_succes(
-        self,
-    ):
-        """Export 100 spans -> REQUESTS_TOTAL(success)=1, ITEMS_TOTAL(success)=100."""
-        src = self._all_sources()
-        assert re.search(
-            r"labels\s*\(|inc\s*\(|observe\s*\(", src
-        ), "Metrics should be incremented during export"
+    def test_export_duration_recording(self):
+        """_export must record duration"""
+        src = self._read(f"{self._BASE}/exporter.py")
+        lower = src.lower()
+        assert "duration" in lower or "time" in lower
 
-    def test_functional_server_returns_503_with_2_retries_then_failure_retried_2_fai(
-        self,
-    ):
-        """Server returns 503 with 2 retries then failure -> retried=2, failed=1."""
-        src = self._all_sources()
-        assert re.search(
-            r"retr|503|retry", src, re.IGNORECASE
-        ), "Retry logic should exist for 503 responses"
+    def test_status_labels(self):
+        """Must use status labels: success, failed, retried"""
+        src = self._read(f"{self._BASE}/exporter.py")
+        for status in ["success", "failed", "retried"]:
+            assert status in src, f"Missing status label: {status}"
 
-    def test_functional_duration_histogram_has_observation_after_successful_export(
-        self,
-    ):
-        """Duration histogram has observation after successful export."""
-        src = self._all_sources()
-        assert re.search(
-            r"observe\s*\(|time\s*\(|duration", src
-        ), "Duration histogram should be observed after export"
+    def test_best_effort_metrics(self):
+        """Metrics recording must be best-effort (catch exceptions)"""
+        src = self._read(f"{self._BASE}/exporter.py")
+        assert "except" in src or "try" in src
 
-    def test_functional_prometheus_client_exception_during_labels_export_still_compl(
-        self,
-    ):
-        """prometheus_client exception during labels() -> export still completes."""
-        src = self._all_sources()
-        assert re.search(
-            r"except|try|Exception", src
-        ), "Metrics failures should not interrupt exports"
+    # === Semantic Checks — Structured Logging ===
 
-    def test_functional_structured_logs_contain_endpoint_signal_duration_ms_fields(
-        self,
-    ):
-        """Structured logs contain endpoint, signal, duration_ms fields."""
-        src = self._all_sources()
-        assert re.search(
-            r"endpoint|signal|duration_ms|log\.", src
-        ), "Structured logs should contain endpoint, signal, duration_ms"
+    def test_structlog_usage(self):
+        """Must use structlog"""
+        src = self._read(f"{self._BASE}/exporter.py")
+        assert "structlog" in src
+
+    def test_structured_log_fields(self):
+        """Structured logs must include endpoint and signal fields"""
+        src = self._read(f"{self._BASE}/exporter.py")
+        assert "endpoint" in src
+        assert "signal" in src
+
+    # === Semantic Checks — Signal Type ===
+
+    def test_signal_type_attribute(self):
+        """_signal_type class attribute must be set"""
+        found = False
+        for root, _, files in os.walk(os.path.join(self.REPO_DIR, self._BASE)):
+            for fn in files:
+                if fn.endswith(".py"):
+                    content = open(os.path.join(root, fn)).read()
+                    if "_signal_type" in content:
+                        found = True
+                        break
+        assert found, "_signal_type attribute not found"
+
+    # === Functional Checks ===
+
+    def test_python_syntax_metrics(self):
+        """metrics.py must have valid syntax"""
+        result = subprocess.run(
+            ["python", "-c",
+             f"import py_compile; py_compile.compile('{self._BASE}/metrics.py', doraise=True)"],
+            capture_output=True, text=True, cwd=self.REPO_DIR, timeout=30,
+        )
+        assert result.returncode == 0, f"Syntax error:\n{result.stderr}"
+
+    def test_observability_tests_pass(self):
+        """Observability tests must pass"""
+        result = subprocess.run(
+            ["python", "-m", "pytest",
+             "exporter/opentelemetry-exporter-otlp-proto-http/tests/test_exporter_observability.py",
+             "-v", "--tb=short"],
+            capture_output=True, text=True, cwd=self.REPO_DIR, timeout=120,
+        )
+        assert result.returncode == 0, (
+            f"Tests failed:\n{result.stdout}\n{result.stderr}"
+        )
+
+    def test_existing_exporter_tests_pass(self):
+        """Existing OTLP HTTP exporter tests must still pass"""
+        result = subprocess.run(
+            ["python", "-m", "pytest",
+             "exporter/opentelemetry-exporter-otlp-proto-http/tests/",
+             "-v", "--tb=short", "-x"],
+            capture_output=True, text=True, cwd=self.REPO_DIR, timeout=180,
+        )
+        assert result.returncode == 0, (
+            f"Existing tests failed:\n{result.stdout}\n{result.stderr}"
+        )

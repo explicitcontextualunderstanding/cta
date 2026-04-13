@@ -1,179 +1,151 @@
 """
-Test for 'similarity-search-patterns' skill — Milvus Similarity Search
-Validates that the Agent implemented a Milvus-based similarity search service
-with batch upsert, metadata filtering, index management, and query optimization.
+Tests for the similarity-search-patterns skill.
+Validates a multi-backend similarity search service for Milvus with
+index configuration, search with filters, reranking, and benchmarking.
 """
 
 import os
 import re
-import sys
+import ast
 
-import pytest
+REPO_DIR = "/workspace/milvus"
+CLIENT_DIR = os.path.join(REPO_DIR, "tests", "python_client")
 
 
 class TestSimilaritySearchPatterns:
-    """Verify Milvus similarity search implementation."""
+    """Tests for the Milvus similarity search service."""
 
-    REPO_DIR = "/workspace/milvus"
+    # ── file_path_check ──────────────────────────────────────────────
 
-    @staticmethod
-    def _read(path: str) -> str:
-        try:
-            with open(path, "r", errors="ignore") as fh:
-                return fh.read()
-        except OSError:
+    def test_search_service_exists(self):
+        """SimilaritySearchService module must exist."""
+        path = os.path.join(CLIENT_DIR, "search_service.py")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    def test_index_config_exists(self):
+        """IndexConfig and IndexFactory module must exist."""
+        path = os.path.join(CLIENT_DIR, "index_config.py")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    def test_search_benchmark_exists(self):
+        """SearchBenchmark module must exist."""
+        path = os.path.join(CLIENT_DIR, "search_benchmark.py")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    def test_reranker_exists(self):
+        """SearchReranker module must exist."""
+        path = os.path.join(CLIENT_DIR, "reranker.py")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    # ── semantic_check ───────────────────────────────────────────────
+
+    def _read(self, filename):
+        path = os.path.join(CLIENT_DIR, filename)
+        if not os.path.isfile(path):
             return ""
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read()
 
-    # ── file_path_check ─────────────────────────────────────────────
+    def test_index_factory_class(self):
+        """IndexFactory class must be defined with create method."""
+        content = self._read("index_config.py")
+        assert re.search(r"class\s+IndexFactory", content), "IndexFactory class not defined"
+        assert re.search(r"def\s+create\b", content), "create method not defined"
 
-    def test_service_module_exists(self):
-        """Verify similarity_search/service.py or similarity_search.py exists."""
-        candidates = ("similarity_search/service.py", "similarity_search.py")
-        found = any(
-            os.path.isfile(os.path.join(self.REPO_DIR, c)) for c in candidates)
-        assert found, f"Missing: none of {candidates} found"
+    def test_index_types_supported(self):
+        """IndexFactory must support FLAT, IVF_FLAT, IVF_PQ, HNSW."""
+        content = self._read("index_config.py")
+        for itype in ["FLAT", "IVF_FLAT", "IVF_PQ", "HNSW"]:
+            assert itype in content, f"Index type '{itype}' not supported"
 
-    def test_index_manager_module_exists(self):
-        """Verify index_manager.py or similarity_search/index_manager.py exists."""
-        candidates = ("similarity_search/index_manager.py", "index_manager.py")
-        found = any(
-            os.path.isfile(os.path.join(self.REPO_DIR, c)) for c in candidates)
-        assert found, f"Missing: none of {candidates} found"
+    def test_search_service_class(self):
+        """SimilaritySearchService must define insert, search, batch_search."""
+        content = self._read("search_service.py")
+        assert re.search(r"class\s+SimilaritySearchService", content), (
+            "SimilaritySearchService class not defined"
+        )
+        for method in ["insert", "search", "batch_search"]:
+            assert re.search(rf"def\s+{method}\b", content), (
+                f"{method} method not defined"
+            )
 
-    def test_query_optimizer_module_exists(self):
-        """Verify query_optimizer.py or similarity_search/optimizer.py exists."""
-        candidates = ("similarity_search/optimizer.py", "query_optimizer.py")
-        found = any(
-            os.path.isfile(os.path.join(self.REPO_DIR, c)) for c in candidates)
-        assert found, f"Missing: none of {candidates} found"
+    def test_deduplicated_batch_search_defined(self):
+        """deduplicated_batch_search method must be defined."""
+        content = self._read("search_service.py")
+        assert re.search(r"def\s+deduplicated_batch_search\b", content), (
+            "deduplicated_batch_search method not defined"
+        )
 
-    # ── semantic_check ──────────────────────────────────────────────
+    def test_multi_vector_search_defined(self):
+        """multi_vector_search method must be defined."""
+        content = self._read("search_service.py")
+        assert re.search(r"def\s+multi_vector_search\b", content), (
+            "multi_vector_search method not defined"
+        )
 
-    def _find_service_file(self):
-        for c in ("similarity_search/service.py", "similarity_search.py"):
-            p = os.path.join(self.REPO_DIR, c)
-            if os.path.isfile(p):
-                return p
-        return None
+    def test_reranker_mmr_and_rrf(self):
+        """SearchReranker must implement MMR reranking and RRF fusion."""
+        content = self._read("reranker.py")
+        assert re.search(r"class\s+SearchReranker", content), "SearchReranker class not defined"
+        assert re.search(r"def\s+mmr_rerank\b", content), "mmr_rerank method not defined"
+        assert re.search(r"def\s+rrf_fuse\b", content), "rrf_fuse method not defined"
 
-    def _find_index_manager_file(self):
-        for c in ("similarity_search/index_manager.py", "index_manager.py"):
-            p = os.path.join(self.REPO_DIR, c)
-            if os.path.isfile(p):
-                return p
-        return None
+    def test_metadata_filter_support(self):
+        """Search must support metadata filtering with comparison operators."""
+        content = self._read("search_service.py")
+        assert re.search(r"filter|_lt|_gt|_lte|_gte|predicate", content, re.IGNORECASE), (
+            "Metadata filter support not found"
+        )
 
-    def test_pymilvus_import_present(self):
-        """Verify pymilvus import is present in the service module."""
-        path = self._find_service_file()
-        assert path, "Service module not found"
-        content = self._read(path)
-        found = any(kw in content for kw in ("from pymilvus", "import pymilvus"))
-        assert found, "pymilvus import not found in service module"
+    def test_benchmark_compare_configs(self):
+        """SearchBenchmark must define compare_configs and find_optimal."""
+        content = self._read("search_benchmark.py")
+        assert re.search(r"class\s+SearchBenchmark", content), (
+            "SearchBenchmark class not defined"
+        )
+        assert re.search(r"def\s+compare_configs\b", content), "compare_configs not defined"
+        assert re.search(r"def\s+find_optimal\b", content), "find_optimal not defined"
 
-    def test_batch_size_parameter_in_upsert(self):
-        """Verify batch_size parameter exists in upsert/insert method signature."""
-        path = self._find_service_file()
-        assert path, "Service module not found"
-        content = self._read(path)
-        assert "batch_size" in content, "batch_size not found in service module"
+    # ── functional_check ─────────────────────────────────────────────
 
-    def test_metadata_filter_expr_param(self):
-        """Verify expr= keyword is passed to Collection.search() for metadata filtering."""
-        path = self._find_service_file()
-        assert path, "Service module not found"
-        content = self._read(path)
-        assert "expr=" in content, "expr= not found in service module"
+    def test_all_files_valid_python(self):
+        """All search service Python files must have valid syntax."""
+        errors = []
+        for fname in ["search_service.py", "index_config.py",
+                       "search_benchmark.py", "reranker.py"]:
+            content = self._read(fname)
+            if not content:
+                continue
+            try:
+                ast.parse(content)
+            except SyntaxError as e:
+                errors.append(f"{fname}: {e}")
+        assert not errors, "Syntax errors:\n" + "\n".join(errors)
 
-    def test_supported_index_types_constant(self):
-        """Verify SUPPORTED_INDEX_TYPES or equivalent constant guards index creation."""
-        path = self._find_index_manager_file()
-        assert path, "Index manager module not found"
-        content = self._read(path)
-        found = any(kw in content for kw in (
-            "SUPPORTED_INDEX_TYPES", "IVF_FLAT", "HNSW"))
-        assert found, "Supported index types not found in index manager"
+    def test_dimension_validation(self):
+        """Insert/search must validate vector dimensions."""
+        content = self._read("search_service.py")
+        assert re.search(r"dimension|ValueError|len\(.*\)|shape", content), (
+            "Dimension validation not found"
+        )
 
-    # ── functional_check (import) ───────────────────────────────────
+    def test_cosine_similarity_in_reranker(self):
+        """Reranker must compute cosine similarity with zero-norm handling."""
+        content = self._read("reranker.py")
+        assert re.search(r"cosine|dot|norm", content, re.IGNORECASE), (
+            "Cosine similarity not found in reranker"
+        )
 
-    def _skip_unless_importable(self):
-        if not os.path.isdir(self.REPO_DIR):
-            pytest.skip("Repo dir does not exist")
-        if self.REPO_DIR not in sys.path:
-            sys.path.insert(0, self.REPO_DIR)
+    def test_weight_normalization(self):
+        """multi_vector_search must normalize weights to sum to 1.0."""
+        content = self._read("search_service.py")
+        assert re.search(r"normalize|sum.*weight|weight.*sum", content, re.IGNORECASE), (
+            "Weight normalization not found"
+        )
 
-    def test_search_results_sorted_by_score_descending(self):
-        """search() with mock Collection returns results sorted descending by score."""
-        self._skip_unless_importable()
-        from unittest.mock import MagicMock
-        try:
-            from similarity_search.service import SimilaritySearchService
-        except Exception as exc:
-            pytest.skip(f"Cannot import: {exc}")
-        hit1 = MagicMock()
-        hit1.id = "a"
-        hit1.score = 0.9
-        hit1.entity.to_dict.return_value = {}
-        hit2 = MagicMock()
-        hit2.id = "b"
-        hit2.score = 0.5
-        hit2.entity.to_dict.return_value = {}
-        svc = SimilaritySearchService.__new__(SimilaritySearchService)
-        mock_col = MagicMock()
-        mock_col.search.return_value = [[hit2, hit1]]
-        svc._collection = mock_col
-        results = svc.search([0.0] * 128, top_k=2)
-        scores = [r[1] for r in results]
-        assert scores == sorted(scores, reverse=True), \
-            "Results must be sorted descending by score"
-
-    def test_invalid_index_type_raises_value_error(self):
-        """VectorIndexManager.create_index() with unsupported type raises ValueError."""
-        self._skip_unless_importable()
-        from unittest.mock import MagicMock
-        try:
-            from similarity_search.index_manager import VectorIndexManager
-        except Exception as exc:
-            pytest.skip(f"Cannot import: {exc}")
-        mgr = VectorIndexManager()
-        with pytest.raises(ValueError):
-            mgr.create_index(MagicMock(),
-                             {"index_type": "FLAT_UNSUPPORTED", "params": {}})
-
-    def test_batch_upsert_splits_1001_into_three_batches(self):
-        """Batch upsert of 1001 vectors with batch_size=500 calls insert 3 times."""
-        self._skip_unless_importable()
-        from unittest.mock import MagicMock
-        try:
-            from similarity_search.service import SimilaritySearchService
-        except Exception as exc:
-            pytest.skip(f"Cannot import: {exc}")
-        svc = SimilaritySearchService.__new__(SimilaritySearchService)
-        call_count = [0]
-
-        def fake_insert(data):
-            call_count[0] += 1
-            return True
-
-        mock_col = MagicMock()
-        mock_col.insert.side_effect = fake_insert
-        svc._collection = mock_col
-        vectors = [(str(i), [0.0] * 128, {}) for i in range(1001)]
-        svc.batch_upsert(vectors, batch_size=500)
-        assert call_count[0] == 3, f"Expected 3 batches, got {call_count[0]}"
-
-    def test_delete_does_not_appear_in_search(self):
-        """After delete(), search on mock collection confirms deleted vector absent."""
-        self._skip_unless_importable()
-        from unittest.mock import MagicMock
-        try:
-            from similarity_search.service import SimilaritySearchService
-        except Exception as exc:
-            pytest.skip(f"Cannot import: {exc}")
-        svc = SimilaritySearchService.__new__(SimilaritySearchService)
-        mock_col = MagicMock()
-        mock_col.search.return_value = [[]]
-        svc._collection = mock_col
-        svc.delete("vec-1")
-        results = svc.search([0.0] * 128, top_k=5)
-        assert results == [], f"Expected empty results, got {results}"
+    def test_index_param_validation(self):
+        """IndexFactory must validate parameter ranges (M, nlist, etc.)."""
+        content = self._read("index_config.py")
+        assert re.search(r"ValueError|range|<|>|must be", content), (
+            "Parameter range validation not found in IndexFactory"
+        )

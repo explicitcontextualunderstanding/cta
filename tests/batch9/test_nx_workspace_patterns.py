@@ -1,146 +1,151 @@
 """
-Test for 'nx-workspace-patterns' skill — Nx Monorepo Configuration
-Validates nx.json, .eslintrc.json, project.json configs for caching,
-module boundaries, named inputs, and target definitions via JSON parsing.
+Test skill: nx-workspace-patterns
+Verify that the Agent creates nx.json pipeline configuration, multiple project.json files,
+.eslintrc.json module boundaries, and tsconfig.base.json in an Nx workspace.
 """
 
-import glob
-import json
 import os
-
+import re
+import json
+import subprocess
 import pytest
 
 
 class TestNxWorkspacePatterns:
-    """Verify Nx workspace configuration: nx.json, eslintrc, project.json."""
-
     REPO_DIR = "/workspace/nx"
 
-    # ── helpers ──────────────────────────────────────────────────────────
-
-    @staticmethod
-    def _read_file(path: str) -> str:
-        try:
-            with open(path, "r", errors="ignore") as fh:
-                return fh.read()
-        except OSError:
-            return ""
-
-    def _root(self, *parts) -> str:
-        return os.path.join(self.REPO_DIR, *parts)
-
-    def _load_json(self, path: str) -> dict:
-        with open(path, "r") as f:
-            return json.load(f)
-
-    # ── file_path_check ──────────────────────────────────────────────────
+    # === File Path Checks ===
 
     def test_nx_json_exists(self):
-        """nx.json must exist at workspace root."""
-        assert os.path.isfile(self._root("nx.json")), "nx.json not found"
+        """Verify nx.json exists at project root"""
+        assert os.path.isfile(os.path.join(self.REPO_DIR, "nx.json")), "nx.json not found"
 
-    def test_eslintrc_json_exists(self):
-        """.eslintrc.json must exist at workspace root."""
-        assert os.path.isfile(self._root(".eslintrc.json")), ".eslintrc.json not found"
+    def test_project_json_files_exist(self):
+        """Verify at least 6 project.json files exist"""
+        project_jsons = []
+        for root, dirs, files in os.walk(self.REPO_DIR):
+            if "node_modules" in root or ".git" in root:
+                continue
+            for f in files:
+                if f == "project.json":
+                    project_jsons.append(os.path.join(root, f))
+        assert len(project_jsons) >= 6, f"Expected at least 6 project.json files, found {len(project_jsons)}"
 
-    def test_project_json_in_apps(self):
-        """At least one apps/*/project.json must exist."""
-        projects = glob.glob(self._root("apps", "*", "project.json"))
-        assert len(projects) >= 1, "No apps/*/project.json found"
-
-    # ── semantic_check ───────────────────────────────────────────────────
-
-    def test_cacheable_operations_include_build_test(self):
-        """nx.json cacheableOperations must include build and test."""
-        content = self._read_file(self._root("nx.json"))
-        if not content:
-            pytest.skip("nx.json not found")
-        assert "cacheableOperations" in content or "targetDefaults" in content
-        assert "build" in content
-        assert "test" in content
-
-    def test_named_inputs_include_nx_json(self):
-        """namedInputs.default must reference {workspaceRoot}/nx.json."""
-        content = self._read_file(self._root("nx.json"))
-        if not content:
-            pytest.skip("nx.json not found")
-        has_named = "namedInputs" in content
-        if has_named:
-            assert "workspaceRoot" in content or "nx.json" in content
-
-    def test_eslintrc_has_module_boundaries(self):
-        """.eslintrc.json must have @nx/enforce-module-boundaries rule."""
-        content = self._read_file(self._root(".eslintrc.json"))
-        if not content:
-            pytest.skip(".eslintrc.json not found")
-        assert "enforce-module-boundaries" in content
-        assert "depConstraints" in content
-
-    def test_project_json_has_build_test_targets(self):
-        """First project.json must have build and test targets."""
-        projects = glob.glob(self._root("apps", "*", "project.json"))
-        if not projects:
-            pytest.skip("No project.json found")
-        content = self._read_file(projects[0])
-        assert "build" in content
-        assert "test" in content
-
-    # ── functional_check ─────────────────────────────────────────────────
+    # === Semantic Checks ===
 
     def test_nx_json_valid_json(self):
-        """nx.json must parse as valid JSON."""
-        path = self._root("nx.json")
-        if not os.path.isfile(path):
-            pytest.skip("nx.json not found")
-        data = self._load_json(path)
-        assert isinstance(data, dict)
+        """Verify nx.json is valid JSON"""
+        nx_path = os.path.join(self.REPO_DIR, "nx.json")
+        with open(nx_path) as fh:
+            data = json.load(fh)
+        assert isinstance(data, dict), "nx.json is not a JSON object"
 
-    def test_eslintrc_valid_json(self):
-        """.eslintrc.json must parse as valid JSON."""
-        path = self._root(".eslintrc.json")
-        if not os.path.isfile(path):
-            pytest.skip(".eslintrc.json not found")
-        data = self._load_json(path)
-        assert isinstance(data, dict)
+    def test_nx_json_has_target_defaults(self):
+        """Verify nx.json defines targetDefaults or tasksRunnerOptions"""
+        nx_path = os.path.join(self.REPO_DIR, "nx.json")
+        with open(nx_path) as fh:
+            data = json.load(fh)
+        has_config = (
+            "targetDefaults" in data
+            or "tasksRunnerOptions" in data
+            or "namedInputs" in data
+        )
+        assert has_config, "nx.json missing targetDefaults or tasksRunnerOptions"
 
-    def test_cacheable_operations_functional(self):
-        """Parsed cacheableOperations must contain 'build' and 'test'."""
-        path = self._root("nx.json")
-        if not os.path.isfile(path):
-            pytest.skip("nx.json not found")
-        data = self._load_json(path)
-        # Look in tasksRunnerOptions or targetDefaults
-        ops = []
-        runners = data.get("tasksRunnerOptions", {})
-        for runner in runners.values():
-            ops.extend(runner.get("options", {}).get("cacheableOperations", []))
-        if not ops:
-            # Nx 16+ uses targetDefaults with cache key
-            targets = data.get("targetDefaults", {})
-            for name, config in targets.items():
-                if config.get("cache", False):
-                    ops.append(name)
-        assert "build" in ops, "'build' not in cacheableOperations"
-        assert "test" in ops, "'test' not in cacheableOperations"
+    def test_project_json_has_targets(self):
+        """Verify project.json files define build/test targets"""
+        project_jsons = self._find_project_jsons()
+        any_target = False
+        for pj in project_jsons[:6]:
+            with open(pj) as fh:
+                data = json.load(fh)
+            if "targets" in data:
+                any_target = True
+                break
+        assert any_target, "No project.json files with 'targets' found"
 
-    def test_all_project_jsons_parse(self):
-        """All apps/*/project.json must parse with targets key."""
-        projects = glob.glob(self._root("apps", "*", "project.json"))
-        if not projects:
-            pytest.skip("No project.json files found")
-        for p in projects:
-            data = self._load_json(p)
-            assert "targets" in data, f"'targets' missing in {p}"
-            assert "build" in data["targets"], f"'build' target missing in {p}"
+    def test_eslintrc_module_boundaries(self):
+        """Verify .eslintrc.json has module boundary rule"""
+        found = False
+        for root, dirs, files in os.walk(self.REPO_DIR):
+            if "node_modules" in root or ".git" in root:
+                continue
+            for f in files:
+                if f in (".eslintrc.json", ".eslintrc"):
+                    fpath = os.path.join(root, f)
+                    with open(fpath) as fh:
+                        content = fh.read()
+                    if "enforce-module-boundaries" in content or "module-boundary" in content.lower():
+                        found = True
+                        break
+            if found:
+                break
+        assert found, ".eslintrc.json with module boundary rules not found"
 
-    def test_missing_build_assertion_fails(self):
-        """Verify test is meaningful: removing 'build' causes assertion failure."""
-        path = self._root("nx.json")
-        if not os.path.isfile(path):
-            pytest.skip("nx.json not found")
-        data = self._load_json(path)
-        runners = data.get("tasksRunnerOptions", {})
-        for runner in runners.values():
-            ops = runner.get("options", {}).get("cacheableOperations", [])
-            modified = [o for o in ops if o != "build"]
-            assert "build" not in modified, "Test sanity: modified list should not contain 'build'"
+    def test_tsconfig_base_exists(self):
+        """Verify tsconfig.base.json exists"""
+        ts_path = os.path.join(self.REPO_DIR, "tsconfig.base.json")
+        assert os.path.isfile(ts_path), "tsconfig.base.json not found"
+
+    def test_tsconfig_base_has_paths(self):
+        """Verify tsconfig.base.json defines path aliases"""
+        ts_path = os.path.join(self.REPO_DIR, "tsconfig.base.json")
+        with open(ts_path) as fh:
+            data = json.load(fh)
+        compiler_opts = data.get("compilerOptions", {})
+        assert "paths" in compiler_opts, "tsconfig.base.json missing compilerOptions.paths"
+        assert len(compiler_opts["paths"]) >= 1, "tsconfig.base.json paths is empty"
+
+    # === Functional Checks ===
+
+    def test_project_json_valid_json(self):
+        """Verify all project.json files are valid JSON"""
+        project_jsons = self._find_project_jsons()
+        for pj in project_jsons:
+            with open(pj) as fh:
+                data = json.load(fh)
+            assert isinstance(data, dict), f"{pj} is not a JSON object"
+
+    def test_project_json_has_name(self):
+        """Verify project.json files have a name field"""
+        project_jsons = self._find_project_jsons()
+        named = 0
+        for pj in project_jsons[:6]:
+            with open(pj) as fh:
+                data = json.load(fh)
+            if "name" in data:
+                named += 1
+        assert named >= 3, f"Only {named} project.json files have a name field"
+
+    def test_no_circular_dependencies(self):
+        """Verify project dependencies don't create obvious circular references"""
+        project_jsons = self._find_project_jsons()
+        dep_map = {}
+        for pj in project_jsons:
+            with open(pj) as fh:
+                data = json.load(fh)
+            name = data.get("name")
+            if name:
+                deps = []
+                targets = data.get("targets", {})
+                for tgt in targets.values():
+                    if isinstance(tgt, dict) and "dependsOn" in tgt:
+                        for dep in tgt["dependsOn"]:
+                            if isinstance(dep, dict) and "projects" in dep:
+                                deps.extend(dep["projects"])
+                            elif isinstance(dep, str) and dep.startswith("^"):
+                                pass
+                dep_map[name] = deps
+        for name, deps in dep_map.items():
+            if name in deps:
+                pytest.fail(f"Project {name} depends on itself")
+
+    def _find_project_jsons(self):
+        result = []
+        for root, dirs, files in os.walk(self.REPO_DIR):
+            if "node_modules" in root or ".git" in root:
+                continue
+            for f in files:
+                if f == "project.json":
+                    result.append(os.path.join(root, f))
+        return result

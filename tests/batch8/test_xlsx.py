@@ -1,178 +1,282 @@
 """
-Test for 'xlsx' skill — Excel Report Generator
-Validates that the Agent implemented an openpyxl-based Excel report generator
-with chart builder, worksheet formatter, bold headers, and currency formatting.
+Test skill: xlsx
+Verify that the Agent correctly implements a financial report generator
+using openpyxl with multi-sheet workbook, formulas, formatting, charts,
+data validation, and a sensitivity analysis table.
 """
 
 import os
-import re
+import subprocess
 import sys
-
+import ast
 import pytest
 
 
 class TestXlsx:
-    """Verify Excel report generator implementation."""
-
     REPO_DIR = "/workspace/openpyxl"
 
-    @staticmethod
-    def _read(path: str) -> str:
-        try:
-            with open(path, "r", errors="ignore") as fh:
-                return fh.read()
-        except OSError:
-            return ""
+    # === File Path Checks ===
 
-    def _find_file(self, *candidates):
-        for c in candidates:
-            p = os.path.join(self.REPO_DIR, c)
-            if os.path.isfile(p):
-                return p
-        return None
+    def test_financial_report_script_exists(self):
+        """Verify that the main financial report script exists"""
+        filepath = os.path.join(self.REPO_DIR, "openpyxl/sample/financial_report.py")
+        assert os.path.exists(filepath), f"financial_report.py not found at {filepath}"
 
-    # ── file_path_check ─────────────────────────────────────────────
+    def test_formatting_module_exists(self):
+        """Verify that the formatting utilities module exists"""
+        filepath = os.path.join(self.REPO_DIR, "openpyxl/sample/formatting.py")
+        assert os.path.exists(filepath), f"formatting.py not found at {filepath}"
 
-    def test_generator_module_exists(self):
-        """Verify xlsx/generator.py or excel_report_generator.py exists."""
-        candidates = ("xlsx/generator.py", "excel_report_generator.py")
-        found = any(
-            os.path.isfile(os.path.join(self.REPO_DIR, c)) for c in candidates)
-        assert found, f"Missing: none of {candidates} found"
+    def test_formulas_module_exists(self):
+        """Verify that the formula builder module exists"""
+        filepath = os.path.join(self.REPO_DIR, "openpyxl/sample/formulas.py")
+        assert os.path.exists(filepath), f"formulas.py not found at {filepath}"
 
-    def test_chart_builder_module_exists(self):
-        """Verify xlsx/chart_builder.py or chart_builder.py exists."""
-        candidates = ("xlsx/chart_builder.py", "chart_builder.py")
-        found = any(
-            os.path.isfile(os.path.join(self.REPO_DIR, c)) for c in candidates)
-        assert found, f"Missing: none of {candidates} found"
+    def test_charts_module_exists(self):
+        """Verify that the charts module exists"""
+        filepath = os.path.join(self.REPO_DIR, "openpyxl/sample/charts.py")
+        assert os.path.exists(filepath), f"charts.py not found at {filepath}"
 
-    def test_formatter_module_exists(self):
-        """Verify xlsx/formatter.py or worksheet_formatter.py exists."""
-        candidates = ("xlsx/formatter.py", "worksheet_formatter.py")
-        found = any(
-            os.path.isfile(os.path.join(self.REPO_DIR, c)) for c in candidates)
-        assert found, f"Missing: none of {candidates} found"
+    def test_all_modules_valid_python(self):
+        """Verify all sample modules are valid Python syntax"""
+        modules = [
+            "openpyxl/sample/financial_report.py",
+            "openpyxl/sample/formatting.py",
+            "openpyxl/sample/formulas.py",
+            "openpyxl/sample/charts.py",
+        ]
+        for mod in modules:
+            filepath = os.path.join(self.REPO_DIR, mod)
+            if os.path.exists(filepath):
+                with open(filepath) as f:
+                    content = f.read()
+                try:
+                    ast.parse(content)
+                except SyntaxError as e:
+                    pytest.fail(f"{mod} has syntax errors: {e}")
 
-    # ── semantic_check ──────────────────────────────────────────────
+    # === Semantic Checks ===
 
-    def test_openpyxl_workbook_instantiation(self):
-        """Verify openpyxl.Workbook() is instantiated in generator module."""
-        path = self._find_file("xlsx/generator.py", "excel_report_generator.py")
-        assert path, "Generator module not found"
-        content = self._read(path)
-        found = any(kw in content for kw in ("openpyxl.Workbook", "Workbook()"))
-        assert found, "Workbook instantiation not found"
+    def test_financial_report_creates_four_sheets(self):
+        """Verify that the script references all 4 required sheet names"""
+        filepath = os.path.join(self.REPO_DIR, "openpyxl/sample/financial_report.py")
+        with open(filepath) as f:
+            content = f.read()
 
-    def test_chart_class_imported(self):
-        """Verify BarChart or LineChart is imported from openpyxl.chart."""
-        path = self._find_file("xlsx/chart_builder.py", "chart_builder.py")
-        assert path, "Chart builder module not found"
-        content = self._read(path)
-        found = any(kw in content for kw in ("BarChart", "LineChart"))
-        assert found, "BarChart or LineChart not found"
+        required_sheets = ["Assumptions", "Income Statement", "Balance Sheet", "Dashboard"]
+        for sheet in required_sheets:
+            assert sheet in content, (
+                f"financial_report.py missing reference to sheet '{sheet}'"
+            )
 
-    def test_bold_font_in_formatter(self):
-        """Verify Font(bold=True) is applied to header cells."""
-        path = self._find_file("xlsx/formatter.py", "worksheet_formatter.py")
-        assert path, "Formatter module not found"
-        content = self._read(path)
-        assert "bold=True" in content, "bold=True not found"
-        found = any(kw in content for kw in ("Font(bold", "Font( bold"))
-        assert found, "Font(bold=True) not found in formatter"
+    def test_formulas_module_has_excel_formulas(self):
+        """Verify formulas.py contains Excel formula strings, not hardcoded values"""
+        filepath = os.path.join(self.REPO_DIR, "openpyxl/sample/formulas.py")
+        with open(filepath) as f:
+            content = f.read()
 
-    def test_currency_number_format(self):
-        """Verify '#,##0.00' number format is assigned to currency cells."""
-        path = self._find_file("xlsx/formatter.py", "worksheet_formatter.py")
-        assert path, "Formatter module not found"
-        content = self._read(path)
-        assert "#,##0.00" in content, "#,##0.00 number format not found"
+        # Excel formulas start with = and reference cells
+        has_formula_patterns = (
+            "=" in content and (
+                "Assumptions!" in content
+                or "!" in content  # Cross-sheet references
+                or re.search(r'[A-Z]+\d+', content) is not None  # Cell references like A1, B2
+            )
+        )
+        assert has_formula_patterns, (
+            "formulas.py does not appear to contain Excel formula strings. "
+            "Computed cells must use Excel formulas, not Python-computed values."
+        )
 
-    # ── functional_check (import) ───────────────────────────────────
+    def test_charts_module_creates_charts(self):
+        """Verify charts.py creates revenue and margin charts"""
+        filepath = os.path.join(self.REPO_DIR, "openpyxl/sample/charts.py")
+        with open(filepath) as f:
+            content = f.read()
 
-    def _skip_unless_importable(self):
-        if not os.path.isdir(self.REPO_DIR):
-            pytest.skip("Repo dir does not exist")
-        if self.REPO_DIR not in sys.path:
-            sys.path.insert(0, self.REPO_DIR)
+        has_chart_creation = (
+            "BarChart" in content or "LineChart" in content
+            or "barchart" in content.lower() or "linechart" in content.lower()
+            or "Chart" in content
+        )
+        assert has_chart_creation, (
+            "charts.py does not contain chart creation code. "
+            "Expected BarChart for revenue and LineChart for margins."
+        )
 
-    def test_generate_creates_valid_xlsx(self):
-        """generate(sample_data, tmp_path) creates a valid xlsx file."""
-        self._skip_unless_importable()
-        import tempfile
-        try:
-            import openpyxl
-            from xlsx.generator import ExcelReportGenerator
-        except Exception as exc:
-            pytest.skip(f"Cannot import: {exc}")
-        data = [{"item": "A", "amount": 1000.0},
-                {"item": "B", "amount": 2500.0}]
-        out = tempfile.mktemp(suffix=".xlsx")
-        try:
-            ExcelReportGenerator().generate(data, out)
-            wb = openpyxl.load_workbook(out)
-            assert wb is not None
-        finally:
-            if os.path.exists(out):
-                os.unlink(out)
+    def test_formatting_has_color_coding(self):
+        """Verify formatting.py implements color coding (blue for inputs, black for formulas)"""
+        filepath = os.path.join(self.REPO_DIR, "openpyxl/sample/formatting.py")
+        with open(filepath) as f:
+            content = f.read()
 
-    def test_workbook_has_summary_sheet(self):
-        """Generated workbook contains 'Summary' in its sheetnames."""
-        self._skip_unless_importable()
-        import tempfile
-        try:
-            import openpyxl
-            from xlsx.generator import ExcelReportGenerator
-        except Exception as exc:
-            pytest.skip(f"Cannot import: {exc}")
-        out = tempfile.mktemp(suffix=".xlsx")
-        try:
-            ExcelReportGenerator().generate(
-                [{"item": "X", "amount": 100.0}], out)
-            wb = openpyxl.load_workbook(out)
-            assert "Summary" in wb.sheetnames, \
-                f"'Summary' not in {wb.sheetnames}"
-        finally:
-            if os.path.exists(out):
-                os.unlink(out)
+        has_colors = (
+            "0000FF" in content or "blue" in content.lower()  # Blue for inputs
+            or "FF0000" in content or "red" in content.lower()  # Red for negatives
+            or "008000" in content or "green" in content.lower()  # Green for cross-refs
+        )
+        assert has_colors, (
+            "formatting.py does not implement color coding. "
+            "Expected blue (#0000FF) for inputs, red for negatives, green for cross-refs."
+        )
 
-    def test_header_row_is_bold(self):
-        """Header row cell at (row=1, col=1) has font.bold == True."""
-        self._skip_unless_importable()
-        import tempfile
-        try:
-            import openpyxl
-            from xlsx.generator import ExcelReportGenerator
-        except Exception as exc:
-            pytest.skip(f"Cannot import: {exc}")
-        out = tempfile.mktemp(suffix=".xlsx")
-        try:
-            ExcelReportGenerator().generate(
-                [{"item": "X", "amount": 100.0}], out)
-            wb = openpyxl.load_workbook(out)
-            ws = wb.active
-            assert ws.cell(row=1, column=1).font.bold is True, \
-                "Header cell font.bold is not True"
-        finally:
-            if os.path.exists(out):
-                os.unlink(out)
+    # === Functional Checks ===
 
-    def test_empty_data_creates_header_only_workbook(self):
-        """generate([], tmp_path) creates workbook with only a header row."""
-        self._skip_unless_importable()
-        import tempfile
+    def test_generate_financial_report(self):
+        """Verify that running the financial report script generates an xlsx file"""
+        # Install openpyxl if needed
+        subprocess.run(
+            ["pip", "install", "-e", "."],
+            cwd=self.REPO_DIR,
+            capture_output=True,
+            timeout=120
+        )
+
+        result = subprocess.run(
+            ["python", "openpyxl/sample/financial_report.py"],
+            cwd=self.REPO_DIR,
+            capture_output=True,
+            text=True,
+            timeout=120
+        )
+        assert result.returncode == 0, (
+            f"financial_report.py failed: {result.stderr[:2000]}"
+        )
+
+        # Check that an xlsx file was generated
+        possible_paths = [
+            os.path.join(self.REPO_DIR, "financial_report.xlsx"),
+            os.path.join(self.REPO_DIR, "openpyxl/sample/financial_report.xlsx"),
+        ]
+        xlsx_exists = any(os.path.exists(p) for p in possible_paths)
+        assert xlsx_exists, (
+            "No financial_report.xlsx generated. Expected output file."
+        )
+
+    def test_workbook_has_four_sheets(self):
+        """Verify the generated workbook contains exactly 4 sheets with correct names"""
         try:
             import openpyxl
-            from xlsx.generator import ExcelReportGenerator
-        except Exception as exc:
-            pytest.skip(f"Cannot import: {exc}")
-        out = tempfile.mktemp(suffix=".xlsx")
+        except ImportError:
+            subprocess.run(["pip", "install", "-e", "."], cwd=self.REPO_DIR, capture_output=True, timeout=120)
+            import openpyxl
+
+        # Generate the workbook first
+        subprocess.run(
+            ["python", "openpyxl/sample/financial_report.py"],
+            cwd=self.REPO_DIR, capture_output=True, timeout=120
+        )
+
+        possible_paths = [
+            os.path.join(self.REPO_DIR, "financial_report.xlsx"),
+            os.path.join(self.REPO_DIR, "openpyxl/sample/financial_report.xlsx"),
+        ]
+        xlsx_path = next((p for p in possible_paths if os.path.exists(p)), None)
+        if xlsx_path is None:
+            pytest.skip("financial_report.xlsx not found")
+
+        wb = openpyxl.load_workbook(xlsx_path)
+        sheet_names = wb.sheetnames
+        assert len(sheet_names) == 4, (
+            f"Expected 4 sheets, found {len(sheet_names)}: {sheet_names}"
+        )
+        expected = {"Assumptions", "Income Statement", "Balance Sheet", "Dashboard"}
+        actual = set(sheet_names)
+        assert expected == actual, (
+            f"Expected sheets {expected}, found {actual}"
+        )
+
+    def test_workbook_has_excel_formulas(self):
+        """Verify that computed cells use Excel formulas, not static values"""
         try:
-            ExcelReportGenerator().generate([], out)
-            wb = openpyxl.load_workbook(out)
-            ws = wb.active
-            assert ws.max_row == 1, \
-                f"Expected 1 row (header only), got {ws.max_row}"
-        finally:
-            if os.path.exists(out):
-                os.unlink(out)
+            import openpyxl
+        except ImportError:
+            subprocess.run(["pip", "install", "-e", "."], cwd=self.REPO_DIR, capture_output=True, timeout=120)
+            import openpyxl
+
+        subprocess.run(
+            ["python", "openpyxl/sample/financial_report.py"],
+            cwd=self.REPO_DIR, capture_output=True, timeout=120
+        )
+
+        possible_paths = [
+            os.path.join(self.REPO_DIR, "financial_report.xlsx"),
+            os.path.join(self.REPO_DIR, "openpyxl/sample/financial_report.xlsx"),
+        ]
+        xlsx_path = next((p for p in possible_paths if os.path.exists(p)), None)
+        if xlsx_path is None:
+            pytest.skip("financial_report.xlsx not found")
+
+        wb = openpyxl.load_workbook(xlsx_path)
+
+        # Check Income Statement sheet for formulas
+        formula_count = 0
+        for sheet_name in wb.sheetnames:
+            ws = wb[sheet_name]
+            for row in ws.iter_rows():
+                for cell in row:
+                    if cell.value and isinstance(cell.value, str) and cell.value.startswith("="):
+                        formula_count += 1
+
+        assert formula_count >= 10, (
+            f"Expected at least 10 Excel formulas in the workbook, found {formula_count}. "
+            "Computed cells must use Excel formulas, not Python-computed static values."
+        )
+
+    def test_workbook_has_data_validation(self):
+        """Verify that the Assumptions sheet has data validation rules"""
+        try:
+            import openpyxl
+        except ImportError:
+            subprocess.run(["pip", "install", "-e", "."], cwd=self.REPO_DIR, capture_output=True, timeout=120)
+            import openpyxl
+
+        subprocess.run(
+            ["python", "openpyxl/sample/financial_report.py"],
+            cwd=self.REPO_DIR, capture_output=True, timeout=120
+        )
+
+        possible_paths = [
+            os.path.join(self.REPO_DIR, "financial_report.xlsx"),
+            os.path.join(self.REPO_DIR, "openpyxl/sample/financial_report.xlsx"),
+        ]
+        xlsx_path = next((p for p in possible_paths if os.path.exists(p)), None)
+        if xlsx_path is None:
+            pytest.skip("financial_report.xlsx not found")
+
+        wb = openpyxl.load_workbook(xlsx_path)
+        ws = wb["Assumptions"]
+        validations = ws.data_validations.dataValidation if ws.data_validations else []
+        assert len(validations) >= 3, (
+            f"Expected at least 3 data validation rules on Assumptions sheet, found {len(validations)}. "
+            "Growth rate, COGS %, SG&A %, and tax rate should have validation ranges."
+        )
+
+    def test_workbook_has_charts(self):
+        """Verify that the Dashboard sheet contains charts"""
+        try:
+            import openpyxl
+        except ImportError:
+            subprocess.run(["pip", "install", "-e", "."], cwd=self.REPO_DIR, capture_output=True, timeout=120)
+            import openpyxl
+
+        subprocess.run(
+            ["python", "openpyxl/sample/financial_report.py"],
+            cwd=self.REPO_DIR, capture_output=True, timeout=120
+        )
+
+        possible_paths = [
+            os.path.join(self.REPO_DIR, "financial_report.xlsx"),
+            os.path.join(self.REPO_DIR, "openpyxl/sample/financial_report.xlsx"),
+        ]
+        xlsx_path = next((p for p in possible_paths if os.path.exists(p)), None)
+        if xlsx_path is None:
+            pytest.skip("financial_report.xlsx not found")
+
+        wb = openpyxl.load_workbook(xlsx_path)
+        ws = wb["Dashboard"]
+        charts = ws._charts
+        assert len(charts) >= 2, (
+            f"Expected at least 2 charts on Dashboard sheet, found {len(charts)}. "
+            "Need revenue bar chart and margin line chart."
+        )

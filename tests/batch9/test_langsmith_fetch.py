@@ -1,182 +1,169 @@
 """
-Test for 'langsmith-fetch' skill — LangSmith Client Integration
-Validates LangSmithClient, ConfigurationError on missing key,
-score validation, retry logic, and evaluation pipeline.
+Test skill: langsmith-fetch
+Verify that the Agent creates a LangSmith trace analyzer for
+LangChain runs.
 """
 
 import os
-import sys
-from unittest.mock import MagicMock, patch
-
+import re
+import ast
+import subprocess
 import pytest
 
 
 class TestLangsmithFetch:
-    """Verify LangSmith client: config, validation, retry, evaluation."""
-
     REPO_DIR = "/workspace/langchain"
 
-    # ── helpers ──────────────────────────────────────────────────────────
+    # === File Path Checks ===
 
-    @staticmethod
-    def _read_file(path: str) -> str:
-        try:
-            with open(path, "r", errors="ignore") as fh:
-                return fh.read()
-        except OSError:
-            return ""
+    def test_langsmith_analyzer_files_exist(self):
+        """Verify LangSmith trace analyzer files exist"""
+        found = False
+        for root, dirs, files in os.walk(self.REPO_DIR):
+            if ".git" in root or "node_modules" in root:
+                continue
+            for f in files:
+                if f.endswith(".py") and ("langsmith" in f.lower() or "trace" in f.lower() or "fetch" in f.lower() or "analyzer" in f.lower()):
+                    found = True
+                    break
+            if found:
+                break
+        assert found, "LangSmith trace analyzer files not found"
 
-    def _ls(self, *parts) -> str:
-        return os.path.join(self.REPO_DIR, "examples", "langsmith_fetch", *parts)
+    # === Semantic Checks ===
 
-    # ── file_path_check ──────────────────────────────────────────────────
+    def test_langsmith_client_used(self):
+        """Verify LangSmith client is used"""
+        content = self._collect_content()
+        content_lower = content.lower()
+        has_client = "langsmith" in content_lower or "Client" in content or "client" in content_lower
+        assert has_client, "LangSmith client not found"
 
-    def test_client_py_exists(self):
-        """client.py must exist."""
-        assert os.path.isfile(self._ls("client.py"))
+    def test_trace_fetching_defined(self):
+        """Verify trace fetching functionality is defined"""
+        content = self._collect_content()
+        content_lower = content.lower()
+        has_fetch = (
+            "fetch" in content_lower
+            or "list_runs" in content_lower
+            or "get_run" in content_lower
+            or "read_run" in content_lower
+        )
+        assert has_fetch, "Trace fetching not found"
 
-    def test_evaluators_and_models_exist(self):
-        """evaluators.py and models.py must exist."""
-        assert os.path.isfile(self._ls("evaluators.py"))
-        assert os.path.isfile(self._ls("models.py"))
+    def test_trace_analysis_defined(self):
+        """Verify trace analysis is implemented"""
+        content = self._collect_content()
+        content_lower = content.lower()
+        has_analysis = (
+            "analyz" in content_lower
+            or "summary" in content_lower
+            or "statistic" in content_lower
+            or "metrics" in content_lower
+            or "aggregate" in content_lower
+        )
+        assert has_analysis, "Trace analysis not found"
 
-    def test_init_py_exists(self):
-        """__init__.py must exist."""
-        assert os.path.isfile(self._ls("__init__.py"))
+    def test_run_data_model(self):
+        """Verify run data model is defined"""
+        content = self._collect_content()
+        has_model = (
+            "Run" in content
+            or "run_id" in content
+            or "trace_id" in content
+            or "run_type" in content
+        )
+        assert has_model, "Run data model not found"
 
-    # ── semantic_check ───────────────────────────────────────────────────
+    # === Functional Checks ===
 
-    def test_client_reads_api_key_from_env(self):
-        """client.py must read LANGCHAIN_API_KEY from environment."""
-        content = self._read_file(self._ls("client.py"))
-        if not content:
-            pytest.skip("client.py not found")
-        assert "LANGCHAIN_API_KEY" in content
-        assert "os.environ" in content or "os.getenv" in content
+    def test_python_files_valid_syntax(self):
+        """Verify Python files have valid AST"""
+        py_files = self._find_py_files()
+        assert len(py_files) > 0, "No LangSmith Python files found"
+        for pf in py_files:
+            with open(pf) as fh:
+                source = fh.read()
+            try:
+                ast.parse(source)
+            except SyntaxError as e:
+                pytest.fail(f"Syntax error in {pf}: {e}")
 
-    def test_submit_feedback_validates_score(self):
-        """submit_feedback must validate score in [0.0, 1.0]."""
-        content = self._read_file(self._ls("client.py"))
-        if not content:
-            pytest.skip("client.py not found")
-        assert "score" in content
-        assert "ValueError" in content
+    def test_python_files_define_functions(self):
+        """Verify Python files define functions or classes"""
+        py_files = self._find_py_files()
+        any_def = False
+        for pf in py_files:
+            with open(pf) as fh:
+                source = fh.read()
+            tree = ast.parse(source)
+            for node in ast.walk(tree):
+                if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+                    any_def = True
+                    break
+            if any_def:
+                break
+        assert any_def, "No functions or classes found"
 
-    def test_retry_logic_for_429(self):
-        """client.py must have retry logic for HTTP 429."""
-        content = self._read_file(self._ls("client.py"))
-        if not content:
-            pytest.skip("client.py not found")
-        assert "429" in content or "retry" in content.lower()
-        assert "time.sleep" in content or "backoff" in content.lower()
+    def test_error_handling(self):
+        """Verify error handling for API calls"""
+        content = self._collect_content()
+        has_error_handling = (
+            "try:" in content
+            or "except" in content
+            or "raise" in content
+            or "error" in content.lower()
+        )
+        assert has_error_handling, "Error handling for API calls not found"
 
-    def test_eval_results_fields(self):
-        """EvalResults must have dataset, runs, scores fields."""
-        content = self._read_file(self._ls("models.py"))
-        if not content:
-            pytest.skip("models.py not found")
-        assert "EvalResults" in content
-        for field in ("dataset", "runs", "scores"):
-            assert field in content, f"Missing field '{field}' in models.py"
+    def test_latency_or_token_analysis(self):
+        """Verify latency or token usage analysis"""
+        content = self._collect_content()
+        content_lower = content.lower()
+        has_perf = (
+            "latency" in content_lower
+            or "token" in content_lower
+            or "duration" in content_lower
+            or "cost" in content_lower
+            or "total_tokens" in content_lower
+        )
+        assert has_perf, "Latency/token analysis not found"
 
-    # ── functional_check ─────────────────────────────────────────────────
+    def test_filtering_capability(self):
+        """Verify run filtering capabilities"""
+        content = self._collect_content()
+        content_lower = content.lower()
+        has_filter = (
+            "filter" in content_lower
+            or "project" in content_lower
+            or "session" in content_lower
+            or "start_time" in content_lower
+        )
+        assert has_filter, "Run filtering capability not found"
 
-    def test_missing_api_key_raises_config_error(self):
-        """LangSmithClient must raise ConfigurationError when key unset."""
-        try:
-            sys.path.insert(0, self.REPO_DIR)
-            from examples.langsmith_fetch.client import LangSmithClient, ConfigurationError
-        except ImportError:
-            pytest.skip("Cannot import LangSmithClient")
-        env = os.environ.copy()
-        os.environ.pop("LANGCHAIN_API_KEY", None)
-        try:
-            with pytest.raises(ConfigurationError):
-                LangSmithClient()
-        finally:
-            os.environ.update(env)
+    def _collect_content(self):
+        all_content = ""
+        for root, dirs, files in os.walk(self.REPO_DIR):
+            if ".git" in root or "node_modules" in root:
+                continue
+            for f in files:
+                if f.endswith(".py"):
+                    fpath = os.path.join(root, f)
+                    try:
+                        with open(fpath) as fh:
+                            c = fh.read()
+                        if any(kw in c.lower() for kw in ["langsmith", "trace", "run", "fetch"]):
+                            all_content += c + "\n"
+                    except (UnicodeDecodeError, PermissionError):
+                        continue
+        return all_content
 
-    def test_score_above_one_raises_valueerror(self):
-        """submit_feedback(score=1.5) must raise ValueError."""
-        try:
-            sys.path.insert(0, self.REPO_DIR)
-            from examples.langsmith_fetch.client import LangSmithClient
-        except ImportError:
-            pytest.skip("Cannot import LangSmithClient")
-        os.environ["LANGCHAIN_API_KEY"] = "test-key"
-        try:
-            with patch("langsmith.Client"):
-                client = LangSmithClient()
-                with pytest.raises(ValueError):
-                    client.submit_feedback("run-id", "accuracy", 1.5)
-        finally:
-            os.environ.pop("LANGCHAIN_API_KEY", None)
-
-    def test_retry_on_rate_limit(self):
-        """Client must retry on rate limit and succeed on 3rd attempt."""
-        try:
-            sys.path.insert(0, self.REPO_DIR)
-            from examples.langsmith_fetch.client import LangSmithClient
-        except ImportError:
-            pytest.skip("Cannot import LangSmithClient")
-        os.environ["LANGCHAIN_API_KEY"] = "test-key"
-        try:
-            mock_api = MagicMock()
-            rate_err = Exception("429 rate limit")
-            mock_dataset = MagicMock()
-            mock_api.create_dataset.side_effect = [rate_err, rate_err, mock_dataset]
-            with patch("langsmith.Client", return_value=mock_api):
-                client = LangSmithClient()
-                try:
-                    client.create_dataset("test")
-                    assert mock_api.create_dataset.call_count >= 2
-                except Exception:
-                    pass  # acceptable if retry not implemented yet
-        finally:
-            os.environ.pop("LANGCHAIN_API_KEY", None)
-
-    def test_log_run_returns_uuid_string(self):
-        """log_run must return a run_id string."""
-        try:
-            sys.path.insert(0, self.REPO_DIR)
-            from examples.langsmith_fetch.client import LangSmithClient
-        except ImportError:
-            pytest.skip("Cannot import LangSmithClient")
-        os.environ["LANGCHAIN_API_KEY"] = "test-key"
-        try:
-            mock_api = MagicMock()
-            mock_run = MagicMock()
-            mock_run.id = "aaaa-bbbb-cccc-dddd"
-            mock_api.create_run.return_value = mock_run
-            with patch("langsmith.Client", return_value=mock_api):
-                client = LangSmithClient()
-                run_id = client.log_run(
-                    inputs={"prompt": "hello"},
-                    outputs={"text": "world"},
-                    run_type="llm",
-                )
-                assert isinstance(run_id, str)
-                assert len(run_id) > 0
-        finally:
-            os.environ.pop("LANGCHAIN_API_KEY", None)
-
-    def test_empty_dataset_returns_empty_results(self):
-        """run_evaluation with empty dataset must return empty results."""
-        try:
-            sys.path.insert(0, self.REPO_DIR)
-            from examples.langsmith_fetch.client import LangSmithClient
-        except ImportError:
-            pytest.skip("Cannot import LangSmithClient")
-        os.environ["LANGCHAIN_API_KEY"] = "test-key"
-        try:
-            mock_api = MagicMock()
-            mock_api.list_examples.return_value = []
-            with patch("langsmith.Client", return_value=mock_api):
-                client = LangSmithClient()
-                try:
-                    results = client.run_evaluation("empty_ds", lambda x: x, [])
-                    assert len(results.runs) == 0
-                except (AttributeError, TypeError):
-                    pass  # method may not exist yet
-        finally:
-            os.environ.pop("LANGCHAIN_API_KEY", None)
+    def _find_py_files(self):
+        result = []
+        for root, dirs, files in os.walk(self.REPO_DIR):
+            if ".git" in root or "node_modules" in root:
+                continue
+            for f in files:
+                if f.endswith(".py") and ("langsmith" in f.lower() or "trace" in f.lower() or "fetch" in f.lower() or "analyzer" in f.lower()):
+                    result.append(os.path.join(root, f))
+        return result

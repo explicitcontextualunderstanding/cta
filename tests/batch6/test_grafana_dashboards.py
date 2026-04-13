@@ -1,216 +1,176 @@
 """
-Tests for 'grafana-dashboards' skill.
-Generated from benchmark case definitions for grafana-dashboards.
+Tests for grafana-dashboards skill.
+Verifies creation of Grafana dashboard JSON files and provisioning YAML configs
+for executive overview, service RED metrics, and infrastructure USE metrics.
 """
 
-import ast
-import base64
-import glob
 import json
 import os
-import py_compile
 import re
-import subprocess
-import textwrap
 
 import pytest
-
-try:
-    import yaml
-except ModuleNotFoundError:
-    yaml = None
+import yaml
 
 
 class TestGrafanaDashboards:
-    """Verify the grafana-dashboards skill output."""
+    """Tests for grafana-dashboards skill."""
 
-    REPO_DIR = '/workspace/grafana'
+    REPO_DIR = "/workspace/grafana"
 
+    # ------------------------------------------------------------------ #
+    #  file_path_check – verify expected files exist
+    # ------------------------------------------------------------------ #
 
-    # ── helpers ──────────────────────────────────────────────
+    def test_executive_overview_json_exists(self):
+        path = os.path.join(self.REPO_DIR, "grafana", "dashboards", "executive-overview.json")
+        assert os.path.isfile(path), f"Missing {path}"
 
-    _SETUP_CACHE: dict = {}
+    def test_service_red_json_exists(self):
+        path = os.path.join(self.REPO_DIR, "grafana", "dashboards", "service-red.json")
+        assert os.path.isfile(path), f"Missing {path}"
 
-    @staticmethod
-    def _repo_path(rel: str) -> str:
-        return os.path.join(TestGrafanaDashboards.REPO_DIR, rel)
+    def test_infrastructure_use_json_exists(self):
+        path = os.path.join(self.REPO_DIR, "grafana", "dashboards", "infrastructure-use.json")
+        assert os.path.isfile(path), f"Missing {path}"
 
-    @staticmethod
-    def _safe_read(path: str) -> str:
-        with open(path, "r", encoding="utf-8", errors="ignore") as fh:
-            return fh.read()
+    def test_provisioning_dashboards_yaml_exists(self):
+        path = os.path.join(self.REPO_DIR, "grafana", "provisioning", "dashboards.yaml")
+        assert os.path.isfile(path), f"Missing {path}"
 
-    @staticmethod
-    def _load_yaml(path: str):
-        if yaml is None:
-            pytest.skip("PyYAML not available")
-        with open(path, "r", encoding="utf-8", errors="ignore") as fh:
-            return yaml.safe_load(fh)
+    def test_provisioning_datasources_yaml_exists(self):
+        path = os.path.join(self.REPO_DIR, "grafana", "provisioning", "datasources.yaml")
+        assert os.path.isfile(path), f"Missing {path}"
 
-    @staticmethod
-    def _load_json(path: str):
-        with open(path, "r", encoding="utf-8", errors="ignore") as fh:
-            return json.load(fh)
+    # ------------------------------------------------------------------ #
+    #  semantic_check – structural / content validation
+    # ------------------------------------------------------------------ #
 
-    @classmethod
-    def _run_in_repo(cls, script: str, timeout: int = 120) -> subprocess.CompletedProcess:
-        return subprocess.run(
-            ["python", "-c", textwrap.dedent(script)],
-            cwd=cls.REPO_DIR,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-        )
+    def _load_dashboard(self, name):
+        path = os.path.join(self.REPO_DIR, "grafana", "dashboards", name)
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
 
-    @classmethod
-    def _run_cmd(cls, command, args=None, timeout=120):
-        args = args or []
-        if isinstance(command, str) and args:
-            return subprocess.run(
-                [command, *args],
-                cwd=cls.REPO_DIR,
-                capture_output=True,
-                text=True,
-                timeout=timeout,
-            )
-        return subprocess.run(
-            command if isinstance(command, list) else command,
-            cwd=cls.REPO_DIR,
-            shell=isinstance(command, str),
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-        )
+    def test_executive_overview_valid_json_structure(self):
+        """Executive overview has correct title, uid, tags and templating."""
+        dash = self._load_dashboard("executive-overview.json")
+        assert dash.get("title") == "Platform Executive Overview"
+        assert dash.get("uid") == "exec-overview"
+        tags = dash.get("tags", [])
+        assert "executive" in tags and "platform" in tags
+        # Template variables
+        var_names = [v.get("name") for v in dash.get("templating", {}).get("list", [])]
+        assert "environment" in var_names or "env" in var_names
 
-    @classmethod
-    def _ensure_setup(cls, label, setup_cmds, fallback):
-        if not setup_cmds:
-            return
-        key = tuple(setup_cmds)
-        if key in cls._SETUP_CACHE:
-            ok, msg = cls._SETUP_CACHE[key]
-            if ok:
-                return
-            if fallback == "skip_if_setup_fails":
-                pytest.skip(f"{label} setup failed: {msg}")
-            pytest.fail(f"{label} setup failed: {msg}")
-        for cmd in setup_cmds:
-            r = subprocess.run(cmd, cwd=cls.REPO_DIR, shell=True,
-                               capture_output=True, text=True, timeout=300)
-            if r.returncode != 0:
-                msg = (r.stderr or r.stdout or 'failed').strip()
-                cls._SETUP_CACHE[key] = (False, msg)
-                if fallback == "skip_if_setup_fails":
-                    pytest.skip(f"{label} setup failed: {msg}")
-                pytest.fail(f"{label} setup failed: {msg}")
-        cls._SETUP_CACHE[key] = (True, 'ok')
+    def test_service_red_valid_json_structure(self):
+        """Service RED dashboard has correct title, uid, tags and template vars."""
+        dash = self._load_dashboard("service-red.json")
+        assert dash.get("title") == "Service RED Metrics"
+        assert dash.get("uid") == "service-red"
+        tags = dash.get("tags", [])
+        assert "service" in tags and "red" in tags
+        var_names = [v.get("name") for v in dash.get("templating", {}).get("list", [])]
+        assert "namespace" in var_names
+        assert "service" in var_names
 
+    def test_infrastructure_use_valid_json_structure(self):
+        """Infrastructure USE dashboard has correct title, uid, tags."""
+        dash = self._load_dashboard("infrastructure-use.json")
+        assert dash.get("title") == "Infrastructure USE Metrics"
+        assert dash.get("uid") == "infra-use"
+        tags = dash.get("tags", [])
+        assert "infrastructure" in tags and "use" in tags
 
-    # ── file_path_check (static) ────────────────────────────────────────
+    def test_provisioning_dashboards_yaml_valid(self):
+        """Dashboard provisioning YAML is valid and has required structure."""
+        path = os.path.join(self.REPO_DIR, "grafana", "provisioning", "dashboards.yaml")
+        with open(path, "r", encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+        assert data is not None
+        assert "apiVersion" in data
+        providers = data.get("providers", [])
+        assert len(providers) >= 1
+        provider = providers[0]
+        assert "options" in provider
+        assert "path" in provider["options"]
 
-    def test_dashboard_json_files_exist(self):
-        """Verify all 3 dashboard JSON files exist"""
-        _p = self._repo_path('monitoring/grafana/dashboards/infrastructure-overview.json')
-        assert os.path.isfile(_p), f'Missing file: monitoring/grafana/dashboards/infrastructure-overview.json'
-        self._load_json(_p)  # parse check
-        _p = self._repo_path('monitoring/grafana/dashboards/application-metrics.json')
-        assert os.path.isfile(_p), f'Missing file: monitoring/grafana/dashboards/application-metrics.json'
-        self._load_json(_p)  # parse check
-        _p = self._repo_path('monitoring/grafana/dashboards/slo-tracking.json')
-        assert os.path.isfile(_p), f'Missing file: monitoring/grafana/dashboards/slo-tracking.json'
-        self._load_json(_p)  # parse check
+    def test_provisioning_datasources_yaml_valid(self):
+        """Datasources YAML includes Prometheus and PostgreSQL."""
+        path = os.path.join(self.REPO_DIR, "grafana", "provisioning", "datasources.yaml")
+        with open(path, "r", encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+        assert data is not None
+        ds_names = [ds.get("name", "").lower() for ds in data.get("datasources", [])]
+        assert any("prometheus" in n for n in ds_names), "Prometheus datasource missing"
+        assert any("postgres" in n for n in ds_names), "PostgreSQL datasource missing"
 
-    def test_provisioning_yaml_exists(self):
-        """Verify provisioning YAML file exists"""
-        _p = self._repo_path('monitoring/grafana/provisioning/dashboards.yml')
-        assert os.path.isfile(_p), f'Missing file: monitoring/grafana/provisioning/dashboards.yml'
-        self._load_yaml(_p)  # parse check
+    def test_executive_dashboard_has_panels(self):
+        """Executive dashboard contains multiple panels or rows."""
+        dash = self._load_dashboard("executive-overview.json")
+        panels = dash.get("panels", [])
+        # May have rows with nested panels
+        total = len(panels)
+        for p in panels:
+            total += len(p.get("panels", []))
+        assert total >= 4, f"Expected ≥4 panels, got {total}"
 
-    # ── semantic_check (static) ────────────────────────────────────────
+    # ------------------------------------------------------------------ #
+    #  functional_check – deeper content validation
+    # ------------------------------------------------------------------ #
 
-    def test_dashboard_has_uid_and_panels(self):
-        """Verify each dashboard JSON has uid, title, and panels keys"""
-        _p = self._repo_path('monitoring/grafana/dashboards/infrastructure-overview.json')
-        assert os.path.exists(_p), f'Missing: monitoring/grafana/dashboards/infrastructure-overview.json'
-        _contents = self._safe_read(_p)
-        _all = _contents if isinstance(_contents, str) else ''
-        assert 'uid' in _all, 'Missing: uid'
-        assert 'title' in _all, 'Missing: title'
-        assert 'panels' in _all, 'Missing: panels'
+    def test_executive_overview_stat_panels_promql(self):
+        """Executive overview stat panels contain PromQL-like expressions."""
+        dash = self._load_dashboard("executive-overview.json")
+        text = json.dumps(dash)
+        assert "http_requests_total" in text, "Missing http_requests_total metric"
+        assert "rate(" in text, "Missing rate() function in PromQL queries"
 
-    def test_infrastructure_has_node_metrics(self):
-        """Verify infrastructure dashboard references node_cpu or node_memory metrics"""
-        _p = self._repo_path('monitoring/grafana/dashboards/infrastructure-overview.json')
-        assert os.path.exists(_p), f'Missing: monitoring/grafana/dashboards/infrastructure-overview.json'
-        _contents = self._safe_read(_p)
-        _all = _contents if isinstance(_contents, str) else ''
-        assert 'node_cpu' in _all, 'Missing: node_cpu'
-        assert 'node_memory' in _all, 'Missing: node_memory'
+    def test_service_red_latency_heatmap_or_histogram(self):
+        """Service RED dashboard includes latency histogram/heatmap queries."""
+        dash = self._load_dashboard("service-red.json")
+        text = json.dumps(dash)
+        assert "histogram_quantile" in text or "heatmap" in text.lower(), \
+            "Missing histogram_quantile or heatmap panel in service RED dashboard"
 
-    def test_application_metrics_has_rate(self):
-        """Verify application-metrics dashboard has rate() in at least one panel"""
-        _p = self._repo_path('monitoring/grafana/dashboards/application-metrics.json')
-        assert os.path.exists(_p), f'Missing: monitoring/grafana/dashboards/application-metrics.json'
-        _contents = self._safe_read(_p)
-        _all = _contents if isinstance(_contents, str) else ''
-        assert re.search('rate(', _all, re.MULTILINE), 'Pattern not found: rate('
+    def test_infrastructure_use_node_metrics(self):
+        """Infrastructure USE dashboard references node-level metrics."""
+        dash = self._load_dashboard("infrastructure-use.json")
+        text = json.dumps(dash)
+        assert "node_cpu" in text or "kube_node" in text, \
+            "Missing node CPU or kube_node metrics in infrastructure dashboard"
+        assert "node_memory" in text or "container_memory" in text, \
+            "Missing memory metrics in infrastructure dashboard"
 
-    def test_slo_has_burn_rate_or_error_budget(self):
-        """Verify slo-tracking has burn_rate or error_budget references"""
-        _p = self._repo_path('monitoring/grafana/dashboards/slo-tracking.json')
-        assert os.path.exists(_p), f'Missing: monitoring/grafana/dashboards/slo-tracking.json'
-        _contents = self._safe_read(_p)
-        _all = _contents if isinstance(_contents, str) else ''
-        assert 'burn_rate' in _all, 'Missing: burn_rate'
-        assert 'error_budget' in _all, 'Missing: error_budget'
+    def test_executive_overview_threshold_configuration(self):
+        """Executive dashboard panels include threshold configurations."""
+        dash = self._load_dashboard("executive-overview.json")
+        text = json.dumps(dash)
+        # Thresholds may appear as "thresholds" key or "steps"
+        assert "threshold" in text.lower(), "No threshold configuration found"
 
-    # ── functional_check ────────────────────────────────────────
+    def test_service_red_status_code_color_overrides(self):
+        """Service RED dashboard differentiates HTTP status codes (2xx/4xx/5xx)."""
+        dash = self._load_dashboard("service-red.json")
+        text = json.dumps(dash)
+        assert "status" in text, "No status reference in service RED dashboard"
+        # Should reference 5xx error filtering
+        assert re.search(r'5[x.]{2}|5\d{2}|status=~"5', text), \
+            "No 5xx error filtering in service RED dashboard"
 
-    def test_all_dashboards_valid_json(self):
-        """Verify all 3 dashboard files are valid JSON"""
-        result = self._run_cmd('python', args=['-c', "import json,glob; files=glob.glob('monitoring/grafana/dashboards/*.json'); assert len(files)>=3; [json.loads(open(f).read()) for f in files]; print('PASS')"], timeout=120)
-        assert result.returncode == 0, (
-            f'test_all_dashboards_valid_json failed (exit {result.returncode})\n' + result.stderr[:500]
-        )
-        assert 'PASS' in (result.stdout + result.stderr), 'Expected PASS in output'
+    def test_infrastructure_use_pod_resources(self):
+        """Infrastructure dashboard monitors pod CPU/memory vs requests/limits."""
+        dash = self._load_dashboard("infrastructure-use.json")
+        text = json.dumps(dash)
+        has_pod = "container_cpu" in text or "kube_pod" in text
+        assert has_pod, "Missing pod-level resource metrics"
 
-    def test_uid_uniqueness(self):
-        """Verify all dashboard uids are unique"""
-        result = self._run_cmd('python', args=['-c', "import json,glob; files=glob.glob('monitoring/grafana/dashboards/*.json'); uids=[json.loads(open(f).read())['uid'] for f in files]; assert len(set(uids))==len(uids), f'Duplicate uids: {uids}'; print('PASS')"], timeout=120)
-        assert result.returncode == 0, (
-            f'test_uid_uniqueness failed (exit {result.returncode})\n' + result.stderr[:500]
-        )
-        assert 'PASS' in (result.stdout + result.stderr), 'Expected PASS in output'
-
-    def test_panels_count_minimum(self):
-        """Verify each dashboard has at least 3 panels"""
-        result = self._run_cmd('python', args=['-c', 'import json,glob; files=glob.glob(\'monitoring/grafana/dashboards/*.json\')\nfor f in files:\n    d=json.loads(open(f).read())\n    assert len(d[\'panels\'])>=3, f\'{f}: only {len(d["panels"])} panels\'\nprint(\'PASS\')'], timeout=120)
-        assert result.returncode == 0, (
-            f'test_panels_count_minimum failed (exit {result.returncode})\n' + result.stderr[:500]
-        )
-        assert 'PASS' in (result.stdout + result.stderr), 'Expected PASS in output'
-
-    def test_panel_type_valid(self):
-        """Verify all panels have a known Grafana panel type"""
-        result = self._run_cmd('python', args=['-c', 'import json,glob; valid_types={\'graph\',\'timeseries\',\'stat\',\'gauge\',\'table\',\'text\',\'row\',\'heatmap\',\'barchart\',\'bargauge\',\'piechart\',\'logs\'}; files=glob.glob(\'monitoring/grafana/dashboards/*.json\')\nfor f in files:\n    d=json.loads(open(f).read())\n    for p in d[\'panels\']:\n        assert p.get(\'type\') in valid_types, f"{f}: unknown type \'{p.get(\'type\')}\'"\nprint(\'PASS\')'], timeout=120)
-        assert result.returncode == 0, (
-            f'test_panel_type_valid failed (exit {result.returncode})\n' + result.stderr[:500]
-        )
-        assert 'PASS' in (result.stdout + result.stderr), 'Expected PASS in output'
-
-    def test_provisioning_yaml_valid(self):
-        """Verify provisioning YAML parses and has providers key"""
-        result = self._run_cmd('python', args=['-c', "import yaml; prov=yaml.safe_load(open('monitoring/grafana/provisioning/dashboards.yml')); assert 'providers' in prov or 'apiVersion' in prov; print('PASS')"], timeout=120)
-        assert result.returncode == 0, (
-            f'test_provisioning_yaml_valid failed (exit {result.returncode})\n' + result.stderr[:500]
-        )
-        assert 'PASS' in (result.stdout + result.stderr), 'Expected PASS in output'
-
-    def test_uid_nonempty_string(self):
-        """Verify uid is a non-empty string in all dashboards"""
-        result = self._run_cmd('python', args=['-c', "import json,glob; files=glob.glob('monitoring/grafana/dashboards/*.json')\nfor f in files:\n    d=json.loads(open(f).read())\n    uid=d.get('uid','')\n    assert isinstance(uid,str) and len(uid)>0, f'{f}: uid is empty or not string'\nprint('PASS')"], timeout=120)
-        assert result.returncode == 0, (
-            f'test_uid_nonempty_string failed (exit {result.returncode})\n' + result.stderr[:500]
-        )
-        assert 'PASS' in (result.stdout + result.stderr), 'Expected PASS in output'
-
+    def test_datasource_prometheus_is_default(self):
+        """Prometheus datasource is marked as default."""
+        path = os.path.join(self.REPO_DIR, "grafana", "provisioning", "datasources.yaml")
+        with open(path, "r", encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+        prometheus_ds = [
+            ds for ds in data.get("datasources", [])
+            if "prometheus" in ds.get("name", "").lower() or ds.get("type") == "prometheus"
+        ]
+        assert len(prometheus_ds) >= 1
+        assert prometheus_ds[0].get("isDefault") is True, "Prometheus should be the default datasource"

@@ -1,12 +1,11 @@
 """
-Test for 'istio-traffic-management' skill — Istio Traffic Management
-Validates VirtualService, DestinationRule, Gateway YAML configurations
-with canary weights, fault injection, and circuit breaker settings.
+Test skill: istio-traffic-management
+Verify that the Agent correctly configures Istio traffic management resources
+for canary, fault injection, circuit breaking, and ingress routing.
 """
 
 import os
 import re
-
 import pytest
 
 try:
@@ -16,150 +15,134 @@ except ImportError:
 
 
 class TestIstioTrafficManagement:
-    """Verify Istio traffic management configuration."""
-
     REPO_DIR = "/workspace/istio"
 
-    # ── file_path_check ─────────────────────────────────────────────────────
+    DEST_RULES = "samples/bookinfo/networking/destination-rules.yaml"
+    CANARY_VS = "samples/bookinfo/networking/virtual-service-canary.yaml"
+    FAULT_VS = "samples/bookinfo/networking/virtual-service-fault.yaml"
+    GATEWAY = "samples/bookinfo/networking/gateway.yaml"
+    INGRESS_VS = "samples/bookinfo/networking/virtual-service-ingress.yaml"
+    CIRCUIT_BREAKER = "samples/bookinfo/networking/circuit-breaker.yaml"
 
-    def test_istio_yaml_files_exist(self):
-        """Verify at least 4 Istio YAML configuration files exist."""
-        yml_files = self._find_istio_yamls()
-        assert (
-            len(yml_files) >= 3
-        ), f"Expected ≥3 Istio YAML files, found {len(yml_files)}"
+    def _read_file(self, rel_path):
+        filepath = os.path.join(self.REPO_DIR, rel_path)
+        with open(filepath) as f:
+            return f.read()
 
-    def test_virtualservice_file_exists(self):
-        """Verify VirtualService YAML exists."""
-        for fpath in self._find_istio_yamls():
-            content = self._read(fpath)
-            if "VirtualService" in content:
-                return
-        pytest.fail("No VirtualService YAML found")
+    # === File Path Checks ===
 
-    # ── semantic_check ──────────────────────────────────────────────────────
+    def test_destination_rules_exists(self):
+        filepath = os.path.join(self.REPO_DIR, self.DEST_RULES)
+        assert os.path.exists(filepath), f"destination-rules.yaml not found"
 
-    def test_networking_api_version(self):
-        """Verify networking.istio.io/v1beta1 or v1alpha3 API version."""
-        yml_files = self._find_istio_yamls()
-        for fpath in yml_files:
-            content = self._read(fpath)
-            if re.search(r"networking\.istio\.io/v1(beta1|alpha3)", content):
-                return
-        pytest.fail("No networking.istio.io API version found")
+    def test_canary_virtual_service_exists(self):
+        filepath = os.path.join(self.REPO_DIR, self.CANARY_VS)
+        assert os.path.exists(filepath), f"virtual-service-canary.yaml not found"
 
+    def test_fault_virtual_service_exists(self):
+        filepath = os.path.join(self.REPO_DIR, self.FAULT_VS)
+        assert os.path.exists(filepath), f"virtual-service-fault.yaml not found"
+
+    def test_gateway_exists(self):
+        filepath = os.path.join(self.REPO_DIR, self.GATEWAY)
+        assert os.path.exists(filepath), f"gateway.yaml not found"
+
+    def test_circuit_breaker_exists(self):
+        filepath = os.path.join(self.REPO_DIR, self.CIRCUIT_BREAKER)
+        assert os.path.exists(filepath), f"circuit-breaker.yaml not found"
+
+    # === Semantic Checks ===
+
+    @pytest.mark.skipif(yaml is None, reason="PyYAML not installed")
+    def test_dest_rules_subsets(self):
+        """Verify reviews destination rule has v1, v2, v3 subsets"""
+        content = self._read_file(self.DEST_RULES)
+        for version in ["v1", "v2", "v3"]:
+            assert version in content, f"Destination rules missing subset: {version}"
+
+    @pytest.mark.skipif(yaml is None, reason="PyYAML not installed")
     def test_canary_weights_sum_100(self):
-        """Verify canary traffic weights sum to 100."""
-        yml_files = self._find_istio_yamls()
-        for fpath in yml_files:
-            content = self._read(fpath)
-            if "weight" in content:
-                weights = [int(m) for m in re.findall(r"weight:\s*(\d+)", content)]
-                if weights and sum(weights) == 100:
-                    return
-        pytest.fail("No canary weights summing to 100 found")
+        """Verify canary route weights sum to 100"""
+        content = self._read_file(self.CANARY_VS)
+        docs = list(yaml.safe_load_all(content))
+        for doc in docs:
+            if doc and doc.get("kind") == "VirtualService":
+                routes = doc.get("spec", {}).get("http", [])
+                for route in routes:
+                    route_dests = route.get("route", [])
+                    if len(route_dests) > 1:
+                        total = sum(d.get("weight", 0) for d in route_dests)
+                        assert total == 100, \
+                            f"Canary weights sum to {total}, expected 100"
 
-    def test_fault_injection_configured(self):
-        """Verify fault injection (delay and/or abort) is configured."""
-        yml_files = self._find_istio_yamls()
-        for fpath in yml_files:
-            content = self._read(fpath)
-            if re.search(r"(fault:\s*\n|delay:|abort:)", content):
-                return
-        pytest.fail("No fault injection configuration found")
+    def test_canary_header_based_routing(self):
+        """Verify header x-canary: true routes to v3"""
+        content = self._read_file(self.CANARY_VS)
+        assert "x-canary" in content, "Canary VS missing x-canary header match"
+        assert "v3" in content, "Canary VS missing v3 destination"
 
-    def test_circuit_breaker_configured(self):
-        """Verify circuit breaker (consecutive5xxErrors or outlierDetection)."""
-        yml_files = self._find_istio_yamls()
-        for fpath in yml_files:
-            content = self._read(fpath)
-            if re.search(
-                r"(outlierDetection|consecutive5xxErrors|connectionPool|circuitBreaker)",
-                content,
-            ):
-                return
-        pytest.fail("No circuit breaker configuration found")
+    def test_canary_timeout_and_retries(self):
+        """Verify canary VS has timeout and retry config"""
+        content = self._read_file(self.CANARY_VS)
+        assert "timeout" in content, "Canary VS missing timeout"
+        assert "retries" in content, "Canary VS missing retries"
 
-    def test_gateway_hosts_and_port(self):
-        """Verify Gateway defines hosts and port."""
-        yml_files = self._find_istio_yamls()
-        for fpath in yml_files:
-            content = self._read(fpath)
-            if "Gateway" in content:
-                if "hosts" in content and ("port" in content or "number" in content):
-                    return
-        pytest.fail("No Gateway with hosts and port found")
+    def test_fault_injection_delay_and_abort(self):
+        """Verify fault injection with 7s delay (10%) and 503 abort (5%)"""
+        content = self._read_file(self.FAULT_VS)
+        assert "delay" in content, "Fault VS missing delay injection"
+        assert "abort" in content, "Fault VS missing abort injection"
+        assert "503" in content, "Fault VS missing HTTP 503 abort code"
+        assert "7" in content, "Fault VS missing 7-second delay"
 
-    # ── functional_check ────────────────────────────────────────────────────
+    def test_fault_injection_header_match(self):
+        """Verify fault injection only when x-test-fault: enabled"""
+        content = self._read_file(self.FAULT_VS)
+        assert "x-test-fault" in content, "Fault VS missing header match"
 
-    def test_yaml_files_valid(self):
-        """Verify all Istio YAML files parse correctly."""
+    def test_gateway_http_and_https(self):
+        """Verify gateway defines port 80 and 443 with TLS"""
+        content = self._read_file(self.GATEWAY)
+        assert "Gateway" in content, "Missing Gateway kind"
+        assert "80" in content, "Gateway missing port 80"
+        assert "443" in content, "Gateway missing port 443"
+        assert "tls" in content.lower(), "Gateway missing TLS config"
+
+    def test_circuit_breaker_config(self):
+        """Verify circuit breaker with connection pool and outlier detection"""
+        content = self._read_file(self.CIRCUIT_BREAKER)
+        assert "connectionPool" in content, "CB missing connectionPool"
+        assert "outlierDetection" in content, "CB missing outlierDetection"
+        assert "consecutive5xxErrors" in content, "CB missing consecutive5xxErrors"
+        assert "baseEjectionTime" in content, "CB missing baseEjectionTime"
+
+    # === Functional Checks ===
+
+    def test_all_yaml_files_valid(self):
+        """Verify all YAML files parse without errors"""
         if yaml is None:
-            pytest.skip("PyYAML not available")
-        yml_files = self._find_istio_yamls()
-        assert yml_files, "No YAML files"
-        for fpath in yml_files:
-            with open(fpath, "r") as fh:
+            pytest.skip("PyYAML not installed")
+        paths = [self.DEST_RULES, self.CANARY_VS, self.FAULT_VS,
+                 self.GATEWAY, self.INGRESS_VS, self.CIRCUIT_BREAKER]
+        for path in paths:
+            filepath = os.path.join(self.REPO_DIR, path)
+            with open(filepath) as f:
                 try:
-                    docs = list(yaml.safe_load_all(fh))
+                    list(yaml.safe_load_all(f.read()))
                 except yaml.YAMLError as e:
-                    pytest.fail(f"Invalid YAML in {os.path.basename(fpath)}: {e}")
+                    pytest.fail(f"{path} YAML error: {e}")
 
-    def test_weight_validation(self):
-        """Verify weights are valid percentages (0-100)."""
-        yml_files = self._find_istio_yamls()
-        for fpath in yml_files:
-            content = self._read(fpath)
-            weights = [int(m) for m in re.findall(r"weight:\s*(\d+)", content)]
-            for w in weights:
-                assert 0 <= w <= 100, f"Invalid weight {w} in {os.path.basename(fpath)}"
+    def test_all_resources_have_correct_api_version(self):
+        """Verify all resources use networking.istio.io API"""
+        for path in [self.DEST_RULES, self.CANARY_VS, self.FAULT_VS,
+                     self.GATEWAY, self.INGRESS_VS, self.CIRCUIT_BREAKER]:
+            content = self._read_file(path)
+            assert "networking.istio.io" in content, \
+                f"{path} missing networking.istio.io apiVersion"
 
-    def test_fault_percentage_range(self):
-        """Verify fault injection percentages are in valid range."""
-        yml_files = self._find_istio_yamls()
-        for fpath in yml_files:
-            content = self._read(fpath)
-            percentages = re.findall(r"percentage:\s*\n\s*value:\s*([\d.]+)", content)
-            for p in percentages:
-                val = float(p)
-                assert (
-                    0 < val <= 100
-                ), f"Invalid fault percentage {val} in {os.path.basename(fpath)}"
-
-    def test_destination_rules_have_host(self):
-        """Verify DestinationRule resources specify a host."""
-        yml_files = self._find_istio_yamls()
-        for fpath in yml_files:
-            content = self._read(fpath)
-            if "DestinationRule" in content:
-                assert (
-                    "host:" in content
-                ), f"DestinationRule missing host in {os.path.basename(fpath)}"
-                return
-        pytest.skip("No DestinationRule to verify")
-
-    def test_virtualservice_has_route(self):
-        """Verify VirtualService defines http routes."""
-        yml_files = self._find_istio_yamls()
-        for fpath in yml_files:
-            content = self._read(fpath)
-            if "VirtualService" in content:
-                if re.search(r"(http:|route:|match:)", content):
-                    return
-        pytest.fail("No VirtualService with HTTP routes found")
-
-    # ── helpers ──────────────────────────────────────────────────────────────
-
-    def _find_istio_yamls(self):
-        results = []
-        for dirpath, _, fnames in os.walk(self.REPO_DIR):
-            if ".git" in dirpath:
-                continue
-            for f in fnames:
-                if f.endswith(".yaml") or f.endswith(".yml"):
-                    results.append(os.path.join(dirpath, f))
-        return results
-
-    def _read(self, path):
-        with open(path, "r", errors="ignore") as fh:
-            return fh.read()
+    def test_ingress_vs_routes_to_services(self):
+        """Verify ingress VS routes /productpage, /api/reviews, /api/ratings"""
+        content = self._read_file(self.INGRESS_VS)
+        assert "productpage" in content, "Ingress VS missing /productpage route"
+        assert "reviews" in content, "Ingress VS missing reviews route"
+        assert "ratings" in content, "Ingress VS missing ratings route"

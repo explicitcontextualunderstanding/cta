@@ -1,190 +1,201 @@
-"""Test file for the clojure-write skill.
-
-This suite validates the result-digest middleware and result-change
-notification modules in the Metabase Clojure codebase.
+"""
+Test skill: clojure-write
+Verify that the Agent implements a Query Result Digest Notification Service in
+Metabase — SHA-256 digest middleware, change-detection service, correct change
+types, and integration with the Toucan model layer.
 """
 
-from __future__ import annotations
-
-import pathlib
+import os
 import re
-
+import subprocess
 import pytest
 
 
 class TestClojureWrite:
-    """Verify result-digest and result-change Clojure modules in Metabase."""
-
     REPO_DIR = "/workspace/metabase"
+    DIGEST_SRC = "src/metabase/query_processor/middleware/result_digest.clj"
+    CHANGE_SRC = "src/metabase/notification/result_change.clj"
+    DIGEST_TEST = "test/metabase/query_processor/middleware/result_digest_test.clj"
+    CHANGE_TEST = "test/metabase/notification/result_change_test.clj"
 
-    DIGEST_CLJ = "src/metabase/query_processor/middleware/result_digest.clj"
-    CHANGE_CLJ = "src/metabase/notification/result_change.clj"
-    DIGEST_TEST_CLJ = "test/metabase/query_processor/middleware/result_digest_test.clj"
+    # ────────────────── helpers ──────────────────
 
-    # ------------------------------------------------------------------
-    # Helpers
-    # ------------------------------------------------------------------
+    def _read(self, rel_path):
+        fpath = os.path.join(self.REPO_DIR, rel_path)
+        with open(fpath, "r") as f:
+            return f.read()
 
-    def _repo_path(self, relative: str) -> pathlib.Path:
-        return pathlib.Path(self.REPO_DIR, *relative.split("/"))
+    def _exists(self, rel_path):
+        return os.path.isfile(os.path.join(self.REPO_DIR, rel_path))
 
-    def _read_text(self, relative: str) -> str:
-        path = self._repo_path(relative)
-        assert path.exists(), f"Expected path to exist: {path}"
-        return path.read_text(encoding="utf-8", errors="ignore")
+    # === File Path Checks ===
 
-    def _assert_non_empty_file(self, relative: str) -> pathlib.Path:
-        path = self._repo_path(relative)
-        assert path.is_file(), f"Expected file to exist: {path}"
-        assert path.stat().st_size > 0, f"Expected non-empty file: {path}"
-        return path
+    def test_result_digest_src_exists(self):
+        """result_digest.clj source file must exist"""
+        assert self._exists(self.DIGEST_SRC), f"Not found: {self.DIGEST_SRC}"
 
-    def _find_defn(self, source: str, fn_name: str) -> str | None:
-        """Return the balanced s-expression starting at (defn fn_name ...)."""
-        pat = rf"\(defn-?\s+{re.escape(fn_name)}\b"
-        m = re.search(pat, source)
-        if m is None:
-            return None
-        start = m.start()
-        depth = 0
-        for i, ch in enumerate(source[start:], start):
-            if ch == "(":
-                depth += 1
-            elif ch == ")":
-                depth -= 1
-                if depth == 0:
-                    return source[start : i + 1]
-        return None
+    def test_result_change_src_exists(self):
+        """result_change.clj source file must exist"""
+        assert self._exists(self.CHANGE_SRC), f"Not found: {self.CHANGE_SRC}"
 
-    # ------------------------------------------------------------------
-    # Layer 1 – file_path_check (3 cases)
-    # ------------------------------------------------------------------
+    def test_result_digest_test_exists(self):
+        """result_digest_test.clj test file must exist"""
+        assert self._exists(self.DIGEST_TEST), f"Not found: {self.DIGEST_TEST}"
 
-    def test_file_path_src_metabase_query_processor_middleware_result_digest_clj_ex(
-        self,
-    ):
-        """Verify result_digest.clj exists and is non-empty."""
-        self._assert_non_empty_file(self.DIGEST_CLJ)
+    def test_result_change_test_exists(self):
+        """result_change_test.clj test file must exist"""
+        assert self._exists(self.CHANGE_TEST), f"Not found: {self.CHANGE_TEST}"
 
-    def test_file_path_src_metabase_notification_result_change_clj_exists(self):
-        """Verify result_change.clj exists and is non-empty."""
-        self._assert_non_empty_file(self.CHANGE_CLJ)
+    # === Semantic Checks — Digest Middleware ===
 
-    def test_file_path_test_metabase_query_processor_middleware_result_digest_test_(
-        self,
-    ):
-        """Verify result_digest_test.clj exists and is non-empty."""
-        self._assert_non_empty_file(self.DIGEST_TEST_CLJ)
-
-    # ------------------------------------------------------------------
-    # Layer 2 – semantic_check (5 cases)
-    # ------------------------------------------------------------------
-
-    def test_semantic_compute_digest_uses_java_security_messagedigest_for_sha_256(self):
-        """compute-digest uses java.security.MessageDigest for SHA-256."""
-        src = self._read_text(self.DIGEST_CLJ)
-        assert (
-            "MessageDigest" in src or "message-digest" in src.lower()
-        ), "compute-digest should use java.security.MessageDigest"
+    def test_digest_namespace_declaration(self):
+        """result_digest.clj must declare the correct namespace"""
+        src = self._read(self.DIGEST_SRC)
         assert re.search(
-            r"SHA.?256", src
-        ), "compute-digest should specify SHA-256 algorithm"
+            r'\(ns\s+metabase\.query-processor\.middleware\.result-digest', src
+        ), "Namespace declaration missing or incorrect"
 
-    def test_semantic_compute_digest_serializes_rows_with_pr_str_and_includes_colu(
-        self,
-    ):
-        """compute-digest serializes rows with pr-str and includes column names."""
-        src = self._read_text(self.DIGEST_CLJ)
-        fn = self._find_defn(src, "compute-digest")
-        assert fn is not None, "Missing defn compute-digest"
-        assert (
-            "pr-str" in fn or "str" in fn
-        ), "compute-digest should serialize rows using pr-str"
+    def test_compute_digest_function_exists(self):
+        """compute-digest function must be defined"""
+        src = self._read(self.DIGEST_SRC)
+        assert re.search(r'\(defn-?\s+compute-digest\b', src), (
+            "compute-digest function not found"
+        )
+
+    def test_sha256_usage(self):
+        """Digest must use java.security.MessageDigest for SHA-256"""
+        src = self._read(self.DIGEST_SRC)
+        assert "MessageDigest" in src or "SHA-256" in src, (
+            "SHA-256 / java.security.MessageDigest not referenced"
+        )
+
+    def test_compute_digest_returns_map_keys(self):
+        """compute-digest should return a map with :digest, :row-count, :col-count"""
+        src = self._read(self.DIGEST_SRC)
+        for key in [":digest", ":row-count", ":col-count"]:
+            assert key in src, f"compute-digest missing return key {key}"
+
+    def test_middleware_function_exists(self):
+        """result-digest-middleware function must be defined"""
+        src = self._read(self.DIGEST_SRC)
+        assert re.search(r'\(defn-?\s+result-digest-middleware\b', src), (
+            "result-digest-middleware function not found"
+        )
+
+    def test_middleware_checks_compute_flag(self):
+        """Middleware should check :compute-digest? flag in the query"""
+        src = self._read(self.DIGEST_SRC)
+        assert ":compute-digest?" in src, (
+            "Middleware does not check :compute-digest? flag"
+        )
+
+    def test_pr_str_for_canonicalization(self):
+        """Rows should be serialised with pr-str for canonical representation"""
+        src = self._read(self.DIGEST_SRC)
+        assert "pr-str" in src, "pr-str not used for canonical row serialisation"
+
+    # === Semantic Checks — Change Detection Service ===
+
+    def test_change_namespace_declaration(self):
+        """result_change.clj must declare the correct namespace"""
+        src = self._read(self.CHANGE_SRC)
         assert re.search(
-            r":cols|column|:name", fn
-        ), "compute-digest should include column names in digest"
+            r'\(ns\s+metabase\.notification\.result-change', src
+        ), "Namespace declaration missing or incorrect"
 
-    def test_semantic_compute_digest_returns_map_with_digest_row_count_col_count(self):
-        """compute-digest returns map with :digest, :row-count, :col-count."""
-        src = self._read_text(self.DIGEST_CLJ)
-        fn = self._find_defn(src, "compute-digest")
-        assert fn is not None, "Missing defn compute-digest"
-        for key in (":digest", ":row-count", ":col-count"):
-            assert key in fn, f"compute-digest return map missing {key}"
+    def test_check_card_function_exists(self):
+        """check-card-for-changes function must be defined"""
+        src = self._read(self.CHANGE_SRC)
+        assert re.search(r'\(defn-?\s+check-card-for-changes\b', src), (
+            "check-card-for-changes function not found"
+        )
 
-    def test_semantic_result_digest_middleware_follows_metabase_middleware_convent(
-        self,
-    ):
-        """result-digest-middleware follows Metabase middleware conventions with [query rff] args."""
-        src = self._read_text(self.DIGEST_CLJ)
-        fn = self._find_defn(src, "result-digest-middleware")
-        assert fn is not None, "Missing defn result-digest-middleware"
-        assert re.search(
-            r"\[.*query.*rff.*\]|\[.*rff.*\]", fn
-        ), "Middleware should accept [query rff] args"
+    def test_check_all_monitored_function_exists(self):
+        """check-all-monitored-cards function must be defined"""
+        src = self._read(self.CHANGE_SRC)
+        assert re.search(r'\(defn-?\s+check-all-monitored-cards\b', src), (
+            "check-all-monitored-cards function not found"
+        )
 
-    def test_semantic_check_card_for_changes_loads_card_via_t2_select_one(self):
-        """check-card-for-changes loads card via t2/select-one."""
-        src = self._read_text(self.CHANGE_CLJ)
-        fn = self._find_defn(src, "check-card-for-changes")
-        assert fn is not None, "Missing defn check-card-for-changes"
-        assert re.search(
-            r"t2/select-one|select-one|db/select-one", fn
-        ), "check-card-for-changes should load card via t2/select-one"
+    def test_update_stored_digest_function_exists(self):
+        """update-stored-digest function must be defined"""
+        src = self._read(self.CHANGE_SRC)
+        assert re.search(r'\(defn-?\s+update-stored-digest\b', src), (
+            "update-stored-digest function not found"
+        )
 
-    # ------------------------------------------------------------------
-    # Layer 3 – functional_check (5 cases, mocked via source analysis)
-    # ------------------------------------------------------------------
+    def test_change_types_present(self):
+        """All four change-types must appear: :new-results, :schema-change,
+        :row-count-change, :data-change"""
+        src = self._read(self.CHANGE_SRC)
+        for ct in [":new-results", ":schema-change", ":row-count-change", ":data-change"]:
+            assert ct in src, f"Change type {ct} not found in result_change.clj"
 
-    def test_functional_compute_digest_rows_1_a_2_b_cols_name_id_name_val_returns_64(
-        self,
-    ):
-        """compute-digest returns 64-char hex string with row-count=2, col-count=2."""
-        src = self._read_text(self.DIGEST_CLJ)
-        fn = self._find_defn(src, "compute-digest")
-        assert fn is not None
-        # Verify hex string production logic
-        assert re.search(
-            r"format|hex|DatatypeConverter|encode", fn, re.IGNORECASE
-        ), "compute-digest should produce hex-encoded digest"
-        assert ":row-count" in fn, "Should return :row-count"
-        assert ":col-count" in fn, "Should return :col-count"
+    def test_notification_payload_keys(self):
+        """Notification payload must include :card-id, :card-name, :change-type,
+        :previous, :current, :detected-at"""
+        src = self._read(self.CHANGE_SRC)
+        for key in [":card-id", ":card-name", ":change-type", ":previous",
+                     ":current", ":detected-at"]:
+            assert key in src, f"Payload key {key} missing in result_change.clj"
 
-    def test_functional_same_input_same_digest_deterministic(self):
-        """Same input → same digest (deterministic)."""
-        src = self._read_text(self.DIGEST_CLJ)
-        fn = self._find_defn(src, "compute-digest")
-        assert fn is not None
-        # SHA-256 is deterministic by nature; verify no random element
-        assert (
-            "rand" not in fn.lower() and "uuid" not in fn.lower()
-        ), "compute-digest should be deterministic (no random/uuid elements)"
+    def test_toucan2_usage(self):
+        """Service should use Toucan 2 (t2) for database operations"""
+        src = self._read(self.CHANGE_SRC)
+        assert "t2/" in src or "toucan2" in src or "toucan.db" in src, (
+            "Toucan 2 (t2) not used for DB operations"
+        )
 
-    def test_functional_changed_cell_different_digest(self):
-        """Changed cell → different digest."""
-        src = self._read_text(self.DIGEST_CLJ)
-        fn = self._find_defn(src, "compute-digest")
-        assert fn is not None
-        # Verify all rows are included in hashing (not just count)
-        assert re.search(
-            r"doseq|reduce|map|each|update", fn
-        ), "compute-digest should iterate over all rows for content hashing"
+    def test_uses_metabase_util_log(self):
+        """Logging should use metabase.util.log, not println or clojure.tools.logging"""
+        src = self._read(self.CHANGE_SRC)
+        assert "println" not in src, "Should not use println for logging"
+        assert "metabase.util.log" in src or "mu/log" in src or "log/" in src, (
+            "Should use metabase.util.log for logging"
+        )
 
-    def test_functional_added_column_different_digest(self):
-        """Added column → different digest."""
-        src = self._read_text(self.DIGEST_CLJ)
-        fn = self._find_defn(src, "compute-digest")
-        assert fn is not None
-        # Column names must be included in digest
-        assert re.search(
-            r":cols|:name|column", fn
-        ), "Column names should be part of digest computation"
+    # === Functional Checks ===
 
-    def test_functional_no_previous_digest_new_results_notification(self):
-        """No previous digest → :new-results notification."""
-        src = self._read_text(self.CHANGE_CLJ)
-        fn = self._find_defn(src, "check-card-for-changes")
-        assert fn is not None
-        assert re.search(
-            r":new-results|:change-type|:first-run|nil\?", fn
-        ), "check-card-for-changes should return :new-results when no previous digest"
+    def test_digest_namespace_compiles(self):
+        """result_digest namespace must compile successfully"""
+        result = subprocess.run(
+            ["clojure", "-M", "-e",
+             "(require 'metabase.query-processor.middleware.result-digest)"],
+            capture_output=True, text=True, cwd=self.REPO_DIR, timeout=120,
+        )
+        assert result.returncode == 0, (
+            f"Compilation failed:\n{result.stdout}\n{result.stderr}"
+        )
+
+    def test_change_namespace_compiles(self):
+        """result_change namespace must compile successfully"""
+        result = subprocess.run(
+            ["clojure", "-M", "-e",
+             "(require 'metabase.notification.result-change)"],
+            capture_output=True, text=True, cwd=self.REPO_DIR, timeout=120,
+        )
+        assert result.returncode == 0, (
+            f"Compilation failed:\n{result.stdout}\n{result.stderr}"
+        )
+
+    def test_digest_tests_pass(self):
+        """result_digest_test must pass"""
+        result = subprocess.run(
+            ["clojure", "-X:dev:test",
+             ":only", "metabase.query-processor.middleware.result-digest-test"],
+            capture_output=True, text=True, cwd=self.REPO_DIR, timeout=300,
+        )
+        assert result.returncode == 0, (
+            f"Digest tests failed:\n{result.stdout}\n{result.stderr}"
+        )
+
+    def test_change_tests_pass(self):
+        """result_change_test must pass"""
+        result = subprocess.run(
+            ["clojure", "-X:dev:test",
+             ":only", "metabase.notification.result-change-test"],
+            capture_output=True, text=True, cwd=self.REPO_DIR, timeout=300,
+        )
+        assert result.returncode == 0, (
+            f"Change tests failed:\n{result.stdout}\n{result.stderr}"
+        )

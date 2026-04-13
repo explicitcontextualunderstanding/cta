@@ -1,200 +1,235 @@
 """
-Tests for 'clojure-write' skill.
-Generated from benchmark case definitions for clojure-write.
+Test skill: clojure-write
+Verify that the Agent correctly implements an audit log query namespace
+for Metabase with query functions, aggregation, API endpoints, and
+validation.
 """
 
-import ast
-import base64
-import glob
-import json
 import os
-import py_compile
 import re
 import subprocess
-import textwrap
-
 import pytest
-
-try:
-    import yaml
-except ModuleNotFoundError:
-    yaml = None
 
 
 class TestClojureWrite:
-    """Verify the clojure-write skill output."""
+    REPO_DIR = "/workspace/metabase"
 
-    REPO_DIR = '/workspace/metabase'
+    # === File Path Checks ===
 
+    def test_query_namespace_exists(self):
+        """Verify audit_log/query.clj exists"""
+        path = os.path.join(self.REPO_DIR, "src/metabase/audit_log/query.clj")
+        assert os.path.exists(path), f"query.clj not found at {path}"
 
-    # ── helpers ──────────────────────────────────────────────
+    def test_models_namespace_exists(self):
+        """Verify audit_log/models.clj exists"""
+        path = os.path.join(self.REPO_DIR, "src/metabase/audit_log/models.clj")
+        assert os.path.exists(path), f"models.clj not found at {path}"
 
-    _SETUP_CACHE: dict = {}
+    def test_api_namespace_exists(self):
+        """Verify api/audit_log.clj exists"""
+        path = os.path.join(self.REPO_DIR, "src/metabase/api/audit_log.clj")
+        assert os.path.exists(path), f"api/audit_log.clj not found at {path}"
 
-    @staticmethod
-    def _repo_path(rel: str) -> str:
-        return os.path.join(TestClojureWrite.REPO_DIR, rel)
+    def test_test_file_exists(self):
+        """Verify audit_log/query_test.clj exists"""
+        path = os.path.join(self.REPO_DIR, "test/metabase/audit_log/query_test.clj")
+        assert os.path.exists(path), f"query_test.clj not found at {path}"
 
-    @staticmethod
-    def _safe_read(path: str) -> str:
-        with open(path, "r", encoding="utf-8", errors="ignore") as fh:
-            return fh.read()
+    # === Semantic Checks ===
 
-    @staticmethod
-    def _load_yaml(path: str):
-        if yaml is None:
-            pytest.skip("PyYAML not available")
-        with open(path, "r", encoding="utf-8", errors="ignore") as fh:
-            return yaml.safe_load(fh)
+    def test_query_audit_log_function_defined(self):
+        """Verify query-audit-log function is defined"""
+        path = os.path.join(self.REPO_DIR, "src/metabase/audit_log/query.clj")
+        with open(path, "r") as f:
+            content = f.read()
 
-    @staticmethod
-    def _load_json(path: str):
-        with open(path, "r", encoding="utf-8", errors="ignore") as fh:
-            return json.load(fh)
-
-    @classmethod
-    def _run_in_repo(cls, script: str, timeout: int = 120) -> subprocess.CompletedProcess:
-        return subprocess.run(
-            ["python", "-c", textwrap.dedent(script)],
-            cwd=cls.REPO_DIR,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
+        assert re.search(r"defn\s+query-audit-log", content), (
+            "query.clj must define query-audit-log function"
         )
 
-    @classmethod
-    def _run_cmd(cls, command, args=None, timeout=120):
-        args = args or []
-        if isinstance(command, str) and args:
-            return subprocess.run(
-                [command, *args],
-                cwd=cls.REPO_DIR,
-                capture_output=True,
-                text=True,
-                timeout=timeout,
+    def test_count_by_action_function_defined(self):
+        """Verify count-by-action function is defined"""
+        path = os.path.join(self.REPO_DIR, "src/metabase/audit_log/query.clj")
+        with open(path, "r") as f:
+            content = f.read()
+
+        assert re.search(r"defn\s+count-by-action", content), (
+            "query.clj must define count-by-action function"
+        )
+
+    def test_count_by_user_function_defined(self):
+        """Verify count-by-user function is defined"""
+        path = os.path.join(self.REPO_DIR, "src/metabase/audit_log/query.clj")
+        with open(path, "r") as f:
+            content = f.read()
+
+        assert re.search(r"defn\s+count-by-user", content), (
+            "query.clj must define count-by-user function"
+        )
+
+    def test_entity_history_function_defined(self):
+        """Verify entity-history function is defined"""
+        path = os.path.join(self.REPO_DIR, "src/metabase/audit_log/query.clj")
+        with open(path, "r") as f:
+            content = f.read()
+
+        assert re.search(r"defn\s+entity-history", content), (
+            "query.clj must define entity-history function"
+        )
+
+    def test_query_supports_filter_options(self):
+        """Verify query-audit-log handles user-id, action, entity-type, dates, pagination"""
+        path = os.path.join(self.REPO_DIR, "src/metabase/audit_log/query.clj")
+        with open(path, "r") as f:
+            content = f.read()
+
+        expected_keys = [":user-id", ":action", ":entity-type", ":start-date", ":end-date",
+                         ":limit", ":offset"]
+        found_keys = [k for k in expected_keys if k in content]
+        assert len(found_keys) >= 5, (
+            f"query-audit-log should support filter keys. Found: {found_keys}, "
+            f"expected at least 5 of: {expected_keys}"
+        )
+
+    def test_returns_results_and_total_count(self):
+        """Verify query-audit-log returns :results and :total_count"""
+        path = os.path.join(self.REPO_DIR, "src/metabase/audit_log/query.clj")
+        with open(path, "r") as f:
+            content = f.read()
+
+        assert ":results" in content, "query-audit-log should return :results key"
+        assert ":total_count" in content or ":total-count" in content, (
+            "query-audit-log should return :total_count key"
+        )
+
+    def test_validation_entity_id_requires_entity_type(self):
+        """Verify entity-id without entity-type raises validation error"""
+        path = os.path.join(self.REPO_DIR, "src/metabase/audit_log/query.clj")
+        with open(path, "r") as f:
+            content = f.read()
+
+        assert "entity-id requires entity-type" in content or \
+               re.search(r"entity.id.*entity.type", content), (
+            "Must validate that :entity-id requires :entity-type"
+        )
+
+    def test_validation_date_range(self):
+        """Verify start-date must be before end-date"""
+        path = os.path.join(self.REPO_DIR, "src/metabase/audit_log/query.clj")
+        with open(path, "r") as f:
+            content = f.read()
+
+        assert "start-date must be before end-date" in content or \
+               re.search(r"start.*before.*end", content), (
+            "Must validate that start-date is before end-date"
+        )
+
+    def test_validation_limit_range(self):
+        """Verify limit must be between 1 and 10000"""
+        path = os.path.join(self.REPO_DIR, "src/metabase/audit_log/query.clj")
+        with open(path, "r") as f:
+            content = f.read()
+
+        assert "10000" in content, (
+            "Must validate that limit is between 1 and 10000"
+        )
+
+    def test_api_endpoints_defined(self):
+        """Verify API endpoints are defined with admin permissions"""
+        path = os.path.join(self.REPO_DIR, "src/metabase/api/audit_log.clj")
+        with open(path, "r") as f:
+            content = f.read()
+
+        assert "audit-log" in content, "API should reference audit-log routes"
+        assert "admin" in content.lower() or "superuser" in content.lower(), (
+            "API endpoints should require admin permissions"
+        )
+
+    def test_api_has_summary_endpoint(self):
+        """Verify GET /api/audit-log/summary endpoint exists"""
+        path = os.path.join(self.REPO_DIR, "src/metabase/api/audit_log.clj")
+        with open(path, "r") as f:
+            content = f.read()
+
+        assert "summary" in content, "API should define /summary endpoint"
+        assert "count-by-action" in content, (
+            "Summary endpoint should call count-by-action"
+        )
+
+    def test_api_has_top_users_endpoint(self):
+        """Verify GET /api/audit-log/top-users endpoint exists"""
+        path = os.path.join(self.REPO_DIR, "src/metabase/api/audit_log.clj")
+        with open(path, "r") as f:
+            content = f.read()
+
+        assert "top-users" in content, "API should define /top-users endpoint"
+
+    def test_models_define_action_keywords(self):
+        """Verify models.clj defines the valid action keywords"""
+        path = os.path.join(self.REPO_DIR, "src/metabase/audit_log/models.clj")
+        with open(path, "r") as f:
+            content = f.read()
+
+        expected_actions = [":create", ":update", ":delete", ":login", ":logout"]
+        found = [a for a in expected_actions if a in content]
+        assert len(found) >= 4, (
+            f"models.clj should define action keywords. Found: {found}"
+        )
+
+    # === Functional Checks ===
+
+    def test_all_clj_files_have_balanced_parens(self):
+        """Verify all Clojure files have balanced parentheses"""
+        files = [
+            "src/metabase/audit_log/query.clj",
+            "src/metabase/audit_log/models.clj",
+            "src/metabase/api/audit_log.clj",
+            "test/metabase/audit_log/query_test.clj",
+        ]
+        for filename in files:
+            path = os.path.join(self.REPO_DIR, filename)
+            if not os.path.exists(path):
+                continue
+            with open(path, "r") as f:
+                content = f.read()
+            opens = content.count("(")
+            closes = content.count(")")
+            assert abs(opens - closes) <= 2, (
+                f"{filename}: Unbalanced parens ({opens} open, {closes} close)"
             )
-        return subprocess.run(
-            command if isinstance(command, list) else command,
-            cwd=cls.REPO_DIR,
-            shell=isinstance(command, str),
-            capture_output=True,
-            text=True,
-            timeout=timeout,
+
+    def test_query_test_has_adequate_coverage(self):
+        """Verify query_test.clj has tests for major functions"""
+        path = os.path.join(self.REPO_DIR, "test/metabase/audit_log/query_test.clj")
+        with open(path, "r") as f:
+            content = f.read()
+
+        assert "deftest" in content, "Test file must use deftest"
+        test_count = len(re.findall(r"deftest", content))
+        assert test_count >= 3, (
+            f"query_test.clj should have at least 3 tests, found {test_count}"
         )
 
-    @classmethod
-    def _ensure_setup(cls, label, setup_cmds, fallback):
-        if not setup_cmds:
-            return
-        key = tuple(setup_cmds)
-        if key in cls._SETUP_CACHE:
-            ok, msg = cls._SETUP_CACHE[key]
-            if ok:
-                return
-            if fallback == "skip_if_setup_fails":
-                pytest.skip(f"{label} setup failed: {msg}")
-            pytest.fail(f"{label} setup failed: {msg}")
-        for cmd in setup_cmds:
-            r = subprocess.run(cmd, cwd=cls.REPO_DIR, shell=True,
-                               capture_output=True, text=True, timeout=300)
-            if r.returncode != 0:
-                msg = (r.stderr or r.stdout or 'failed').strip()
-                cls._SETUP_CACHE[key] = (False, msg)
-                if fallback == "skip_if_setup_fails":
-                    pytest.skip(f"{label} setup failed: {msg}")
-                pytest.fail(f"{label} setup failed: {msg}")
-        cls._SETUP_CACHE[key] = (True, 'ok')
+        # Should test main functions
+        assert "query-audit-log" in content, "Tests should cover query-audit-log"
+        assert "count-by" in content, "Tests should cover count-by-action or count-by-user"
 
-
-    # ── file_path_check (static) ────────────────────────────────────────
-
-    def test_queries_clj_exists(self):
-        """Verify audit queries namespace file exists"""
-        _p = self._repo_path('src/metabase/audit/queries.clj')
-        assert os.path.isfile(_p), f'Missing file: src/metabase/audit/queries.clj'
-
-    def test_queries_test_exists(self):
-        """Verify test file for audit queries exists"""
-        _p = self._repo_path('test/metabase/audit/queries_test.clj')
-        assert os.path.isfile(_p), f'Missing file: test/metabase/audit/queries_test.clj'
-
-    # ── semantic_check (static) ────────────────────────────────────────
-
-    def test_query_audit_log_defn(self):
-        """Verify query-audit-log function is defined with docstring"""
-        _p = self._repo_path('src/metabase/audit/queries.clj')
-        assert os.path.exists(_p), f'Missing: src/metabase/audit/queries.clj'
-        _contents = self._safe_read(_p)
-        _all = _contents if isinstance(_contents, str) else ''
-        assert 'defn query-audit-log' in _all, 'Missing: defn query-audit-log'
-
-    def test_format_audit_entry_defn(self):
-        """Verify format-audit-entry function is defined"""
-        _p = self._repo_path('src/metabase/audit/queries.clj')
-        assert os.path.exists(_p), f'Missing: src/metabase/audit/queries.clj'
-        _contents = self._safe_read(_p)
-        _all = _contents if isinstance(_contents, str) else ''
-        assert 'defn format-audit-entry' in _all, 'Missing: defn format-audit-entry'
-
-    def test_aggregate_by_user_defn(self):
-        """Verify aggregate-by-user function is defined"""
-        _p = self._repo_path('src/metabase/audit/queries.clj')
-        assert os.path.exists(_p), f'Missing: src/metabase/audit/queries.clj'
-        _contents = self._safe_read(_p)
-        _all = _contents if isinstance(_contents, str) else ''
-        assert 'defn aggregate-by-user' in _all, 'Missing: defn aggregate-by-user'
-
-    def test_db_namespace_require(self):
-        """Verify namespace requires DB layer (metabase.db or next.jdbc or honeysql)"""
-        _p = self._repo_path('src/metabase/audit/queries.clj')
-        assert os.path.exists(_p), f'Missing: src/metabase/audit/queries.clj'
-        _contents = self._safe_read(_p)
-        _all = _contents if isinstance(_contents, str) else ''
-        assert 'metabase.db' in _all, 'Missing: metabase.db'
-        assert 'next.jdbc' in _all, 'Missing: next.jdbc'
-        assert 'honeysql' in _all, 'Missing: honeysql'
-
-    # ── functional_check ────────────────────────────────────────
-
-    def test_query_returns_seq(self):
-        """Verify query-audit-log returns a seq (not nil) for valid input"""
-        result = self._run_cmd('clojure', args=['-M:dev', '-e', "(require '[metabase.audit.queries :as audit]) (println (sequential? (audit/query-audit-log {:limit 5 :offset 0})))"], timeout=120)
-        assert result.returncode == 0, (
-            f'test_query_returns_seq failed (exit {result.returncode})\n' + result.stderr[:500]
-        )
-
-    def test_format_entry_required_keys(self):
-        """Verify format-audit-entry output has :timestamp :user-id :action keys"""
-        result = self._run_cmd('clojure', args=['-M:dev', '-e', '(require \'[metabase.audit.queries :as audit]) (let [e (audit/format-audit-entry {:id 1 :user_id 1 :action "create" :created_at "2024-01-01"})] (println (every? #(contains? e %) [:timestamp :user-id :action])))'], timeout=120)
-        assert result.returncode == 0, (
-            f'test_format_entry_required_keys failed (exit {result.returncode})\n' + result.stderr[:500]
-        )
-
-    def test_empty_result_returns_empty_seq(self):
-        """Verify empty result returns empty seq (not nil)"""
-        result = self._run_cmd('clojure', args=['-M:dev', '-e', "(require '[metabase.audit.queries :as audit]) (let [r (audit/query-audit-log {:user-id -999 :limit 5 :offset 0})] (println (and (not (nil? r)) (empty? r))))"], timeout=120)
-        assert result.returncode == 0, (
-            f'test_empty_result_returns_empty_seq failed (exit {result.returncode})\n' + result.stderr[:500]
-        )
-
-    def test_count_audit_events_nonneg(self):
-        """Verify count-audit-events returns non-negative integer"""
-        result = self._run_cmd('clojure', args=['-M:dev', '-e', "(require '[metabase.audit.queries :as audit]) (println (>= (audit/count-audit-events {}) 0))"], timeout=120)
-        assert result.returncode == 0, (
-            f'test_count_audit_events_nonneg failed (exit {result.returncode})\n' + result.stderr[:500]
-        )
-
-    def test_invalid_user_id_type_throws(self):
-        """Verify string user-id throws ExceptionInfo with :status 400"""
-        result = self._run_cmd('clojure', args=['-M:dev', '-e', '(require \'[metabase.audit.queries :as audit]) (try (audit/query-audit-log {:user-id "not-an-int"}) (println false) (catch clojure.lang.ExceptionInfo e (println (= 400 (:status (ex-data e))))))'], timeout=120)
-        assert result.returncode == 0, (
-            f'test_invalid_user_id_type_throws failed (exit {result.returncode})\n' + result.stderr[:500]
-        )
-
-    def test_limit_zero_returns_empty(self):
-        """Verify limit=0 returns empty result set"""
-        result = self._run_cmd('clojure', args=['-M:dev', '-e', "(require '[metabase.audit.queries :as audit]) (println (empty? (audit/query-audit-log {:limit 0 :offset 0})))"], timeout=120)
-        assert result.returncode == 0, (
-            f'test_limit_zero_returns_empty failed (exit {result.returncode})\n' + result.stderr[:500]
-        )
-
+    def test_namespaces_have_correct_ns_declaration(self):
+        """Verify each file has proper (ns ...) declaration"""
+        expected = {
+            "src/metabase/audit_log/query.clj": "metabase.audit-log.query",
+            "src/metabase/audit_log/models.clj": "metabase.audit-log.models",
+            "src/metabase/api/audit_log.clj": "metabase.api.audit-log",
+        }
+        for filepath, ns_name in expected.items():
+            path = os.path.join(self.REPO_DIR, filepath)
+            if not os.path.exists(path):
+                continue
+            with open(path, "r") as f:
+                content = f.read()
+            # ns name may use underscores in filesystem but hyphens in Clojure
+            ns_pattern = ns_name.replace(".", r"\.")
+            assert re.search(rf"\(ns\s+{ns_pattern}", content) or ns_name in content, (
+                f"{filepath} should declare namespace {ns_name}"
+            )

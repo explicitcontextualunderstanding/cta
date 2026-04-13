@@ -1,216 +1,202 @@
 """
-Tests for 'k8s-manifest-generator' skill — Kubernetes Manifest Generator.
-Validates that the Agent generated proper K8s manifests including Deployments,
-Services, Ingress, RBAC, Secrets, and HPA with correct structure, required
-fields, resource limits, base64-encoded secrets, and label alignment.
+Test skill: k8s-manifest-generator
+Verify that the Agent generates production-ready Kubernetes manifests for
+a three-tier e-commerce application (storefront, API, PostgreSQL) with
+security contexts, HPA, NetworkPolicies, and Ingress.
 """
 
-import base64
-import glob
 import os
-import subprocess
-import textwrap
-
+import re
 import pytest
-import yaml
+
+try:
+    import yaml
+except ImportError:
+    yaml = None
+
+
+def load_yaml(path):
+    if yaml is None:
+        pytest.skip("PyYAML not available")
+    with open(path) as f:
+        return list(yaml.safe_load_all(f))
 
 
 class TestK8sManifestGenerator:
-    """Verify Kubernetes manifest generation quality."""
-
     REPO_DIR = "/workspace/kustomize"
-    K8S_DIR = os.path.join(REPO_DIR, "k8s")
 
-    # ── helpers ──────────────────────────────────────────────────────────
+    # === File Path Checks ===
 
-    @staticmethod
-    def _load_yaml(path: str):
-        with open(path, "r", encoding="utf-8", errors="ignore") as fh:
-            return yaml.safe_load(fh)
+    def test_namespace_exists(self):
+        assert os.path.exists(os.path.join(self.REPO_DIR, "k8s/namespace.yaml"))
 
-    def _run_in_repo(
-        self, script: str, timeout: int = 120
-    ) -> subprocess.CompletedProcess:
-        return subprocess.run(
-            ["python", "-c", textwrap.dedent(script)],
-            cwd=self.REPO_DIR,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
+    def test_storefront_manifests_exist(self):
+        for f in ("deployment.yaml", "service.yaml", "configmap.yaml"):
+            path = os.path.join(self.REPO_DIR, f"k8s/storefront/{f}")
+            assert os.path.exists(path), f"Missing storefront/{f}"
+
+    def test_api_manifests_exist(self):
+        for f in ("deployment.yaml", "service.yaml", "configmap.yaml", "secret.yaml", "hpa.yaml"):
+            path = os.path.join(self.REPO_DIR, f"k8s/api/{f}")
+            assert os.path.exists(path), f"Missing api/{f}"
+
+    def test_db_manifests_exist(self):
+        for f in ("statefulset.yaml", "service.yaml", "configmap.yaml", "secret.yaml"):
+            path = os.path.join(self.REPO_DIR, f"k8s/db/{f}")
+            assert os.path.exists(path), f"Missing db/{f}"
+
+    def test_ingress_exists(self):
+        assert os.path.exists(os.path.join(self.REPO_DIR, "k8s/ingress.yaml"))
+
+    def test_networkpolicy_exists(self):
+        assert os.path.exists(os.path.join(self.REPO_DIR, "k8s/networkpolicy.yaml"))
+
+    # === Semantic Checks ===
+
+    def test_storefront_uses_pinned_tag(self):
+        """Storefront deployment should use pinned image tag, not :latest"""
+        docs = load_yaml(os.path.join(self.REPO_DIR, "k8s/storefront/deployment.yaml"))
+        doc = docs[0]
+        containers = doc["spec"]["template"]["spec"]["containers"]
+        image = containers[0].get("image", "")
+        assert ":latest" not in image, "Image must not use :latest"
+        assert ":" in image, "Image must have a pinned tag"
+
+    def test_storefront_has_security_context(self):
+        """Storefront should run as non-root with readOnlyRootFilesystem"""
+        docs = load_yaml(os.path.join(self.REPO_DIR, "k8s/storefront/deployment.yaml"))
+        spec = docs[0]["spec"]["template"]["spec"]
+        pod_sec = spec.get("securityContext", {})
+        assert pod_sec.get("runAsNonRoot") is True, "Must set runAsNonRoot: true"
+        container_sec = spec["containers"][0].get("securityContext", {})
+        assert container_sec.get("readOnlyRootFilesystem") is True, (
+            "Must set readOnlyRootFilesystem: true"
+        )
+        assert container_sec.get("allowPrivilegeEscalation") is False, (
+            "Must set allowPrivilegeEscalation: false"
         )
 
-    def _all_yaml_files(self):
-        return glob.glob(os.path.join(self.K8S_DIR, "**", "*.yaml"), recursive=True)
+    def test_storefront_has_probes(self):
+        """Storefront should have liveness and readiness probes"""
+        docs = load_yaml(os.path.join(self.REPO_DIR, "k8s/storefront/deployment.yaml"))
+        container = docs[0]["spec"]["template"]["spec"]["containers"][0]
+        assert "livenessProbe" in container, "Missing livenessProbe"
+        assert "readinessProbe" in container, "Missing readinessProbe"
 
-    # ── file_path_check (static) ────────────────────────────────────────
+    def test_storefront_has_resource_limits(self):
+        """Storefront should have resource requests and limits"""
+        docs = load_yaml(os.path.join(self.REPO_DIR, "k8s/storefront/deployment.yaml"))
+        container = docs[0]["spec"]["template"]["spec"]["containers"][0]
+        resources = container.get("resources", {})
+        assert "requests" in resources, "Missing resource requests"
+        assert "limits" in resources, "Missing resource limits"
 
-    def test_deployments_directory_exists(self):
-        """Verify k8s/deployments/ directory exists with at least 5 YAML files."""
-        dep_dir = os.path.join(self.K8S_DIR, "deployments")
-        assert os.path.isdir(dep_dir), f"Missing directory: {dep_dir}"
-        yamls = glob.glob(os.path.join(dep_dir, "*.yaml"))
-        assert len(yamls) >= 5, f"Expected >= 5 deployment YAMLs, found {len(yamls)}"
+    def test_api_hpa_config(self):
+        """HPA should target API deployment with min 3 max 10"""
+        docs = load_yaml(os.path.join(self.REPO_DIR, "k8s/api/hpa.yaml"))
+        doc = docs[0]
+        spec = doc.get("spec", {})
+        assert spec.get("minReplicas") == 3, f"HPA min should be 3, got {spec.get('minReplicas')}"
+        assert spec.get("maxReplicas") == 10, f"HPA max should be 10, got {spec.get('maxReplicas')}"
 
-    def test_services_directory_exists(self):
-        """Verify k8s/services/ directory exists."""
-        svc_dir = os.path.join(self.K8S_DIR, "services")
-        assert os.path.isdir(svc_dir), f"Missing directory: {svc_dir}"
+    def test_api_hpa_targets_cpu_and_memory(self):
+        """HPA should target both CPU and memory utilization"""
+        docs = load_yaml(os.path.join(self.REPO_DIR, "k8s/api/hpa.yaml"))
+        metrics = docs[0].get("spec", {}).get("metrics", [])
+        metric_types = [m.get("resource", {}).get("name", "") for m in metrics if m.get("type") == "Resource"]
+        assert "cpu" in metric_types, "HPA should target CPU"
+        assert "memory" in metric_types, "HPA should target memory"
 
-    def test_ingress_and_rbac_exist(self):
-        """Verify ingress.yaml and rbac/ directory exist under k8s/."""
-        ingress_path = os.path.join(self.K8S_DIR, "ingress.yaml")
-        rbac_dir = os.path.join(self.K8S_DIR, "rbac")
-        assert os.path.isfile(ingress_path), f"Missing {ingress_path}"
-        assert os.path.isdir(rbac_dir), f"Missing directory: {rbac_dir}"
+    def test_db_statefulset_has_volume_claim(self):
+        """PostgreSQL StatefulSet should have volumeClaimTemplates"""
+        docs = load_yaml(os.path.join(self.REPO_DIR, "k8s/db/statefulset.yaml"))
+        doc = docs[0]
+        assert doc.get("kind") == "StatefulSet", "DB should be a StatefulSet"
+        vcts = doc.get("spec", {}).get("volumeClaimTemplates", [])
+        assert len(vcts) >= 1, "Missing volumeClaimTemplates"
+        storage = vcts[0]["spec"]["resources"]["requests"]["storage"]
+        assert "20Gi" in str(storage), f"VCT should request 20Gi, got {storage}"
 
-    # ── semantic_check (static) ─────────────────────────────────────────
+    def test_db_uses_postgres_alpine(self):
+        """DB should use postgres:16-alpine image"""
+        docs = load_yaml(os.path.join(self.REPO_DIR, "k8s/db/statefulset.yaml"))
+        containers = docs[0]["spec"]["template"]["spec"]["containers"]
+        image = containers[0].get("image", "")
+        assert "postgres" in image, f"DB image should be postgres, got {image}"
+        assert "alpine" in image, "Should use alpine variant"
 
-    def test_all_manifests_have_required_keys(self):
-        """Verify every YAML manifest has apiVersion, kind, and metadata.name."""
-        for fpath in self._all_yaml_files():
-            doc = self._load_yaml(fpath)
-            assert doc is not None, f"{fpath}: empty document"
-            for key in ("apiVersion", "kind", "metadata"):
-                assert key in doc, f"{fpath}: missing {key}"
-            assert "name" in doc["metadata"], f"{fpath}: missing metadata.name"
+    def test_ingress_has_tls(self):
+        """Ingress should have TLS configuration"""
+        docs = load_yaml(os.path.join(self.REPO_DIR, "k8s/ingress.yaml"))
+        doc = docs[0]
+        assert doc.get("spec", {}).get("tls"), "Ingress must have TLS config"
 
-    def test_deployment_has_resource_limits(self):
-        """Verify Deployment containers specify resources.limits and resources.requests."""
-        dep_dir = os.path.join(self.K8S_DIR, "deployments")
-        yamls = glob.glob(os.path.join(dep_dir, "*.yaml"))
-        assert len(yamls) > 0, "No deployment files"
-        for fpath in yamls:
-            doc = self._load_yaml(fpath)
-            containers = (
-                doc.get("spec", {})
-                .get("template", {})
-                .get("spec", {})
-                .get("containers", [])
+    def test_ingress_has_path_routing(self):
+        """Ingress should route /api to api and / to storefront"""
+        path = os.path.join(self.REPO_DIR, "k8s/ingress.yaml")
+        with open(path) as f:
+            content = f.read()
+        assert "/api" in content, "Ingress should route /api"
+        assert "storefront" in content, "Ingress should route to storefront"
+
+    def test_networkpolicy_has_default_deny(self):
+        """NetworkPolicies should include default deny"""
+        path = os.path.join(self.REPO_DIR, "k8s/networkpolicy.yaml")
+        with open(path) as f:
+            content = f.read()
+        assert "default-deny" in content or "DefaultDeny" in content or "deny" in content.lower(), (
+            "Should include a default-deny NetworkPolicy"
+        )
+
+    def test_api_has_startup_probe(self):
+        """API deployment should have startupProbe"""
+        docs = load_yaml(os.path.join(self.REPO_DIR, "k8s/api/deployment.yaml"))
+        container = docs[0]["spec"]["template"]["spec"]["containers"][0]
+        assert "startupProbe" in container, "API should have startupProbe"
+
+    # === Functional Checks ===
+
+    def test_all_yaml_files_parse(self):
+        """All YAML files under k8s/ should parse without errors"""
+        if yaml is None:
+            pytest.skip("PyYAML not available")
+        base = os.path.join(self.REPO_DIR, "k8s")
+        for root, _dirs, files in os.walk(base):
+            for fname in files:
+                if fname.endswith((".yaml", ".yml")):
+                    filepath = os.path.join(root, fname)
+                    try:
+                        with open(filepath) as f:
+                            list(yaml.safe_load_all(f))
+                    except yaml.YAMLError as e:
+                        pytest.fail(f"{filepath} has YAML error: {e}")
+
+    def test_all_manifests_have_namespace(self):
+        """All manifests should reference the production namespace"""
+        if yaml is None:
+            pytest.skip("PyYAML not available")
+        # Check a sampling of key files
+        for filepath in (
+            "k8s/storefront/deployment.yaml",
+            "k8s/api/deployment.yaml",
+            "k8s/db/statefulset.yaml",
+        ):
+            full = os.path.join(self.REPO_DIR, filepath)
+            docs = load_yaml(full)
+            ns = docs[0].get("metadata", {}).get("namespace", "")
+            assert ns == "production", (
+                f"{filepath} should be in production namespace, got '{ns}'"
             )
-            for c in containers:
-                resources = c.get("resources", {})
-                assert (
-                    "limits" in resources
-                ), f"{fpath}: container {c.get('name')} missing resources.limits"
-                assert (
-                    "requests" in resources
-                ), f"{fpath}: container {c.get('name')} missing resources.requests"
 
-    def test_secret_has_base64_data(self):
-        """Verify Secret files have type: Opaque and a data block."""
-        secrets_dir = os.path.join(self.K8S_DIR, "secrets")
-        if not os.path.isdir(secrets_dir):
-            pytest.skip("k8s/secrets/ directory not present")
-        yamls = glob.glob(os.path.join(secrets_dir, "*.yaml"))
-        assert len(yamls) > 0, "No secret files found"
-        for fpath in yamls:
-            doc = self._load_yaml(fpath)
-            assert doc.get("kind") == "Secret", f"{fpath}: kind != Secret"
-            assert "data" in doc or "stringData" in doc, f"{fpath}: missing data block"
-
-    # ── functional_check (command) ──────────────────────────────────────
-
-    def test_all_yaml_parseable(self):
-        """Verify all 16+ YAML manifest files parse without error."""
-        result = self._run_in_repo(
-            """\
-            import yaml, glob
-            files = glob.glob('k8s/**/*.yaml', recursive=True)
-            assert len(files) >= 16, f'Only {len(files)} files'
-            for f in files:
-                yaml.safe_load(open(f))
-            print('PASS')
-        """
-        )
-        assert result.returncode == 0, f"Parse failed: {result.stderr}"
-        assert "PASS" in result.stdout
-
-    def test_manifests_have_metadata(self):
-        """Verify every manifest has apiVersion, kind, and metadata.name (functional)."""
-        result = self._run_in_repo(
-            """\
-            import yaml, glob
-            files = glob.glob('k8s/**/*.yaml', recursive=True)
-            for f in files:
-                doc = yaml.safe_load(open(f))
-                for k in ['apiVersion', 'kind', 'metadata']:
-                    assert k in doc, f'{f}: missing {k}'
-                assert 'name' in doc['metadata'], f'{f}: missing metadata.name'
-            print('PASS')
-        """
-        )
-        assert result.returncode == 0, f"Metadata check failed: {result.stderr}"
-        assert "PASS" in result.stdout
-
-    def test_deployment_count(self):
-        """Verify at least 5 Deployment manifests exist."""
-        result = self._run_in_repo(
-            """\
-            import glob
-            deps = glob.glob('k8s/deployments/*.yaml')
-            assert len(deps) >= 5, f'Only {len(deps)} deployments'
-            print('PASS')
-        """
-        )
-        assert result.returncode == 0, f"Deployment count check failed: {result.stderr}"
-        assert "PASS" in result.stdout
-
-    def test_secret_values_base64(self):
-        """Verify Secret data values are valid base64-encoded strings."""
-        result = self._run_in_repo(
-            """\
-            import yaml, glob, base64
-            secrets = glob.glob('k8s/secrets/*.yaml')
-            for f in secrets:
-                s = yaml.safe_load(open(f))
-                for k, v in s.get('data', {}).items():
-                    base64.b64decode(v)
-            print('PASS')
-        """
-        )
-        assert result.returncode == 0, f"Base64 check failed: {result.stderr}"
-        assert "PASS" in result.stdout
-
-    def test_hpa_replicas_valid(self):
-        """Verify HPA minReplicas <= maxReplicas."""
-        result = self._run_in_repo(
-            """\
-            import yaml, glob
-            hpas = [f for f in glob.glob('k8s/**/*.yaml', recursive=True)
-                     if 'hpa' in f.lower() or 'autoscal' in f.lower()]
-            for f in hpas:
-                h = yaml.safe_load(open(f))
-                assert h['spec']['minReplicas'] <= h['spec']['maxReplicas'], (
-                    f'{f}: min > max'
-                )
-            print('PASS')
-        """
-        )
-        assert result.returncode == 0, f"HPA check failed: {result.stderr}"
-        assert "PASS" in result.stdout
-
-    def test_service_selector_matches_deployment(self):
-        """Verify Service selector labels match at least one Deployment pod template labels."""
-        result = self._run_in_repo(
-            """\
-            import yaml, glob
-            dep_labels = {}
-            for f in glob.glob('k8s/deployments/*.yaml'):
-                d = yaml.safe_load(open(f))
-                name = d['metadata']['name']
-                dep_labels[name] = d['spec']['template']['metadata']['labels']
-            for f in glob.glob('k8s/services/*.yaml'):
-                s = yaml.safe_load(open(f))
-                sel = s['spec'].get('selector', {})
-                if not sel:
-                    continue
-                matched = any(
-                    all(labels.get(k) == v for k, v in sel.items())
-                    for labels in dep_labels.values()
-                )
-                assert matched, f"{f}: selector {sel} matches no deployment labels"
-            print('PASS')
-        """
-        )
-        assert result.returncode == 0, f"Selector match check failed: {result.stderr}"
-        assert "PASS" in result.stdout
+    def test_secrets_are_base64_or_stringdata(self):
+        """Secrets should use data (base64) or stringData"""
+        for filepath in ("k8s/api/secret.yaml", "k8s/db/secret.yaml"):
+            full = os.path.join(self.REPO_DIR, filepath)
+            if not os.path.exists(full):
+                continue
+            docs = load_yaml(full)
+            doc = docs[0]
+            assert doc.get("kind") == "Secret", f"{filepath} should be a Secret"
+            assert "data" in doc or "stringData" in doc, (
+                f"{filepath} should have data or stringData"
+            )

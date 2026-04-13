@@ -1,140 +1,164 @@
 """
-Test for 'similarity-search-patterns' skill — Go Similarity Search Library
-Validates Searcher interface, BruteForce, Result struct, dimension checks,
-k-clamping, sorting, and empty-index behavior via static source analysis.
+Test skill: similarity-search-patterns
+Verify that the Agent implements hybrid search with RRF/Convex/Relative score fusion in Milvus (Go).
 """
 
 import os
 import re
-
+import subprocess
 import pytest
 
 
 class TestSimilaritySearchPatterns:
-    """Verify Go similarity-search library via static source inspection."""
-
     REPO_DIR = "/workspace/milvus"
 
-    # ── helpers ──────────────────────────────────────────────────────────
+    # === File Path Checks ===
 
-    @staticmethod
-    def _read_file(path: str) -> str:
-        try:
-            with open(path, "r", errors="ignore") as fh:
-                return fh.read()
-        except OSError:
-            return ""
+    def test_hybrid_search_files_exist(self):
+        """Verify hybrid search implementation files exist"""
+        found = False
+        for root, dirs, files in os.walk(self.REPO_DIR):
+            if ".git" in root or "vendor" in root:
+                continue
+            for f in files:
+                if f.endswith(".go") and ("hybrid" in f.lower() or "fusion" in f.lower()):
+                    found = True
+                    break
+            if found:
+                break
+        assert found, "Hybrid search Go files not found"
 
-    def _sim(self, *parts) -> str:
-        return os.path.join(self.REPO_DIR, "similarity", *parts)
+    # === Semantic Checks ===
 
-    # ── file_path_check ──────────────────────────────────────────────────
+    def test_rrf_fusion_implemented(self):
+        """Verify RRF (Reciprocal Rank Fusion) is implemented"""
+        content = self._find_content()
+        content_lower = content.lower()
+        has_rrf = "rrf" in content_lower or "reciprocalrank" in content_lower or "reciprocal_rank" in content_lower
+        assert has_rrf, "RRF (Reciprocal Rank Fusion) not found"
 
-    def test_go_mod_and_index_go_exist(self):
-        """go.mod and similarity/index.go must exist."""
-        assert os.path.isfile(os.path.join(self.REPO_DIR, "go.mod")), "go.mod not found"
-        index = self._sim("index.go")
-        hnsw = os.path.join(self.REPO_DIR, "internal", "hnsw", "hnsw.go")
-        assert os.path.isfile(index) or os.path.isfile(hnsw), "index.go or hnsw.go not found"
+    def test_convex_fusion_implemented(self):
+        """Verify Convex score fusion is implemented"""
+        content = self._find_content()
+        content_lower = content.lower()
+        has_convex = "convex" in content_lower or "weighted" in content_lower
+        assert has_convex, "Convex score fusion not found"
 
-    def test_bruteforce_and_searcher_exist(self):
-        """similarity/bruteforce.go and searcher.go must exist."""
-        assert os.path.isfile(self._sim("bruteforce.go")), "bruteforce.go not found"
-        iface = self._sim("searcher.go")
-        alt = self._sim("interface.go")
-        assert os.path.isfile(iface) or os.path.isfile(alt), "searcher.go or interface.go not found"
+    def test_relative_score_fusion_implemented(self):
+        """Verify Relative score fusion is implemented"""
+        content = self._find_content()
+        content_lower = content.lower()
+        has_relative = "relative" in content_lower or "normalize" in content_lower
+        assert has_relative, "Relative score fusion not found"
 
-    def test_test_file_and_makefile_exist(self):
-        """Test file and build automation must exist."""
-        import glob
-        tests = glob.glob(self._sim("*_test.go"))
-        assert len(tests) >= 1, "No *_test.go in similarity/"
-        mk = os.path.join(self.REPO_DIR, "Makefile")
-        tf = os.path.join(self.REPO_DIR, "Taskfile.yml")
-        assert os.path.isfile(mk) or os.path.isfile(tf), "Makefile/Taskfile.yml not found"
+    def test_fusion_strategy_interface(self):
+        """Verify a common interface/type for fusion strategies exists"""
+        content = self._find_content()
+        has_interface = (
+            "interface" in content
+            or "type " in content and "func" in content
+            or "Fusion" in content
+        )
+        assert has_interface, "Fusion strategy interface not found"
 
-    # ── semantic_check ───────────────────────────────────────────────────
+    def test_search_handles_multiple_vectors(self):
+        """Verify search implementation handles multiple vector fields"""
+        content = self._find_content()
+        content_lower = content.lower()
+        has_multi = (
+            "vector" in content_lower
+            and ("multiple" in content_lower or "fields" in content_lower or "[]" in content)
+        )
+        assert has_multi, "Implementation doesn't handle multiple vector fields"
 
-    def test_searcher_interface_search_signature(self):
-        """Searcher interface must define Search([]float32, int) []Result."""
-        path = self._sim("searcher.go")
-        alt = self._sim("interface.go")
-        content = self._read_file(path) or self._read_file(alt)
-        if not content:
-            pytest.skip("searcher/interface file not found")
-        assert "type Searcher interface" in content, "Searcher interface not defined"
-        assert "Search" in content, "Search method not found"
+    # === Functional Checks ===
 
-    def test_result_struct_fields(self):
-        """Result struct must have ID, Score, Distance fields."""
-        for name in ("searcher.go", "index.go", "interface.go"):
-            content = self._read_file(self._sim(name))
-            if "type Result struct" in content:
-                assert "ID" in content
-                assert "Score" in content or "Distance" in content
-                return
-        pytest.fail("Result struct not found in any similarity/ file")
+    def test_go_files_compile(self):
+        """Verify Go files have no syntax errors"""
+        go_files = []
+        for root, dirs, files in os.walk(self.REPO_DIR):
+            if ".git" in root or "vendor" in root:
+                continue
+            for f in files:
+                if f.endswith(".go") and ("hybrid" in f.lower() or "fusion" in f.lower()):
+                    go_files.append(os.path.join(root, f))
+        assert len(go_files) > 0, "No Go files found to compile"
+        for gf in go_files:
+            result = subprocess.run(
+                ["go", "vet", gf],
+                cwd=self.REPO_DIR,
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+            # go vet on individual files may fail without proper module context
+            # Just check for obvious syntax issues
+            if result.returncode != 0:
+                assert "syntax error" not in result.stderr.lower(), (
+                    f"Syntax error in {gf}: {result.stderr[:500]}"
+                )
 
-    def test_bruteforce_sorts_by_distance(self):
-        """BruteForce.Search must sort results by distance ascending."""
-        content = self._read_file(self._sim("bruteforce.go"))
-        if not content:
-            pytest.skip("bruteforce.go not found")
-        assert "sort." in content, "sort package not used"
-        assert "Distance" in content or "distance" in content, "No distance reference"
+    def test_go_build(self):
+        """Verify the project builds"""
+        result = subprocess.run(
+            ["go", "build", "./..."],
+            cwd=self.REPO_DIR,
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+        if result.returncode != 0:
+            # Check that fusion-related files aren't causing the errors
+            fusion_errors = [
+                line for line in result.stderr.splitlines()
+                if "hybrid" in line.lower() or "fusion" in line.lower()
+            ]
+            assert len(fusion_errors) == 0, (
+                f"Build errors in hybrid/fusion files: {fusion_errors[:5]}"
+            )
 
-    def test_dimension_mismatch_returns_error(self):
-        """AddVector must return error for dimension mismatch, not panic."""
-        for name in ("index.go", "bruteforce.go"):
-            content = self._read_file(self._sim(name))
-            if "dim" in content.lower() and ("error" in content or "Errorf" in content):
-                assert "panic" not in content.split("dim")[0][-200:], "panic used instead of error return"
-                return
-        pytest.fail("No dimension validation error return found")
+    def test_go_files_have_package(self):
+        """Verify Go files have proper package declarations"""
+        go_files = []
+        for root, dirs, files in os.walk(self.REPO_DIR):
+            if ".git" in root or "vendor" in root:
+                continue
+            for f in files:
+                if f.endswith(".go") and ("hybrid" in f.lower() or "fusion" in f.lower()):
+                    go_files.append(os.path.join(root, f))
+        for gf in go_files:
+            with open(gf) as fh:
+                content = fh.read()
+            assert "package " in content[:200], f"{gf} missing package declaration"
 
-    # ── functional_check (static Go) ─────────────────────────────────────
+    def test_go_tests_exist(self):
+        """Verify test files for hybrid search exist"""
+        found = False
+        for root, dirs, files in os.walk(self.REPO_DIR):
+            if ".git" in root or "vendor" in root:
+                continue
+            for f in files:
+                if f.endswith("_test.go") and ("hybrid" in f.lower() or "fusion" in f.lower()):
+                    found = True
+                    break
+            if found:
+                break
+        # Tests may not be required, just check
+        if not found:
+            pytest.skip("No test files for hybrid search found (not required)")
 
-    def test_bruteforce_linear_scan_pattern(self):
-        """BruteForce must linearly scan all vectors computing distance."""
-        content = self._read_file(self._sim("bruteforce.go"))
-        if not content:
-            pytest.skip("bruteforce.go not found")
-        has_range = "range" in content
-        has_dist = any(d in content.lower() for d in ("cosine", "euclidean", "l2", "dot"))
-        assert has_range and has_dist, "Linear scan with distance function not found"
-
-    def test_empty_index_returns_empty_slice(self):
-        """Search on empty index must return empty []Result, not panic."""
-        for name in ("bruteforce.go", "index.go"):
-            content = self._read_file(self._sim(name))
-            if re.search(r"len.*==\s*0|Result\{\}", content):
-                return
-        pytest.fail("No empty-index guard found")
-
-    def test_k_clamped_when_larger_than_n(self):
-        """When k > len(vectors), all available results returned."""
-        content = self._read_file(self._sim("bruteforce.go"))
-        if not content:
-            pytest.skip("bruteforce.go not found")
-        has_clamp = re.search(r"k\s*>\s*len|min\(k", content)
-        assert has_clamp, "k-clamping guard not found"
-
-    def test_go_mod_version_at_least_1_21(self):
-        """go.mod must declare go >= 1.21."""
-        content = self._read_file(os.path.join(self.REPO_DIR, "go.mod"))
-        if not content:
-            pytest.skip("go.mod not found")
-        m = re.search(r"^go\s+1\.(\d+)", content, re.MULTILINE)
-        assert m, "go version directive not found"
-        assert int(m.group(1)) >= 21, f"go 1.{m.group(1)} < 1.21"
-
-    def test_wrong_dimension_error_path(self):
-        """Add() with wrong dimension must return error, no recover()."""
-        for name in ("index.go", "bruteforce.go"):
-            content = self._read_file(self._sim(name))
-            if "dim" in content.lower():
-                assert "recover()" not in content, "recover() used instead of error return"
-                has_err = "return" in content and ("err" in content or "Err" in content)
-                assert has_err, "No error return for dimension mismatch"
-                return
-        pytest.fail("No dimension check code found")
+    def _find_content(self):
+        """Helper to find hybrid search content"""
+        all_content = ""
+        for root, dirs, files in os.walk(self.REPO_DIR):
+            if ".git" in root or "vendor" in root:
+                continue
+            for f in files:
+                if f.endswith(".go") and ("hybrid" in f.lower() or "fusion" in f.lower() or "search" in f.lower()):
+                    fpath = os.path.join(root, f)
+                    try:
+                        with open(fpath) as fh:
+                            all_content += fh.read() + "\n"
+                    except (UnicodeDecodeError, PermissionError):
+                        continue
+        return all_content

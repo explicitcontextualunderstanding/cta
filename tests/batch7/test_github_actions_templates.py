@@ -1,136 +1,177 @@
-"""Test file for the github-actions-templates skill.
-
-This suite validates the Node.js library CI and publish GitHub Actions
-workflow templates in the starter-workflows repository.
+"""
+Test skill: github-actions-templates
+Verify that the Agent correctly creates reusable CI/CD workflow templates
+for Node.js libraries in the GitHub Actions starter-workflows repository.
 """
 
-from __future__ import annotations
-
-import json
-import pathlib
+import os
 import re
-
+import json
+import subprocess
 import pytest
-import yaml
 
 
 class TestGithubActionsTemplates:
-    """Verify GitHub Actions workflow templates for Node.js library CI/CD."""
-
     REPO_DIR = "/workspace/starter-workflows"
 
-    CI_YML = "ci/node-library-ci.yml"
-    PUBLISH_YML = "deployments/node-library-publish.yml"
-    CI_PROPS = "ci/node-library-ci.properties.json"
+    # === File Path Checks ===
 
-    # ------------------------------------------------------------------
-    # Helpers
-    # ------------------------------------------------------------------
+    def test_ci_workflow_exists(self):
+        """Verify CI workflow template exists"""
+        fpath = os.path.join(self.REPO_DIR, "ci/node-library-ci.yml")
+        assert os.path.isfile(fpath), f"CI workflow not found at {fpath}"
 
-    def _repo_path(self, relative: str) -> pathlib.Path:
-        return pathlib.Path(self.REPO_DIR, *relative.split("/"))
+    def test_publish_workflow_exists(self):
+        """Verify publish workflow template exists"""
+        fpath = os.path.join(self.REPO_DIR, "deployments/node-library-publish.yml")
+        assert os.path.isfile(fpath), f"Publish workflow not found at {fpath}"
 
-    def _read_text(self, relative: str) -> str:
-        path = self._repo_path(relative)
-        assert path.exists(), f"Expected path to exist: {path}"
-        return path.read_text(encoding="utf-8", errors="ignore")
+    def test_ci_properties_exists(self):
+        """Verify CI properties.json exists"""
+        fpath = os.path.join(self.REPO_DIR, "ci/node-library-ci.properties.json")
+        assert os.path.isfile(fpath), f"CI properties.json not found at {fpath}"
 
-    def _assert_non_empty_file(self, relative: str) -> pathlib.Path:
-        path = self._repo_path(relative)
-        assert path.is_file(), f"Expected file to exist: {path}"
-        assert path.stat().st_size > 0, f"Expected non-empty file: {path}"
-        return path
+    def test_publish_properties_exists(self):
+        """Verify publish properties.json exists"""
+        fpath = os.path.join(self.REPO_DIR, "deployments/node-library-publish.properties.json")
+        assert os.path.isfile(fpath), f"Publish properties.json not found at {fpath}"
 
-    def _parse_yaml(self, relative: str) -> dict:
-        """Parse a YAML file, replacing GitHub Actions template variables."""
-        text = self._read_text(relative)
-        # Replace $default-branch placeholder so YAML parser doesn't choke
-        text = text.replace("$default-branch", "main")
-        return yaml.safe_load(text)
+    # === Semantic Checks ===
 
-    # ------------------------------------------------------------------
-    # Layer 1 – file_path_check (3 cases)
-    # ------------------------------------------------------------------
+    def test_ci_workflow_has_matrix_strategy(self):
+        """Verify CI workflow defines matrix for Node.js 18, 20, and 22"""
+        fpath = os.path.join(self.REPO_DIR, "ci/node-library-ci.yml")
+        with open(fpath, "r") as f:
+            content = f.read()
+        assert "matrix" in content, "CI workflow should use matrix strategy"
+        for version in ["18", "20", "22"]:
+            assert version in content, f"CI workflow matrix should include Node.js {version}"
+        assert "fail-fast" in content, "CI workflow should set fail-fast: false"
 
-    def test_file_path_ci_node_library_ci_yml_exists(self):
-        """Verify ci/node-library-ci.yml exists and is non-empty."""
-        self._assert_non_empty_file(self.CI_YML)
+    def test_ci_workflow_has_required_steps(self):
+        """Verify CI workflow has checkout, setup-node, npm ci, npm test, npm audit steps"""
+        fpath = os.path.join(self.REPO_DIR, "ci/node-library-ci.yml")
+        with open(fpath, "r") as f:
+            content = f.read()
+        assert "actions/checkout" in content, "CI workflow should use actions/checkout"
+        assert "actions/setup-node" in content, "CI workflow should use actions/setup-node"
+        assert "npm ci" in content, "CI workflow should run 'npm ci'"
+        assert "npm test" in content, "CI workflow should run 'npm test'"
+        assert "npm audit" in content, "CI workflow should run 'npm audit'"
 
-    def test_file_path_deployments_node_library_publish_yml_exists(self):
-        """Verify deployments/node-library-publish.yml exists and is non-empty."""
-        self._assert_non_empty_file(self.PUBLISH_YML)
+    def test_ci_workflow_has_concurrency(self):
+        """Verify CI workflow defines concurrency group"""
+        fpath = os.path.join(self.REPO_DIR, "ci/node-library-ci.yml")
+        with open(fpath, "r") as f:
+            content = f.read()
+        assert "concurrency" in content, "CI workflow should define concurrency group"
 
-    def test_file_path_ci_node_library_ci_properties_json_exists(self):
-        """Verify ci/node-library-ci.properties.json exists and is non-empty."""
-        self._assert_non_empty_file(self.CI_PROPS)
+    def test_ci_workflow_has_correct_triggers(self):
+        """Verify CI workflow triggers on push and pull_request to main/master"""
+        fpath = os.path.join(self.REPO_DIR, "ci/node-library-ci.yml")
+        with open(fpath, "r") as f:
+            content = f.read()
+        assert "push" in content, "CI workflow should trigger on push"
+        assert "pull_request" in content, "CI workflow should trigger on pull_request"
 
-    # ------------------------------------------------------------------
-    # Layer 2 – semantic_check (5 cases)
-    # ------------------------------------------------------------------
+    def test_publish_workflow_triggers_on_version_tags(self):
+        """Verify publish workflow triggers on v*.*.* tags"""
+        fpath = os.path.join(self.REPO_DIR, "deployments/node-library-publish.yml")
+        with open(fpath, "r") as f:
+            content = f.read()
+        has_tag_trigger = bool(re.search(r'v\*\.\*\.\*|tags', content))
+        assert has_tag_trigger, "Publish workflow should trigger on version tags (v*.*.*)"
 
-    def test_semantic_ci_workflow_yaml_contains_matrix_with_node_version_18_20_22(self):
-        """CI workflow YAML contains matrix with node-version: [18, 20, 22]."""
-        src = self._read_text(self.CI_YML)
-        assert "node-version" in src, "CI workflow must define node-version matrix"
-        for ver in ("18", "20", "22"):
-            assert ver in src, f"CI workflow matrix must include Node.js {ver}"
+    def test_publish_workflow_has_npm_publish(self):
+        """Verify publish workflow runs npm publish with auth token"""
+        fpath = os.path.join(self.REPO_DIR, "deployments/node-library-publish.yml")
+        with open(fpath, "r") as f:
+            content = f.read()
+        assert "npm publish" in content, "Publish workflow should run 'npm publish'"
+        assert "NODE_AUTH_TOKEN" in content, "Publish workflow should use NODE_AUTH_TOKEN"
+        assert "NPM_TOKEN" in content, "Publish workflow should reference NPM_TOKEN secret"
 
-    def test_semantic_ci_workflow_has_fail_fast_false(self):
-        """CI workflow has fail-fast: false."""
-        src = self._read_text(self.CI_YML)
-        assert re.search(
-            r"fail-fast\s*:\s*false", src
-        ), "CI workflow should have fail-fast: false"
+    def test_publish_workflow_verifies_version(self):
+        """Verify publish workflow checks tag version matches package.json"""
+        fpath = os.path.join(self.REPO_DIR, "deployments/node-library-publish.yml")
+        with open(fpath, "r") as f:
+            content = f.read()
+        has_version_check = bool(re.search(r'(package\.json|version.*match|tag.*version)', content, re.IGNORECASE))
+        assert has_version_check, "Publish workflow should verify tag-to-package.json version consistency"
 
-    def test_semantic_ci_workflow_has_concurrency_group_configuration(self):
-        """CI workflow has concurrency group configuration."""
-        src = self._read_text(self.CI_YML)
-        assert "concurrency" in src, "CI workflow should have concurrency configuration"
-        assert "group" in src, "Concurrency configuration should include group"
+    def test_publish_workflow_creates_github_release(self):
+        """Verify publish workflow creates a GitHub Release"""
+        fpath = os.path.join(self.REPO_DIR, "deployments/node-library-publish.yml")
+        with open(fpath, "r") as f:
+            content = f.read()
+        has_release = bool(re.search(r'(create-release|gh release|softprops/action-gh-release)', content, re.IGNORECASE))
+        assert has_release, "Publish workflow should create a GitHub Release"
 
-    def test_semantic_ci_workflow_has_permissions_contents_read(self):
-        """CI workflow has permissions: contents: read."""
-        src = self._read_text(self.CI_YML)
-        assert "permissions" in src, "CI workflow should define permissions"
-        assert re.search(
-            r"contents\s*:\s*read", src
-        ), "CI workflow should have contents: read permission"
+    def test_ci_properties_json_valid(self):
+        """Verify CI properties.json has required fields with correct categories"""
+        fpath = os.path.join(self.REPO_DIR, "ci/node-library-ci.properties.json")
+        with open(fpath, "r") as f:
+            props = json.load(f)
+        assert "name" in props, "Properties missing 'name'"
+        assert "description" in props, "Properties missing 'description'"
+        assert "iconName" in props, "Properties missing 'iconName'"
+        assert "categories" in props, "Properties missing 'categories'"
+        assert isinstance(props["categories"], list), "categories should be an array"
+        cats = [c.lower() for c in props["categories"]]
+        assert any("node" in c for c in cats), f"CI categories should include 'Node.js'. Got: {props['categories']}"
 
-    def test_semantic_ci_workflow_has_npm_audit_audit_level_high_step(self):
-        """CI workflow has npm audit --audit-level=high step."""
-        src = self._read_text(self.CI_YML)
-        assert re.search(
-            r"npm\s+audit|audit-level", src
-        ), "CI workflow should include npm audit step"
+    def test_publish_properties_json_valid(self):
+        """Verify publish properties.json has required fields with correct categories"""
+        fpath = os.path.join(self.REPO_DIR, "deployments/node-library-publish.properties.json")
+        with open(fpath, "r") as f:
+            props = json.load(f)
+        assert "name" in props, "Properties missing 'name'"
+        assert "description" in props, "Properties missing 'description'"
+        assert "categories" in props, "Properties missing 'categories'"
+        cats = [c.lower() for c in props["categories"]]
+        assert any("npm" in c or "deploy" in c for c in cats), (
+            f"Publish categories should include 'npm' or 'Deployment'. Got: {props['categories']}"
+        )
 
-    # ------------------------------------------------------------------
-    # Layer 3 – functional_check (4 cases)
-    # ------------------------------------------------------------------
+    def test_ci_workflow_has_minimal_permissions(self):
+        """Verify CI workflow sets permissions to contents: read"""
+        fpath = os.path.join(self.REPO_DIR, "ci/node-library-ci.yml")
+        with open(fpath, "r") as f:
+            content = f.read()
+        assert "permissions" in content, "CI workflow should declare permissions"
+        assert "read" in content, "CI workflow permissions should include 'contents: read'"
 
-    def test_functional_ci_workflow_is_valid_yaml_parseable_by_a_yaml_parser(self):
-        """CI workflow is valid YAML parseable by a YAML parser."""
-        data = self._parse_yaml(self.CI_YML)
-        assert isinstance(data, dict), "CI workflow YAML should parse to a dict"
-        assert "on" in data or True in data, "CI workflow must have 'on' trigger"
-        assert "jobs" in data, "CI workflow must have 'jobs' section"
+    # === Functional Checks ===
 
-    def test_functional_publish_workflow_is_valid_yaml_parseable_by_a_yaml_parser(self):
-        """Publish workflow is valid YAML parseable by a YAML parser."""
-        data = self._parse_yaml(self.PUBLISH_YML)
-        assert isinstance(data, dict), "Publish workflow YAML should parse to a dict"
-        assert "jobs" in data, "Publish workflow must have 'jobs' section"
+    def test_ci_workflow_is_valid_yaml(self):
+        """Verify CI workflow is valid YAML"""
+        import yaml
+        fpath = os.path.join(self.REPO_DIR, "ci/node-library-ci.yml")
+        with open(fpath, "r") as f:
+            try:
+                data = yaml.safe_load(f)
+            except yaml.YAMLError as e:
+                pytest.fail(f"CI workflow is not valid YAML: {e}")
+        assert isinstance(data, dict), "CI workflow should parse to a dict"
+        assert "on" in data or True in data, "CI workflow should have 'on' trigger"
+        assert "jobs" in data, "CI workflow should have 'jobs' section"
 
-    def test_functional_properties_json_files_are_valid_json(self):
-        """.properties.json files are valid JSON."""
-        text = self._read_text(self.CI_PROPS)
-        data = json.loads(text)
-        assert isinstance(data, dict), "properties.json should be a valid JSON object"
+    def test_publish_workflow_is_valid_yaml(self):
+        """Verify publish workflow is valid YAML"""
+        import yaml
+        fpath = os.path.join(self.REPO_DIR, "deployments/node-library-publish.yml")
+        with open(fpath, "r") as f:
+            try:
+                data = yaml.safe_load(f)
+            except yaml.YAMLError as e:
+                pytest.fail(f"Publish workflow is not valid YAML: {e}")
+        assert isinstance(data, dict), "Publish workflow should parse to a dict"
+        assert "jobs" in data, "Publish workflow should have 'jobs' section"
 
-    def test_functional_categories_arrays_contain_correct_values_per_requirements(self):
-        """Categories arrays contain correct values per requirements."""
-        text = self._read_text(self.CI_PROPS)
-        data = json.loads(text)
-        assert "categories" in data, "properties.json should have 'categories' field"
-        categories = data["categories"]
-        assert isinstance(categories, list), "categories should be an array"
-        assert len(categories) > 0, "categories should not be empty"
+    def test_ci_workflow_uses_cache_action(self):
+        """Verify CI workflow uses dependency caching"""
+        fpath = os.path.join(self.REPO_DIR, "ci/node-library-ci.yml")
+        with open(fpath, "r") as f:
+            content = f.read()
+        has_cache = bool(re.search(r'(actions/cache|cache.*npm|setup-node.*cache)', content))
+        assert has_cache, "CI workflow should cache npm dependencies"

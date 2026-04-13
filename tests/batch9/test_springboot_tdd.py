@@ -1,146 +1,201 @@
 """
-Test for 'springboot-tdd' skill — Spring Boot TDD Patterns
-Validates Spring Boot test conventions: @WebMvcTest, @MockBean, @DataJpaTest,
-@SpringBootTest with TestContainers, MockMvc assertions, and AssertJ usage
-in the spring-petclinic project.
+Test skill: springboot-tdd
+Verify that the Agent correctly adds appointment scheduling to the Spring PetClinic application.
 """
 
-import glob
 import os
+import subprocess
 import re
-
 import pytest
 
 
 class TestSpringbootTdd:
-    """Verify Spring Boot TDD patterns in spring-petclinic."""
-
     REPO_DIR = "/workspace/spring-petclinic"
 
-    # ── helpers ──────────────────────────────────────────────────────────
-    @staticmethod
-    def _read_file(path: str) -> str:
-        try:
-            with open(path, "r", errors="ignore") as fh:
-                return fh.read()
-        except OSError:
-            return ""
+    # === File Path Checks ===
 
-    def _glob_java(self, *subdirs: str, pattern: str = "*.java") -> list[str]:
-        base = os.path.join(self.REPO_DIR, *subdirs)
-        return glob.glob(os.path.join(base, "**", pattern), recursive=True)
-
-    def _find_test_files(self, suffix: str) -> list[str]:
-        """Find test files ending with given suffix under src/test/java/."""
-        return [
-            f for f in self._glob_java("src", "test", "java")
-            if f.endswith(suffix)
+    def test_appointment_entity_exists(self):
+        """Verify Appointment entity Java file exists"""
+        candidates = [
+            "src/main/java/org/springframework/samples/petclinic/appointment/Appointment.java",
+            "src/main/java/org/springframework/samples/petclinic/model/Appointment.java",
+            "src/main/java/org/springframework/samples/petclinic/owner/Appointment.java",
         ]
+        found = any(
+            os.path.exists(os.path.join(self.REPO_DIR, c)) for c in candidates
+        )
+        assert found, "Appointment.java entity not found in expected locations"
 
-    def _combined_test_content(self) -> str:
-        """Concatenate all Java test files."""
-        files = self._glob_java("src", "test", "java")
-        return "\n".join(self._read_file(f) for f in files)
+    def test_appointment_repository_exists(self):
+        """Verify AppointmentRepository interface exists"""
+        found = False
+        for root, dirs, files in os.walk(os.path.join(self.REPO_DIR, "src/main")):
+            for f in files:
+                if "AppointmentRepository" in f:
+                    found = True
+                    break
+        assert found, "AppointmentRepository not found"
 
-    # ── file_path_check ──────────────────────────────────────────────────
+    def test_appointment_controller_exists(self):
+        """Verify AppointmentController exists"""
+        found = False
+        for root, dirs, files in os.walk(os.path.join(self.REPO_DIR, "src/main")):
+            for f in files:
+                if "AppointmentController" in f:
+                    found = True
+                    break
+        assert found, "AppointmentController not found"
 
-    def test_controller_and_service_test_files_exist(self):
-        """At least one *ControllerTest.java and *ServiceTest.java must exist."""
-        ctrl = self._find_test_files("ControllerTest.java") or self._find_test_files("ControllerTests.java")
-        svc = self._find_test_files("ServiceTest.java") or self._find_test_files("ServiceTests.java")
-        assert ctrl, "No *ControllerTest(s).java found under src/test/java/"
-        assert svc, "No *ServiceTest(s).java found under src/test/java/"
+    # === Semantic Checks ===
 
-    def test_repository_and_integration_test_files_exist(self):
-        """At least one *RepositoryTest.java and *IntegrationTest.java must exist."""
-        repo_tests = self._find_test_files("RepositoryTest.java") or self._find_test_files("RepositoryTests.java")
-        integ_tests = self._find_test_files("IntegrationTest.java") or self._find_test_files("IntegrationTests.java")
-        assert repo_tests, "No *RepositoryTest(s).java found"
-        assert integ_tests, "No *IntegrationTest(s).java found"
-
-    def test_main_controller_and_build_file_exist(self):
-        """A Controller.java must exist; pom.xml must declare spring-boot-starter-test."""
-        controllers = [
-            f for f in self._glob_java("src", "main", "java")
-            if f.endswith("Controller.java")
-        ]
-        assert controllers, "No *Controller.java found under src/main/java/"
-        pom = os.path.join(self.REPO_DIR, "pom.xml")
-        build_gradle = os.path.join(self.REPO_DIR, "build.gradle")
-        if os.path.isfile(pom):
-            content = self._read_file(pom)
-            assert "spring-boot-starter-test" in content, (
-                "pom.xml missing spring-boot-starter-test"
-            )
-        elif os.path.isfile(build_gradle):
-            content = self._read_file(build_gradle)
-            assert "spring-boot-starter-test" in content, (
-                "build.gradle missing spring-boot-starter-test"
-            )
-        else:
-            pytest.fail("Neither pom.xml nor build.gradle found")
-
-    # ── semantic_check ───────────────────────────────────────────────────
-
-    def test_controller_test_has_webmvctest_annotation(self):
-        """Controller test must use @WebMvcTest annotation."""
-        files = self._find_test_files("ControllerTest.java") or self._find_test_files("ControllerTests.java")
-        assert files, "No controller test file found"
-        combined = "\n".join(self._read_file(f) for f in files)
-        assert "@WebMvcTest" in combined, "@WebMvcTest annotation not found"
-
-    def test_service_declared_as_mock_bean(self):
-        """Controller test must use @MockBean for service dependency."""
-        files = self._find_test_files("ControllerTest.java") or self._find_test_files("ControllerTests.java")
-        assert files, "No controller test file found"
-        combined = "\n".join(self._read_file(f) for f in files)
-        assert "@MockBean" in combined, "@MockBean not found in controller test"
-
-    def test_repository_test_has_datajpatest_annotation(self):
-        """Repository test must use @DataJpaTest annotation."""
-        files = self._find_test_files("RepositoryTest.java") or self._find_test_files("RepositoryTests.java")
-        assert files, "No repository test file found"
-        combined = "\n".join(self._read_file(f) for f in files)
-        assert "@DataJpaTest" in combined, "@DataJpaTest annotation not found"
-
-    def test_integration_test_uses_testcontainers(self):
-        """Integration test must use PostgreSQLContainer / @Container / @SpringBootTest."""
-        files = self._find_test_files("IntegrationTest.java") or self._find_test_files("IntegrationTests.java")
-        assert files, "No integration test file found"
-        combined = "\n".join(self._read_file(f) for f in files)
-        assert "@SpringBootTest" in combined, "@SpringBootTest not found"
-        has_tc = "PostgreSQLContainer" in combined or "@Container" in combined or "Testcontainers" in combined
-        assert has_tc, "TestContainers (PostgreSQLContainer/@Container) not found"
-
-    # ── functional_check (static content verification) ───────────────────
-
-    def test_mockmvc_get_items_returns_200(self):
-        """Controller test must verify MockMvc GET with status().isOk()."""
-        combined = self._combined_test_content()
-        assert "mockMvc" in combined or "MockMvc" in combined, "MockMvc not used"
-        assert "isOk" in combined or "status().isOk()" in combined, (
-            "isOk() assertion not found in controller tests"
+    def test_appointment_entity_has_jpa_annotations(self):
+        """Verify Appointment entity uses JPA annotations"""
+        entity_file = None
+        for root, dirs, files in os.walk(os.path.join(self.REPO_DIR, "src/main")):
+            for f in files:
+                if f == "Appointment.java":
+                    entity_file = os.path.join(root, f)
+                    break
+        assert entity_file is not None, "Appointment.java not found"
+        with open(entity_file) as fh:
+            content = fh.read()
+        assert "@Entity" in content, "Appointment class missing @Entity annotation"
+        assert "@Id" in content or "BaseEntity" in content, (
+            "Appointment class missing @Id or does not extend BaseEntity"
         )
 
-    def test_post_valid_body_expects_201_and_location_header(self):
-        """Controller test must verify POST returns 201 Created."""
-        combined = self._combined_test_content()
-        has_created = "isCreated" in combined or "201" in combined
-        assert has_created, "isCreated()/201 assertion not found in tests"
+    def test_appointment_has_required_fields(self):
+        """Verify Appointment entity has date, description, pet/vet references"""
+        entity_file = None
+        for root, dirs, files in os.walk(os.path.join(self.REPO_DIR, "src/main")):
+            for f in files:
+                if f == "Appointment.java":
+                    entity_file = os.path.join(root, f)
+                    break
+        assert entity_file is not None
+        with open(entity_file) as fh:
+            content = fh.read()
+        content_lower = content.lower()
+        assert "date" in content_lower or "datetime" in content_lower or "localdate" in content_lower, (
+            "Appointment missing date/dateTime field"
+        )
+        assert "description" in content_lower or "reason" in content_lower, (
+            "Appointment missing description field"
+        )
 
-    def test_invalid_post_body_expects_400(self):
-        """Controller test must verify invalid POST returns 400 Bad Request."""
-        combined = self._combined_test_content()
-        has_bad = "isBadRequest" in combined or "400" in combined
-        assert has_bad, "isBadRequest()/400 assertion not found"
+    def test_appointment_has_validation_annotations(self):
+        """Verify Appointment entity uses Bean Validation annotations"""
+        entity_file = None
+        for root, dirs, files in os.walk(os.path.join(self.REPO_DIR, "src/main")):
+            for f in files:
+                if f == "Appointment.java":
+                    entity_file = os.path.join(root, f)
+                    break
+        assert entity_file is not None
+        with open(entity_file) as fh:
+            content = fh.read()
+        validation_annotations = ["@NotNull", "@NotEmpty", "@NotBlank", "@Valid", "@Future", "@Size"]
+        found = [a for a in validation_annotations if a in content]
+        assert len(found) >= 1, (
+            f"No Bean Validation annotations found. Expected at least one of: {validation_annotations}"
+        )
 
-    def test_get_nonexistent_item_expects_404(self):
-        """Controller test must verify GET nonexistent resource returns 404."""
-        combined = self._combined_test_content()
-        has_notfound = "isNotFound" in combined or "404" in combined
-        assert has_notfound, "isNotFound()/404 assertion not found"
+    def test_controller_has_conflict_detection(self):
+        """Verify AppointmentController includes scheduling conflict detection logic"""
+        controller_file = None
+        for root, dirs, files in os.walk(os.path.join(self.REPO_DIR, "src/main")):
+            for f in files:
+                if "AppointmentController" in f:
+                    controller_file = os.path.join(root, f)
+                    break
+        assert controller_file is not None
+        with open(controller_file) as fh:
+            content = fh.read()
+        content_lower = content.lower()
+        has_conflict = (
+            "conflict" in content_lower
+            or "overlap" in content_lower
+            or "already booked" in content_lower
+            or "existing" in content_lower
+            or "findby" in content_lower
+        )
+        assert has_conflict, (
+            "AppointmentController does not appear to implement conflict detection"
+        )
 
-    def test_assertj_assertions_used_across_tests(self):
-        """AssertJ assertThat() must be used in at least one test class."""
-        combined = self._combined_test_content()
-        assert "assertThat" in combined, "assertThat() (AssertJ) not used in any test"
+    def test_appointment_test_file_exists(self):
+        """Verify test file for appointment functionality exists"""
+        found = False
+        for root, dirs, files in os.walk(os.path.join(self.REPO_DIR, "src/test")):
+            for f in files:
+                if "appointment" in f.lower() or "Appointment" in f:
+                    found = True
+                    break
+        assert found, "No test file for appointment feature found under src/test"
+
+    def test_appointment_test_uses_web_mvc_test(self):
+        """Verify appointment controller test uses @WebMvcTest annotation"""
+        test_file = None
+        for root, dirs, files in os.walk(os.path.join(self.REPO_DIR, "src/test")):
+            for f in files:
+                if "appointment" in f.lower() and f.endswith(".java"):
+                    test_file = os.path.join(root, f)
+                    break
+        if test_file is None:
+            pytest.skip("No appointment test file found")
+        with open(test_file) as fh:
+            content = fh.read()
+        assert "@WebMvcTest" in content or "@SpringBootTest" in content, (
+            "Appointment test does not use @WebMvcTest or @SpringBootTest annotation"
+        )
+
+    # === Functional Checks ===
+
+    def test_maven_compile_succeeds(self):
+        """Verify project compiles with Maven"""
+        result = subprocess.run(
+            ["./mvnw", "compile", "-DskipTests", "-q"],
+            cwd=self.REPO_DIR,
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+        assert result.returncode == 0, (
+            f"Maven compile failed:\n{result.stdout[-500:]}\n{result.stderr[-500:]}"
+        )
+
+    def test_maven_tests_pass(self):
+        """Verify all tests pass including new appointment tests"""
+        result = subprocess.run(
+            ["./mvnw", "test", "-q"],
+            cwd=self.REPO_DIR,
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+        assert result.returncode == 0, (
+            f"Maven tests failed:\n{result.stdout[-1000:]}\n{result.stderr[-500:]}"
+        )
+
+    def test_appointment_controller_responds(self):
+        """Verify the application starts and appointment endpoint is accessible"""
+        # Check that the controller mapping is present in source
+        controller_file = None
+        for root, dirs, files in os.walk(os.path.join(self.REPO_DIR, "src/main")):
+            for f in files:
+                if "AppointmentController" in f:
+                    controller_file = os.path.join(root, f)
+                    break
+        assert controller_file is not None
+        with open(controller_file) as fh:
+            content = fh.read()
+        has_mapping = (
+            "@RequestMapping" in content
+            or "@GetMapping" in content
+            or "@PostMapping" in content
+            or "@Controller" in content
+            or "@RestController" in content
+        )
+        assert has_mapping, (
+            "AppointmentController has no request mapping annotations"
+        )

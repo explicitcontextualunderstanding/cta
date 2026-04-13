@@ -1,212 +1,197 @@
 """
-Tests for 'service-mesh-observability' skill.
-Generated from benchmark case definitions for service-mesh-observability.
+Test skill: service-mesh-observability
+Verify that the Agent builds a service mesh observability stack with
+Prometheus scrape configs, recording/alerting rules, Grafana dashboards,
+Kiali CR, and OTel Collector config.
 """
 
-import ast
-import base64
-import glob
-import json
 import os
-import py_compile
 import re
-import subprocess
-import textwrap
-
+import json
 import pytest
 
 try:
     import yaml
-except ModuleNotFoundError:
+except ImportError:
     yaml = None
 
 
 class TestServiceMeshObservability:
-    """Verify the service-mesh-observability skill output."""
+    REPO_DIR = "/workspace/linkerd2"
 
-    REPO_DIR = '/workspace/linkerd2'
-
-
-    # ── helpers ──────────────────────────────────────────────
-
-    _SETUP_CACHE: dict = {}
-
-    @staticmethod
-    def _repo_path(rel: str) -> str:
-        return os.path.join(TestServiceMeshObservability.REPO_DIR, rel)
-
-    @staticmethod
-    def _safe_read(path: str) -> str:
-        with open(path, "r", encoding="utf-8", errors="ignore") as fh:
-            return fh.read()
-
-    @staticmethod
-    def _load_yaml(path: str):
-        if yaml is None:
-            pytest.skip("PyYAML not available")
-        with open(path, "r", encoding="utf-8", errors="ignore") as fh:
-            return yaml.safe_load(fh)
-
-    @staticmethod
-    def _load_json(path: str):
-        with open(path, "r", encoding="utf-8", errors="ignore") as fh:
-            return json.load(fh)
-
-    @classmethod
-    def _run_in_repo(cls, script: str, timeout: int = 120) -> subprocess.CompletedProcess:
-        return subprocess.run(
-            ["python", "-c", textwrap.dedent(script)],
-            cwd=cls.REPO_DIR,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-        )
-
-    @classmethod
-    def _run_cmd(cls, command, args=None, timeout=120):
-        args = args or []
-        if isinstance(command, str) and args:
-            return subprocess.run(
-                [command, *args],
-                cwd=cls.REPO_DIR,
-                capture_output=True,
-                text=True,
-                timeout=timeout,
-            )
-        return subprocess.run(
-            command if isinstance(command, list) else command,
-            cwd=cls.REPO_DIR,
-            shell=isinstance(command, str),
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-        )
-
-    @classmethod
-    def _ensure_setup(cls, label, setup_cmds, fallback):
-        if not setup_cmds:
-            return
-        key = tuple(setup_cmds)
-        if key in cls._SETUP_CACHE:
-            ok, msg = cls._SETUP_CACHE[key]
-            if ok:
-                return
-            if fallback == "skip_if_setup_fails":
-                pytest.skip(f"{label} setup failed: {msg}")
-            pytest.fail(f"{label} setup failed: {msg}")
-        for cmd in setup_cmds:
-            r = subprocess.run(cmd, cwd=cls.REPO_DIR, shell=True,
-                               capture_output=True, text=True, timeout=300)
-            if r.returncode != 0:
-                msg = (r.stderr or r.stdout or 'failed').strip()
-                cls._SETUP_CACHE[key] = (False, msg)
-                if fallback == "skip_if_setup_fails":
-                    pytest.skip(f"{label} setup failed: {msg}")
-                pytest.fail(f"{label} setup failed: {msg}")
-        cls._SETUP_CACHE[key] = (True, 'ok')
-
-
-    # ── file_path_check (static) ────────────────────────────────────────
+    # === File Path Checks ===
 
     def test_prometheus_config_exists(self):
-        """Verify Prometheus config YAML exists"""
-        _p = self._repo_path('observability/prometheus/config.yaml')
-        assert os.path.isfile(_p), f'Missing file: observability/prometheus/config.yaml'
-        self._load_yaml(_p)  # parse check
-
-    def test_grafana_dashboards_dir_exists(self):
-        """Verify Grafana dashboards directory with JSON files exists"""
-        _p = self._repo_path('observability/grafana/dashboards/')
-        assert os.path.isdir(_p), f'Missing directory: observability/grafana/dashboards/'
-
-    def test_alerting_rules_exist(self):
-        """Verify alerting rules YAML exists"""
-        _p = self._repo_path('observability/prometheus/alerting-rules.yaml')
-        assert os.path.isfile(_p), f'Missing file: observability/prometheus/alerting-rules.yaml'
-        self._load_yaml(_p)  # parse check
-
-    # ── semantic_check (static) ────────────────────────────────────────
-
-    def test_prometheus_scrape_configs_structure(self):
-        """Verify config.yaml has global section and scrape_configs with Istio jobs"""
-        _p = self._repo_path('observability/prometheus/config.yaml')
-        assert os.path.exists(_p), f'Missing: observability/prometheus/config.yaml'
-        _contents = self._safe_read(_p)
-        _all = _contents if isinstance(_contents, str) else ''
-        assert 'global' in _all, 'Missing: global'
-        assert 'scrape_configs' in _all, 'Missing: scrape_configs'
-        assert 'job_name' in _all, 'Missing: job_name'
-        assert 'istio' in _all, 'Missing: istio'
-        assert 'envoy' in _all, 'Missing: envoy'
-
-    def test_grafana_dashboard_panels_structure(self):
-        """Verify Grafana dashboard JSON has panels with PromQL targets"""
-        _p = self._repo_path('observability/grafana/dashboards/*.json')
-        assert os.path.exists(_p), f'Missing: observability/grafana/dashboards/*.json'
-        _contents = self._safe_read(_p)
-        _all = _contents if isinstance(_contents, str) else ''
-        assert 'panels' in _all, 'Missing: panels'
-        assert 'targets' in _all, 'Missing: targets'
-        assert 'expr' in _all, 'Missing: expr'
-        assert 'istio_request' in _all, 'Missing: istio_request'
-
-    def test_alerting_rules_have_for_duration(self):
-        """Verify alerting rules include 'for' duration to prevent flapping"""
-        _p = self._repo_path('observability/prometheus/alerting-rules.yaml')
-        assert os.path.exists(_p), f'Missing: observability/prometheus/alerting-rules.yaml'
-        _contents = self._safe_read(_p)
-        _all = _contents if isinstance(_contents, str) else ''
-        assert 'groups' in _all, 'Missing: groups'
-        assert 'rules' in _all, 'Missing: rules'
-        assert 'alert' in _all, 'Missing: alert'
-        assert 'expr' in _all, 'Missing: expr'
-        assert 'for' in _all, 'Missing: for'
-
-    # ── functional_check ────────────────────────────────────────
-
-    def test_prometheus_yaml_valid(self):
-        """Verify Prometheus config is valid YAML with scrape_configs"""
-        self._ensure_setup('test_prometheus_yaml_valid', ['pip install pyyaml'], 'fail_if_missing')
-        result = self._run_cmd('python', args=['-c', "import yaml; c=yaml.safe_load(open('observability/prometheus/config.yaml')); assert 'scrape_configs' in c; assert len(c['scrape_configs'])>0; print('PASS')"], timeout=120)
-        assert result.returncode == 0, (
-            f'test_prometheus_yaml_valid failed (exit {result.returncode})\n' + result.stderr[:500]
+        assert os.path.exists(
+            os.path.join(self.REPO_DIR, "observability/prometheus/config.yaml")
         )
 
-    def test_scrape_jobs_have_job_name(self):
-        """Verify every scrape job has job_name key"""
-        self._ensure_setup('test_scrape_jobs_have_job_name', ['pip install pyyaml'], 'fail_if_missing')
-        result = self._run_cmd('python', args=['-c', "import yaml; c=yaml.safe_load(open('observability/prometheus/config.yaml')); assert all('job_name' in j for j in c['scrape_configs']); print('PASS')"], timeout=120)
-        assert result.returncode == 0, (
-            f'test_scrape_jobs_have_job_name failed (exit {result.returncode})\n' + result.stderr[:500]
+    def test_prometheus_alerts_exists(self):
+        assert os.path.exists(
+            os.path.join(self.REPO_DIR, "observability/prometheus/alerts.yaml")
         )
 
-    def test_grafana_dashboards_valid_json(self):
-        """Verify all Grafana dashboard files are valid JSON"""
-        result = self._run_cmd('python', args=['-c', "import json, pathlib; files=list(pathlib.Path('observability/grafana/dashboards').glob('*.json')); assert len(files)>0; [json.load(open(f)) for f in files]; print(f'PASS: {len(files)} dashboards valid')"], timeout=120)
-        assert result.returncode == 0, (
-            f'test_grafana_dashboards_valid_json failed (exit {result.returncode})\n' + result.stderr[:500]
+    def test_mesh_overview_dashboard_exists(self):
+        assert os.path.exists(
+            os.path.join(self.REPO_DIR, "observability/grafana/dashboards/mesh-overview.json")
         )
 
-    def test_dashboard_panels_non_empty(self):
-        """Verify dashboards have non-empty panels array"""
-        result = self._run_cmd('python', args=['-c', "import json, pathlib; files=list(pathlib.Path('observability/grafana/dashboards').glob('*.json')); dashboards=[json.load(open(f)) for f in files]; assert all('panels' in d and len(d['panels'])>0 for d in dashboards); print('PASS')"], timeout=120)
-        assert result.returncode == 0, (
-            f'test_dashboard_panels_non_empty failed (exit {result.returncode})\n' + result.stderr[:500]
+    def test_service_detail_dashboard_exists(self):
+        assert os.path.exists(
+            os.path.join(self.REPO_DIR, "observability/grafana/dashboards/service-detail.json")
         )
 
-    def test_alerting_rules_yaml_valid(self):
-        """Verify alerting rules YAML is valid"""
-        self._ensure_setup('test_alerting_rules_yaml_valid', ['pip install pyyaml'], 'fail_if_missing')
-        result = self._run_cmd('python', args=['-c', "import yaml; r=yaml.safe_load(open('observability/prometheus/alerting-rules.yaml')); assert 'groups' in r; assert len(r['groups'])>0; print('PASS')"], timeout=120)
-        assert result.returncode == 0, (
-            f'test_alerting_rules_yaml_valid failed (exit {result.returncode})\n' + result.stderr[:500]
+    def test_datasources_exists(self):
+        assert os.path.exists(
+            os.path.join(self.REPO_DIR, "observability/grafana/datasources.yaml")
         )
 
-    def test_invalid_yaml_detected(self):
-        """Verify invalid YAML syntax would be detected"""
-        self._ensure_setup('test_invalid_yaml_detected', ['pip install pyyaml'], 'fail_if_missing')
-        result = self._run_cmd('python', args=['-c', "import yaml\ntry:\n    yaml.safe_load('{{invalid: yaml')\n    assert False\nexcept yaml.YAMLError:\n    print('PASS')"], timeout=120)
-        assert result.returncode == 0, (
-            f'test_invalid_yaml_detected failed (exit {result.returncode})\n' + result.stderr[:500]
+    def test_kiali_cr_exists(self):
+        assert os.path.exists(
+            os.path.join(self.REPO_DIR, "observability/kiali/kiali-cr.yaml")
         )
 
+    def test_otel_collector_config_exists(self):
+        assert os.path.exists(
+            os.path.join(self.REPO_DIR, "observability/otel-collector/config.yaml")
+        )
+
+    # === Semantic Checks ===
+
+    def test_prometheus_has_scrape_configs(self):
+        """Prometheus config should have scrape configs for Istio metrics"""
+        path = os.path.join(self.REPO_DIR, "observability/prometheus/config.yaml")
+        with open(path) as f:
+            content = f.read()
+        assert "scrape_configs" in content, "Missing scrape_configs"
+        assert "envoy" in content.lower() or "istio" in content.lower(), (
+            "Should scrape Istio/Envoy metrics"
+        )
+
+    def test_prometheus_has_recording_rules(self):
+        """Prometheus should have recording rules for golden signals"""
+        path = os.path.join(self.REPO_DIR, "observability/prometheus/config.yaml")
+        with open(path) as f:
+            content = f.read()
+        assert "record:" in content or "recording" in content, "Missing recording rules"
+        assert "error_rate" in content or "istio_error" in content, "Missing error rate rule"
+        assert "latency" in content, "Missing latency rule"
+
+    def test_alerts_has_high_error_rate(self):
+        """Alerts should include HighErrorRate alert"""
+        path = os.path.join(self.REPO_DIR, "observability/prometheus/alerts.yaml")
+        with open(path) as f:
+            content = f.read()
+        assert "HighErrorRate" in content, "Missing HighErrorRate alert"
+        assert "critical" in content, "Should have critical severity"
+
+    def test_alerts_has_latency_alerts(self):
+        """Alerts should include latency threshold alerts"""
+        path = os.path.join(self.REPO_DIR, "observability/prometheus/alerts.yaml")
+        with open(path) as f:
+            content = f.read()
+        assert "Latency" in content or "latency" in content, "Missing latency alerts"
+
+    def test_alerts_has_circuit_breaker(self):
+        """Alerts should detect circuit breaker trips"""
+        path = os.path.join(self.REPO_DIR, "observability/prometheus/alerts.yaml")
+        with open(path) as f:
+            content = f.read()
+        assert "CircuitBreaker" in content or "UO" in content, (
+            "Missing CircuitBreaker alert"
+        )
+
+    def test_mesh_overview_has_golden_signals(self):
+        """Mesh overview dashboard should have golden signal panels"""
+        path = os.path.join(self.REPO_DIR, "observability/grafana/dashboards/mesh-overview.json")
+        with open(path) as f:
+            data = json.load(f)
+        content_str = json.dumps(data)
+        assert "mesh-overview" in data.get("uid", "") or "mesh" in data.get("title", "").lower(), (
+            "Dashboard UID should be mesh-overview"
+        )
+        assert "request" in content_str.lower() or "rate" in content_str.lower(), (
+            "Should have request rate panel"
+        )
+        assert "error" in content_str.lower(), "Should have error rate panel"
+        assert "latency" in content_str.lower() or "p99" in content_str.lower(), (
+            "Should have latency panel"
+        )
+
+    def test_service_detail_has_variables(self):
+        """Service detail dashboard should have namespace and service variables"""
+        path = os.path.join(self.REPO_DIR, "observability/grafana/dashboards/service-detail.json")
+        with open(path) as f:
+            data = json.load(f)
+        templating = data.get("templating", {}).get("list", [])
+        names = [t.get("name", "") for t in templating]
+        assert "namespace" in names, "Missing namespace variable"
+        assert "service" in names, "Missing service variable"
+
+    def test_datasources_has_prometheus_and_jaeger(self):
+        """Datasources should include Prometheus and Jaeger"""
+        if yaml is None:
+            pytest.skip("PyYAML not available")
+        path = os.path.join(self.REPO_DIR, "observability/grafana/datasources.yaml")
+        with open(path) as f:
+            data = yaml.safe_load(f)
+        ds_names = [d.get("name", "").lower() for d in data.get("datasources", [])]
+        assert any("prometheus" in n for n in ds_names), "Missing Prometheus datasource"
+        assert any("jaeger" in n for n in ds_names), "Missing Jaeger datasource"
+
+    def test_kiali_has_external_services(self):
+        """Kiali CR should reference Prometheus, Grafana, Jaeger"""
+        path = os.path.join(self.REPO_DIR, "observability/kiali/kiali-cr.yaml")
+        with open(path) as f:
+            content = f.read()
+        assert "prometheus" in content.lower(), "Kiali should reference Prometheus"
+        assert "grafana" in content.lower(), "Kiali should reference Grafana"
+        assert "jaeger" in content.lower() or "tracing" in content.lower(), (
+            "Kiali should reference Jaeger"
+        )
+
+    def test_otel_collector_has_otlp_receiver(self):
+        """OTel Collector should have OTLP receiver"""
+        path = os.path.join(self.REPO_DIR, "observability/otel-collector/config.yaml")
+        with open(path) as f:
+            content = f.read()
+        assert "otlp" in content, "Missing OTLP receiver"
+        assert "4317" in content, "Should listen on gRPC port 4317"
+
+    # === Functional Checks ===
+
+    def test_all_yaml_files_valid(self):
+        """All YAML files should parse without errors"""
+        if yaml is None:
+            pytest.skip("PyYAML not available")
+        base = os.path.join(self.REPO_DIR, "observability")
+        for root, _dirs, files in os.walk(base):
+            for fname in files:
+                if fname.endswith((".yaml", ".yml")):
+                    filepath = os.path.join(root, fname)
+                    try:
+                        with open(filepath) as f:
+                            list(yaml.safe_load_all(f))
+                    except yaml.YAMLError as e:
+                        pytest.fail(f"{filepath} YAML error: {e}")
+
+    def test_dashboard_jsons_valid(self):
+        """All Grafana dashboard JSON files should be valid"""
+        for fname in ("mesh-overview.json", "service-detail.json"):
+            path = os.path.join(
+                self.REPO_DIR, f"observability/grafana/dashboards/{fname}"
+            )
+            with open(path) as f:
+                try:
+                    json.load(f)
+                except json.JSONDecodeError as e:
+                    pytest.fail(f"{fname} JSON error: {e}")
+
+    def test_alerts_yaml_valid(self):
+        """Alerts YAML should be valid"""
+        if yaml is None:
+            pytest.skip("PyYAML not available")
+        path = os.path.join(self.REPO_DIR, "observability/prometheus/alerts.yaml")
+        with open(path) as f:
+            data = yaml.safe_load(f)
+        assert data is not None, "Alerts file is empty"

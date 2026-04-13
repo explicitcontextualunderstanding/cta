@@ -1,175 +1,193 @@
 """
-Test for 'github-actions-templates' skill — CI/CD Workflow Templates
-Validates that the Agent created proper GitHub Actions CI and CD workflow
-YAML files with lint, test, matrix, coverage, Docker, and secret management.
+Test skill: github-actions-templates
+Verify that GitHub Actions CI/CD workflows for a Python library have been
+correctly created, including CI matrix, publish workflow, security scan,
+and release drafter — all with proper YAML structure and best practices.
 """
 
 import os
-import re
-
+import subprocess
 import pytest
-import yaml
 
 
 class TestGithubActionsTemplates:
-    """Verify GitHub Actions CI/CD workflow templates."""
-
     REPO_DIR = "/workspace/starter-workflows"
 
-    # ---- helpers ----
+    CI_PATH = "ci/python-library-ci.yml"
+    PUBLISH_PATH = "deployments/python-library-publish.yml"
+    SECURITY_PATH = "code-scanning/python-security-scan.yml"
+    RELEASE_PATH = "automation/python-release-drafter.yml"
 
     @staticmethod
-    def _read(path):
-        with open(path, "r", errors="ignore") as fh:
-            return fh.read()
+    def _load_yaml(filepath):
+        """Helper to load YAML file"""
+        try:
+            import yaml
+        except ImportError:
+            subprocess.run(["pip", "install", "pyyaml"],
+                           capture_output=True, text=True, timeout=60)
+            import yaml
+        with open(filepath) as f:
+            return yaml.safe_load(f)
 
-    def _ci_path(self):
-        return os.path.join(self.REPO_DIR, ".github/workflows/ci.yml")
+    # === File Path Checks ===
 
-    def _cd_path(self):
-        return os.path.join(self.REPO_DIR, ".github/workflows/cd.yml")
+    def test_ci_workflow_exists(self):
+        """Verify CI workflow file exists"""
+        filepath = os.path.join(self.REPO_DIR, self.CI_PATH)
+        assert os.path.exists(filepath), f"CI workflow not found at {filepath}"
 
-    def _load_ci(self):
-        return yaml.safe_load(open(self._ci_path()).read())
+    def test_publish_workflow_exists(self):
+        """Verify publish workflow file exists"""
+        filepath = os.path.join(self.REPO_DIR, self.PUBLISH_PATH)
+        assert os.path.exists(filepath), f"Publish workflow not found at {filepath}"
 
-    def _load_cd(self):
-        return yaml.safe_load(open(self._cd_path()).read())
+    def test_security_scan_workflow_exists(self):
+        """Verify security scan workflow file exists"""
+        filepath = os.path.join(self.REPO_DIR, self.SECURITY_PATH)
+        assert os.path.exists(filepath), f"Security scan workflow not found at {filepath}"
 
-    # ---- file_path_check ----
+    def test_release_drafter_workflow_exists(self):
+        """Verify release drafter workflow file exists"""
+        filepath = os.path.join(self.REPO_DIR, self.RELEASE_PATH)
+        assert os.path.exists(filepath), f"Release drafter workflow not found at {filepath}"
 
-    def test_ci_yml_exists(self):
-        """Verifies .github/workflows/ci.yml exists."""
-        assert os.path.exists(self._ci_path()), "ci.yml not found"
+    # === Semantic Checks ===
 
-    def test_cd_yml_exists(self):
-        """Verifies .github/workflows/cd.yml exists."""
-        assert os.path.exists(self._cd_path()), "cd.yml not found"
+    def test_ci_workflow_has_matrix_strategy(self):
+        """Verify CI workflow uses matrix strategy with 4 Python versions"""
+        filepath = os.path.join(self.REPO_DIR, self.CI_PATH)
+        config = self._load_yaml(filepath)
+        assert config is not None, "CI workflow YAML is empty or invalid"
+        jobs = config.get("jobs", {})
+        # Find the matrix test job
+        matrix_found = False
+        for job_name, job in jobs.items():
+            strategy = job.get("strategy", {})
+            matrix = strategy.get("matrix", {})
+            python_versions = matrix.get("python-version", [])
+            if len(python_versions) >= 4:
+                matrix_found = True
+                version_strs = [str(v) for v in python_versions]
+                assert any("3.9" in v for v in version_strs), "Matrix should include Python 3.9"
+                assert any("3.12" in v for v in version_strs), "Matrix should include Python 3.12"
+                break
+        assert matrix_found, "CI workflow should have a matrix job testing 4+ Python versions"
 
-    # ---- semantic_check ----
+    def test_ci_workflow_has_all_checks_pass_job(self):
+        """Verify CI workflow has an all-checks-pass gate job"""
+        filepath = os.path.join(self.REPO_DIR, self.CI_PATH)
+        config = self._load_yaml(filepath)
+        jobs = config.get("jobs", {})
+        has_gate = any("all-checks" in name.lower() or "gate" in name.lower() or
+                       "status" in name.lower()
+                       for name in jobs.keys())
+        # Also check if any job has 'needs' referencing the matrix job
+        if not has_gate:
+            for job_name, job in jobs.items():
+                needs = job.get("needs", [])
+                if isinstance(needs, str):
+                    needs = [needs]
+                if len(needs) > 0 and job_name != list(jobs.keys())[0]:
+                    has_gate = True
+                    break
+        assert has_gate, "CI workflow should have an all-checks-pass gate job"
 
-    def test_sem_ci_valid_yaml(self):
-        """Verifies ci.yml is valid YAML with 'on' and 'jobs'."""
-        ci = self._load_ci()
-        assert "on" in ci or True in ci, "'on' key missing in ci.yml"
-        assert "jobs" in ci, "'jobs' key missing in ci.yml"
+    def test_ci_workflow_triggers_correct(self):
+        """Verify CI workflow triggers on push and pull_request"""
+        filepath = os.path.join(self.REPO_DIR, self.CI_PATH)
+        config = self._load_yaml(filepath)
+        triggers = config.get("on", config.get(True, {}))
+        assert "push" in triggers or "pull_request" in triggers, \
+            "CI workflow should trigger on push and/or pull_request"
 
-    def test_sem_cd_valid_yaml(self):
-        """Verifies cd.yml is valid YAML with 'on' and 'jobs'."""
-        cd = self._load_cd()
-        assert "on" in cd or True in cd, "'on' key missing in cd.yml"
-        assert "jobs" in cd, "'jobs' key missing in cd.yml"
+    def test_publish_workflow_uses_trusted_publishing(self):
+        """Verify publish workflow uses id-token: write for trusted PyPI publishing"""
+        filepath = os.path.join(self.REPO_DIR, self.PUBLISH_PATH)
+        with open(filepath) as f:
+            content = f.read()
+        assert "id-token" in content, \
+            "Publish workflow should use id-token: write for trusted publishing"
+        assert "pypi" in content.lower(), \
+            "Publish workflow should reference PyPI publishing"
 
-    def test_sem_ci_push_trigger(self):
-        """Verifies ci.yml has push trigger."""
-        ci = self._load_ci()
-        on_cfg = ci.get("on") or ci.get(True, {})
-        if isinstance(on_cfg, dict):
-            assert "push" in on_cfg, "ci.yml missing 'push' trigger"
-        # If 'on' is a list, check if 'push' is in it
-        elif isinstance(on_cfg, list):
-            assert "push" in on_cfg, "ci.yml missing 'push' trigger"
+    def test_publish_workflow_triggers_on_release(self):
+        """Verify publish workflow triggers on release event"""
+        filepath = os.path.join(self.REPO_DIR, self.PUBLISH_PATH)
+        config = self._load_yaml(filepath)
+        triggers = config.get("on", config.get(True, {}))
+        assert "release" in triggers, \
+            "Publish workflow should trigger on release event"
 
-    def test_sem_ci_pull_request_trigger(self):
-        """Verifies ci.yml has pull_request trigger (edge case)."""
-        ci = self._load_ci()
-        on_cfg = ci.get("on") or ci.get(True, {})
-        if isinstance(on_cfg, dict):
-            assert "pull_request" in on_cfg, "ci.yml missing 'pull_request' trigger"
-        elif isinstance(on_cfg, list):
-            assert "pull_request" in on_cfg, "ci.yml missing 'pull_request' trigger"
+    def test_security_scan_has_pip_audit_and_bandit(self):
+        """Verify security scan runs both pip-audit and bandit"""
+        filepath = os.path.join(self.REPO_DIR, self.SECURITY_PATH)
+        with open(filepath) as f:
+            content = f.read()
+        assert "pip-audit" in content, \
+            "Security scan should run pip-audit for dependency vulnerability checking"
+        assert "bandit" in content, \
+            "Security scan should run bandit for source code security scanning"
 
-    def test_sem_ci_matrix_strategy(self):
-        """Verifies at least one job uses matrix strategy."""
-        ci = self._load_ci()
-        assert any(
-            "matrix" in str(job.get("strategy", {})) for job in ci["jobs"].values()
-        ), "No matrix strategy found in ci.yml jobs"
+    def test_security_scan_has_cron_schedule(self):
+        """Verify security scan has a weekly cron schedule"""
+        filepath = os.path.join(self.REPO_DIR, self.SECURITY_PATH)
+        config = self._load_yaml(filepath)
+        triggers = config.get("on", config.get(True, {}))
+        assert "schedule" in triggers, \
+            "Security scan should have a schedule trigger"
 
-    def test_sem_cd_tag_trigger(self):
-        """Verifies cd.yml triggers on tag push."""
-        cd = self._load_cd()
-        on_cfg = cd.get("on") or cd.get(True, {})
-        if isinstance(on_cfg, dict):
-            assert (
-                on_cfg.get("push", {}).get("tags") is not None
-            ), "cd.yml missing tag trigger"
+    def test_release_drafter_has_categories(self):
+        """Verify release drafter defines feature, bug fix, docs, and breaking categories"""
+        filepath = os.path.join(self.REPO_DIR, self.RELEASE_PATH)
+        with open(filepath) as f:
+            content = f.read()
+        assert "release-drafter" in content.lower(), \
+            "Release drafter workflow should use release-drafter action"
 
-    # ---- functional_check ----
+    def test_actions_use_pinned_versions(self):
+        """Verify all action references use pinned versions (@v*), not @latest or @main"""
+        workflow_files = [self.CI_PATH, self.PUBLISH_PATH, self.SECURITY_PATH, self.RELEASE_PATH]
+        import re
+        for rel_path in workflow_files:
+            filepath = os.path.join(self.REPO_DIR, rel_path)
+            if not os.path.exists(filepath):
+                continue
+            with open(filepath) as f:
+                content = f.read()
+            # Find action references (uses: action/name@version)
+            action_refs = re.findall(r'uses:\s*[\w\-\.]+/[\w\-\.]+@(\S+)', content)
+            for ref in action_refs:
+                assert ref != "latest" and ref != "main" and ref != "master", \
+                    f"Action in {rel_path} uses unpinned version @{ref}"
 
-    def test_func_ci_has_lint_job(self):
-        """Verifies CI has a lint job with flake8 or ruff."""
-        ci = self._load_ci()
-        ci_jobs = ci["jobs"]
-        assert any(
-            "lint" in name or "flake8" in str(job) or "ruff" in str(job)
-            for name, job in ci_jobs.items()
-        ), "No lint job found in ci.yml"
+    # === Functional Checks ===
 
-    def test_func_ci_has_pytest(self):
-        """Verifies CI has a pytest step."""
-        ci = self._load_ci()
-        ci_jobs = ci["jobs"]
-        assert any(
-            "pytest" in str(job) for job in ci_jobs.values()
-        ), "No pytest step found in ci.yml"
+    def test_all_workflows_are_valid_yaml(self):
+        """Verify all workflow files parse as valid YAML without errors"""
+        workflow_files = [self.CI_PATH, self.PUBLISH_PATH, self.SECURITY_PATH, self.RELEASE_PATH]
+        for rel_path in workflow_files:
+            filepath = os.path.join(self.REPO_DIR, rel_path)
+            if not os.path.exists(filepath):
+                continue
+            config = self._load_yaml(filepath)
+            assert config is not None, f"{rel_path} is empty or invalid YAML"
+            assert isinstance(config, dict), f"{rel_path} should be a YAML mapping"
 
-    def test_func_ci_python_version_matrix(self):
-        """Verifies CI matrix has >= 2 Python versions."""
-        ci = self._load_ci()
-        ci_jobs = ci["jobs"]
-        python_versions = [
-            str(v)
-            for job in ci_jobs.values()
-            for v in job.get("strategy", {}).get("matrix", {}).get("python-version", [])
-        ]
-        assert (
-            len(python_versions) >= 2
-        ), f"Expected >= 2 Python versions, got {len(python_versions)}"
+    def test_ci_workflow_includes_lint_and_test_steps(self):
+        """Verify CI workflow includes ruff, mypy, and pytest steps"""
+        filepath = os.path.join(self.REPO_DIR, self.CI_PATH)
+        with open(filepath) as f:
+            content = f.read()
+        assert "ruff" in content, "CI should include ruff linting step"
+        assert "mypy" in content, "CI should include mypy type checking step"
+        assert "pytest" in content, "CI should include pytest testing step"
 
-    def test_func_ci_coverage(self):
-        """Verifies CI has coverage reporting."""
-        ci = self._load_ci()
-        ci_jobs = ci["jobs"]
-        assert any(
-            "cov-fail-under" in str(job) or "coverage" in str(job).lower()
-            for job in ci_jobs.values()
-        ), "No coverage configuration found in ci.yml"
-
-    def test_func_cd_has_docker_or_build(self):
-        """Verifies CD has a Docker or build job."""
-        cd = self._load_cd()
-        cd_jobs = cd["jobs"]
-        assert any(
-            "docker" in str(job).lower() or "build" in name.lower()
-            for name, job in cd_jobs.items()
-        ), "No Docker/build job in cd.yml"
-
-    def test_func_cd_has_needs(self):
-        """Verifies CD jobs use 'needs' for dependencies."""
-        cd = self._load_cd()
-        cd_jobs = cd["jobs"]
-        assert any(
-            "needs" in str(job) for job in cd_jobs.values()
-        ), "No 'needs' dependency in cd.yml"
-
-    def test_func_secrets_reference(self):
-        """Verifies workflows reference secrets."""
-        workflow_text = self._read(self._ci_path()) + self._read(self._cd_path())
-        assert (
-            "${{ secrets." in workflow_text
-        ), "No ${{ secrets. }} reference in workflows"
-
-    def test_func_no_hardcoded_passwords(self):
-        """Verifies no hardcoded passwords in workflows."""
-        workflow_text = self._read(self._ci_path()) + self._read(self._cd_path())
-        assert not re.search(
-            r"password\s*=\s*[\"'][^$\{]", workflow_text, re.IGNORECASE
-        ), "Hardcoded password found in workflow"
-
-    def test_func_failure_hardcoded_password(self):
-        """Failure case: no hardcoded passwords should exist."""
-        workflow_text = self._read(self._ci_path()) + self._read(self._cd_path())
-        matches = re.findall(
-            r"password\s*=\s*[\"'][^$\{]", workflow_text, re.IGNORECASE
-        )
-        assert len(matches) == 0, f"Hardcoded passwords found: {matches}"
+    def test_ci_workflow_caches_pip(self):
+        """Verify CI workflow enables pip caching in Python setup"""
+        filepath = os.path.join(self.REPO_DIR, self.CI_PATH)
+        with open(filepath) as f:
+            content = f.read()
+        has_cache = ("cache: pip" in content or "cache: 'pip'" in content or
+                     'cache: "pip"' in content or "actions/cache" in content)
+        assert has_cache, "CI workflow should enable pip caching"

@@ -1,172 +1,204 @@
 """
-Test for 'spark-optimization' skill — Apache Spark Optimization Patterns
-Validates BroadcastJoin, SkewHandler, SparkConfigValidator, PartitionOptimizer,
-and CacheStrategyAdvisor via static analysis and pure Python arithmetic checks.
+Test skill: spark-optimization
+Verify that the Agent creates SkewJoinOptimizer Catalyst rule, SkewDetector,
+and SkewedSortMergeJoinExec in Apache Spark (Scala).
 """
 
-import glob
-import math
 import os
 import re
-import sys
-
+import subprocess
 import pytest
 
 
 class TestSparkOptimization:
-    """Verify Spark optimization patterns: broadcast, skew, config, partitioning."""
-
     REPO_DIR = "/workspace/spark"
 
-    # ── helpers ──────────────────────────────────────────────────────────
+    # === File Path Checks ===
 
-    @staticmethod
-    def _read_file(path: str) -> str:
-        try:
-            with open(path, "r", errors="ignore") as fh:
-                return fh.read()
-        except OSError:
-            return ""
-
-    def _find_source(self) -> str:
-        """Locate the main Spark optimizer source file."""
-        candidates = [
-            os.path.join(self.REPO_DIR, "src", "main", "scala", "SparkOptimizer.scala"),
-        ]
-        py_files = glob.glob(os.path.join(self.REPO_DIR, "examples", "spark", "*.py"))
-        for c in candidates:
-            if os.path.isfile(c):
-                return c
-        return py_files[0] if py_files else candidates[0]
-
-    def _find_all_sources(self) -> list:
-        """Find all relevant spark source files."""
-        files = []
-        scala = os.path.join(self.REPO_DIR, "src", "main", "scala", "SparkOptimizer.scala")
-        if os.path.isfile(scala):
-            files.append(scala)
-        files.extend(glob.glob(os.path.join(self.REPO_DIR, "examples", "spark", "*.py")))
-        return files
-
-    # ── file_path_check ──────────────────────────────────────────────────
-
-    def test_source_file_exists(self):
-        """SparkOptimizer source file must exist (Scala or Python)."""
-        sources = self._find_all_sources()
-        assert len(sources) >= 1, "No Spark optimizer source files found"
-
-    def test_build_file_exists(self):
-        """build.sbt or pom.xml or Python test file must exist."""
-        candidates = [
-            os.path.join(self.REPO_DIR, "build.sbt"),
-            os.path.join(self.REPO_DIR, "pom.xml"),
-            os.path.join(self.REPO_DIR, "tests", "test_spark.py"),
-        ]
-        found = any(os.path.isfile(c) for c in candidates)
-        assert found, "No build descriptor or test file found"
-
-    def test_readme_mentions_spark(self):
-        """README.md must mention Spark setup."""
-        path = os.path.join(self.REPO_DIR, "README.md")
-        if not os.path.isfile(path):
-            pytest.skip("README.md not found")
-        content = self._read_file(path)
-        has_spark = "spark" in content.lower() or "sbt" in content.lower() or "pyspark" in content.lower()
-        assert has_spark, "README does not mention Spark/sbt/pyspark"
-
-    # ── semantic_check ───────────────────────────────────────────────────
-
-    def test_broadcast_join_hint(self):
-        """Source must use broadcast() hint or autoBroadcastJoinThreshold."""
-        sources = self._find_all_sources()
+    def test_skew_join_optimizer_exists(self):
+        """Verify SkewJoinOptimizer Catalyst rule file exists"""
         found = False
-        for src in sources:
-            content = self._read_file(src)
-            if "broadcast" in content.lower():
-                found = True
+        for root, dirs, files in os.walk(self.REPO_DIR):
+            if ".git" in root or "target" in root:
+                continue
+            for f in files:
+                if "SkewJoinOptimizer" in f or ("skew" in f.lower() and "join" in f.lower() and f.endswith(".scala")):
+                    found = True
+                    break
+            if found:
                 break
-        assert found, "No broadcast join hint found"
+        assert found, "SkewJoinOptimizer file not found"
 
-    def test_skew_handler_salting(self):
-        """SkewHandler must use salting pattern (salt/rand)."""
-        sources = self._find_all_sources()
+    def test_skew_detector_exists(self):
+        """Verify SkewDetector file exists"""
         found = False
-        for src in sources:
-            content = self._read_file(src)
-            if "salt" in content.lower() or ("rand" in content and "skew" in content.lower()):
-                found = True
+        for root, dirs, files in os.walk(self.REPO_DIR):
+            if ".git" in root or "target" in root:
+                continue
+            for f in files:
+                if "SkewDetector" in f or ("skew" in f.lower() and "detect" in f.lower() and f.endswith(".scala")):
+                    found = True
+                    break
+            if found:
                 break
-        assert found, "No salting pattern found in SkewHandler"
+        assert found, "SkewDetector file not found"
 
-    def test_config_validator_memory_regex(self):
-        """Config validator must use memory format regex with [kmgKMG]."""
-        sources = self._find_all_sources()
+    # === Semantic Checks ===
+
+    def test_skew_join_optimizer_extends_rule(self):
+        """Verify SkewJoinOptimizer extends Catalyst Rule"""
+        content = self._find_content("SkewJoinOptimizer")
+        has_rule = (
+            "Rule[" in content
+            or "extends Rule" in content
+            or "Strategy" in content
+            or "Optimizer" in content
+        )
+        assert has_rule, "SkewJoinOptimizer does not extend Catalyst Rule"
+
+    def test_skew_detector_has_detection_logic(self):
+        """Verify SkewDetector implements skew detection algorithm"""
+        content = self._find_content("SkewDetector")
+        content_lower = content.lower()
+        has_detect = (
+            "detect" in content_lower
+            or "skew" in content_lower
+            or "partition" in content_lower
+            or "statistics" in content_lower
+        )
+        assert has_detect, "SkewDetector missing detection logic"
+
+    def test_skewed_sort_merge_join_exec_defined(self):
+        """Verify SkewedSortMergeJoinExec physical plan is defined"""
         found = False
-        for src in sources:
-            content = self._read_file(src)
-            if re.search(r"[kmgKMG]", content) and ("regex" in content.lower() or "re." in content or "match" in content):
-                found = True
+        for root, dirs, files in os.walk(self.REPO_DIR):
+            if ".git" in root or "target" in root:
+                continue
+            for f in files:
+                if f.endswith(".scala"):
+                    fpath = os.path.join(root, f)
+                    try:
+                        with open(fpath) as fh:
+                            content = fh.read()
+                        if "SkewedSortMergeJoinExec" in content or "SkewedSortMergeJoin" in content:
+                            found = True
+                            break
+                    except (UnicodeDecodeError, PermissionError):
+                        continue
+            if found:
                 break
-        assert found, "No memory format regex validation found"
+        assert found, "SkewedSortMergeJoinExec not found"
 
-    def test_partition_uses_128mb_target(self):
-        """Partition optimizer must reference 128MB target partition size."""
-        sources = self._find_all_sources()
-        found = False
-        for src in sources:
-            content = self._read_file(src)
-            if "128" in content or "134217728" in content or "maxPartitionBytes" in content:
-                found = True
-                break
-        assert found, "128MB partition target not found"
+    def test_optimizer_handles_partition_splitting(self):
+        """Verify optimizer implements partition splitting for skewed keys"""
+        content = self._find_content("SkewJoinOptimizer")
+        content += self._find_content("SkewedSortMergeJoin")
+        content_lower = content.lower()
+        has_split = (
+            "split" in content_lower
+            or "partition" in content_lower
+            or "repartition" in content_lower
+            or "salt" in content_lower
+        )
+        assert has_split, "Optimizer missing partition splitting logic"
 
-    # ── functional_check ─────────────────────────────────────────────────
+    def test_scala_files_have_package_declaration(self):
+        """Verify Scala files have proper package declarations"""
+        skew_files = []
+        for root, dirs, files in os.walk(self.REPO_DIR):
+            if ".git" in root or "target" in root:
+                continue
+            for f in files:
+                if f.endswith(".scala") and "skew" in f.lower():
+                    skew_files.append(os.path.join(root, f))
+        assert len(skew_files) > 0, "No skew-related Scala files found"
+        for sf in skew_files:
+            with open(sf) as fh:
+                content = fh.read()
+            assert "package " in content, f"{sf} missing package declaration"
 
-    def test_partition_formula_arithmetic(self):
-        """ceil(1_000_000_000 / 134_217_728) == 8 partitions."""
-        result = math.ceil(1_000_000_000 / 134_217_728)
-        assert result == 8
+    # === Functional Checks ===
 
-    def test_config_validator_rejects_invalid_format(self):
-        """SparkConfigValidator must reject '10x' as invalid memory format."""
-        try:
-            sys.path.insert(0, self.REPO_DIR)
-            from examples.spark.config_validator import SparkConfigValidator, ConfigError
-        except ImportError:
-            pytest.skip("Cannot import SparkConfigValidator")
-        with pytest.raises(ConfigError):
-            SparkConfigValidator().validate_memory("10x")
+    def test_scala_files_no_obvious_syntax_errors(self):
+        """Verify Scala files have balanced braces"""
+        skew_files = []
+        for root, dirs, files in os.walk(self.REPO_DIR):
+            if ".git" in root or "target" in root:
+                continue
+            for f in files:
+                if f.endswith(".scala") and "skew" in f.lower():
+                    skew_files.append(os.path.join(root, f))
+        for sf in skew_files:
+            with open(sf) as fh:
+                content = fh.read()
+            # Remove strings and comments
+            cleaned = re.sub(r'"[^"]*"', '', content)
+            cleaned = re.sub(r'//[^\n]*', '', cleaned)
+            cleaned = re.sub(r'/\*.*?\*/', '', cleaned, flags=re.DOTALL)
+            opens = cleaned.count('{')
+            closes = cleaned.count('}')
+            assert opens == closes, (
+                f"Unbalanced braces in {sf}: opens={opens}, closes={closes}"
+            )
 
-    def test_config_validator_accepts_valid_formats(self):
-        """SparkConfigValidator must accept '1g', '512m', '2048k'."""
-        try:
-            sys.path.insert(0, self.REPO_DIR)
-            from examples.spark.config_validator import SparkConfigValidator
-        except ImportError:
-            pytest.skip("Cannot import SparkConfigValidator")
-        for fmt in ["1g", "512m", "2048k"]:
-            SparkConfigValidator().validate_memory(fmt)
+    def test_maven_or_sbt_compiles(self):
+        """Verify the project compiles"""
+        # Try Maven first
+        if os.path.exists(os.path.join(self.REPO_DIR, "pom.xml")):
+            result = subprocess.run(
+                ["mvn", "compile", "-pl", "sql/catalyst", "-DskipTests", "-q"],
+                cwd=self.REPO_DIR,
+                capture_output=True,
+                text=True,
+                timeout=300,
+            )
+        elif os.path.exists(os.path.join(self.REPO_DIR, "build.sbt")):
+            result = subprocess.run(
+                ["sbt", "sql/compile"],
+                cwd=self.REPO_DIR,
+                capture_output=True,
+                text=True,
+                timeout=300,
+            )
+        else:
+            result = subprocess.run(
+                ["./build/mvn", "compile", "-pl", "sql/catalyst", "-DskipTests", "-q"],
+                cwd=self.REPO_DIR,
+                capture_output=True,
+                text=True,
+                timeout=300,
+            )
+        assert result.returncode == 0, (
+            f"Compilation failed:\n{result.stdout[-500:]}\n{result.stderr[-500:]}"
+        )
 
-    def test_config_validator_rejects_empty(self):
-        """SparkConfigValidator must reject empty string."""
-        try:
-            sys.path.insert(0, self.REPO_DIR)
-            from examples.spark.config_validator import SparkConfigValidator, ConfigError
-        except ImportError:
-            pytest.skip("Cannot import SparkConfigValidator")
-        with pytest.raises(ConfigError):
-            SparkConfigValidator().validate_memory("")
+    def test_skew_detector_uses_statistics(self):
+        """Verify SkewDetector uses statistical measures (median, std, percentile)"""
+        content = self._find_content("SkewDetector")
+        content_lower = content.lower()
+        has_stats = (
+            "median" in content_lower
+            or "percentile" in content_lower
+            or "stddev" in content_lower
+            or "threshold" in content_lower
+            or "statistics" in content_lower
+        )
+        assert has_stats, "SkewDetector should use statistical measures"
 
-    def test_skew_salt_factor_1_edge(self):
-        """Source must handle salt factor N=1 as no-op or special case."""
-        sources = self._find_all_sources()
-        found = False
-        for src in sources:
-            content = self._read_file(src)
-            if "salt" in content.lower() and ("== 1" in content or "=1" in content):
-                found = True
-                break
-        # Soft check — not all implementations guard N=1
-        if not found:
-            sources_content = " ".join(self._read_file(s) for s in sources)
-            assert "salt" in sources_content.lower(), "No salt logic found at all"
+    def _find_content(self, class_name):
+        """Helper to find content related to a class"""
+        all_content = ""
+        for root, dirs, files in os.walk(self.REPO_DIR):
+            if ".git" in root or "target" in root:
+                continue
+            for f in files:
+                if f.endswith(".scala"):
+                    fpath = os.path.join(root, f)
+                    try:
+                        with open(fpath) as fh:
+                            content = fh.read()
+                        if class_name in content:
+                            all_content += content + "\n"
+                    except (UnicodeDecodeError, PermissionError):
+                        continue
+        return all_content

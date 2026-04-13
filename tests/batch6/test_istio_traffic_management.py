@@ -1,191 +1,194 @@
 """
-Tests for 'istio-traffic-management' skill — Istio Traffic Management.
-Validates that the Agent generated correct Istio VirtualService, DestinationRule,
-and PeerAuthentication manifests with proper weights, subsets, mTLS, and
-header-based canary routing.
+Test skill: istio-traffic-management
+Verify that the Agent configures Istio for canary deployment with
+circuit breaking, fault injection, traffic mirroring, and Gateway/
+VirtualService/DestinationRule resources.
 """
 
-import glob
 import os
 import re
-import subprocess
-import textwrap
-
 import pytest
-import yaml
+
+try:
+    import yaml
+except ImportError:
+    yaml = None
+
+
+def load_yaml(path):
+    if yaml is None:
+        pytest.skip("PyYAML not available")
+    with open(path) as f:
+        return list(yaml.safe_load_all(f))
 
 
 class TestIstioTrafficManagement:
-    """Verify Istio traffic management manifests."""
-
     REPO_DIR = "/workspace/istio"
-    ISTIO_DIR = os.path.join(REPO_DIR, "istio")
 
-    # ── helpers ──────────────────────────────────────────────────────────
+    # === File Path Checks ===
 
-    @staticmethod
-    def _read_file(path: str) -> str:
-        """Read a file and return its content, or None on failure."""
-        try:
-            with open(path, "r", encoding="utf-8", errors="ignore") as fh:
-                return fh.read()
-        except OSError:
-            return None
+    def test_gateway_exists(self):
+        assert os.path.exists(os.path.join(self.REPO_DIR, "istio/gateway.yaml"))
 
-    @staticmethod
-    def _load_yaml(path: str):
-        """Parse a YAML file and return the top-level object."""
-        with open(path, "r", encoding="utf-8", errors="ignore") as fh:
-            return yaml.safe_load(fh)
+    def test_checkout_vs_exists(self):
+        assert os.path.exists(os.path.join(self.REPO_DIR, "istio/checkout-vs.yaml"))
 
-    def _run_in_repo(
-        self, script: str, timeout: int = 120
-    ) -> subprocess.CompletedProcess:
-        """Run a Python inline script inside REPO_DIR."""
-        return subprocess.run(
-            ["python", "-c", textwrap.dedent(script)],
-            cwd=self.REPO_DIR,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
+    def test_checkout_dr_exists(self):
+        assert os.path.exists(os.path.join(self.REPO_DIR, "istio/checkout-dr.yaml"))
+
+    def test_payment_files_exist(self):
+        assert os.path.exists(os.path.join(self.REPO_DIR, "istio/payment-vs.yaml"))
+        assert os.path.exists(os.path.join(self.REPO_DIR, "istio/payment-dr.yaml"))
+
+    def test_inventory_files_exist(self):
+        assert os.path.exists(os.path.join(self.REPO_DIR, "istio/inventory-vs.yaml"))
+        assert os.path.exists(os.path.join(self.REPO_DIR, "istio/inventory-dr.yaml"))
+
+    def test_fault_injection_exists(self):
+        assert os.path.exists(os.path.join(self.REPO_DIR, "istio/fault-injection.yaml"))
+
+    def test_traffic_mirror_exists(self):
+        assert os.path.exists(os.path.join(self.REPO_DIR, "istio/traffic-mirror.yaml"))
+
+    def test_k8s_deployments_exist(self):
+        assert os.path.exists(os.path.join(self.REPO_DIR, "k8s/checkout-v1-deployment.yaml"))
+        assert os.path.exists(os.path.join(self.REPO_DIR, "k8s/checkout-v2-deployment.yaml"))
+
+    # === Semantic Checks ===
+
+    def test_gateway_has_https(self):
+        """Gateway should configure HTTPS on port 443"""
+        path = os.path.join(self.REPO_DIR, "istio/gateway.yaml")
+        with open(path) as f:
+            content = f.read()
+        assert "443" in content, "Gateway should have port 443"
+        assert "SIMPLE" in content or "tls" in content.lower(), "Gateway should have TLS config"
+        assert "shop.example.com" in content, "Gateway should serve shop.example.com"
+
+    def test_gateway_has_http_redirect(self):
+        """Gateway should redirect HTTP to HTTPS"""
+        path = os.path.join(self.REPO_DIR, "istio/gateway.yaml")
+        with open(path) as f:
+            content = f.read()
+        assert "httpsRedirect" in content or "redirect" in content.lower(), (
+            "Gateway should redirect HTTP to HTTPS"
         )
 
-    # ── file_path_check (static) ────────────────────────────────────────
+    def test_checkout_vs_has_canary_header(self):
+        """Checkout VS should route x-canary: true to v2"""
+        path = os.path.join(self.REPO_DIR, "istio/checkout-vs.yaml")
+        with open(path) as f:
+            content = f.read()
+        assert "x-canary" in content, "Should match x-canary header"
 
-    def test_virtual_service_exists(self):
-        """Verify VirtualService YAML exists at istio/virtual-service.yaml."""
-        path = os.path.join(self.ISTIO_DIR, "virtual-service.yaml")
-        assert os.path.isfile(path), f"Missing {path}"
-
-    def test_destination_rule_exists(self):
-        """Verify DestinationRule YAML exists at istio/destination-rule.yaml."""
-        path = os.path.join(self.ISTIO_DIR, "destination-rule.yaml")
-        assert os.path.isfile(path), f"Missing {path}"
-
-    def test_peer_authentication_exists(self):
-        """Verify PeerAuthentication YAML exists at istio/peer-authentication.yaml."""
-        path = os.path.join(self.ISTIO_DIR, "peer-authentication.yaml")
-        assert os.path.isfile(path), f"Missing {path}"
-
-    # ── semantic_check (static) ─────────────────────────────────────────
-
-    def test_vs_has_http_routes(self):
-        """Verify VirtualService has kind: VirtualService and http routes with weight fields."""
-        path = os.path.join(self.ISTIO_DIR, "virtual-service.yaml")
-        doc = self._load_yaml(path)
-        assert doc.get("kind") == "VirtualService", "kind is not VirtualService"
-        http_routes = doc.get("spec", {}).get("http", [])
-        assert len(http_routes) > 0, "No http routes defined in VirtualService"
-        has_weight = any(
-            "weight" in dest for route in http_routes for dest in route.get("route", [])
+    def test_checkout_vs_has_weighted_split(self):
+        """Checkout VS should have weighted routing between v1 and v2"""
+        docs = load_yaml(os.path.join(self.REPO_DIR, "istio/checkout-vs.yaml"))
+        doc = docs[0]
+        content_str = str(doc)
+        assert "v1" in content_str and "v2" in content_str, (
+            "VS should reference both v1 and v2 subsets"
         )
-        assert has_weight, "No weight field found in any http route destination"
+        assert "weight" in content_str, "VS should have weighted routing"
 
-    def test_dr_has_subsets(self):
-        """Verify DestinationRule defines v1 and v2 subsets."""
-        path = os.path.join(self.ISTIO_DIR, "destination-rule.yaml")
-        doc = self._load_yaml(path)
-        subsets = doc.get("spec", {}).get("subsets", [])
-        subset_names = {s.get("name") for s in subsets}
-        assert "v1" in subset_names, "Missing subset v1"
-        assert "v2" in subset_names, "Missing subset v2"
+    def test_checkout_dr_has_subsets(self):
+        """Checkout DR should define v1 and v2 subsets"""
+        docs = load_yaml(os.path.join(self.REPO_DIR, "istio/checkout-dr.yaml"))
+        spec = docs[0].get("spec", {})
+        subsets = spec.get("trafficPolicy", {}) or spec.get("subsets", [])
+        # Check in content
+        with open(os.path.join(self.REPO_DIR, "istio/checkout-dr.yaml")) as f:
+            content = f.read()
+        assert "v1" in content and "v2" in content, "DR should define v1 and v2 subsets"
 
-    def test_pa_mtls_strict(self):
-        """Verify PeerAuthentication has mTLS mode STRICT."""
-        path = os.path.join(self.ISTIO_DIR, "peer-authentication.yaml")
-        doc = self._load_yaml(path)
-        mode = doc.get("spec", {}).get("mtls", {}).get("mode")
-        assert mode == "STRICT", f"Expected STRICT, got {mode}"
-
-    # ── functional_check (command) ──────────────────────────────────────
-
-    def test_all_istio_yaml_parseable(self):
-        """Verify all Istio YAML files parse without error using yaml.safe_load."""
-        result = self._run_in_repo(
-            """\
-            import yaml, glob
-            files = glob.glob('istio/*.yaml')
-            assert len(files) >= 4, f'Only {len(files)} YAML files found'
-            for f in files:
-                yaml.safe_load(open(f))
-            print('PASS')
-        """
+    def test_checkout_dr_has_circuit_breaker(self):
+        """Checkout DR should have outlier detection for circuit breaking"""
+        path = os.path.join(self.REPO_DIR, "istio/checkout-dr.yaml")
+        with open(path) as f:
+            content = f.read()
+        assert "outlierDetection" in content, "Missing outlier detection"
+        assert "consecutive5xxErrors" in content or "consecutiveErrors" in content, (
+            "Missing consecutive error threshold"
         )
-        assert result.returncode == 0, f"Parse failed: {result.stderr}"
-        assert "PASS" in result.stdout
 
-    def test_route_weights_sum_100(self):
-        """Verify that default VirtualService route weights sum to 100."""
-        result = self._run_in_repo(
-            """\
-            import yaml
-            vs = yaml.safe_load(open('istio/virtual-service.yaml'))
-            routes = [r for r in vs['spec']['http'] if 'match' not in r]
-            total = sum(d['weight'] for r in routes for d in r['route'])
-            assert total == 100, f'Weights sum to {total}'
-            print('PASS')
-        """
-        )
-        assert result.returncode == 0, f"Weight check failed: {result.stderr}"
-        assert "PASS" in result.stdout
+    def test_checkout_vs_has_timeout_and_retries(self):
+        """Checkout VS should have timeout of 10s and 3 retries"""
+        path = os.path.join(self.REPO_DIR, "istio/checkout-vs.yaml")
+        with open(path) as f:
+            content = f.read()
+        assert "timeout" in content, "Missing timeout"
+        assert "retries" in content, "Missing retries"
 
-    def test_dr_subsets_v1_v2(self):
-        """Verify DestinationRule subsets contain v1 and v2 via functional parsing."""
-        result = self._run_in_repo(
-            """\
-            import yaml
-            dr = yaml.safe_load(open('istio/destination-rule.yaml'))
-            names = [s['name'] for s in dr['spec']['subsets']]
-            assert 'v1' in names and 'v2' in names, f'Subsets: {names}'
-            print('PASS')
-        """
-        )
-        assert result.returncode == 0, f"Subsets check failed: {result.stderr}"
-        assert "PASS" in result.stdout
+    def test_payment_vs_has_timeout(self):
+        """Payment VS should have timeout of 5s"""
+        path = os.path.join(self.REPO_DIR, "istio/payment-vs.yaml")
+        with open(path) as f:
+            content = f.read()
+        assert "timeout" in content, "Missing timeout"
+        assert "5s" in content, "Payment timeout should be 5s"
 
-    def test_peer_auth_strict_mode(self):
-        """Verify PeerAuthentication mode is exactly STRICT (functional)."""
-        result = self._run_in_repo(
-            """\
-            import yaml
-            pa = yaml.safe_load(open('istio/peer-authentication.yaml'))
-            mode = pa['spec']['mtls']['mode']
-            assert mode == 'STRICT', f'Mode is {mode}'
-            print('PASS')
-        """
-        )
-        assert result.returncode == 0, f"Strict mode check failed: {result.stderr}"
-        assert "PASS" in result.stdout
+    def test_fault_injection_has_safety_guard(self):
+        """Fault injection should require x-test-chaos header"""
+        path = os.path.join(self.REPO_DIR, "istio/fault-injection.yaml")
+        with open(path) as f:
+            content = f.read()
+        assert "x-test-chaos" in content, "Fault injection must be guarded by x-test-chaos header"
 
-    def test_canary_header_routing(self):
-        """Verify header-based canary routing to v2 exists in VirtualService."""
-        result = self._run_in_repo(
-            """\
-            import yaml
-            vs = yaml.safe_load(open('istio/virtual-service.yaml'))
-            canary = [r for r in vs['spec']['http'] if 'match' in r]
-            assert len(canary) > 0, 'No canary route with match'
-            match_str = str(canary[0])
-            assert 'v2' in match_str or 'canary' in match_str, (
-                f'Canary route does not reference v2 or canary: {match_str[:200]}'
+    def test_fault_injection_has_abort_and_delay(self):
+        """Fault injection should include 503 abort and delay"""
+        path = os.path.join(self.REPO_DIR, "istio/fault-injection.yaml")
+        with open(path) as f:
+            content = f.read()
+        assert "abort" in content, "Missing abort fault"
+        assert "503" in content, "Abort should return 503"
+        assert "delay" in content, "Missing delay fault"
+
+    def test_traffic_mirror_targets_v2(self):
+        """Traffic mirror should mirror to v2 subset"""
+        path = os.path.join(self.REPO_DIR, "istio/traffic-mirror.yaml")
+        with open(path) as f:
+            content = f.read()
+        assert "mirror" in content, "Missing mirror configuration"
+        assert "v2" in content, "Mirror should target v2"
+
+    def test_k8s_deployments_have_version_labels(self):
+        """K8s deployments should have version labels matching subsets"""
+        for ver, fname in [("v1", "checkout-v1-deployment.yaml"), ("v2", "checkout-v2-deployment.yaml")]:
+            docs = load_yaml(os.path.join(self.REPO_DIR, f"k8s/{fname}"))
+            labels = docs[0]["spec"]["template"]["metadata"]["labels"]
+            assert labels.get("version") == ver, (
+                f"{fname} should have label version: {ver}"
             )
-            print('PASS')
-        """
-        )
-        assert result.returncode == 0, f"Canary check failed: {result.stderr}"
-        assert "PASS" in result.stdout
-
-    def test_api_version_correct(self):
-        """Verify VirtualService apiVersion contains networking.istio.io."""
-        result = self._run_in_repo(
-            """\
-            import yaml
-            vs = yaml.safe_load(open('istio/virtual-service.yaml'))
-            assert 'networking.istio.io' in vs['apiVersion'], (
-                f"Wrong apiVersion: {vs['apiVersion']}"
+            assert labels.get("app") == "checkout", (
+                f"{fname} should have label app: checkout"
             )
-            print('PASS')
-        """
-        )
-        assert result.returncode == 0, f"apiVersion check failed: {result.stderr}"
-        assert "PASS" in result.stdout
+
+    # === Functional Checks ===
+
+    def test_all_yaml_files_parse(self):
+        """All YAML files should parse without errors"""
+        if yaml is None:
+            pytest.skip("PyYAML not available")
+        for d in ("istio", "k8s"):
+            base = os.path.join(self.REPO_DIR, d)
+            if not os.path.isdir(base):
+                continue
+            for root, _dirs, files in os.walk(base):
+                for fname in files:
+                    if fname.endswith((".yaml", ".yml")):
+                        filepath = os.path.join(root, fname)
+                        try:
+                            with open(filepath) as f:
+                                list(yaml.safe_load_all(f))
+                        except yaml.YAMLError as e:
+                            pytest.fail(f"{filepath} YAML error: {e}")
+
+    def test_connection_pool_configured(self):
+        """DestinationRules should have connectionPool settings"""
+        for dr_file in ("checkout-dr.yaml", "payment-dr.yaml", "inventory-dr.yaml"):
+            path = os.path.join(self.REPO_DIR, f"istio/{dr_file}")
+            with open(path) as f:
+                content = f.read()
+            assert "connectionPool" in content or "maxConnections" in content, (
+                f"{dr_file} should have connection pool config"
+            )

@@ -1,12 +1,11 @@
 """
-Test for 'gitlab-ci-patterns' skill — GitLab CI/CD Pipeline Configuration
-Validates .gitlab-ci.yml with stages, parallel jobs, cache, Kaniko builds,
-templates, and rollback scripts.
+Test skill: gitlab-ci-patterns
+Verify that the Agent correctly configures GitLab CI/CD pipelines for a Rails
+application with multi-stage, templates, parallel testing, and rollback.
 """
 
 import os
 import re
-
 import pytest
 
 try:
@@ -16,184 +15,129 @@ except ImportError:
 
 
 class TestGitlabCiPatterns:
-    """Verify GitLab CI/CD pipeline patterns."""
-
     REPO_DIR = "/workspace/gitlabhq"
 
-    # ── file_path_check ─────────────────────────────────────────────────────
+    GITLAB_CI = ".gitlab-ci.yml"
+    TEST_TEMPLATE = "ci/templates/test-template.yml"
+    DEPLOY_TEMPLATE = "ci/templates/deploy-template.yml"
+    ROLLBACK_SCRIPT = "ci/scripts/rollback.sh"
 
-    def test_gitlab_ci_yml_exists(self):
-        """Verify .gitlab-ci.yml exists."""
-        ci_file = os.path.join(self.REPO_DIR, ".gitlab-ci.yml")
-        assert os.path.isfile(ci_file), ".gitlab-ci.yml not found"
+    def _read_file(self, rel_path):
+        filepath = os.path.join(self.REPO_DIR, rel_path)
+        with open(filepath) as f:
+            return f.read()
 
-    def test_ci_templates_exist(self):
-        """Verify at least one CI template file exists."""
-        found = []
-        for dirpath, _, fnames in os.walk(self.REPO_DIR):
-            if ".git" in dirpath:
-                continue
-            for f in fnames:
-                if (
-                    f.endswith(".yml") or f.endswith(".yaml")
-                ) and "template" in f.lower():
-                    found.append(f)
-                elif (
-                    f.endswith(".yml") or f.endswith(".yaml")
-                ) and "ci" in dirpath.lower():
-                    found.append(f)
-        assert found, "No CI template files found"
+    # === File Path Checks ===
 
-    # ── semantic_check ──────────────────────────────────────────────────────
+    def test_gitlab_ci_exists(self):
+        filepath = os.path.join(self.REPO_DIR, self.GITLAB_CI)
+        assert os.path.exists(filepath), f".gitlab-ci.yml not found at {filepath}"
 
-    def test_five_stages_defined(self):
-        """Verify at least 5 pipeline stages are defined."""
-        ci_file = os.path.join(self.REPO_DIR, ".gitlab-ci.yml")
-        if not os.path.isfile(ci_file):
-            pytest.skip(".gitlab-ci.yml not found")
-        content = self._read(ci_file)
-        stages = re.findall(r"^\s*-\s+(\w+)", content, re.MULTILINE)
-        # Also check 'stages:' block
-        if yaml:
-            with open(ci_file, "r") as fh:
-                try:
-                    data = yaml.safe_load(fh)
-                    if isinstance(data, dict) and "stages" in data:
-                        stages = data["stages"]
-                except yaml.YAMLError:
-                    pass
-        assert len(stages) >= 4, f"Expected ≥4 stages, found: {stages}"
+    def test_test_template_exists(self):
+        filepath = os.path.join(self.REPO_DIR, self.TEST_TEMPLATE)
+        assert os.path.exists(filepath), f"test-template.yml not found"
 
-    def test_parallel_jobs(self):
-        """Verify parallel job configuration (parallel: N)."""
-        ci_file = os.path.join(self.REPO_DIR, ".gitlab-ci.yml")
-        if not os.path.isfile(ci_file):
-            pytest.skip(".gitlab-ci.yml not found")
-        content = self._read(ci_file)
-        assert re.search(
-            r"parallel:\s*\d+", content
-        ), "No parallel job configuration found"
+    def test_deploy_template_exists(self):
+        filepath = os.path.join(self.REPO_DIR, self.DEPLOY_TEMPLATE)
+        assert os.path.exists(filepath), f"deploy-template.yml not found"
+
+    def test_rollback_script_exists(self):
+        filepath = os.path.join(self.REPO_DIR, self.ROLLBACK_SCRIPT)
+        assert os.path.exists(filepath), f"rollback.sh not found"
+
+    # === Semantic Checks ===
+
+    def test_stages_defined(self):
+        """Verify 5 stages: prepare, test, build, deploy, rollback"""
+        content = self._read_file(self.GITLAB_CI)
+        assert "stages:" in content, "Missing stages definition"
+        for stage in ["prepare", "test", "build", "deploy", "rollback"]:
+            assert stage in content, f"Missing stage: {stage}"
+
+    def test_bundle_install_job(self):
+        """Verify bundle-install job in prepare stage"""
+        content = self._read_file(self.GITLAB_CI)
+        assert "bundle" in content.lower(), "Missing bundle install job"
+        assert "vendor/bundle" in content, "Missing vendor/bundle cache path"
 
     def test_cache_configuration(self):
-        """Verify cache with pull-push policy."""
-        ci_file = os.path.join(self.REPO_DIR, ".gitlab-ci.yml")
-        if not os.path.isfile(ci_file):
-            pytest.skip(".gitlab-ci.yml not found")
-        content = self._read(ci_file)
-        assert "cache" in content, "No cache configuration found"
-        assert re.search(
-            r"(pull-push|policy)", content
-        ), "No cache pull-push policy found"
+        """Verify gem caching with correct key pattern"""
+        content = self._read_file(self.GITLAB_CI)
+        assert "cache" in content, "Missing cache configuration"
+        has_key = "CI_COMMIT_REF_SLUG" in content or "gems" in content
+        assert has_key, "Cache missing key with CI_COMMIT_REF_SLUG"
 
-    def test_production_tag_only_kaniko(self):
-        """Verify production uses tag-only deploys with Kaniko container builds."""
-        all_yml = self._find_ci_files()
-        for fpath in all_yml:
-            content = self._read(fpath)
-            if "kaniko" in content.lower() or "gcr.io/kaniko" in content:
-                return
-        # Check for tag-only at least
-        ci_file = os.path.join(self.REPO_DIR, ".gitlab-ci.yml")
-        if os.path.isfile(ci_file):
-            content = self._read(ci_file)
-            if re.search(r"only:\s*\n\s*-\s*tags|rules:.*tag", content):
-                return
-        pytest.fail("No Kaniko or tag-only production config found")
+    def test_parallel_unit_tests(self):
+        """Verify unit tests run in parallel with 4 nodes"""
+        content = self._read_file(self.GITLAB_CI)
+        assert "parallel" in content, "Missing parallel testing"
+        assert "4" in content, "Missing parallel: 4 config"
 
-    def test_rollback_script(self):
-        """Verify rollback script exists."""
-        found = False
-        for dirpath, _, fnames in os.walk(self.REPO_DIR):
-            if ".git" in dirpath:
-                continue
-            for f in fnames:
-                if "rollback" in f.lower() and (
-                    f.endswith(".sh") or f.endswith(".yml") or f.endswith(".yaml")
-                ):
-                    found = True
-                    break
-            if found:
-                break
-        if not found:
-            # Check inline in CI
-            ci_file = os.path.join(self.REPO_DIR, ".gitlab-ci.yml")
-            if os.path.isfile(ci_file):
-                content = self._read(ci_file)
-                if "rollback" in content.lower():
-                    found = True
-        assert found, "No rollback script or job found"
+    def test_junit_reports(self):
+        """Verify JUnit report artifacts"""
+        content = self._read_file(self.GITLAB_CI)
+        assert "junit" in content.lower(), "Missing JUnit report"
 
-    # ── functional_check ────────────────────────────────────────────────────
+    def test_integration_tests_have_services(self):
+        """Verify integration tests define postgres and redis services"""
+        content = self._read_file(self.GITLAB_CI)
+        assert "postgres" in content, "Missing postgres service"
+        assert "redis" in content, "Missing redis service"
+
+    def test_docker_build_with_kaniko(self):
+        """Verify docker-build uses Kaniko"""
+        content = self._read_file(self.GITLAB_CI)
+        has_kaniko = "kaniko" in content.lower() or "gcr.io/kaniko" in content
+        assert has_kaniko, "Missing Kaniko for Docker build"
+
+    def test_deploy_staging_auto(self):
+        """Verify deploy-staging auto-deploys on main branch"""
+        content = self._read_file(self.GITLAB_CI)
+        assert "staging" in content, "Missing deploy-staging job"
+        assert "main" in content, "Missing main branch reference"
+
+    def test_deploy_production_manual(self):
+        """Verify deploy-production is manual and only on tags"""
+        content = self._read_file(self.GITLAB_CI)
+        assert "production" in content, "Missing deploy-production job"
+        assert "manual" in content, "Missing manual trigger for production"
+
+    def test_rollback_job(self):
+        """Verify rollback job exists and is manual"""
+        content = self._read_file(self.GITLAB_CI)
+        assert "rollback" in content.lower(), "Missing rollback job"
+
+    def test_rollback_script_uses_kubectl(self):
+        """Verify rollback script uses kubectl rollout undo"""
+        content = self._read_file(self.ROLLBACK_SCRIPT)
+        assert "kubectl" in content, "Rollback script missing kubectl"
+        assert "rollout undo" in content, "Rollback missing rollout undo"
+        assert "rollout status" in content, "Rollback missing status check"
+
+    def test_templates_use_extends(self):
+        """Verify jobs use extends for template reuse"""
+        content = self._read_file(self.GITLAB_CI)
+        assert "extends" in content, "Missing extends for template reuse"
+
+    # === Functional Checks ===
 
     def test_gitlab_ci_valid_yaml(self):
-        """Verify .gitlab-ci.yml is valid YAML."""
+        """Verify .gitlab-ci.yml is valid YAML"""
         if yaml is None:
-            pytest.skip("PyYAML not available")
-        ci_file = os.path.join(self.REPO_DIR, ".gitlab-ci.yml")
-        if not os.path.isfile(ci_file):
-            pytest.skip(".gitlab-ci.yml not found")
-        with open(ci_file, "r") as fh:
-            data = yaml.safe_load(fh)
-        assert data is not None, ".gitlab-ci.yml is empty"
+            pytest.skip("PyYAML not installed")
+        content = self._read_file(self.GITLAB_CI)
+        try:
+            yaml.safe_load(content)
+        except yaml.YAMLError as e:
+            pytest.fail(f".gitlab-ci.yml YAML error: {e}")
 
-    def test_manual_rollback_action(self):
-        """Verify rollback has manual trigger (when: manual)."""
-        all_yml = self._find_ci_files()
-        for fpath in all_yml:
-            content = self._read(fpath)
-            if "rollback" in content.lower() and "manual" in content.lower():
-                return
-        pytest.fail("No manual rollback trigger found")
-
-    def test_bash_syntax_of_rollback(self):
-        """Verify rollback shell script has valid bash syntax."""
-        import subprocess
-
-        for dirpath, _, fnames in os.walk(self.REPO_DIR):
-            if ".git" in dirpath:
-                continue
-            for f in fnames:
-                if "rollback" in f.lower() and f.endswith(".sh"):
-                    fpath = os.path.join(dirpath, f)
-                    try:
-                        result = subprocess.run(
-                            ["bash", "-n", fpath],
-                            capture_output=True,
-                            text=True,
-                            timeout=30,
-                        )
-                        assert (
-                            result.returncode == 0
-                        ), f"Bash syntax error in {f}: {result.stderr}"
-                        return
-                    except FileNotFoundError:
-                        pytest.skip("bash not available")
-        pytest.skip("No rollback .sh file found")
-
-    def test_includes_or_extends(self):
-        """Verify CI uses include or extends for template reuse."""
-        ci_file = os.path.join(self.REPO_DIR, ".gitlab-ci.yml")
-        if not os.path.isfile(ci_file):
-            pytest.skip(".gitlab-ci.yml not found")
-        content = self._read(ci_file)
-        assert re.search(
-            r"(include:|extends:|\!reference)", content
-        ), "No include/extends for template reuse"
-
-    # ── helpers ──────────────────────────────────────────────────────────────
-
-    def _find_ci_files(self):
-        results = []
-        for dirpath, _, fnames in os.walk(self.REPO_DIR):
-            if ".git" in dirpath:
-                continue
-            for f in fnames:
-                if (f.endswith(".yml") or f.endswith(".yaml")) and (
-                    "ci" in f.lower() or "gitlab" in f.lower()
-                ):
-                    results.append(os.path.join(dirpath, f))
-        return results
-
-    def _read(self, path):
-        with open(path, "r", errors="ignore") as fh:
-            return fh.read()
+    def test_templates_valid_yaml(self):
+        """Verify template YAML files are valid"""
+        if yaml is None:
+            pytest.skip("PyYAML not installed")
+        for path in [self.TEST_TEMPLATE, self.DEPLOY_TEMPLATE]:
+            content = self._read_file(path)
+            try:
+                yaml.safe_load(content)
+            except yaml.YAMLError as e:
+                pytest.fail(f"{path} YAML error: {e}")

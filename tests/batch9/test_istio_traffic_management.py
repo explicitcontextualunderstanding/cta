@@ -1,152 +1,146 @@
 """
-Test for 'istio-traffic-management' skill — Istio Traffic Management
-Validates VirtualServiceBuilder, DestinationRuleBuilder, GatewayBuilder,
-PeerAuthBuilder with weight validation, mTLS, and YAML generation.
+Test skill: istio-traffic-management
+Verify that the Agent creates VirtualService, DestinationRule, and Gateway
+generators using Python/Pydantic for Istio traffic management.
 """
 
 import os
-import sys
-
+import re
+import ast
+import subprocess
 import pytest
 
 
 class TestIstioTrafficManagement:
-    """Verify Istio traffic management builders and YAML generation."""
-
     REPO_DIR = "/workspace/istio"
 
-    # ── helpers ──────────────────────────────────────────────────────────
+    # === File Path Checks ===
 
-    @staticmethod
-    def _read_file(path: str) -> str:
-        try:
-            with open(path, "r", errors="ignore") as fh:
-                return fh.read()
-        except OSError:
-            return ""
+    def test_istio_generator_files_exist(self):
+        """Verify Istio traffic management generator files exist"""
+        found = False
+        for root, dirs, files in os.walk(self.REPO_DIR):
+            if ".git" in root or "vendor" in root or "node_modules" in root:
+                continue
+            for f in files:
+                if f.endswith(".py") and ("virtual" in f.lower() or "destination" in f.lower() or "gateway" in f.lower() or "traffic" in f.lower() or "istio" in f.lower()):
+                    found = True
+                    break
+            if found:
+                break
+        assert found, "Istio generator Python files not found"
 
-    def _ist(self, *parts) -> str:
-        return os.path.join(self.REPO_DIR, "examples", "istio", *parts)
+    # === Semantic Checks ===
 
-    # ── file_path_check ──────────────────────────────────────────────────
+    def test_virtual_service_generator_defined(self):
+        """Verify VirtualService generator is implemented"""
+        content = self._collect_python_content()
+        assert "VirtualService" in content or "virtual_service" in content, "VirtualService generator not found"
 
-    def test_init_py_exists(self):
-        """examples/istio/__init__.py must exist."""
-        assert os.path.isfile(self._ist("__init__.py")), "__init__.py not found"
+    def test_destination_rule_generator_defined(self):
+        """Verify DestinationRule generator is implemented"""
+        content = self._collect_python_content()
+        assert "DestinationRule" in content or "destination_rule" in content, "DestinationRule generator not found"
 
-    def test_virtual_service_py_exists(self):
-        """virtual_service.py must exist."""
-        assert os.path.isfile(self._ist("virtual_service.py")), "virtual_service.py not found"
+    def test_gateway_generator_defined(self):
+        """Verify Gateway generator is implemented"""
+        content = self._collect_python_content()
+        assert "Gateway" in content or "gateway" in content, "Gateway generator not found"
 
-    def test_destination_rule_gateway_peer_auth_exist(self):
-        """destination_rule.py, gateway.py, peer_auth.py must exist."""
-        for name in ("destination_rule.py", "gateway.py", "peer_auth.py"):
-            assert os.path.isfile(self._ist(name)), f"{name} not found"
+    def test_pydantic_models_used(self):
+        """Verify Pydantic models are used for configuration"""
+        content = self._collect_python_content()
+        has_pydantic = "BaseModel" in content or "pydantic" in content
+        assert has_pydantic, "Pydantic models not used"
 
-    def test_test_file_exists(self):
-        """tests/test_istio.py must exist."""
-        path = os.path.join(self.REPO_DIR, "tests", "test_istio.py")
-        assert os.path.isfile(path), f"{path} not found"
+    def test_traffic_routing_defined(self):
+        """Verify traffic routing configuration is defined"""
+        content = self._collect_python_content()
+        content_lower = content.lower()
+        has_routing = (
+            "route" in content_lower
+            or "match" in content_lower
+            or "weight" in content_lower
+            or "subset" in content_lower
+        )
+        assert has_routing, "Traffic routing configuration not found"
 
-    # ── semantic_check ───────────────────────────────────────────────────
+    # === Functional Checks ===
 
-    def test_weight_sum_validation(self):
-        """VirtualServiceBuilder must validate sum(weights) == 100."""
-        content = self._read_file(self._ist("virtual_service.py"))
-        if not content:
-            pytest.skip("virtual_service.py not found")
-        assert "sum" in content or "100" in content
-        assert "ValueError" in content
+    def test_python_files_valid_syntax(self):
+        """Verify Python files have valid AST"""
+        py_files = self._find_py_files()
+        assert len(py_files) > 0, "No Istio generator Python files found"
+        for pf in py_files:
+            with open(pf) as fh:
+                source = fh.read()
+            try:
+                ast.parse(source)
+            except SyntaxError as e:
+                pytest.fail(f"Syntax error in {pf}: {e}")
 
-    def test_apiversion_v1beta1_not_v1alpha3(self):
-        """Builders must use networking.istio.io/v1beta1, not v1alpha3."""
-        for name in ("virtual_service.py", "destination_rule.py"):
-            content = self._read_file(self._ist(name))
-            if content:
-                assert "v1beta1" in content, f"v1beta1 not found in {name}"
-                assert "v1alpha3" not in content, f"Deprecated v1alpha3 in {name}"
+    def test_python_files_have_classes(self):
+        """Verify Python files define classes"""
+        py_files = self._find_py_files()
+        any_class = False
+        for pf in py_files:
+            with open(pf) as fh:
+                source = fh.read()
+            tree = ast.parse(source)
+            for node in ast.walk(tree):
+                if isinstance(node, ast.ClassDef):
+                    any_class = True
+                    break
+            if any_class:
+                break
+        assert any_class, "No classes found in Istio generator files"
 
-    def test_destination_rule_mtls(self):
-        """DestinationRule must reference ISTIO_MUTUAL mode."""
-        content = self._read_file(self._ist("destination_rule.py"))
-        if not content:
-            pytest.skip("destination_rule.py not found")
-        assert "ISTIO_MUTUAL" in content
+    def test_yaml_output_capability(self):
+        """Verify generators can produce YAML output"""
+        content = self._collect_python_content()
+        has_yaml = (
+            "yaml" in content.lower()
+            or "to_dict" in content
+            or "to_yaml" in content
+            or "json" in content.lower()
+            or "apiVersion" in content
+        )
+        assert has_yaml, "No YAML/dict output capability found"
 
-    def test_peer_auth_strict_mode(self):
-        """PeerAuthentication must use STRICT mode."""
-        content = self._read_file(self._ist("peer_auth.py"))
-        if not content:
-            pytest.skip("peer_auth.py not found")
-        assert "STRICT" in content
+    def test_api_version_specified(self):
+        """Verify Istio API version is specified"""
+        content = self._collect_python_content()
+        has_api = (
+            "networking.istio.io" in content
+            or "security.istio.io" in content
+            or "apiVersion" in content
+            or "api_version" in content
+        )
+        assert has_api, "Istio API version not specified"
 
-    # ── functional_check ─────────────────────────────────────────────────
+    def _collect_python_content(self):
+        all_content = ""
+        for root, dirs, files in os.walk(self.REPO_DIR):
+            if ".git" in root or "vendor" in root or "node_modules" in root:
+                continue
+            for f in files:
+                if f.endswith(".py"):
+                    fpath = os.path.join(root, f)
+                    try:
+                        with open(fpath) as fh:
+                            c = fh.read()
+                        if any(kw in c for kw in ["VirtualService", "DestinationRule", "Gateway", "virtual_service", "destination_rule", "gateway", "istio"]):
+                            all_content += c + "\n"
+                    except (UnicodeDecodeError, PermissionError):
+                        continue
+        return all_content
 
-    def test_80_20_split_yaml(self):
-        """VirtualService 80/20 split must produce valid YAML with sum 100."""
-        try:
-            import yaml
-            sys.path.insert(0, self.REPO_DIR)
-            from examples.istio.virtual_service import VirtualServiceBuilder
-        except ImportError:
-            pytest.skip("Cannot import VirtualServiceBuilder or yaml")
-        vs = VirtualServiceBuilder(hosts=["myapp"], weights=[80, 20])
-        config = yaml.safe_load(vs.build())
-        assert config["apiVersion"] == "networking.istio.io/v1beta1"
-        routes = config["spec"]["http"][0]["route"]
-        assert sum(r["weight"] for r in routes) == 100
-
-    def test_invalid_weights_raise_valueerror(self):
-        """Weights summing to 110 must raise ValueError."""
-        try:
-            sys.path.insert(0, self.REPO_DIR)
-            from examples.istio.virtual_service import VirtualServiceBuilder
-        except ImportError:
-            pytest.skip("Cannot import VirtualServiceBuilder")
-        with pytest.raises(ValueError):
-            VirtualServiceBuilder(hosts=["myapp"], weights=[50, 60]).build()
-
-    def test_destination_rule_mtls_yaml(self):
-        """DestinationRule with mtls=True must produce ISTIO_MUTUAL in YAML."""
-        try:
-            import yaml
-            sys.path.insert(0, self.REPO_DIR)
-            from examples.istio.destination_rule import DestinationRuleBuilder
-        except ImportError:
-            pytest.skip("Cannot import DestinationRuleBuilder")
-        dr = DestinationRuleBuilder(host="myapp", mtls=True)
-        config = yaml.safe_load(dr.build())
-        assert config["spec"]["trafficPolicy"]["tls"]["mode"] == "ISTIO_MUTUAL"
-
-    def test_single_host_100_percent(self):
-        """Single backend at 100% weight must be valid."""
-        try:
-            import yaml
-            sys.path.insert(0, self.REPO_DIR)
-            from examples.istio.virtual_service import VirtualServiceBuilder
-        except ImportError:
-            pytest.skip("Cannot import VirtualServiceBuilder")
-        vs = VirtualServiceBuilder(hosts=["myapp"], weights=[100])
-        config = yaml.safe_load(vs.build())
-        routes = config["spec"]["http"][0]["route"]
-        assert len(routes) == 1 and routes[0]["weight"] == 100
-
-    def test_all_builders_produce_valid_yaml(self):
-        """All builders must produce YAML with apiVersion and kind."""
-        try:
-            import yaml
-            sys.path.insert(0, self.REPO_DIR)
-            from examples.istio.virtual_service import VirtualServiceBuilder
-            from examples.istio.destination_rule import DestinationRuleBuilder
-            from examples.istio.gateway import GatewayBuilder
-        except ImportError:
-            pytest.skip("Cannot import builders")
-        builders = [
-            VirtualServiceBuilder(hosts=["myapp"], weights=[100]),
-            DestinationRuleBuilder(host="myapp"),
-            GatewayBuilder(hosts=["myapp"]),
-        ]
-        for b in builders:
-            config = yaml.safe_load(b.build())
-            assert "apiVersion" in config
-            assert "kind" in config
+    def _find_py_files(self):
+        py_files = []
+        for root, dirs, files in os.walk(self.REPO_DIR):
+            if ".git" in root or "vendor" in root or "node_modules" in root:
+                continue
+            for f in files:
+                if f.endswith(".py") and ("virtual" in f.lower() or "destination" in f.lower() or "gateway" in f.lower() or "traffic" in f.lower() or "istio" in f.lower() or "model" in f.lower()):
+                    py_files.append(os.path.join(root, f))
+        return py_files

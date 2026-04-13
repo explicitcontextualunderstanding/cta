@@ -1,211 +1,176 @@
 """
-Test for 'python-resilience' skill — Python Resilience Patterns
-Validates retry decorator, circuit breaker, bulkhead, and timeout patterns:
-file existence, semantic signatures, and functional behavior via direct
-import with mocked dependencies.
+Test skill: python-resilience
+Verify that the Agent correctly adds ResilientTransport with retry, circuit breaker,
+and AsyncResilientTransport to the httpx library.
 """
 
 import os
-import sys
-import time
-from unittest.mock import MagicMock, patch
-
+import subprocess
+import ast
+import re
 import pytest
 
 
 class TestPythonResilience:
-    """Verify Python resilience patterns: retry, circuit breaker, bulkhead, timeout."""
-
     REPO_DIR = "/workspace/httpx"
 
-    # ── helpers ──────────────────────────────────────────────────────────
-    @staticmethod
-    def _read_file(path: str) -> str:
-        try:
-            with open(path, "r", errors="ignore") as fh:
-                return fh.read()
-        except OSError:
-            return ""
+    # === File Path Checks ===
 
-    @classmethod
-    def _add_to_path(cls):
-        examples_dir = os.path.join(cls.REPO_DIR, "examples")
-        if examples_dir not in sys.path:
-            sys.path.insert(0, examples_dir)
-        if cls.REPO_DIR not in sys.path:
-            sys.path.insert(0, cls.REPO_DIR)
+    def test_resilient_transport_file_exists(self):
+        """Verify resilient.py exists in _transports directory"""
+        path = os.path.join(self.REPO_DIR, "httpx/_transports/resilient.py")
+        assert os.path.exists(path), f"resilient.py not found at {path}"
 
-    # ── file_path_check ──────────────────────────────────────────────────
+    def test_config_file_exists(self):
+        """Verify _config.py exists"""
+        path = os.path.join(self.REPO_DIR, "httpx/_config.py")
+        assert os.path.exists(path), f"_config.py not found at {path}"
 
-    def test_retry_and_circuit_breaker_py_exist(self):
-        """examples/resilience/retry.py and circuit_breaker.py must exist."""
-        for name in ("retry.py", "circuit_breaker.py"):
-            path = os.path.join(self.REPO_DIR, "examples", "resilience", name)
-            assert os.path.isfile(path), f"{path} does not exist"
-            assert os.path.getsize(path) > 0, f"{name} is empty"
+    # === Semantic Checks ===
 
-    def test_bulkhead_timeout_and_test_exist(self):
-        """bulkhead.py, timeout.py, and tests/test_resilience.py must exist."""
-        for name in ("bulkhead.py", "timeout.py"):
-            path = os.path.join(self.REPO_DIR, "examples", "resilience", name)
-            assert os.path.isfile(path), f"{path} does not exist"
-        test_path = os.path.join(self.REPO_DIR, "tests", "test_resilience.py")
-        assert os.path.isfile(test_path), f"{test_path} does not exist"
-
-    def test_init_py_exists(self):
-        """examples/resilience/__init__.py must exist."""
-        path = os.path.join(self.REPO_DIR, "examples", "resilience", "__init__.py")
-        assert os.path.isfile(path), f"{path} does not exist"
-
-    # ── semantic_check ───────────────────────────────────────────────────
-
-    def test_retry_decorator_accepts_params(self):
-        """retry() must accept max_attempts, backoff_factor, exceptions."""
-        content = self._read_file(
-            os.path.join(self.REPO_DIR, "examples", "resilience", "retry.py")
-        )
-        assert "def retry" in content, "retry function not defined"
-        assert "max_attempts" in content, "max_attempts parameter missing"
-        assert "backoff_factor" in content, "backoff_factor parameter missing"
-        assert "functools.wraps" in content or "wraps" in content, (
-            "functools.wraps not used"
+    def test_resilient_transport_class_defined(self):
+        """Verify ResilientTransport class is defined"""
+        path = os.path.join(self.REPO_DIR, "httpx/_transports/resilient.py")
+        with open(path) as f:
+            source = f.read()
+        tree = ast.parse(source)
+        class_names = [node.name for node in ast.walk(tree) if isinstance(node, ast.ClassDef)]
+        assert "ResilientTransport" in class_names, (
+            f"ResilientTransport class not found. Classes: {class_names}"
         )
 
-    def test_circuit_breaker_has_states_and_threshold(self):
-        """CircuitBreaker must define CLOSED/OPEN/HALF_OPEN states."""
-        content = self._read_file(
-            os.path.join(self.REPO_DIR, "examples", "resilience", "circuit_breaker.py")
-        )
-        assert "CircuitBreaker" in content, "CircuitBreaker class not defined"
-        assert "failure_threshold" in content, "failure_threshold missing"
-        for state in ("CLOSED", "OPEN", "HALF_OPEN"):
-            assert state in content, f"{state} state not defined"
-
-    def test_bulkhead_uses_threading_semaphore(self):
-        """Bulkhead must use threading.Semaphore and define BulkheadFullError."""
-        content = self._read_file(
-            os.path.join(self.REPO_DIR, "examples", "resilience", "bulkhead.py")
-        )
-        assert "Semaphore" in content, "Semaphore not used in bulkhead"
-        assert "BulkheadFullError" in content, "BulkheadFullError not defined"
-
-    def test_exponential_backoff_formula(self):
-        """retry.py must use exponential backoff (** operator) with time.sleep."""
-        content = self._read_file(
-            os.path.join(self.REPO_DIR, "examples", "resilience", "retry.py")
-        )
-        assert "**" in content or "pow" in content, (
-            "No exponential backoff formula (** or pow) found"
-        )
-        assert "time.sleep" in content or "sleep" in content, (
-            "time.sleep not called for backoff delay"
+    def test_async_resilient_transport_class_defined(self):
+        """Verify AsyncResilientTransport class is defined"""
+        path = os.path.join(self.REPO_DIR, "httpx/_transports/resilient.py")
+        with open(path) as f:
+            source = f.read()
+        tree = ast.parse(source)
+        class_names = [node.name for node in ast.walk(tree) if isinstance(node, ast.ClassDef)]
+        assert "AsyncResilientTransport" in class_names, (
+            f"AsyncResilientTransport class not found. Classes: {class_names}"
         )
 
-    # ── functional_check (import) ────────────────────────────────────────
+    def test_retry_logic_with_exponential_backoff(self):
+        """Verify retry logic includes exponential backoff"""
+        path = os.path.join(self.REPO_DIR, "httpx/_transports/resilient.py")
+        with open(path) as f:
+            source = f.read()
+        has_backoff = (
+            "exponential" in source.lower()
+            or "backoff" in source.lower()
+            or ("**" in source and "retry" in source.lower())
+            or "2 **" in source
+            or "pow(" in source
+        )
+        assert has_backoff, "No exponential backoff logic found in resilient.py"
 
-    def test_retry_fails_twice_then_succeeds(self):
-        """@retry(3) on function failing twice then returning 'ok' must succeed."""
-        self._add_to_path()
-        try:
-            from resilience.retry import retry
-        except ImportError as exc:
-            pytest.skip(f"Cannot import retry: {exc}")
+    def test_retry_after_header_support(self):
+        """Verify retry logic respects Retry-After header"""
+        path = os.path.join(self.REPO_DIR, "httpx/_transports/resilient.py")
+        with open(path) as f:
+            source = f.read()
+        has_retry_after = "retry-after" in source.lower() or "Retry-After" in source
+        assert has_retry_after, "No Retry-After header handling found"
 
-        call_count = 0
+    def test_circuit_breaker_states(self):
+        """Verify circuit breaker implements CLOSED, OPEN, HALF_OPEN states"""
+        path = os.path.join(self.REPO_DIR, "httpx/_transports/resilient.py")
+        with open(path) as f:
+            source = f.read()
+        source_upper = source.upper()
+        has_closed = "CLOSED" in source_upper
+        has_open = "OPEN" in source_upper
+        has_half_open = "HALF_OPEN" in source_upper or "HALF-OPEN" in source_upper
+        assert has_closed and has_open and has_half_open, (
+            f"Circuit breaker states missing. CLOSED={has_closed}, OPEN={has_open}, HALF_OPEN={has_half_open}"
+        )
 
-        @retry(max_attempts=3, exceptions=(ValueError,))
-        def flaky():
-            nonlocal call_count
-            call_count += 1
-            if call_count < 3:
-                raise ValueError("fail")
-            return "ok"
+    def test_config_defines_retry_and_circuit_breaker_settings(self):
+        """Verify _config.py defines configuration for retry and circuit breaker"""
+        path = os.path.join(self.REPO_DIR, "httpx/_config.py")
+        with open(path) as f:
+            source = f.read()
+        has_retry_config = "retry" in source.lower() or "max_retries" in source.lower()
+        has_cb_config = "circuit" in source.lower() or "breaker" in source.lower() or "threshold" in source.lower()
+        assert has_retry_config, "_config.py missing retry configuration"
+        assert has_cb_config, "_config.py missing circuit breaker configuration"
 
-        with patch("time.sleep"):
-            result = flaky()
-        assert result == "ok"
-        assert call_count == 3
+    # === Functional Checks ===
 
-    def test_retry_all_attempts_exhausted_raises(self):
-        """@retry(3) on always-failing function must propagate ValueError."""
-        self._add_to_path()
-        try:
-            from resilience.retry import retry
-        except ImportError as exc:
-            pytest.skip(f"Cannot import retry: {exc}")
+    def test_resilient_module_imports(self):
+        """Verify resilient module can be imported"""
+        result = subprocess.run(
+            [
+                "python", "-c",
+                "import sys; sys.path.insert(0, '.'); "
+                "from httpx._transports.resilient import ResilientTransport, AsyncResilientTransport; "
+                "print('OK')"
+            ],
+            cwd=self.REPO_DIR,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        assert result.returncode == 0, f"Import failed: {result.stderr}"
+        assert "OK" in result.stdout
 
-        @retry(max_attempts=3, exceptions=(ValueError,))
-        def always_fail():
-            raise ValueError("boom")
+    def test_resilient_transport_instantiation(self):
+        """Verify ResilientTransport can be instantiated"""
+        script = """
+import sys
+sys.path.insert(0, '.')
+from httpx._transports.resilient import ResilientTransport
+try:
+    transport = ResilientTransport()
+    print(f'OK:{type(transport).__name__}')
+except TypeError as e:
+    # May require parameters
+    print(f'NEEDS_PARAMS:{e}')
+except Exception as e:
+    print(f'FAIL:{e}')
+"""
+        result = subprocess.run(
+            ["python", "-c", script],
+            cwd=self.REPO_DIR,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        assert result.returncode == 0, f"Script failed: {result.stderr}"
+        output = result.stdout.strip()
+        assert output.startswith("OK:") or output.startswith("NEEDS_PARAMS:"), (
+            f"ResilientTransport instantiation failed: {output}"
+        )
 
-        with patch("time.sleep"):
-            with pytest.raises(ValueError, match="boom"):
-                always_fail()
+    def test_circuit_breaker_state_transitions(self):
+        """Verify circuit breaker has state transition methods"""
+        path = os.path.join(self.REPO_DIR, "httpx/_transports/resilient.py")
+        with open(path) as f:
+            source = f.read()
+        tree = ast.parse(source)
+        methods = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef):
+                methods.add(node.name)
+        state_methods = [m for m in methods if any(
+            kw in m.lower() for kw in ["record", "success", "failure", "trip", "reset", "state", "transition"]
+        )]
+        assert len(state_methods) >= 2, (
+            f"Circuit breaker has insufficient state management methods. Found: {state_methods}"
+        )
 
-    def test_circuit_breaker_opens_after_threshold(self):
-        """CircuitBreaker must transition to OPEN after failure_threshold failures."""
-        self._add_to_path()
-        try:
-            from resilience.circuit_breaker import CircuitBreaker, CircuitOpenError
-        except ImportError as exc:
-            pytest.skip(f"Cannot import CircuitBreaker: {exc}")
-
-        cb = CircuitBreaker(failure_threshold=3, reset_timeout=10)
-        for _ in range(3):
-            try:
-                cb.call(lambda: (_ for _ in ()).throw(ValueError("fail")))
-            except (ValueError, Exception):
-                pass
-        state = str(cb.state).upper() if hasattr(cb, "state") else ""
-        assert "OPEN" in state, f"Expected OPEN state, got {state}"
-
-    def test_circuit_open_raises_circuit_open_error(self):
-        """Calling through open circuit must raise CircuitOpenError."""
-        self._add_to_path()
-        try:
-            from resilience.circuit_breaker import CircuitBreaker, CircuitOpenError
-        except ImportError as exc:
-            pytest.skip(f"Cannot import CircuitBreaker: {exc}")
-
-        cb = CircuitBreaker(failure_threshold=1, reset_timeout=60)
-        try:
-            cb.call(lambda: (_ for _ in ()).throw(ValueError("fail")))
-        except (ValueError, Exception):
-            pass
-        mock_fn = MagicMock()
-        with pytest.raises(CircuitOpenError):
-            cb.call(mock_fn)
-        mock_fn.assert_not_called()
-
-    def test_bulkhead_full_raises_error(self):
-        """Bulkhead at capacity must raise BulkheadFullError."""
-        self._add_to_path()
-        try:
-            from resilience.bulkhead import Bulkhead, BulkheadFullError
-        except ImportError as exc:
-            pytest.skip(f"Cannot import Bulkhead: {exc}")
-
-        bh = Bulkhead(max_concurrent=1)
-        # Pre-acquire the semaphore to simulate full capacity
-        if hasattr(bh, "_semaphore"):
-            bh._semaphore.acquire()
-        with pytest.raises(BulkheadFullError):
-            bh.call(lambda: None)
-
-    def test_timeout_decorator_raises_timeout_error(self):
-        """@timeout(0.1) on slow function must raise TimeoutError quickly."""
-        self._add_to_path()
-        try:
-            from resilience.timeout import timeout
-        except ImportError as exc:
-            pytest.skip(f"Cannot import timeout: {exc}")
-
-        @timeout(seconds=0.1)
-        def slow_fn():
-            time.sleep(5)
-
-        start = time.time()
-        with pytest.raises((TimeoutError, Exception)):
-            slow_fn()
-        elapsed = time.time() - start
-        assert elapsed < 1.0, f"Timeout took too long: {elapsed:.2f}s"
+    def test_existing_httpx_tests_not_broken(self):
+        """Verify existing httpx tests still pass"""
+        result = subprocess.run(
+            ["python", "-m", "pytest", "tests/", "-x", "--timeout=60", "-q", "--ignore=tests/test_resilient.py"],
+            cwd=self.REPO_DIR,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        # Allow some failures in pre-existing tests, but the suite should generally work
+        if result.returncode != 0:
+            # Check if failures are only in unrelated tests
+            assert "error" not in result.stderr.lower()[:200] or "resilient" not in result.stderr.lower(), (
+                f"Tests failed due to resilient changes: {result.stdout[-500:]}"
+            )

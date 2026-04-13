@@ -1,143 +1,156 @@
 """
-Test for 'rag-implementation' skill — RAG Pipeline
-Validates that the Agent implemented a Retrieval-Augmented Generation pipeline
-with hybrid retrieval, scored document models, and token-constrained context builder.
+Tests for the rag-implementation skill.
+Validates a Document Q&A RAG pipeline for LangChain with chunking strategies,
+hybrid search retrieval, pipeline orchestration, and evaluation metrics.
 """
 
 import os
 import re
-import sys
+import ast
 
-import pytest
+REPO_DIR = "/workspace/langchain"
+RAG_DIR = os.path.join(REPO_DIR, "libs", "langchain", "langchain", "rag")
 
 
 class TestRagImplementation:
-    """Verify RAG pipeline implementation."""
+    """Tests for the LangChain RAG pipeline implementation."""
 
-    REPO_DIR = "/workspace/langchain"
+    # ── file_path_check ──────────────────────────────────────────────
 
-    @staticmethod
-    def _read(path: str) -> str:
-        try:
-            with open(path, "r", errors="ignore") as fh:
-                return fh.read()
-        except OSError:
+    def test_pipeline_file_exists(self):
+        """RAGPipeline module must exist."""
+        path = os.path.join(RAG_DIR, "pipeline.py")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    def test_chunker_file_exists(self):
+        """DocumentChunker module must exist."""
+        path = os.path.join(RAG_DIR, "chunker.py")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    def test_retriever_file_exists(self):
+        """HybridRetriever module must exist."""
+        path = os.path.join(RAG_DIR, "retriever.py")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    def test_evaluator_file_exists(self):
+        """RetrievalEvaluator module must exist."""
+        path = os.path.join(RAG_DIR, "evaluator.py")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    # ── semantic_check ───────────────────────────────────────────────
+
+    def _read(self, filename):
+        path = os.path.join(RAG_DIR, filename)
+        if not os.path.isfile(path):
             return ""
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read()
 
-    # ── file_path_check ─────────────────────────────────────────────
+    def test_document_chunker_class(self):
+        """DocumentChunker class must be defined with chunk and chunk_documents methods."""
+        content = self._read("chunker.py")
+        assert re.search(r"class\s+DocumentChunker", content), (
+            "DocumentChunker class not defined"
+        )
+        assert re.search(r"def\s+chunk\b", content), "chunk method not defined"
+        assert re.search(r"def\s+chunk_documents\b", content), "chunk_documents method not defined"
 
-    def test_rag_pipeline_module_files_exist(self):
-        """Verify src/rag_pipeline/pipeline.py and retriever.py exist."""
-        for rel in ("src/rag_pipeline/pipeline.py", "src/rag_pipeline/retriever.py"):
-            path = os.path.join(self.REPO_DIR, rel)
-            assert os.path.isfile(path), f"Missing: {rel}"
+    def test_chunking_strategies(self):
+        """DocumentChunker must support recursive, sentence, and sliding_window strategies."""
+        content = self._read("chunker.py")
+        for strategy in ["recursive", "sentence", "sliding_window"]:
+            assert strategy in content, f"Strategy '{strategy}' not found in chunker.py"
 
-    def test_context_builder_and_models_exist(self):
-        """Verify context_builder.py and models.py exist."""
-        for rel in ("src/rag_pipeline/context_builder.py",
-                     "src/rag_pipeline/models.py"):
-            path = os.path.join(self.REPO_DIR, rel)
-            assert os.path.isfile(path), f"Missing: {rel}"
+    def test_hybrid_retriever_class(self):
+        """HybridRetriever class must be defined with index and search methods."""
+        content = self._read("retriever.py")
+        assert re.search(r"class\s+HybridRetriever", content), (
+            "HybridRetriever class not defined"
+        )
+        assert re.search(r"def\s+index\b", content), "index method not defined"
+        assert re.search(r"def\s+search\b", content), "search method not defined"
 
-    def test_package_init_exists(self):
-        """Verify src/rag_pipeline/__init__.py exists."""
-        path = os.path.join(self.REPO_DIR, "src/rag_pipeline/__init__.py")
-        assert os.path.isfile(path), "Missing: src/rag_pipeline/__init__.py"
+    def test_reciprocal_rank_fusion(self):
+        """HybridRetriever must implement Reciprocal Rank Fusion."""
+        content = self._read("retriever.py")
+        assert re.search(r"reciprocal|rrf|rank.*fusion|1/.*rank.*\+.*60", content, re.IGNORECASE), (
+            "Reciprocal Rank Fusion not found in retriever"
+        )
 
-    # ── semantic_check ──────────────────────────────────────────────
+    def test_dense_and_sparse_search(self):
+        """HybridRetriever must implement both dense and sparse search."""
+        content = self._read("retriever.py")
+        assert re.search(r"def\s+search_dense\b", content), "search_dense method not defined"
+        assert re.search(r"def\s+search_sparse\b", content), "search_sparse method not defined"
 
-    def test_hybrid_retriever_alpha_param(self):
-        """Verify HybridRetriever.retrieve accepts alpha parameter for blend weighting."""
-        content = self._read(os.path.join(
-            self.REPO_DIR, "src/rag_pipeline/retriever.py"))
-        assert content, "retriever.py is empty or unreadable"
-        assert "alpha" in content, "alpha parameter not found in retriever.py"
+    def test_bm25_in_sparse_search(self):
+        """Sparse search must use BM25 or TF-IDF scoring."""
+        content = self._read("retriever.py")
+        assert re.search(r"bm25|tf.idf|tfidf|term.frequency|idf", content, re.IGNORECASE), (
+            "BM25/TF-IDF scoring not found in sparse search"
+        )
 
-    def test_scored_document_model(self):
-        """Verify ScoredDocument model has doc_id, text, and score fields."""
-        content = self._read(os.path.join(
-            self.REPO_DIR, "src/rag_pipeline/models.py"))
-        assert content, "models.py is empty or unreadable"
-        for kw in ("doc_id", "score", "ScoredDocument"):
-            assert kw in content, f"'{kw}' not found in models.py"
+    def test_rag_pipeline_class(self):
+        """RAGPipeline class must be defined with ingest and query methods."""
+        content = self._read("pipeline.py")
+        assert re.search(r"class\s+RAGPipeline", content), "RAGPipeline class not defined"
+        assert re.search(r"def\s+ingest\b", content), "ingest method not defined"
+        assert re.search(r"def\s+query\b", content), "query method not defined"
 
-    def test_context_builder_token_limit_logic(self):
-        """Verify ContextBuilder.build respects max_tokens parameter."""
-        content = self._read(os.path.join(
-            self.REPO_DIR, "src/rag_pipeline/context_builder.py"))
-        assert content, "context_builder.py is empty or unreadable"
-        assert "max_tokens" in content, "max_tokens not found in context_builder.py"
+    def test_evaluator_metrics(self):
+        """RetrievalEvaluator must define precision_at_k, recall_at_k, mrr, ndcg."""
+        content = self._read("evaluator.py")
+        assert re.search(r"class\s+RetrievalEvaluator", content), (
+            "RetrievalEvaluator class not defined"
+        )
+        for metric in ["precision_at_k", "recall_at_k", "mrr", "ndcg"]:
+            assert re.search(rf"def\s+{metric}\b", content), (
+                f"{metric} method not defined in evaluator"
+            )
 
-    # ── functional_check (import) ───────────────────────────────────
+    # ── functional_check ─────────────────────────────────────────────
 
-    def _skip_unless_importable(self):
-        if not os.path.isdir(self.REPO_DIR):
-            pytest.skip("Repo dir does not exist")
-        if self.REPO_DIR not in sys.path:
-            sys.path.insert(0, self.REPO_DIR)
+    def test_all_files_valid_python(self):
+        """All RAG module files must have valid syntax."""
+        errors = []
+        for fname in ["pipeline.py", "chunker.py", "retriever.py", "evaluator.py"]:
+            content = self._read(fname)
+            if not content:
+                continue
+            try:
+                ast.parse(content)
+            except SyntaxError as e:
+                errors.append(f"{fname}: {e}")
+        assert not errors, "Syntax errors:\n" + "\n".join(errors)
 
-    def test_retrieve_returns_k_results(self):
-        """HybridRetriever.retrieve with 20 docs and k=5 returns exactly 5 results."""
-        self._skip_unless_importable()
-        try:
-            from src.rag_pipeline.retriever import HybridRetriever
-            from src.rag_pipeline.models import Document
-        except Exception as exc:
-            pytest.skip(f"Cannot import: {exc}")
-        docs = [Document(doc_id=str(i), text=f"document text {i}") for i in range(20)]
-        results = HybridRetriever().retrieve("test query", docs, k=5, alpha=0.5)
-        assert len(results) == 5, f"Expected 5 results, got {len(results)}"
+    def test_chunk_overlap_validation(self):
+        """DocumentChunker must reject chunk_overlap >= chunk_size."""
+        content = self._read("chunker.py")
+        assert re.search(r"ValueError|overlap.*size|overlap.*>=|overlap.*chunk_size", content, re.IGNORECASE), (
+            "chunk_overlap >= chunk_size validation not found"
+        )
 
-    def test_results_sorted_descending_by_score(self):
-        """Returned results are sorted descending by score."""
-        self._skip_unless_importable()
-        try:
-            from src.rag_pipeline.retriever import HybridRetriever
-            from src.rag_pipeline.models import Document
-        except Exception as exc:
-            pytest.skip(f"Cannot import: {exc}")
-        docs = [Document(doc_id=str(i), text=f"query term {i} document")
-                for i in range(10)]
-        results = HybridRetriever().retrieve("query term", docs, k=5, alpha=0.5)
-        scores = [r.score for r in results]
-        assert scores == sorted(scores, reverse=True), \
-            "Results must be sorted descending by score"
+    def test_alpha_weighting_in_retriever(self):
+        """HybridRetriever must use alpha parameter for dense/sparse weighting."""
+        content = self._read("retriever.py")
+        assert "alpha" in content, "alpha weighting parameter not found in retriever"
 
-    def test_empty_corpus_returns_empty_list(self):
-        """HybridRetriever.retrieve with empty docs returns [] without error."""
-        self._skip_unless_importable()
-        try:
-            from src.rag_pipeline.retriever import HybridRetriever
-        except Exception as exc:
-            pytest.skip(f"Cannot import: {exc}")
-        results = HybridRetriever().retrieve("query", [], k=5, alpha=0.5)
-        assert results == [], f"Expected empty list, got {results}"
+    def test_source_citations_in_pipeline(self):
+        """Pipeline query must return sources for citation."""
+        content = self._read("pipeline.py")
+        assert re.search(r"sources|source|citation", content, re.IGNORECASE), (
+            "Source citations not found in pipeline query response"
+        )
 
-    def test_context_builder_respects_token_limit(self):
-        """ContextBuilder.build returns context with token count <= max_tokens."""
-        self._skip_unless_importable()
-        try:
-            from src.rag_pipeline.context_builder import ContextBuilder
-            from src.rag_pipeline.models import ScoredDocument
-        except Exception as exc:
-            pytest.skip(f"Cannot import: {exc}")
-        docs = [ScoredDocument(doc_id=str(i), text=" ".join(["word"] * 100),
-                               score=1.0 - i * 0.1) for i in range(5)]
-        context = ContextBuilder().build(docs, max_tokens=50)
-        assert len(context.split()) <= 50, \
-            f"Context has {len(context.split())} tokens, expected <= 50"
+    def test_no_info_fallback_message(self):
+        """Pipeline must handle no-context case with appropriate message."""
+        content = self._read("pipeline.py")
+        assert re.search(
+            r"don't have enough|no.*information|cannot answer|not.*enough",
+            content, re.IGNORECASE
+        ), "No-information fallback message not found in pipeline"
 
-    def test_deduplication_by_doc_id(self):
-        """Two docs with identical doc_id result in only one entry in retrieve output."""
-        self._skip_unless_importable()
-        try:
-            from src.rag_pipeline.retriever import HybridRetriever
-            from src.rag_pipeline.models import Document
-        except Exception as exc:
-            pytest.skip(f"Cannot import: {exc}")
-        docs = [Document(doc_id="dup", text="same document"),
-                Document(doc_id="dup", text="same document again")]
-        results = HybridRetriever().retrieve("same document", docs, k=5, alpha=0.5)
-        doc_ids = [r.doc_id for r in results]
-        assert len(doc_ids) == len(set(doc_ids)), \
-            "Duplicate doc_ids must be deduplicated"
+    def test_test_file_exists(self):
+        """Test suite file must exist."""
+        path = os.path.join(REPO_DIR, "tests", "test_rag_implementation.py")
+        assert os.path.isfile(path), f"Missing {path}"

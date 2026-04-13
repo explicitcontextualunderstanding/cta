@@ -1,132 +1,152 @@
 """
-Test for 'creating-financial-models' skill — Financial Models (DCF + Scenarios)
-Validates that the Agent created a Python package implementing DCF valuation,
-IRR computation, sensitivity tables, and scenario analysis.
+Tests for the creating-financial-models skill.
+Validates a DCF valuation, sensitivity analysis, Monte Carlo simulation,
+and scenario comparison module built on QuantLib.
 """
 
 import os
 import re
-import sys
+import ast
+import subprocess
 
-import pytest
+REPO_DIR = "/workspace/QuantLib"
+EXAMPLES_DIR = os.path.join(REPO_DIR, "Examples", "python")
 
 
 class TestCreatingFinancialModels:
-    """Verify financial models package implementation."""
+    """Tests for the DCF valuation and financial modeling module."""
 
-    REPO_DIR = "/workspace/QuantLib"
+    # ── file_path_check ──────────────────────────────────────────────
 
-    @staticmethod
-    def _read(path: str) -> str:
-        try:
-            with open(path, "r", errors="ignore") as fh:
-                return fh.read()
-        except OSError:
+    def test_dcf_valuation_exists(self):
+        """DCF valuation module must exist."""
+        path = os.path.join(EXAMPLES_DIR, "dcf_valuation.py")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    def test_sensitivity_analysis_exists(self):
+        """Sensitivity analysis module must exist."""
+        path = os.path.join(EXAMPLES_DIR, "sensitivity_analysis.py")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    def test_monte_carlo_valuation_exists(self):
+        """Monte Carlo valuation module must exist."""
+        path = os.path.join(EXAMPLES_DIR, "monte_carlo_valuation.py")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    def test_scenario_comparison_exists(self):
+        """Scenario comparison module must exist."""
+        path = os.path.join(EXAMPLES_DIR, "scenario_comparison.py")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    def test_financial_utils_exists(self):
+        """Shared financial utilities module must exist."""
+        path = os.path.join(EXAMPLES_DIR, "financial_utils.py")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    # ── semantic_check ───────────────────────────────────────────────
+
+    def _read(self, filename):
+        path = os.path.join(EXAMPLES_DIR, filename)
+        if not os.path.isfile(path):
             return ""
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read()
 
-    # ── file_path_check ─────────────────────────────────────────────
-
-    def test_financial_models_package_exists(self):
-        """Verify the financial_models package __init__.py and dcf.py exist."""
-        for rel in ("src/financial_models/__init__.py", "src/financial_models/dcf.py"):
-            path = os.path.join(self.REPO_DIR, rel)
-            assert os.path.isfile(path), f"Missing: {rel}"
-
-    def test_scenarios_sensitivity_files_exist(self):
-        """Verify scenarios.py and sensitivity.py exist."""
-        for rel in ("src/financial_models/scenarios.py",
-                     "src/financial_models/sensitivity.py"):
-            path = os.path.join(self.REPO_DIR, rel)
-            assert os.path.isfile(path), f"Missing: {rel}"
-
-    def test_all_classes_importable(self):
-        """All main classes and DCFResult are importable."""
-        if not os.path.isdir(self.REPO_DIR):
-            pytest.skip("Repo dir does not exist")
-        sys.path.insert(0, os.path.join(self.REPO_DIR, "src"))
-        try:
-            from financial_models.dcf import DCFModel, DCFResult  # noqa: F401
-            from financial_models.scenarios import ScenarioAnalyzer  # noqa: F401
-            from financial_models.sensitivity import SensitivityTable  # noqa: F401
-        except ImportError:
-            pytest.skip("financial_models not importable")
-        finally:
-            sys.path.pop(0)
-
-    # ── semantic_check ──────────────────────────────────────────────
-
-    def test_dcf_model_class_defined(self):
-        """Verify dcf.py defines DCFModel class with calculate and irr methods."""
-        content = self._read(os.path.join(self.REPO_DIR, "src/financial_models/dcf.py"))
-        assert content, "dcf.py is empty or unreadable"
-        for pat in ("class DCFModel", "def calculate", "def irr"):
-            assert pat in content, f"'{pat}' not found in dcf.py"
-
-    def test_value_error_guards_in_dcf(self):
-        """Verify ValueError is raised for invalid inputs in dcf.py."""
-        content = self._read(os.path.join(self.REPO_DIR, "src/financial_models/dcf.py"))
-        assert content, "dcf.py is empty or unreadable"
-        for pat in ("ValueError", "discount_rate", "terminal_growth_rate"):
-            assert pat in content, f"'{pat}' not found in dcf.py"
-
-    def test_sensitivity_table_compute_defined(self):
-        """Verify SensitivityTable class and compute method are defined."""
-        content = self._read(os.path.join(
-            self.REPO_DIR, "src/financial_models/sensitivity.py"))
-        assert content, "sensitivity.py is empty or unreadable"
-        assert "class SensitivityTable" in content, "SensitivityTable class not found"
-        assert "def compute" in content, "compute method not found"
-
-    # ── functional_check (import) ───────────────────────────────────
-
-    def _import(self, dotpath: str):
-        if not os.path.isdir(self.REPO_DIR):
-            pytest.skip("Repo dir does not exist")
-        sys.path.insert(0, os.path.join(self.REPO_DIR, "src"))
-        try:
-            return __import__(dotpath, fromlist=[""])
-        except ImportError:
-            pytest.skip(f"{dotpath} not importable")
-        finally:
-            sys.path.pop(0)
-
-    def test_dcf_npv_calculation(self):
-        """DCFModel.calculate with [100, 200, 300] at 10% discount rate computes correct NPV."""
-        mod = self._import("financial_models.dcf")
-        result = mod.DCFModel().calculate([100, 200, 300], discount_rate=0.10,
-                                          terminal_growth_rate=0.02)
-        expected_npv = sum(cf / (1.10 ** (i + 1)) for i, cf in enumerate([100, 200, 300]))
-        assert abs(result.npv - expected_npv) < 0.01, \
-            f"NPV mismatch: expected ~{expected_npv:.2f}, got {result.npv}"
-
-    def test_dcf_terminal_value_formula(self):
-        """DCFModel.calculate produces correct terminal value using Gordon Growth Model."""
-        mod = self._import("financial_models.dcf")
-        result = mod.DCFModel().calculate([100, 200, 300], 0.10, 0.02)
-        expected_tv = 300 * 1.02 / (0.10 - 0.02)
-        assert abs(result.terminal_value - expected_tv) < 0.01, \
-            f"Terminal value mismatch: expected ~{expected_tv:.2f}, got {result.terminal_value}"
-
-    def test_dcf_empty_cash_flows_raises_value_error(self):
-        """DCFModel.calculate with empty cash_flows raises ValueError."""
-        mod = self._import("financial_models.dcf")
-        with pytest.raises(ValueError):
-            mod.DCFModel().calculate([], 0.10, 0.02)
-
-    def test_dcf_rate_equals_growth_raises_value_error(self):
-        """discount_rate == terminal_growth_rate raises ValueError."""
-        mod = self._import("financial_models.dcf")
-        with pytest.raises(ValueError, match="discount_rate"):
-            mod.DCFModel().calculate([100], 0.05, 0.05)
-
-    def test_sensitivity_table_shape(self):
-        """SensitivityTable.compute returns 3x3 table for 3 discount rates and 3 growth rates."""
-        mod_dcf = self._import("financial_models.dcf")
-        mod_sens = self._import("financial_models.sensitivity")
-        model = mod_dcf.DCFModel()
-        table = mod_sens.SensitivityTable().compute(
-            model, [0.08, 0.10, 0.12], [0.01, 0.02, 0.03]
+    def test_wacc_calculation_defined(self):
+        """financial_utils must define calculate_wacc function."""
+        content = self._read("financial_utils.py")
+        assert re.search(r"def\s+calculate_wacc\b", content), (
+            "calculate_wacc function not defined in financial_utils.py"
         )
-        assert len(table) == 3, f"Expected 3 rows, got {len(table)}"
-        for row in table:
-            assert len(row) == 3, f"Expected 3 columns, got {len(row)}"
+
+    def test_dcf_computes_terminal_value_both_methods(self):
+        """DCF module must compute terminal value via both perpetuity growth and exit multiple."""
+        content = self._read("dcf_valuation.py") + self._read("financial_utils.py")
+        assert re.search(r"perpetuity|perp.*growth|terminal_growth", content, re.IGNORECASE), (
+            "Perpetuity growth terminal value method not found"
+        )
+        assert re.search(r"exit.mult|exit_multiple", content, re.IGNORECASE), (
+            "Exit multiple terminal value method not found"
+        )
+
+    def test_dcf_inputs_accepted(self):
+        """DCF must accept key inputs: revenue_base, wacc, shares_outstanding, etc."""
+        content = self._read("dcf_valuation.py")
+        for field in ["revenue_base", "wacc", "shares_outstanding", "net_debt"]:
+            assert field in content, f"Input field '{field}' not found in dcf_valuation.py"
+
+    def test_sensitivity_table_dimensions(self):
+        """Sensitivity analysis must produce a WACC-vs-growth table."""
+        content = self._read("sensitivity_analysis.py")
+        assert re.search(r"wacc|WACC", content), "WACC not referenced in sensitivity analysis"
+        assert re.search(r"terminal_growth|growth_rate", content), (
+            "Terminal growth rate not referenced in sensitivity analysis"
+        )
+
+    def test_monte_carlo_iterations(self):
+        """Monte Carlo must run 10,000 iterations with seed=42."""
+        content = self._read("monte_carlo_valuation.py")
+        assert "10000" in content or "10_000" in content, (
+            "10,000 iterations not specified in Monte Carlo module"
+        )
+        assert "42" in content, "Random seed 42 not found in Monte Carlo module"
+
+    def test_scenario_definitions(self):
+        """Scenario comparison must define bull, base, and bear scenarios."""
+        content = self._read("scenario_comparison.py")
+        for scenario in ["bull", "base", "bear"]:
+            assert re.search(scenario, content, re.IGNORECASE), (
+                f"'{scenario}' scenario not defined in scenario_comparison.py"
+            )
+
+    def test_tornado_chart_data(self):
+        """Sensitivity analysis must produce tornado chart data."""
+        content = self._read("sensitivity_analysis.py")
+        assert re.search(r"tornado|single.variable|impact", content, re.IGNORECASE), (
+            "Tornado chart data generation not found"
+        )
+
+    # ── functional_check ─────────────────────────────────────────────
+
+    def test_all_files_valid_python(self):
+        """All Python files must have valid syntax."""
+        errors = []
+        for fname in [
+            "dcf_valuation.py", "sensitivity_analysis.py",
+            "monte_carlo_valuation.py", "scenario_comparison.py",
+            "financial_utils.py",
+        ]:
+            content = self._read(fname)
+            if not content:
+                continue
+            try:
+                ast.parse(content)
+            except SyntaxError as e:
+                errors.append(f"{fname}: {e}")
+        assert not errors, "Syntax errors:\n" + "\n".join(errors)
+
+    def test_value_error_for_growth_ge_wacc(self):
+        """DCF must raise ValueError when terminal_growth_rate >= wacc."""
+        content = self._read("dcf_valuation.py") + self._read("financial_utils.py")
+        assert re.search(r"ValueError|growth.*wacc|terminal.*less", content, re.IGNORECASE), (
+            "ValueError for growth >= WACC not found"
+        )
+
+    def test_probability_weighted_expected_value(self):
+        """Scenario comparison must compute probability-weighted expected value."""
+        content = self._read("scenario_comparison.py")
+        assert re.search(r"probability|weight|expected", content, re.IGNORECASE), (
+            "Probability-weighted expected value not found"
+        )
+
+    def test_monte_carlo_percentiles(self):
+        """Monte Carlo module must compute percentile statistics."""
+        content = self._read("monte_carlo_valuation.py")
+        assert re.search(r"percentile|quantile|5th|95th", content, re.IGNORECASE), (
+            "Percentile computation not found in Monte Carlo module"
+        )
+
+    def test_test_dcf_file_exists(self):
+        """Test suite for DCF must exist."""
+        path = os.path.join(EXAMPLES_DIR, "test_dcf.py")
+        assert os.path.isfile(path), f"Missing {path}"

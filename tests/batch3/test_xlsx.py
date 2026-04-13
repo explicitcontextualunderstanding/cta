@@ -1,202 +1,367 @@
 """
-Tests for xlsx skill.
-REPO_DIR: /workspace/openpyxl
+Test skill: xlsx
+Verify that the Agent correctly implements a multi-sheet financial comparison
+report generator using openpyxl.
 """
 
 import os
 import sys
-import importlib
+import ast
+import csv
+import subprocess
 import pytest
-
-REPO_DIR = "/workspace/openpyxl"
-
-
-def _path(rel):
-    return os.path.join(REPO_DIR, rel)
-
-
-def _read(rel):
-    with open(_path(rel), encoding="utf-8") as f:
-        return f.read()
 
 
 class TestXlsx:
-    # ── file_path_check ────────────────────────────────────────────────────
-    def test_financial_report_module_exists(self):
-        """Verify openpyxl/sample/financial_report.py exists in openpyxl source."""
-        fpath = _path("openpyxl/sample/financial_report.py")
-        assert os.path.isfile(
-            fpath
-        ), "openpyxl/sample/financial_report.py must exist with main() function"
-        assert os.path.getsize(fpath) > 0, "financial_report.py must be non-empty"
+    REPO_DIR = "/workspace/openpyxl"
 
-    def test_sample_data_directory_exists(self):
-        """Verify sample data directory or CSV input file exists for the report."""
-        sample_dir = _path("openpyxl/sample")
-        assert os.path.isdir(sample_dir), "openpyxl/sample/ directory must exist"
-        # Either a CSV data file exists, or the directory itself counts
-        csv_path = _path("openpyxl/sample/financial_data.csv")
-        has_data = os.path.isfile(csv_path) or os.path.isdir(sample_dir)
-        assert has_data, "Sample data directory or financial_data.csv must be present"
+    # === File Path Checks ===
 
-    # ── semantic_check ─────────────────────────────────────────────────────
-    def test_main_function_defined(self):
-        """Verify main() function is defined and creates a Workbook."""
-        content = _read("openpyxl/sample/financial_report.py")
-        assert "def main" in content, "main() function must be defined"
-        assert "Workbook" in content, "Workbook instance must be created in main()"
-        assert ".save(" in content, "workbook must be saved with .save() call"
+    def test_financial_report_script_exists(self):
+        """Verify the financial report generator script exists"""
+        path = os.path.join(self.REPO_DIR, "openpyxl/sample/financial_report.py")
+        assert os.path.exists(path), f"financial_report.py not found at {path}"
+        with open(path) as f:
+            ast.parse(f.read())
 
-    def test_three_sheet_names_defined(self):
-        """Verify sheet names 'Summary', quarterly data sheets, and 'Details' are defined."""
-        content = _read("openpyxl/sample/financial_report.py")
-        assert "Summary" in content, "'Summary' sheet name must be defined"
-        has_quarterly = "Q1" in content or "Q1-Q4" in content or "Quarterly" in content
-        assert (
-            has_quarterly
-        ), "Quarterly data sheet (Q1, Q1-Q4, or Quarterly) must be created"
-        assert "Details" in content, "'Details' sheet name must be defined"
+    def test_sample_csv_exists(self):
+        """Verify the sample revenue CSV file exists and is valid"""
+        path = os.path.join(self.REPO_DIR, "openpyxl/sample/sample_revenue.csv")
+        assert os.path.exists(path), f"sample_revenue.csv not found at {path}"
+        with open(path, newline="") as f:
+            reader = csv.reader(f)
+            headers = next(reader)
+        assert len(headers) >= 5, \
+            f"CSV should have at least 5 columns, got {len(headers)}: {headers}"
 
-    def test_currency_format_defined(self):
-        """Verify '$#,##0' currency number format is applied."""
-        content = _read("openpyxl/sample/financial_report.py")
-        assert "$#,##0" in content, "'$#,##0' currency format string must be present"
-        assert (
-            "number_format" in content
-        ), "number_format must be assigned on currency cells"
+    def test_test_file_exists(self):
+        """Verify the agent's test file exists"""
+        path = os.path.join(self.REPO_DIR, "openpyxl/tests/test_financial_report.py")
+        assert os.path.exists(path), f"test_financial_report.py not found at {path}"
 
-    def test_chart_and_freeze_panes_defined(self):
-        """Verify a chart is created and freeze_panes is set in the report."""
-        content = _read("openpyxl/sample/financial_report.py")
-        has_chart = (
-            "BarChart" in content
-            or "LineChart" in content
-            or "PieChart" in content
-            or "Chart" in content
+    # === Semantic Checks ===
+
+    def test_csv_has_required_columns(self):
+        """Verify sample CSV has all required columns"""
+        path = os.path.join(self.REPO_DIR, "openpyxl/sample/sample_revenue.csv")
+        with open(path, newline="") as f:
+            reader = csv.DictReader(f)
+            headers = reader.fieldnames
+        required = ["Year", "Quarter", "BusinessUnit", "Revenue", "COGS", "OperatingExpenses"]
+        for col in required:
+            found = any(col.lower() == h.lower().strip() for h in headers)
+            assert found, \
+                f"CSV missing required column '{col}'. Found: {headers}"
+
+    def test_csv_has_multiple_years_and_units(self):
+        """Verify CSV covers at least 2 years and 3 business units"""
+        path = os.path.join(self.REPO_DIR, "openpyxl/sample/sample_revenue.csv")
+        years = set()
+        units = set()
+        with open(path, newline="") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                # Handle case-insensitive keys
+                year_key = next((k for k in row.keys() if k.lower().strip() == "year"), None)
+                unit_key = next((k for k in row.keys() if k.lower().strip() == "businessunit"), None)
+                if year_key:
+                    years.add(row[year_key].strip())
+                if unit_key:
+                    units.add(row[unit_key].strip())
+        assert len(years) >= 2, f"CSV should have at least 2 years, found {years}"
+        assert len(units) >= 3, f"CSV should have at least 3 business units, found {units}"
+
+    def test_script_uses_openpyxl_imports(self):
+        """Verify the script imports and uses openpyxl features"""
+        path = os.path.join(self.REPO_DIR, "openpyxl/sample/financial_report.py")
+        with open(path) as f:
+            content = f.read()
+        assert "openpyxl" in content, "Script should import openpyxl"
+        # Check for key features
+        features = ["Workbook", "chart", "formatting", "conditional"]
+        found = sum(1 for feat in features if feat.lower() in content.lower())
+        assert found >= 2, \
+            f"Script should use openpyxl features (Workbook, chart, formatting). Found {found}"
+
+    def test_script_creates_three_sheets(self):
+        """Verify the script references three expected sheet names"""
+        path = os.path.join(self.REPO_DIR, "openpyxl/sample/financial_report.py")
+        with open(path) as f:
+            content = f.read()
+        expected_sheets = ["Raw Data", "Summary", "YoY Comparison"]
+        for sheet in expected_sheets:
+            assert sheet in content, \
+                f"Script should create sheet named '{sheet}'"
+
+    def test_script_uses_formulas_not_hardcoded(self):
+        """Verify the script uses Excel formulas (SUMIFS, SUM, IF) not hardcoded values"""
+        path = os.path.join(self.REPO_DIR, "openpyxl/sample/financial_report.py")
+        with open(path) as f:
+            content = f.read()
+        formula_keywords = ["SUMIFS", "SUM(", "IF(", "IFERROR", "ISBLANK"]
+        found = sum(1 for kw in formula_keywords if kw in content)
+        assert found >= 2, \
+            f"Script should use Excel formulas (SUMIFS, SUM, IF). Found {found} formula keywords"
+
+    # === Functional Checks ===
+
+    def _install_openpyxl(self):
+        """Helper: install openpyxl"""
+        result = subprocess.run(
+            ["pip", "install", "-e", "."],
+            cwd=self.REPO_DIR,
+            capture_output=True, text=True, timeout=120
         )
-        assert has_chart, "A chart (BarChart, LineChart, etc.) must be created"
-        assert "freeze_panes" in content, "freeze_panes must be set in the report"
+        if result.returncode != 0:
+            pytest.skip(f"Failed to install openpyxl: {result.stderr[:500]}")
 
-    # ── functional_check (import / mocked) ────────────────────────────────
-    def _import_main(self):
-        """Try to import main() from financial_report; return None if unavailable."""
-        sys.path.insert(0, REPO_DIR)
+    def test_script_runs_successfully(self):
+        """Verify the financial report script runs without errors"""
+        self._install_openpyxl()
+        script_path = os.path.join(self.REPO_DIR, "openpyxl/sample/financial_report.py")
+        result = subprocess.run(
+            ["python", script_path],
+            cwd=self.REPO_DIR,
+            capture_output=True, text=True, timeout=120
+        )
+        assert result.returncode == 0, \
+            f"Script failed:\n{result.stdout[:1000]}\n{result.stderr[:1000]}"
+
+    def test_generated_workbook_has_three_sheets(self):
+        """Verify the generated workbook has exactly 3 sheets with correct names"""
+        self._install_openpyxl()
+        # Run the script first
+        script_path = os.path.join(self.REPO_DIR, "openpyxl/sample/financial_report.py")
+        subprocess.run(
+            ["python", script_path],
+            cwd=self.REPO_DIR,
+            capture_output=True, text=True, timeout=120
+        )
+        # Find the generated xlsx file
+        test_code = '''
+import os, glob, sys
+sys.path.insert(0, ".")
+from openpyxl import load_workbook
+
+# Look for generated xlsx files
+patterns = [
+    "openpyxl/sample/*.xlsx",
+    "*.xlsx",
+    "output/*.xlsx",
+    "openpyxl/sample/output/*.xlsx",
+]
+xlsx_files = []
+for pattern in patterns:
+    xlsx_files.extend(glob.glob(pattern))
+
+if not xlsx_files:
+    print("SKIP: No xlsx file found")
+    sys.exit(0)
+
+wb = load_workbook(xlsx_files[0])
+sheet_names = wb.sheetnames
+print(f"SHEETS:{sheet_names}")
+
+expected = ["Raw Data", "Summary", "YoY Comparison"]
+for name in expected:
+    if name not in sheet_names:
+        print(f"FAIL: Missing sheet '{name}'. Found: {sheet_names}")
+        sys.exit(1)
+print("PASS")
+'''
+        result = subprocess.run(
+            ["python", "-c", test_code],
+            cwd=self.REPO_DIR,
+            capture_output=True, text=True, timeout=60
+        )
+        if "SKIP" in result.stdout:
+            pytest.skip("No xlsx file found after running script")
+        assert "PASS" in result.stdout, \
+            f"Sheet validation failed: {result.stdout}\n{result.stderr[:500]}"
+
+    def test_generated_workbook_has_formulas(self):
+        """Verify Summary sheet cells contain Excel formulas, not hardcoded values"""
+        self._install_openpyxl()
+        script_path = os.path.join(self.REPO_DIR, "openpyxl/sample/financial_report.py")
+        subprocess.run(
+            ["python", script_path],
+            cwd=self.REPO_DIR,
+            capture_output=True, text=True, timeout=120
+        )
+        test_code = '''
+import os, glob, sys
+sys.path.insert(0, ".")
+from openpyxl import load_workbook
+
+patterns = ["openpyxl/sample/*.xlsx", "*.xlsx", "output/*.xlsx"]
+xlsx_files = []
+for p in patterns:
+    xlsx_files.extend(glob.glob(p))
+
+if not xlsx_files:
+    print("SKIP")
+    sys.exit(0)
+
+wb = load_workbook(xlsx_files[0])
+if "Summary" not in wb.sheetnames:
+    print("FAIL: No Summary sheet")
+    sys.exit(1)
+
+ws = wb["Summary"]
+formula_count = 0
+for row in ws.iter_rows():
+    for cell in row:
+        if isinstance(cell.value, str) and cell.value.startswith("="):
+            formula_count += 1
+
+if formula_count >= 3:
+    print(f"PASS: Found {formula_count} formulas")
+else:
+    print(f"FAIL: Only {formula_count} formulas found. Summary should use Excel formulas, not hardcoded values")
+'''
+        result = subprocess.run(
+            ["python", "-c", test_code],
+            cwd=self.REPO_DIR,
+            capture_output=True, text=True, timeout=60
+        )
+        if "SKIP" in result.stdout:
+            pytest.skip("No xlsx file found")
+        assert "PASS" in result.stdout, \
+            f"Formula check failed: {result.stdout}\n{result.stderr[:500]}"
+
+    def test_generated_workbook_has_conditional_formatting(self):
+        """Verify conditional formatting is applied to the workbook"""
+        self._install_openpyxl()
+        script_path = os.path.join(self.REPO_DIR, "openpyxl/sample/financial_report.py")
+        subprocess.run(
+            ["python", script_path],
+            cwd=self.REPO_DIR,
+            capture_output=True, text=True, timeout=120
+        )
+        test_code = '''
+import glob, sys
+sys.path.insert(0, ".")
+from openpyxl import load_workbook
+
+patterns = ["openpyxl/sample/*.xlsx", "*.xlsx", "output/*.xlsx"]
+xlsx_files = []
+for p in patterns:
+    xlsx_files.extend(glob.glob(p))
+
+if not xlsx_files:
+    print("SKIP")
+    sys.exit(0)
+
+wb = load_workbook(xlsx_files[0])
+total_cond_fmt = 0
+for sheet_name in wb.sheetnames:
+    ws = wb[sheet_name]
+    total_cond_fmt += len(ws.conditional_formatting)
+
+if total_cond_fmt >= 1:
+    print(f"PASS: Found {total_cond_fmt} conditional formatting rules")
+else:
+    print("FAIL: No conditional formatting rules found")
+'''
+        result = subprocess.run(
+            ["python", "-c", test_code],
+            cwd=self.REPO_DIR,
+            capture_output=True, text=True, timeout=60
+        )
+        if "SKIP" in result.stdout:
+            pytest.skip("No xlsx file found")
+        assert "PASS" in result.stdout, \
+            f"Conditional formatting check failed: {result.stdout}\n{result.stderr[:500]}"
+
+    def test_generated_workbook_has_chart(self):
+        """Verify a chart is present on the Summary sheet"""
+        self._install_openpyxl()
+        script_path = os.path.join(self.REPO_DIR, "openpyxl/sample/financial_report.py")
+        subprocess.run(
+            ["python", script_path],
+            cwd=self.REPO_DIR,
+            capture_output=True, text=True, timeout=120
+        )
+        test_code = '''
+import glob, sys
+sys.path.insert(0, ".")
+from openpyxl import load_workbook
+
+patterns = ["openpyxl/sample/*.xlsx", "*.xlsx", "output/*.xlsx"]
+xlsx_files = []
+for p in patterns:
+    xlsx_files.extend(glob.glob(p))
+
+if not xlsx_files:
+    print("SKIP")
+    sys.exit(0)
+
+wb = load_workbook(xlsx_files[0])
+if "Summary" not in wb.sheetnames:
+    print("FAIL: No Summary sheet")
+    sys.exit(1)
+
+ws = wb["Summary"]
+charts = ws._charts
+if len(charts) >= 1:
+    chart = charts[0]
+    title = str(chart.title) if chart.title else ""
+    print(f"PASS: Found {len(charts)} chart(s), title='{title}'")
+else:
+    print("FAIL: No charts found on Summary sheet")
+'''
+        result = subprocess.run(
+            ["python", "-c", test_code],
+            cwd=self.REPO_DIR,
+            capture_output=True, text=True, timeout=60
+        )
+        if "SKIP" in result.stdout:
+            pytest.skip("No xlsx file found")
+        assert "PASS" in result.stdout, \
+            f"Chart check failed: {result.stdout}\n{result.stderr[:500]}"
+
+    def test_script_validates_csv_columns(self):
+        """Verify script raises ValueError for CSV with missing columns"""
+        self._install_openpyxl()
+        test_code = '''
+import sys, tempfile, os
+sys.path.insert(0, ".")
+
+# Create a CSV with missing columns
+with tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False, newline='') as f:
+    f.write("Year,Quarter,Revenue\\n")
+    f.write("2023,Q1,1000\\n")
+    bad_csv = f.name
+
+try:
+    # Try importing and running with bad CSV
+    try:
+        from openpyxl.sample.financial_report import generate_report
         try:
-            mod = importlib.import_module("openpyxl.sample.financial_report")
-            return mod.main
-        except Exception:
-            return None
-
-    def _make_mock_main(self):
-        """Return a mock main() that creates a Workbook with the expected structure."""
-        try:
-            import openpyxl
-            from openpyxl import Workbook
-            from openpyxl.styles import numbers
-        except ImportError:
-            pytest.skip("openpyxl not installed; cannot run mock functional tests")
-
-        def main(csv_path=None):
-            if csv_path is not None and not os.path.isfile(csv_path):
-                raise ValueError(f"Invalid CSV path: {csv_path}")
-            wb = Workbook()
-            # Remove default sheet
-            wb.remove(wb.active)
-            # Create required sheets
-            ws_summary = wb.create_sheet("Summary")
-            ws_q1 = wb.create_sheet("Q1-Q4")
-            ws_details = wb.create_sheet("Details")
-            # Add formulas to summary
-            ws_summary["A1"] = "Total Revenue"
-            ws_summary["B1"] = "=SUM('Q1-Q4'!B2:B5)"
-            # Apply currency format
-            ws_summary["B1"].number_format = "$#,##0"
-            # Freeze header row
-            ws_summary.freeze_panes = "A2"
-            # Conditional formatting (rule on a range)
-            from openpyxl.formatting.rule import ColorScaleRule
-
-            rule = ColorScaleRule(
-                start_type="min",
-                start_color="FF0000",
-                end_type="max",
-                end_color="00FF00",
-            )
-            ws_summary.conditional_formatting.add("B2:B10", rule)
-            # Chart on summary sheet
-            from openpyxl.chart import BarChart, Reference
-
-            chart = BarChart()
-            ws_summary.add_chart(chart, "D1")
-            return wb
-
-        return main
-
-    def test_three_sheets_created(self):
-        """Verify main() creates a workbook with exactly 3 correctly named sheets."""
-        main_fn = self._import_main() or self._make_mock_main()
-        wb = main_fn()
-        sheet_names = wb.sheetnames
-        assert (
-            len(sheet_names) == 3
-        ), f"Workbook must have exactly 3 sheets; got {len(sheet_names)}: {sheet_names}"
-        assert "Summary" in sheet_names, "'Summary' sheet must exist"
-
-    def test_summary_cells_contain_formulas(self):
-        """Verify Summary sheet cells contain Excel formulas (start with '=')."""
-        main_fn = self._import_main() or self._make_mock_main()
-        wb = main_fn()
-        assert "Summary" in wb.sheetnames, "'Summary' sheet must exist"
-        ws = wb["Summary"]
-        formula_cells = [
-            c
-            for row in ws.iter_rows()
-            for c in row
-            if c.value and str(c.value).startswith("=")
-        ]
-        assert (
-            len(formula_cells) > 0
-        ), "Summary sheet must contain at least one Excel formula (cell value starting with '=')"
-
-    def test_currency_format_applied(self):
-        """Verify '$#,##0' number format is applied to at least one cell."""
-        main_fn = self._import_main() or self._make_mock_main()
-        wb = main_fn()
-        formatted = [
-            c
-            for ws in wb
-            for row in ws.iter_rows()
-            for c in row
-            if c.number_format == "$#,##0"
-        ]
-        assert (
-            len(formatted) > 0
-        ), "At least one cell must have number_format == '$#,##0'"
-
-    def test_conditional_formatting_rules_exist(self):
-        """Verify conditional_formatting rules are added to at least one sheet range."""
-        main_fn = self._import_main() or self._make_mock_main()
-        wb = main_fn()
-        has_cf = any(list(ws.conditional_formatting) for ws in wb)
-        assert has_cf, "At least one sheet must have conditional_formatting rules"
-
-    def test_freeze_panes_set(self):
-        """Verify freeze_panes is set on at least one worksheet."""
-        main_fn = self._import_main() or self._make_mock_main()
-        wb = main_fn()
-        has_freeze = any(ws.freeze_panes is not None for ws in wb)
-        assert (
-            has_freeze
-        ), "freeze_panes must be set on at least one sheet to lock header rows"
-
-    def test_invalid_csv_path_raises_value_error(self):
-        """Verify main() raises ValueError when passed an invalid or non-existent CSV path."""
-        main_fn = self._import_main() or self._make_mock_main()
-        with pytest.raises((ValueError, FileNotFoundError, Exception)) as exc_info:
-            main_fn(csv_path="/nonexistent/path/data.csv")
-        # The spec requires ValueError specifically; accept FileNotFoundError as fallback
-        exc_type = type(exc_info.value).__name__
-        assert exc_type in (
-            "ValueError",
-            "FileNotFoundError",
-        ), f"Expected ValueError (or FileNotFoundError) for invalid CSV path, got {exc_type}"
+            generate_report(bad_csv, "test_output.xlsx")
+            print("FAIL: Should have raised ValueError for missing columns")
+        except ValueError as e:
+            print(f"PASS: {e}")
+        except Exception as e:
+            print(f"PASS_OTHER: Raised {type(e).__name__}: {e}")
+    except ImportError:
+        # Try running as script with bad CSV
+        import subprocess
+        result = subprocess.run(
+            [sys.executable, "openpyxl/sample/financial_report.py", bad_csv],
+            capture_output=True, text=True, timeout=30
+        )
+        if result.returncode != 0:
+            print("PASS: Script failed with bad CSV as expected")
+        else:
+            print("FAIL: Script should fail with bad CSV")
+finally:
+    os.unlink(bad_csv)
+'''
+        result = subprocess.run(
+            ["python", "-c", test_code],
+            cwd=self.REPO_DIR,
+            capture_output=True, text=True, timeout=60
+        )
+        assert "PASS" in result.stdout, \
+            f"CSV validation test failed: {result.stdout}\n{result.stderr[:500]}"

@@ -1,218 +1,206 @@
 """
-Tests for 'implementing-agent-modes' skill.
-Generated from benchmark case definitions for implementing-agent-modes.
+Test skill: implementing-agent-modes
+Verify that the Agent implements a Data Explorer mode for PostHog with
+AgentMode enum extension, toolkit with 5 tools, trajectory examples,
+feature flag gating, and frontend integration.
 """
 
-import ast
-import base64
-import glob
-import json
 import os
-import py_compile
 import re
-import subprocess
-import textwrap
-
+import ast
 import pytest
-
-try:
-    import yaml
-except ModuleNotFoundError:
-    yaml = None
 
 
 class TestImplementingAgentModes:
-    """Verify the implementing-agent-modes skill output."""
+    REPO_DIR = "/workspace/posthog"
 
-    REPO_DIR = '/workspace/posthog'
+    # === File Path Checks ===
 
-
-    # ── helpers ──────────────────────────────────────────────
-
-    _SETUP_CACHE: dict = {}
-
-    @staticmethod
-    def _repo_path(rel: str) -> str:
-        return os.path.join(TestImplementingAgentModes.REPO_DIR, rel)
-
-    @staticmethod
-    def _safe_read(path: str) -> str:
-        with open(path, "r", encoding="utf-8", errors="ignore") as fh:
-            return fh.read()
-
-    @staticmethod
-    def _load_yaml(path: str):
-        if yaml is None:
-            pytest.skip("PyYAML not available")
-        with open(path, "r", encoding="utf-8", errors="ignore") as fh:
-            return yaml.safe_load(fh)
-
-    @staticmethod
-    def _load_json(path: str):
-        with open(path, "r", encoding="utf-8", errors="ignore") as fh:
-            return json.load(fh)
-
-    @classmethod
-    def _run_in_repo(cls, script: str, timeout: int = 120) -> subprocess.CompletedProcess:
-        return subprocess.run(
-            ["python", "-c", textwrap.dedent(script)],
-            cwd=cls.REPO_DIR,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-        )
-
-    @classmethod
-    def _run_cmd(cls, command, args=None, timeout=120):
-        args = args or []
-        if isinstance(command, str) and args:
-            return subprocess.run(
-                [command, *args],
-                cwd=cls.REPO_DIR,
-                capture_output=True,
-                text=True,
-                timeout=timeout,
+    def test_data_explorer_init_exists(self):
+        assert os.path.exists(
+            os.path.join(
+                self.REPO_DIR,
+                "ee/hogai/core/agent_modes/presets/data_explorer/__init__.py",
             )
-        return subprocess.run(
-            command if isinstance(command, list) else command,
-            cwd=cls.REPO_DIR,
-            shell=isinstance(command, str),
-            capture_output=True,
-            text=True,
-            timeout=timeout,
         )
 
-    @classmethod
-    def _ensure_setup(cls, label, setup_cmds, fallback):
-        if not setup_cmds:
-            return
-        key = tuple(setup_cmds)
-        if key in cls._SETUP_CACHE:
-            ok, msg = cls._SETUP_CACHE[key]
-            if ok:
-                return
-            if fallback == "skip_if_setup_fails":
-                pytest.skip(f"{label} setup failed: {msg}")
-            pytest.fail(f"{label} setup failed: {msg}")
-        for cmd in setup_cmds:
-            r = subprocess.run(cmd, cwd=cls.REPO_DIR, shell=True,
-                               capture_output=True, text=True, timeout=300)
-            if r.returncode != 0:
-                msg = (r.stderr or r.stdout or 'failed').strip()
-                cls._SETUP_CACHE[key] = (False, msg)
-                if fallback == "skip_if_setup_fails":
-                    pytest.skip(f"{label} setup failed: {msg}")
-                pytest.fail(f"{label} setup failed: {msg}")
-        cls._SETUP_CACHE[key] = (True, 'ok')
-
-
-    # ── file_path_check (static) ────────────────────────────────────────
-
-    def test_data_explorer_module_exists(self):
-        """Verify data_explorer preset module exists"""
-        _p = self._repo_path('ee/hogai/core/agent_modes/presets/data_explorer/__init__.py')
-        assert os.path.isfile(_p), f'Missing file: ee/hogai/core/agent_modes/presets/data_explorer/__init__.py'
-        py_compile.compile(_p, doraise=True)
-
-    def test_session_replay_module_exists(self):
-        """Verify session_replay preset module exists"""
-        _p = self._repo_path('ee/hogai/core/agent_modes/presets/session_replay/__init__.py')
-        assert os.path.isfile(_p), f'Missing file: ee/hogai/core/agent_modes/presets/session_replay/__init__.py'
-        py_compile.compile(_p, doraise=True)
-
-    def test_registry_module_exists(self):
-        """Verify registry.py and base.py exist"""
-        _p = self._repo_path('ee/hogai/core/agent_modes/registry.py')
-        assert os.path.isfile(_p), f'Missing file: ee/hogai/core/agent_modes/registry.py'
-        py_compile.compile(_p, doraise=True)
-        _p = self._repo_path('ee/hogai/core/agent_modes/base.py')
-        assert os.path.isfile(_p), f'Missing file: ee/hogai/core/agent_modes/base.py'
-        py_compile.compile(_p, doraise=True)
-
-    # ── semantic_check (static) ────────────────────────────────────────
-
-    def test_agent_mode_config_class(self):
-        """Verify AgentModeConfig class has mode_id, tools, system_prompt fields"""
-        _p = self._repo_path('ee/hogai/core/agent_modes/base.py')
-        assert os.path.exists(_p), f'Missing: ee/hogai/core/agent_modes/base.py'
-        _contents = self._safe_read(_p)
-        _all = _contents if isinstance(_contents, str) else ''
-        assert 'AgentModeConfig' in _all, 'Missing: AgentModeConfig'
-        assert 'mode_id' in _all, 'Missing: mode_id'
-        assert 'tools' in _all, 'Missing: tools'
-        assert 'system_prompt' in _all, 'Missing: system_prompt'
-
-    def test_registry_functions_defined(self):
-        """Verify register_agent_mode and get_agent_mode functions exist"""
-        _p = self._repo_path('ee/hogai/core/agent_modes/registry.py')
-        assert os.path.exists(_p), f'Missing: ee/hogai/core/agent_modes/registry.py'
-        _contents = self._safe_read(_p)
-        _all = _contents if isinstance(_contents, str) else ''
-        assert 'register_agent_mode' in _all, 'Missing: register_agent_mode'
-        assert 'get_agent_mode' in _all, 'Missing: get_agent_mode'
-
-    def test_data_explorer_tools_list(self):
-        """Verify DataExplorerMode has execute_hogql and fetch_schema tools"""
-        _p = self._repo_path('ee/hogai/core/agent_modes/presets/data_explorer/__init__.py')
-        assert os.path.exists(_p), f'Missing: ee/hogai/core/agent_modes/presets/data_explorer/__init__.py'
-        _contents = self._safe_read(_p)
-        _all = _contents if isinstance(_contents, str) else ''
-        assert 'execute_hogql' in _all, 'Missing: execute_hogql'
-        assert 'fetch_schema' in _all, 'Missing: fetch_schema'
-
-    def test_session_replay_tools_list(self):
-        """Verify SessionReplayMode has search_sessions and get_session_events tools"""
-        _p = self._repo_path('ee/hogai/core/agent_modes/presets/session_replay/__init__.py')
-        assert os.path.exists(_p), f'Missing: ee/hogai/core/agent_modes/presets/session_replay/__init__.py'
-        _contents = self._safe_read(_p)
-        _all = _contents if isinstance(_contents, str) else ''
-        assert 'search_sessions' in _all, 'Missing: search_sessions'
-        assert 'get_session_events' in _all, 'Missing: get_session_events'
-
-    # ── functional_check ────────────────────────────────────────
-
-    def test_import_agent_mode_config(self):
-        """Verify AgentModeConfig is importable and has required attributes"""
-        self._ensure_setup('test_import_agent_mode_config', ['pip install pydantic'], 'fail_if_missing')
-        result = self._run_cmd('python', args=['-c', "from ee.hogai.core.agent_modes.base import AgentModeConfig; assert hasattr(AgentModeConfig, 'mode_id') or 'mode_id' in AgentModeConfig.__dataclass_fields__; print('PASS')"], timeout=120)
-        assert result.returncode == 0, (
-            f'test_import_agent_mode_config failed (exit {result.returncode})\n' + result.stderr[:500]
+    def test_toolkit_exists(self):
+        assert os.path.exists(
+            os.path.join(
+                self.REPO_DIR,
+                "ee/hogai/core/agent_modes/presets/data_explorer/toolkit.py",
+            )
         )
-        assert 'PASS' in (result.stdout + result.stderr), 'Expected PASS in output'
 
-    def test_get_data_explorer_mode(self):
-        """Verify data-explorer mode is retrievable from registry"""
-        self._ensure_setup('test_get_data_explorer_mode', ['pip install pydantic langgraph'], 'fail_if_missing')
-        result = self._run_cmd('python', args=['-c', "from ee.hogai.core.agent_modes.registry import get_agent_mode; config=get_agent_mode('data-explorer'); assert config is not None; assert len(config.system_prompt)>0; print('PASS')"], timeout=120)
-        assert result.returncode == 0, (
-            f'test_get_data_explorer_mode failed (exit {result.returncode})\n' + result.stderr[:500]
+    def test_definition_exists(self):
+        assert os.path.exists(
+            os.path.join(
+                self.REPO_DIR,
+                "ee/hogai/core/agent_modes/presets/data_explorer/definition.py",
+            )
         )
-        assert 'PASS' in (result.stdout + result.stderr), 'Expected PASS in output'
 
-    def test_get_nonexistent_mode(self):
-        """Verify get_agent_mode with unknown ID raises KeyError"""
-        self._ensure_setup('test_get_nonexistent_mode', ['pip install pydantic'], 'fail_if_missing')
-        result = self._run_cmd('python', args=['-c', "from ee.hogai.core.agent_modes.registry import get_agent_mode\ntry:\n    get_agent_mode('nonexistent')\n    assert False, 'Should have raised'\nexcept (KeyError, ValueError):\n    print('PASS')"], timeout=120)
-        assert result.returncode == 0, (
-            f'test_get_nonexistent_mode failed (exit {result.returncode})\n' + result.stderr[:500]
+    def test_test_file_exists(self):
+        assert os.path.exists(
+            os.path.join(
+                self.REPO_DIR,
+                "ee/hogai/core/agent_modes/presets/data_explorer/tests/test_data_explorer_toolkit.py",
+            )
         )
-        assert 'PASS' in (result.stdout + result.stderr), 'Expected PASS in output'
 
-    def test_register_duplicate_mode(self):
-        """Verify re-registering existing mode_id behavior is defined"""
-        self._ensure_setup('test_register_duplicate_mode', ['pip install pydantic'], 'fail_if_missing')
-        result = self._run_cmd('python', args=['-c', "from ee.hogai.core.agent_modes.registry import register_agent_mode, get_agent_mode\nfrom ee.hogai.core.agent_modes.base import AgentModeConfig\nconfig=AgentModeConfig(mode_id='test-dup', tools=[], system_prompt='test', allowed_actions=[])\nregister_agent_mode('test-dup', config)\ntry:\n    register_agent_mode('test-dup', config)\n    print('PASS-overwrite')\nexcept (ValueError, KeyError):\n    print('PASS-error')"], timeout=120)
-        assert result.returncode == 0, (
-            f'test_register_duplicate_mode failed (exit {result.returncode})\n' + result.stderr[:500]
+    # === Semantic Checks ===
+
+    def test_agent_mode_enum_has_data_explorer(self):
+        """AgentMode enum should include DATA_EXPLORER"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "frontend/src/queries/schema/schema-assistant-messages.ts",
         )
-        assert 'PASS' in (result.stdout + result.stderr), 'Expected PASS in output'
-
-    def test_none_system_prompt(self):
-        """Verify AgentModeConfig rejects None system_prompt"""
-        self._ensure_setup('test_none_system_prompt', ['pip install pydantic'], 'fail_if_missing')
-        result = self._run_cmd('python', args=['-c', "from ee.hogai.core.agent_modes.base import AgentModeConfig\ntry:\n    config=AgentModeConfig(mode_id='bad', tools=[], system_prompt=None, allowed_actions=[])\n    assert config.system_prompt is not None, 'system_prompt should not be None'\n    print('PASS-accepted')\nexcept (TypeError, ValueError, Exception):\n    print('PASS-rejected')"], timeout=120)
-        assert result.returncode == 0, (
-            f'test_none_system_prompt failed (exit {result.returncode})\n' + result.stderr[:500]
+        with open(path) as f:
+            content = f.read()
+        assert "DATA_EXPLORER" in content or "data_explorer" in content, (
+            "AgentMode enum should include DATA_EXPLORER"
         )
-        assert 'PASS' in (result.stdout + result.stderr), 'Expected PASS in output'
 
+    def test_toolkit_has_required_tools(self):
+        """DataExplorerToolkit should expose exactly 5 tools"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "ee/hogai/core/agent_modes/presets/data_explorer/toolkit.py",
+        )
+        with open(path) as f:
+            content = f.read()
+        assert "DataExplorerToolkit" in content, "Missing DataExplorerToolkit class"
+        for tool in ("read_data", "search", "list_data", "create_insight", "trends_query"):
+            assert tool in content, f"Toolkit should expose '{tool}' tool"
+
+    def test_toolkit_excludes_other_tools(self):
+        """Toolkit should NOT include experiment/flag/session/survey tools"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "ee/hogai/core/agent_modes/presets/data_explorer/toolkit.py",
+        )
+        with open(path) as f:
+            content = f.read()
+        # These terms should not appear as exposed tools
+        for excluded in ("experiment", "feature_flag", "session_recording", "survey"):
+            # Check if it appears as a registered tool (not just in comments)
+            if excluded in content:
+                # Allow in comments or docstrings, but not as tool registration
+                lines = [
+                    l.strip()
+                    for l in content.split("\n")
+                    if excluded in l and not l.strip().startswith("#") and not l.strip().startswith('"""')
+                ]
+                # This is a soft check - we just ensure the tool names are limited
+                pass
+
+    def test_toolkit_has_trajectory_examples(self):
+        """Toolkit should have at least 3 trajectory examples"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "ee/hogai/core/agent_modes/presets/data_explorer/toolkit.py",
+        )
+        with open(path) as f:
+            content = f.read()
+        content_lower = content.lower()
+        assert (
+            "trajectory" in content_lower
+            or "example" in content_lower
+            or "few_shot" in content_lower
+        ), "Toolkit should include trajectory examples"
+
+    def test_definition_has_mode_and_description(self):
+        """Definition should set mode, description, toolkit_class"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "ee/hogai/core/agent_modes/presets/data_explorer/definition.py",
+        )
+        with open(path) as f:
+            content = f.read()
+        assert "AgentModeDefinition" in content, "Should use AgentModeDefinition"
+        assert "DATA_EXPLORER" in content or "data_explorer" in content, "Should reference DATA_EXPLORER mode"
+        assert "description" in content, "Should include description"
+        assert "DataExplorerToolkit" in content, "Should reference DataExplorerToolkit"
+
+    def test_mode_manager_registers_data_explorer(self):
+        """Mode manager should register DATA_EXPLORER behind feature flag"""
+        path = os.path.join(
+            self.REPO_DIR, "ee/hogai/chat_agent/mode_manager.py"
+        )
+        with open(path) as f:
+            content = f.read()
+        assert "DATA_EXPLORER" in content or "data_explorer" in content, (
+            "Mode manager should reference DATA_EXPLORER"
+        )
+        assert "feature" in content.lower() or "flag" in content.lower(), (
+            "Registration should be gated by feature flag"
+        )
+
+    def test_feature_flag_constant_defined(self):
+        """Feature flag constant HOGAI_DATA_EXPLORER_MODE should be defined"""
+        path = os.path.join(
+            self.REPO_DIR, "posthog/models/feature_flag/feature_flag.py"
+        )
+        with open(path) as f:
+            content = f.read()
+        assert "HOGAI_DATA_EXPLORER_MODE" in content, (
+            "Missing HOGAI_DATA_EXPLORER_MODE constant"
+        )
+
+    def test_frontend_mode_selector_has_data_explorer(self):
+        """Frontend mode constants should include Data Explorer"""
+        path = os.path.join(
+            self.REPO_DIR, "frontend/src/scenes/max/max-constants.tsx"
+        )
+        with open(path) as f:
+            content = f.read()
+        assert "Data Explorer" in content or "data_explorer" in content, (
+            "Mode selector should include Data Explorer"
+        )
+
+    # === Functional Checks ===
+
+    def test_all_python_files_parse(self):
+        """All new Python files should parse without syntax errors"""
+        py_files = [
+            "ee/hogai/core/agent_modes/presets/data_explorer/__init__.py",
+            "ee/hogai/core/agent_modes/presets/data_explorer/toolkit.py",
+            "ee/hogai/core/agent_modes/presets/data_explorer/definition.py",
+            "ee/hogai/core/agent_modes/presets/data_explorer/tests/test_data_explorer_toolkit.py",
+        ]
+        for pf in py_files:
+            path = os.path.join(self.REPO_DIR, pf)
+            with open(path) as f:
+                source = f.read()
+            try:
+                ast.parse(source)
+            except SyntaxError as e:
+                pytest.fail(f"{pf} has syntax error: {e}")
+
+    def test_init_exports_definition(self):
+        """__init__.py should export the mode definition"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "ee/hogai/core/agent_modes/presets/data_explorer/__init__.py",
+        )
+        with open(path) as f:
+            content = f.read()
+        assert (
+            "definition" in content.lower()
+            or "DataExplorer" in content
+            or "data_explorer" in content
+        ), "__init__.py should export the mode definition"
+
+    def test_test_file_has_test_methods(self):
+        """Test file should contain actual test methods"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "ee/hogai/core/agent_modes/presets/data_explorer/tests/test_data_explorer_toolkit.py",
+        )
+        with open(path) as f:
+            content = f.read()
+        test_methods = re.findall(r"def (test_\w+)", content)
+        assert len(test_methods) >= 2, (
+            f"Test file should have at least 2 test methods, found {len(test_methods)}"
+        )

@@ -1,191 +1,244 @@
 """
-Test for 'creating-financial-models' skill — QuantLib Financial Models
-Validates that the Agent created DCF, Monte Carlo, and sensitivity analysis
-models using the QuantLib library.
+Test skill: creating-financial-models
+Verify that the Agent correctly implements a DCF valuation engine,
+Monte Carlo simulator, and sensitivity analysis for QuantLib.
 """
 
 import os
 import re
-
+import ast
+import subprocess
 import pytest
 
 
 class TestCreatingFinancialModels:
-    """Verify QuantLib financial model implementation."""
-
     REPO_DIR = "/workspace/QuantLib"
 
-    def test_dcf_model_file_exists(self):
-        """DCF (Discounted Cash Flow) model file must exist."""
-        found = False
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            for f in files:
-                if f.endswith((".py", ".cpp", ".hpp")):
-                    if "dcf" in f.lower() or "discount" in f.lower() or "cashflow" in f.lower():
-                        found = True
-                        break
-            if found:
-                break
-        assert found, "DCF model file not found"
+    # === File Path Checks ===
 
-    def test_monte_carlo_model_exists(self):
-        """Monte Carlo simulation model must exist."""
-        found = False
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            for f in files:
-                if f.endswith((".py", ".cpp", ".hpp")):
-                    path = os.path.join(root, f)
-                    with open(path, "r", errors="ignore") as fh:
-                        content = fh.read()
-                    if re.search(r"[Mm]onte.?[Cc]arlo|MonteCarlo|monte_carlo", content):
-                        found = True
-                        break
-            if found:
-                break
-        assert found, "Monte Carlo model not found"
+    def test_dcf_valuation_exists(self):
+        """Verify ql/python/dcf_valuation.py was created"""
+        path = os.path.join(self.REPO_DIR, "ql/python/dcf_valuation.py")
+        assert os.path.exists(path), f"dcf_valuation.py not found at {path}"
 
-    def test_sensitivity_analysis_exists(self):
-        """Sensitivity analysis module must exist."""
-        found = False
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            for f in files:
-                if f.endswith((".py", ".cpp", ".hpp")):
-                    path = os.path.join(root, f)
-                    with open(path, "r", errors="ignore") as fh:
-                        content = fh.read()
-                    if re.search(r"sensitiv|greek|delta|gamma|vega", content, re.IGNORECASE):
-                        found = True
-                        break
-            if found:
-                break
-        assert found, "Sensitivity analysis module not found"
+    def test_monte_carlo_exists(self):
+        """Verify ql/python/monte_carlo_valuation.py was created"""
+        path = os.path.join(self.REPO_DIR, "ql/python/monte_carlo_valuation.py")
+        assert os.path.exists(path), f"monte_carlo_valuation.py not found at {path}"
 
-    def test_dcf_uses_discount_factor(self):
-        """DCF model must calculate discount factors."""
-        found = False
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            for f in files:
-                if f.endswith((".py", ".cpp", ".hpp")):
-                    path = os.path.join(root, f)
-                    with open(path, "r", errors="ignore") as fh:
-                        content = fh.read()
-                    if re.search(r"discount.*factor|present.*value|NPV|npv", content, re.IGNORECASE):
-                        found = True
-                        break
-            if found:
-                break
-        assert found, "DCF model does not calculate discount factors"
+    def test_sensitivity_exists(self):
+        """Verify ql/python/sensitivity.py was created"""
+        path = os.path.join(self.REPO_DIR, "ql/python/sensitivity.py")
+        assert os.path.exists(path), f"sensitivity.py not found at {path}"
 
-    def test_monte_carlo_uses_random_paths(self):
-        """Monte Carlo model must generate random paths."""
-        found = False
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            for f in files:
-                if f.endswith((".py", ".cpp", ".hpp")):
-                    path = os.path.join(root, f)
-                    with open(path, "r", errors="ignore") as fh:
-                        content = fh.read()
-                    if re.search(r"random|normal|GaussianRng|MersenneTwister|simulation", content, re.IGNORECASE):
-                        if re.search(r"path|sample|iteration|num_paths", content, re.IGNORECASE):
-                            found = True
-                            break
-            if found:
-                break
-        assert found, "Monte Carlo does not generate random paths"
+    def test_test_file_exists(self):
+        """Verify ql/python/test_financial_models.py was created"""
+        path = os.path.join(self.REPO_DIR, "ql/python/test_financial_models.py")
+        assert os.path.exists(path), f"test_financial_models.py not found at {path}"
 
-    def test_yield_curve_or_term_structure(self):
-        """Model must use a yield curve or term structure."""
-        found = False
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            for f in files:
-                if f.endswith((".py", ".cpp", ".hpp")):
-                    path = os.path.join(root, f)
-                    with open(path, "r", errors="ignore") as fh:
-                        content = fh.read()
-                    if re.search(r"[Yy]ield[Cc]urve|[Tt]erm[Ss]tructure|YieldTermStructure|FlatForward", content):
-                        found = True
-                        break
-            if found:
-                break
-        assert found, "No yield curve or term structure found"
+    # === Semantic Checks: DCF Model ===
 
-    def test_option_pricing_or_valuation(self):
-        """Models should include option pricing or instrument valuation."""
-        found = False
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            for f in files:
-                if f.endswith((".py", ".cpp", ".hpp")):
-                    path = os.path.join(root, f)
-                    with open(path, "r", errors="ignore") as fh:
-                        content = fh.read()
-                    if re.search(r"[Oo]ption|[Vv]aluation|[Pp]ricing|Black.?Scholes|setPricingEngine", content):
-                        found = True
-                        break
-            if found:
-                break
-        assert found, "No option pricing or valuation found"
+    def test_dcf_model_class_defined(self):
+        """Verify DCFModel class is defined"""
+        path = os.path.join(self.REPO_DIR, "ql/python/dcf_valuation.py")
+        with open(path) as f:
+            content = f.read()
+        assert "class DCFModel" in content, "DCFModel class should be defined"
 
-    def test_risk_free_rate_defined(self):
-        """Models must define or accept a risk-free rate."""
-        found = False
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            for f in files:
-                if f.endswith((".py", ".cpp", ".hpp")):
-                    path = os.path.join(root, f)
-                    with open(path, "r", errors="ignore") as fh:
-                        content = fh.read()
-                    if re.search(r"risk.free|riskFree|risk_free_rate|r_f\b", content, re.IGNORECASE):
-                        found = True
-                        break
-            if found:
-                break
-        assert found, "No risk-free rate parameter found"
+    def test_dcf_has_project_cash_flows(self):
+        """Verify DCFModel has project_cash_flows method"""
+        path = os.path.join(self.REPO_DIR, "ql/python/dcf_valuation.py")
+        with open(path) as f:
+            content = f.read()
+        assert "def project_cash_flows(" in content, (
+            "DCFModel should have project_cash_flows method"
+        )
 
-    def test_volatility_parameter(self):
-        """Models must include volatility as a parameter."""
-        found = False
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            for f in files:
-                if f.endswith((".py", ".cpp", ".hpp")):
-                    path = os.path.join(root, f)
-                    with open(path, "r", errors="ignore") as fh:
-                        content = fh.read()
-                    if re.search(r"[Vv]olatility|sigma|vol\b|BlackVol", content):
-                        found = True
-                        break
-            if found:
-                break
-        assert found, "No volatility parameter found"
+    def test_dcf_has_terminal_value_perpetuity(self):
+        """Verify DCFModel has terminal_value_perpetuity method"""
+        path = os.path.join(self.REPO_DIR, "ql/python/dcf_valuation.py")
+        with open(path) as f:
+            content = f.read()
+        assert "terminal_value_perpetuity" in content, (
+            "DCFModel should have terminal_value_perpetuity method"
+        )
 
-    def test_output_or_result_formatting(self):
-        """Models must format and output results."""
-        found = False
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            for f in files:
-                if f.endswith((".py", ".cpp", ".hpp")):
-                    path = os.path.join(root, f)
-                    with open(path, "r", errors="ignore") as fh:
-                        content = fh.read()
-                    if re.search(r"print|cout|result|output|format|report", content, re.IGNORECASE):
-                        if re.search(r"NPV|price|value|cashflow", content, re.IGNORECASE):
-                            found = True
-                            break
-            if found:
-                break
-        assert found, "No result formatting or output found"
+    def test_dcf_has_terminal_value_exit_multiple(self):
+        """Verify DCFModel has terminal_value_exit_multiple method"""
+        path = os.path.join(self.REPO_DIR, "ql/python/dcf_valuation.py")
+        with open(path) as f:
+            content = f.read()
+        assert "terminal_value_exit_multiple" in content, (
+            "DCFModel should have terminal_value_exit_multiple method"
+        )
 
-    def test_date_handling_with_quantlib(self):
-        """Models should use QuantLib date handling."""
-        found = False
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            for f in files:
-                if f.endswith((".py", ".cpp", ".hpp")):
-                    path = os.path.join(root, f)
-                    with open(path, "r", errors="ignore") as fh:
-                        content = fh.read()
-                    if re.search(r"Date\(|Calendar|Schedule|DayCounter|ActualActual|Thirty360", content):
-                        found = True
-                        break
-            if found:
-                break
-        assert found, "No QuantLib date handling found"
+    def test_dcf_has_enterprise_value(self):
+        """Verify DCFModel has enterprise_value method"""
+        path = os.path.join(self.REPO_DIR, "ql/python/dcf_valuation.py")
+        with open(path) as f:
+            content = f.read()
+        assert "def enterprise_value(" in content, (
+            "DCFModel should have enterprise_value method"
+        )
+
+    def test_dcf_has_equity_value(self):
+        """Verify DCFModel has equity_value method"""
+        path = os.path.join(self.REPO_DIR, "ql/python/dcf_valuation.py")
+        with open(path) as f:
+            content = f.read()
+        assert "def equity_value(" in content, (
+            "DCFModel should have equity_value method"
+        )
+
+    def test_dcf_has_price_per_share(self):
+        """Verify DCFModel has price_per_share method"""
+        path = os.path.join(self.REPO_DIR, "ql/python/dcf_valuation.py")
+        with open(path) as f:
+            content = f.read()
+        assert "def price_per_share(" in content, (
+            "DCFModel should have price_per_share method"
+        )
+
+    def test_dcf_validates_wacc_vs_growth(self):
+        """Verify DCFModel raises ValueError when wacc <= terminal_growth_rate"""
+        path = os.path.join(self.REPO_DIR, "ql/python/dcf_valuation.py")
+        with open(path) as f:
+            content = f.read()
+        assert "ValueError" in content, (
+            "DCFModel should raise ValueError for invalid inputs"
+        )
+
+    def test_dcf_accepts_constructor_params(self):
+        """Verify DCFModel constructor accepts all required parameters"""
+        path = os.path.join(self.REPO_DIR, "ql/python/dcf_valuation.py")
+        with open(path) as f:
+            content = f.read()
+        for param in ["revenue_base", "revenue_growth_rates", "operating_margin",
+                       "tax_rate", "wacc", "terminal_growth_rate", "shares_outstanding", "net_debt"]:
+            assert param in content, f"DCFModel should accept '{param}' parameter"
+
+    # === Semantic Checks: Monte Carlo ===
+
+    def test_monte_carlo_class_defined(self):
+        """Verify MonteCarloValuation class is defined"""
+        path = os.path.join(self.REPO_DIR, "ql/python/monte_carlo_valuation.py")
+        with open(path) as f:
+            content = f.read()
+        assert "class MonteCarloValuation" in content, (
+            "MonteCarloValuation class should be defined"
+        )
+
+    def test_monte_carlo_has_run_method(self):
+        """Verify MonteCarloValuation has run method"""
+        path = os.path.join(self.REPO_DIR, "ql/python/monte_carlo_valuation.py")
+        with open(path) as f:
+            content = f.read()
+        assert "def run(" in content, "MonteCarloValuation should have run method"
+
+    def test_monte_carlo_result_dataclass(self):
+        """Verify MonteCarloResult dataclass is defined"""
+        path = os.path.join(self.REPO_DIR, "ql/python/monte_carlo_valuation.py")
+        with open(path) as f:
+            content = f.read()
+        assert "MonteCarloResult" in content, (
+            "MonteCarloResult should be defined"
+        )
+        for field in ["mean", "median", "std", "percentile_5", "percentile_95"]:
+            assert field in content, (
+                f"MonteCarloResult should have '{field}' field"
+            )
+
+    def test_monte_carlo_supports_random_seed(self):
+        """Verify Monte Carlo supports random_seed for reproducibility"""
+        path = os.path.join(self.REPO_DIR, "ql/python/monte_carlo_valuation.py")
+        with open(path) as f:
+            content = f.read()
+        assert "random_seed" in content or "seed" in content, (
+            "MonteCarloValuation should support random_seed"
+        )
+
+    def test_monte_carlo_distribution_types(self):
+        """Verify both normal and triangular distributions are supported"""
+        path = os.path.join(self.REPO_DIR, "ql/python/monte_carlo_valuation.py")
+        with open(path) as f:
+            content = f.read()
+        assert "normal" in content, "Should support normal distribution"
+        assert "triangular" in content, "Should support triangular distribution"
+
+    # === Semantic Checks: Sensitivity Analysis ===
+
+    def test_sensitivity_class_defined(self):
+        """Verify SensitivityAnalyzer class is defined"""
+        path = os.path.join(self.REPO_DIR, "ql/python/sensitivity.py")
+        with open(path) as f:
+            content = f.read()
+        assert "class SensitivityAnalyzer" in content, (
+            "SensitivityAnalyzer class should be defined"
+        )
+
+    def test_sensitivity_two_way_table(self):
+        """Verify two_way_table method is defined"""
+        path = os.path.join(self.REPO_DIR, "ql/python/sensitivity.py")
+        with open(path) as f:
+            content = f.read()
+        assert "def two_way_table(" in content, (
+            "SensitivityAnalyzer should have two_way_table method"
+        )
+
+    def test_sensitivity_tornado_chart(self):
+        """Verify tornado_chart method is defined"""
+        path = os.path.join(self.REPO_DIR, "ql/python/sensitivity.py")
+        with open(path) as f:
+            content = f.read()
+        assert "def tornado_chart(" in content, (
+            "SensitivityAnalyzer should have tornado_chart method"
+        )
+
+    # === Functional Checks ===
+
+    def test_dcf_valuation_parses(self):
+        """Verify dcf_valuation.py has valid Python syntax"""
+        path = os.path.join(self.REPO_DIR, "ql/python/dcf_valuation.py")
+        with open(path) as f:
+            source = f.read()
+        try:
+            ast.parse(source)
+        except SyntaxError as e:
+            pytest.fail(f"dcf_valuation.py has syntax error: {e}")
+
+    def test_monte_carlo_parses(self):
+        """Verify monte_carlo_valuation.py has valid Python syntax"""
+        path = os.path.join(self.REPO_DIR, "ql/python/monte_carlo_valuation.py")
+        with open(path) as f:
+            source = f.read()
+        try:
+            ast.parse(source)
+        except SyntaxError as e:
+            pytest.fail(f"monte_carlo_valuation.py has syntax error: {e}")
+
+    def test_sensitivity_parses(self):
+        """Verify sensitivity.py has valid Python syntax"""
+        path = os.path.join(self.REPO_DIR, "ql/python/sensitivity.py")
+        with open(path) as f:
+            source = f.read()
+        try:
+            ast.parse(source)
+        except SyntaxError as e:
+            pytest.fail(f"sensitivity.py has syntax error: {e}")
+
+    def test_financial_model_tests_pass(self):
+        """Verify test_financial_models.py tests pass"""
+        result = subprocess.run(
+            [
+                "python", "-m", "pytest",
+                "ql/python/test_financial_models.py",
+                "-v", "--tb=short",
+            ],
+            cwd=self.REPO_DIR,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        assert result.returncode == 0, (
+            f"Financial model tests failed:\n{result.stdout}\n{result.stderr}"
+        )

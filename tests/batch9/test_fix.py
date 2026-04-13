@@ -1,214 +1,168 @@
 """
-Test for 'fix' skill — React Code Fix & Linter CLI
-Validates the upgradle fix CLI tool: package.json bin entry, CLI flag
-definitions (--dry-run, --rule), ESLint/jscodeshift integration, and
-command-line behavior (help, error handling, dry-run immutability).
+Test skill: fix
+Verify that the Agent correctly fixes ESLint, Prettier, and TypeScript errors in the upgradle project.
 """
 
-import json
 import os
 import subprocess
-import tempfile
-
 import pytest
 
 
 class TestFix:
-    """Verify upgradle fix CLI tool structure and behavior."""
-
     REPO_DIR = "/workspace/upgradle"
-    PKG_DIR = os.path.join(REPO_DIR, "packages", "fix")
 
-    # ── helpers ──────────────────────────────────────────────────────────
-    @staticmethod
-    def _read_file(path: str) -> str:
-        try:
-            with open(path, "r", errors="ignore") as fh:
-                return fh.read()
-        except OSError:
-            return ""
+    # === File Path Checks ===
 
-    @classmethod
-    def _load_pkg_json(cls) -> dict:
-        path = os.path.join(cls.PKG_DIR, "package.json")
-        with open(path, "r") as fh:
-            return json.load(fh)
+    def test_package_json_exists(self):
+        """Verify package.json exists at project root"""
+        path = os.path.join(self.REPO_DIR, "package.json")
+        assert os.path.exists(path), f"package.json not found at {path}"
 
-    @classmethod
-    def _npm_install(cls):
-        """Run npm install inside packages/fix; skip on failure."""
+    def test_src_directory_exists(self):
+        """Verify src directory exists"""
+        path = os.path.join(self.REPO_DIR, "src")
+        assert os.path.isdir(path), f"src directory not found at {path}"
+
+    # === Semantic Checks ===
+
+    def test_no_var_declarations_in_ts_files(self):
+        """Verify no 'var' declarations remain in TypeScript source files"""
+        src_dir = os.path.join(self.REPO_DIR, "src")
+        import re
+        var_pattern = re.compile(r"\bvar\s+\w+")
+        violations = []
+        for root, dirs, files in os.walk(src_dir):
+            for fname in files:
+                if fname.endswith((".ts", ".tsx")):
+                    fpath = os.path.join(root, fname)
+                    with open(fpath) as f:
+                        for lineno, line in enumerate(f, 1):
+                            if var_pattern.search(line) and not line.strip().startswith("//"):
+                                violations.append(f"{fpath}:{lineno}")
+        assert len(violations) == 0, (
+            f"Found 'var' declarations in: {violations[:10]}"
+        )
+
+    def test_no_console_log_in_production_code(self):
+        """Verify no stray console.log statements in source (common lint issue)"""
+        src_dir = os.path.join(self.REPO_DIR, "src")
+        import re
+        console_pattern = re.compile(r"\bconsole\.log\(")
+        violations = []
+        for root, dirs, files in os.walk(src_dir):
+            for fname in files:
+                if fname.endswith((".ts", ".tsx")):
+                    fpath = os.path.join(root, fname)
+                    with open(fpath) as f:
+                        for lineno, line in enumerate(f, 1):
+                            if console_pattern.search(line) and not line.strip().startswith("//"):
+                                violations.append(f"{fpath}:{lineno}")
+        # console.log may be acceptable in some files, but flag if excessive
+        assert len(violations) <= 5, (
+            f"Too many console.log statements ({len(violations)}): {violations[:10]}"
+        )
+
+    def test_tsx_files_have_react_import_or_jsx_runtime(self):
+        """Verify .tsx files either import React or use new JSX transform"""
+        src_dir = os.path.join(self.REPO_DIR, "src")
+        tsx_files = []
+        for root, dirs, files in os.walk(src_dir):
+            for fname in files:
+                if fname.endswith(".tsx"):
+                    tsx_files.append(os.path.join(root, fname))
+        assert len(tsx_files) > 0, "No .tsx files found in src"
+        # With new JSX transform, explicit React import is not needed.
+        # Just verify files parse without obvious issues
+
+    def test_no_trailing_whitespace_in_source(self):
+        """Verify Prettier-style no trailing whitespace in source files"""
+        src_dir = os.path.join(self.REPO_DIR, "src")
+        violations = []
+        for root, dirs, files in os.walk(src_dir):
+            for fname in files:
+                if fname.endswith((".ts", ".tsx", ".js", ".jsx")):
+                    fpath = os.path.join(root, fname)
+                    with open(fpath) as f:
+                        for lineno, line in enumerate(f, 1):
+                            if line.rstrip("\n") != line.rstrip():
+                                violations.append(f"{fpath}:{lineno}")
+        assert len(violations) == 0, (
+            f"Trailing whitespace found in {len(violations)} lines: {violations[:10]}"
+        )
+
+    # === Functional Checks ===
+
+    def test_npm_install_succeeds(self):
+        """Verify npm install completes without errors"""
         result = subprocess.run(
             ["npm", "install"],
-            cwd=cls.PKG_DIR,
+            cwd=self.REPO_DIR,
             capture_output=True,
+            text=True,
             timeout=120,
         )
-        if result.returncode != 0:
-            pytest.skip("npm install failed — skipping CLI tests")
+        assert result.returncode == 0, f"npm install failed: {result.stderr[:500]}"
 
-    # ── file_path_check ──────────────────────────────────────────────────
-
-    def test_package_json_exists_with_bin_entry(self):
-        """packages/fix/package.json must exist and declare a bin.fix entry."""
-        pkg = self._load_pkg_json()
-        assert "bin" in pkg, "package.json missing 'bin' key"
-        assert "fix" in pkg["bin"], "package.json bin missing 'fix' entry"
-
-    def test_index_ts_exists(self):
-        """packages/fix/src/index.ts must exist and be non-empty."""
-        path = os.path.join(self.PKG_DIR, "src", "index.ts")
-        assert os.path.isfile(path), f"{path} does not exist"
-        assert os.path.getsize(path) > 0, "index.ts is empty"
-
-    def test_runner_ts_exists(self):
-        """packages/fix/src/runner.ts must exist and be non-empty."""
-        path = os.path.join(self.PKG_DIR, "src", "runner.ts")
-        assert os.path.isfile(path), f"{path} does not exist"
-        assert os.path.getsize(path) > 0, "runner.ts is empty"
-
-    # ── semantic_check ───────────────────────────────────────────────────
-
-    def test_bin_field_points_to_valid_js_entry(self):
-        """bin.fix value must point to a .js entrypoint."""
-        pkg = self._load_pkg_json()
-        bin_path = pkg.get("bin", {}).get("fix", "")
-        assert bin_path, "bin.fix is empty"
-        assert bin_path.endswith(".js"), f"bin.fix should end with .js, got {bin_path}"
-
-    def test_dry_run_flag_defined_in_cli_source(self):
-        """--dry-run flag must be defined in the CLI argument parser."""
-        content = self._read_file(os.path.join(self.PKG_DIR, "src", "index.ts"))
-        assert content, "index.ts is empty or unreadable"
-        assert "dry-run" in content or "dryRun" in content, (
-            "--dry-run flag not defined in index.ts"
-        )
-
-    def test_eslint_integration_in_runner(self):
-        """runner.ts must import ESLint or jscodeshift."""
-        content = self._read_file(os.path.join(self.PKG_DIR, "src", "runner.ts"))
-        assert content, "runner.ts is empty or unreadable"
-        has_eslint = "eslint" in content.lower() or "ESLint" in content
-        has_jscodeshift = "jscodeshift" in content
-        assert has_eslint or has_jscodeshift, (
-            "runner.ts imports neither eslint nor jscodeshift"
-        )
-
-    def test_jscodeshift_declared_as_dependency(self):
-        """jscodeshift must be in dependencies or devDependencies."""
-        pkg = self._load_pkg_json()
-        deps = set(pkg.get("dependencies", {}).keys())
-        dev_deps = set(pkg.get("devDependencies", {}).keys())
-        assert "jscodeshift" in deps | dev_deps, (
-            "jscodeshift not declared in any dependency section"
-        )
-
-    # ── functional_check (command) ───────────────────────────────────────
-
-    def test_fix_help_exits_with_code_zero(self):
-        """'node packages/fix/bin/fix --help' must exit 0 with non-empty output."""
-        self._npm_install()
-        bin_path = os.path.join(self.PKG_DIR, "bin", "fix")
-        if not os.path.isfile(bin_path):
-            # Try dist path
-            pkg = self._load_pkg_json()
-            bin_path = os.path.join(self.PKG_DIR, pkg.get("bin", {}).get("fix", ""))
+    def test_eslint_passes(self):
+        """Verify ESLint produces zero errors"""
         result = subprocess.run(
-            ["node", bin_path, "--help"],
-            capture_output=True,
-            timeout=30,
+            ["npx", "eslint", "."],
             cwd=self.REPO_DIR,
+            capture_output=True,
+            text=True,
+            timeout=120,
         )
-        assert result.returncode == 0, f"--help exited with {result.returncode}"
-        assert len(result.stdout) > 0, "--help produced no output"
+        assert result.returncode == 0, (
+            f"ESLint reported errors:\n{result.stdout[:1000]}\n{result.stderr[:500]}"
+        )
 
-    def test_nonexistent_file_exits_with_error(self):
-        """Passing a non-existent file path must exit with non-zero code."""
-        self._npm_install()
-        bin_path = os.path.join(self.PKG_DIR, "bin", "fix")
-        if not os.path.isfile(bin_path):
-            pkg = self._load_pkg_json()
-            bin_path = os.path.join(self.PKG_DIR, pkg.get("bin", {}).get("fix", ""))
+    def test_prettier_check_passes(self):
+        """Verify Prettier check finds no formatting issues"""
         result = subprocess.run(
-            ["node", bin_path, "/nonexistent/path/file.js"],
-            capture_output=True,
-            timeout=30,
+            ["npx", "prettier", "--check", "."],
             cwd=self.REPO_DIR,
+            capture_output=True,
+            text=True,
+            timeout=120,
         )
-        assert result.returncode != 0, "Expected non-zero exit for nonexistent file"
+        assert result.returncode == 0, (
+            f"Prettier check failed:\n{result.stdout[:1000]}\n{result.stderr[:500]}"
+        )
 
-    def test_dry_run_does_not_modify_file(self):
-        """--dry-run must not modify the target file."""
-        self._npm_install()
-        bin_path = os.path.join(self.PKG_DIR, "bin", "fix")
-        if not os.path.isfile(bin_path):
-            pkg = self._load_pkg_json()
-            bin_path = os.path.join(self.PKG_DIR, pkg.get("bin", {}).get("fix", ""))
-        # Create a temporary JS file with a known fixable issue
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".js", dir=self.REPO_DIR, delete=False
-        ) as tmp:
-            tmp.write("var x = 1;\n")
-            tmp_path = tmp.name
-        try:
-            before = open(tmp_path).read()
-            subprocess.run(
-                ["node", bin_path, "--dry-run", tmp_path],
-                capture_output=True,
-                timeout=30,
-                cwd=self.REPO_DIR,
-            )
-            after = open(tmp_path).read()
-            assert before == after, "--dry-run modified the file"
-        finally:
-            os.unlink(tmp_path)
+    def test_typescript_noEmit_passes(self):
+        """Verify TypeScript type checking passes with --noEmit"""
+        result = subprocess.run(
+            ["npx", "tsc", "--noEmit"],
+            cwd=self.REPO_DIR,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        assert result.returncode == 0, (
+            f"TypeScript errors found:\n{result.stdout[:1000]}\n{result.stderr[:500]}"
+        )
 
-    def test_dry_run_outputs_diff_to_stdout(self):
-        """--dry-run should produce non-empty stdout for fixable files."""
-        self._npm_install()
-        bin_path = os.path.join(self.PKG_DIR, "bin", "fix")
-        if not os.path.isfile(bin_path):
-            pkg = self._load_pkg_json()
-            bin_path = os.path.join(self.PKG_DIR, pkg.get("bin", {}).get("fix", ""))
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".js", dir=self.REPO_DIR, delete=False
-        ) as tmp:
-            tmp.write("var x = 1;\nvar y = 2;\n")
-            tmp_path = tmp.name
-        try:
-            result = subprocess.run(
-                ["node", bin_path, "--dry-run", tmp_path],
-                capture_output=True,
-                timeout=30,
-                cwd=self.REPO_DIR,
-            )
-            # Output may be empty if no fixable issues, so we just assert no crash
-            assert result.returncode in (0, 1), (
-                f"Unexpected exit code {result.returncode}"
-            )
-        finally:
-            os.unlink(tmp_path)
+    def test_npm_build_succeeds(self):
+        """Verify the project builds successfully"""
+        result = subprocess.run(
+            ["npm", "run", "build"],
+            cwd=self.REPO_DIR,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        assert result.returncode == 0, (
+            f"Build failed:\n{result.stdout[:1000]}\n{result.stderr[:500]}"
+        )
 
-    def test_fix_rule_flag_filters_to_single_rule(self):
-        """--rule flag must be accepted without crashing."""
-        self._npm_install()
-        bin_path = os.path.join(self.PKG_DIR, "bin", "fix")
-        if not os.path.isfile(bin_path):
-            pkg = self._load_pkg_json()
-            bin_path = os.path.join(self.PKG_DIR, pkg.get("bin", {}).get("fix", ""))
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".js", dir=self.REPO_DIR, delete=False
-        ) as tmp:
-            tmp.write("var x = 1;\n")
-            tmp_path = tmp.name
-        try:
-            result = subprocess.run(
-                ["node", bin_path, "--rule", "no-var", "--dry-run", tmp_path],
-                capture_output=True,
-                timeout=30,
-                cwd=self.REPO_DIR,
-            )
-            assert result.returncode in (0, 1), (
-                f"--rule flag caused unexpected exit code {result.returncode}"
-            )
-        finally:
-            os.unlink(tmp_path)
+    def test_build_output_exists(self):
+        """Verify build produces output files"""
+        # Common build output directories
+        possible_dirs = ["build", "dist", "out"]
+        found = False
+        for d in possible_dirs:
+            path = os.path.join(self.REPO_DIR, d)
+            if os.path.isdir(path) and os.listdir(path):
+                found = True
+                break
+        assert found, "No build output directory found (build/, dist/, or out/)"

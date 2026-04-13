@@ -1,210 +1,284 @@
 """
-Tests for python-background-jobs skill.
-Validates email delivery state machine in celery/contrib/email_models.py.
+Tests for the python-background-jobs skill.
+
+Validates that an idempotent email delivery pipeline with state machine,
+retry behavior, timeouts, and status visibility was implemented for Celery.
+
+Repo: celery (https://github.com/celery/celery)
 """
 
+import ast
 import os
-import pytest
+import re
+import subprocess
+import sys
 
 REPO_DIR = "/workspace/celery"
 
 
-def _path(rel: str) -> str:
-    return os.path.join(REPO_DIR, rel)
+class TestFilePathCheck:
+    """Verify that all required files were created."""
 
-
-def _read(rel: str) -> str:
-    with open(_path(rel), encoding="utf-8", errors="ignore") as f:
-        return f.read()
-
-
-class TestPythonBackgroundJobs:
-
-    # ── file_path_check ──────────────────────────────────────────────────────
+    def test_email_pipeline_file_exists(self):
+        path = os.path.join(REPO_DIR, "celery", "contrib", "email_pipeline.py")
+        assert os.path.isfile(path), f"Expected email_pipeline.py at {path}"
 
     def test_email_models_file_exists(self):
-        """celery/contrib/email_models.py must exist."""
-        rel = "celery/contrib/email_models.py"
-        assert os.path.isfile(_path(rel)), f"{rel} not found"
-        assert os.path.getsize(_path(rel)) > 0, "email_models.py is empty"
+        path = os.path.join(REPO_DIR, "celery", "contrib", "email_models.py")
+        assert os.path.isfile(path), f"Expected email_models.py at {path}"
 
-    def test_contrib_init_exists(self):
-        """celery/contrib/__init__.py must exist."""
-        rel = "celery/contrib/__init__.py"
-        assert os.path.isfile(_path(rel)), f"{rel} not found"
+    def test_email_pipeline_test_file_exists(self):
+        path = os.path.join(REPO_DIR, "t", "unit", "contrib", "test_email_pipeline.py")
+        assert os.path.isfile(path), f"Expected test_email_pipeline.py at {path}"
 
-    # ── semantic_check ───────────────────────────────────────────────────────
 
-    def test_delivery_state_enum_defined(self):
-        """email_models.py must define DeliveryState with PENDING, SENDING, SENT, FAILED."""
-        content = _read("celery/contrib/email_models.py")
-        assert "class DeliveryState" in content, "DeliveryState enum not defined"
-        for state in ("PENDING", "SENDING", "SENT", "FAILED"):
-            assert state in content, f"{state} state missing from DeliveryState"
+class TestSemanticStateMachine:
+    """Verify the email delivery state machine is correctly defined."""
 
-    def test_invalid_state_transition_errors_defined(self):
-        """InvalidStateTransition and DuplicateDeliveryError must be defined."""
-        content = _read("celery/contrib/email_models.py")
-        assert (
-            "class InvalidStateTransition" in content
-        ), "InvalidStateTransition not defined"
-        assert (
-            "class DuplicateDeliveryError" in content
-        ), "DuplicateDeliveryError not defined"
+    def _read_models(self):
+        path = os.path.join(REPO_DIR, "celery", "contrib", "email_models.py")
+        with open(path, "r") as f:
+            return f.read()
 
-    def test_retry_backoff_cap_defined(self):
-        """Backoff cap must be defined at 3600 seconds."""
-        content = _read("celery/contrib/email_models.py")
-        assert "3600" in content, "Backoff cap of 3600s not found in email_models.py"
+    def _read_pipeline(self):
+        path = os.path.join(REPO_DIR, "celery", "contrib", "email_pipeline.py")
+        with open(path, "r") as f:
+            return f.read()
 
-    def test_smtp_immediate_fail_handler(self):
-        """SMTPRecipientsRefused handler must not retry (immediate FAILED)."""
-        content = _read("celery/contrib/email_models.py")
-        assert "SMTPRecipientsRefused" in content, "SMTPRecipientsRefused not handled"
+    def test_all_states_defined(self):
+        """States: PENDING, SENDING, SENT, FAILED, CANCELLED."""
+        content = self._read_models() + self._read_pipeline()
+        for state in ["PENDING", "SENDING", "SENT", "FAILED", "CANCELLED"]:
+            assert state in content, f"Expected delivery state '{state}' to be defined"
 
-    # ── functional_check ─────────────────────────────────────────────────────
+    def test_invalid_state_transition_exception(self):
+        content = self._read_models() + self._read_pipeline()
+        assert re.search(r"class\s+InvalidStateTransition", content), (
+            "Expected InvalidStateTransition exception class"
+        )
 
-    def test_pending_to_sending_valid_transition(self):
-        """PENDING -> SENDING must be a valid state transition (mocked)."""
-        from enum import Enum
+    def test_duplicate_delivery_error_exception(self):
+        content = self._read_models() + self._read_pipeline()
+        assert re.search(r"class\s+DuplicateDeliveryError", content), (
+            "Expected DuplicateDeliveryError exception class"
+        )
 
-        class DeliveryState(Enum):
-            PENDING = "PENDING"
-            SENDING = "SENDING"
-            SENT = "SENT"
-            FAILED = "FAILED"
+    def test_state_transitions_defined(self):
+        """Valid transitions should be explicitly defined."""
+        content = self._read_models() + self._read_pipeline()
+        # Look for transition mapping/dict or transition validation logic
+        assert re.search(
+            r"transition|PENDING.*SENDING|valid.*state|allowed.*transition",
+            content, re.IGNORECASE
+        ), "Expected state transition mapping or validation logic"
 
-        VALID_TRANSITIONS = {
-            DeliveryState.PENDING: {DeliveryState.SENDING},
-            DeliveryState.SENDING: {DeliveryState.SENT, DeliveryState.FAILED},
-        }
+    def test_transition_records_timestamp(self):
+        """Each state transition should record a timestamp."""
+        content = self._read_models() + self._read_pipeline()
+        assert re.search(r"timestamp|datetime|time\.time|created_at|transition.*time", content, re.IGNORECASE), (
+            "Expected timestamp recording on state transitions"
+        )
 
-        class InvalidStateTransition(Exception):
-            pass
+    def test_transition_history_maintained(self):
+        """Transition history should be maintained for status visibility."""
+        content = self._read_models() + self._read_pipeline()
+        assert re.search(r"history|transitions|log|record", content, re.IGNORECASE), (
+            "Expected transition history tracking"
+        )
 
-        class Record:
-            def __init__(self, state):
-                self.state = state
 
-            def transition(self, new_state):
-                allowed = VALID_TRANSITIONS.get(self.state, set())
-                if new_state not in allowed:
-                    raise InvalidStateTransition(f"{self.state} -> {new_state}")
-                self.state = new_state
+class TestSemanticIdempotency:
+    """Verify idempotency enforcement."""
 
-        r = Record(DeliveryState.PENDING)
-        r.transition(DeliveryState.SENDING)
-        assert r.state == DeliveryState.SENDING
+    def _read_pipeline(self):
+        path = os.path.join(REPO_DIR, "celery", "contrib", "email_pipeline.py")
+        with open(path, "r") as f:
+            return f.read()
 
-    def test_sent_to_sending_invalid_transition_error(self):
-        """SENT -> SENDING must raise InvalidStateTransition (mocked)."""
-        from enum import Enum
+    def test_idempotency_key_parameter(self):
+        content = self._read_pipeline()
+        assert re.search(r"idempotency_key", content), (
+            "Expected idempotency_key parameter in email delivery pipeline"
+        )
 
-        class DeliveryState(Enum):
-            PENDING = "PENDING"
-            SENDING = "SENDING"
-            SENT = "SENT"
-            FAILED = "FAILED"
+    def test_sent_state_early_return(self):
+        """If already SENT, task should return without resending."""
+        content = self._read_pipeline()
+        assert re.search(r"SENT|already.*sent|skip|return", content, re.IGNORECASE), (
+            "Expected early return logic for already-SENT deliveries"
+        )
 
-        VALID_TRANSITIONS = {
-            DeliveryState.PENDING: {DeliveryState.SENDING},
-            DeliveryState.SENDING: {DeliveryState.SENT, DeliveryState.FAILED},
-        }
+    def test_atomic_check_and_transition(self):
+        """Idempotency check and SENDING transition must be atomic."""
+        content = self._read_pipeline()
+        assert re.search(r"atomic|lock|mutex|compare.*swap|cas|threading", content, re.IGNORECASE), (
+            "Expected atomic/lock mechanism for idempotency check"
+        )
 
-        class InvalidStateTransition(Exception):
-            pass
 
-        class Record:
-            def __init__(self, state):
-                self.state = state
+class TestSemanticRetryBehavior:
+    """Verify retry behavior with exponential backoff."""
 
-            def transition(self, new_state):
-                allowed = VALID_TRANSITIONS.get(self.state, set())
-                if new_state not in allowed:
-                    raise InvalidStateTransition(f"{self.state} -> {new_state}")
-                self.state = new_state
+    def _read_pipeline(self):
+        path = os.path.join(REPO_DIR, "celery", "contrib", "email_pipeline.py")
+        with open(path, "r") as f:
+            return f.read()
 
-        r = Record(DeliveryState.SENT)
-        with pytest.raises(InvalidStateTransition):
-            r.transition(DeliveryState.SENDING)
+    def test_max_retry_count(self):
+        """Maximum 5 retry attempts."""
+        content = self._read_pipeline()
+        assert "5" in content, "Expected max retry count of 5 in pipeline"
 
-    def test_duplicate_delivery_error_for_existing(self):
-        """Creating a second delivery for the same message_id must raise DuplicateDeliveryError (mocked)."""
+    def test_exponential_backoff(self):
+        """Retry delays should increase exponentially."""
+        content = self._read_pipeline()
+        assert re.search(r"exponential|backoff|\*\*|pow|2\s*\*\*", content, re.IGNORECASE), (
+            "Expected exponential backoff logic in retry behavior"
+        )
 
-        class DuplicateDeliveryError(Exception):
-            pass
+    def test_max_delay_cap(self):
+        """Delay should be capped at 3600 seconds."""
+        content = self._read_pipeline()
+        assert "3600" in content, "Expected max delay cap of 3600 seconds"
 
-        registry = {}
+    def test_initial_delay(self):
+        """Starting delay of 60 seconds."""
+        content = self._read_pipeline()
+        assert "60" in content, "Expected initial retry delay of 60 seconds"
 
-        def create_delivery(message_id: str):
-            if message_id in registry:
-                raise DuplicateDeliveryError(f"{message_id} already exists")
-            registry[message_id] = True
+    def test_transient_errors_trigger_retry(self):
+        """SMTPTemporaryError, ConnectionError, TimeoutError should trigger retry."""
+        content = self._read_pipeline()
+        transient_found = sum(1 for err in ["ConnectionError", "TimeoutError", "SMTPTemporary"]
+                              if err in content)
+        assert transient_found >= 2, (
+            f"Expected at least 2 transient error types handled, found {transient_found}"
+        )
 
-        create_delivery("msg1")
-        with pytest.raises(DuplicateDeliveryError):
-            create_delivery("msg1")
+    def test_permanent_errors_fail_immediately(self):
+        """SMTPAuthenticationError, SMTPRecipientsRefused should fail without retry."""
+        content = self._read_pipeline()
+        permanent_found = sum(1 for err in ["SMTPAuthentication", "SMTPRecipientsRefused"]
+                              if err in content)
+        assert permanent_found >= 1, (
+            "Expected at least 1 permanent error type handled (fail without retry)"
+        )
 
-    def test_connection_error_5_retries_then_failed(self):
-        """ConnectionError after 5 retries must result in FAILED state (mocked)."""
 
-        class DeliveryState:
-            PENDING = "PENDING"
-            SENDING = "SENDING"
-            FAILED = "FAILED"
+class TestSemanticTimeouts:
+    """Verify soft and hard timeout handling."""
 
-        class FakeSMTP:
-            def __init__(self, max_failures):
-                self.calls = 0
-                self.max_failures = max_failures
+    def _read_pipeline(self):
+        path = os.path.join(REPO_DIR, "celery", "contrib", "email_pipeline.py")
+        with open(path, "r") as f:
+            return f.read()
 
-            def send(self):
-                self.calls += 1
-                raise ConnectionError("Connection refused")
+    def test_soft_timeout_value(self):
+        """Soft timeout of 30 seconds."""
+        content = self._read_pipeline()
+        assert "30" in content, "Expected soft timeout value of 30 seconds"
 
-        smtp = FakeSMTP(max_failures=5)
-        state = DeliveryState.PENDING
-        retry_count = 0
-        max_retries = 5
-        while retry_count < max_retries:
-            try:
-                smtp.send()
-                state = DeliveryState.SENDING
-                break
-            except ConnectionError:
-                retry_count += 1
-        else:
-            state = DeliveryState.FAILED
+    def test_hard_timeout_value(self):
+        """Hard timeout of 60 seconds."""
+        content = self._read_pipeline()
+        assert "60" in content, "Expected hard timeout value of 60 seconds"
 
-        assert state == DeliveryState.FAILED
-        assert retry_count == 5
+    def test_timeout_logging(self):
+        """Soft timeout should trigger warning log."""
+        content = self._read_pipeline()
+        assert re.search(r"warning|warn|logger|logging", content, re.IGNORECASE), (
+            "Expected logging for timeout events"
+        )
 
-    def test_smtp_recipients_refused_immediate_failed(self):
-        """SMTPRecipientsRefused must immediately set FAILED with zero retries (mocked)."""
 
-        class SMTPRecipientsRefused(Exception):
-            pass
+class TestSemanticStatusVisibility:
+    """Verify status query functions."""
 
-        class DeliveryState:
-            PENDING = "PENDING"
-            FAILED = "FAILED"
+    def _read_all(self):
+        pipeline = os.path.join(REPO_DIR, "celery", "contrib", "email_pipeline.py")
+        models = os.path.join(REPO_DIR, "celery", "contrib", "email_models.py")
+        content = ""
+        for path in [pipeline, models]:
+            with open(path, "r") as f:
+                content += f.read()
+        return content
 
-        def deliver(smtp_error_class):
-            retry_count = 0
-            try:
-                raise smtp_error_class("bad recipients")
-            except SMTPRecipientsRefused:
-                return DeliveryState.FAILED, retry_count
+    def test_get_delivery_status_function(self):
+        content = self._read_all()
+        assert re.search(r"def\s+get_delivery_status", content), (
+            "Expected get_delivery_status function"
+        )
 
-        state, retries = deliver(SMTPRecipientsRefused)
-        assert state == DeliveryState.FAILED
-        assert retries == 0
+    def test_list_failed_deliveries_function(self):
+        content = self._read_all()
+        assert re.search(r"def\s+list_failed_deliveries", content), (
+            "Expected list_failed_deliveries function"
+        )
 
-    def test_backoff_delay_caps_at_3600(self):
-        """Exponential backoff must never exceed 3600 seconds (mocked)."""
 
-        def compute_backoff(attempt: int, base: float = 2.0, cap: int = 3600) -> float:
-            return min(base**attempt, cap)
+class TestFunctionalPythonSyntax:
+    """Validate Python syntax of all created files."""
 
-        delays = [compute_backoff(i) for i in range(20)]
-        assert max(delays) <= 3600, f"Max backoff {max(delays)} exceeds 3600s cap"
+    def _check_syntax(self, filepath):
+        with open(filepath, "r") as f:
+            source = f.read()
+        ast.parse(source)
+
+    def test_email_pipeline_syntax(self):
+        self._check_syntax(os.path.join(REPO_DIR, "celery", "contrib", "email_pipeline.py"))
+
+    def test_email_models_syntax(self):
+        self._check_syntax(os.path.join(REPO_DIR, "celery", "contrib", "email_models.py"))
+
+    def test_test_file_syntax(self):
+        self._check_syntax(
+            os.path.join(REPO_DIR, "t", "unit", "contrib", "test_email_pipeline.py")
+        )
+
+
+class TestFunctionalTestCoverage:
+    """Verify that the agent's own test file has adequate coverage."""
+
+    def _read_test_file(self):
+        path = os.path.join(REPO_DIR, "t", "unit", "contrib", "test_email_pipeline.py")
+        with open(path, "r") as f:
+            return f.read()
+
+    def test_test_file_has_sufficient_tests(self):
+        content = self._read_test_file()
+        test_count = len(re.findall(r"def\s+test_", content))
+        assert test_count >= 5, (
+            f"Expected at least 5 test functions in test_email_pipeline.py, found {test_count}"
+        )
+
+    def test_test_covers_state_transitions(self):
+        content = self._read_test_file()
+        assert re.search(r"state|transition|InvalidStateTransition", content), (
+            "Expected tests covering state transitions"
+        )
+
+    def test_test_covers_idempotency(self):
+        content = self._read_test_file()
+        assert re.search(r"idempotency|idempotent|duplicate|DuplicateDeliveryError", content, re.IGNORECASE), (
+            "Expected tests covering idempotency"
+        )
+
+    def test_test_covers_retry(self):
+        content = self._read_test_file()
+        assert re.search(r"retry|backoff|transient", content, re.IGNORECASE), (
+            "Expected tests covering retry behavior"
+        )
+
+    def test_agent_tests_pass(self):
+        """Run the agent's own tests to verify they pass."""
+        result = subprocess.run(
+            [sys.executable, "-m", "pytest",
+             "t/unit/contrib/test_email_pipeline.py", "-v", "--tb=short"],
+            cwd=REPO_DIR,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        assert result.returncode == 0, (
+            f"Agent's own tests failed:\n{result.stdout[-1000:]}\n{result.stderr[-500:]}"
+        )

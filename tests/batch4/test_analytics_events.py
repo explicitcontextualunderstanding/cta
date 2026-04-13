@@ -1,192 +1,192 @@
 """
-Test for 'analytics-events' skill — Metabase Collection Bookmark Analytics
-Validates that the Agent created analytics event types and integrated tracking
-for CollectionBookmark CRUD operations in the Metabase frontend.
+Test skill: analytics-events
+Verify that analytics events for collection bookmark interactions have been
+correctly added to Metabase, including TypeScript type definitions, tracking
+functions, component integrations, and proper event naming conventions.
 """
 
 import os
-
+import re
+import subprocess
 import pytest
 
 
 class TestAnalyticsEvents:
-    """Verify Metabase collection bookmark analytics event implementation."""
-
     REPO_DIR = "/workspace/metabase"
+    EVENT_TYPES_PATH = "frontend/src/metabase-types/analytics/event.ts"
+    ANALYTICS_PATH = "frontend/src/metabase/collections/analytics.ts"
+    BOOKMARK_COMP = "frontend/src/metabase/collections/components/CollectionBookmark.tsx"
+    BOOKMARK_LIST = "frontend/src/metabase/collections/components/BookmarkList.tsx"
 
-    # ---- helpers ----
+    # === File Path Checks ===
 
-    @staticmethod
-    def _read(path):
-        with open(path, "r", errors="ignore") as fh:
-            return fh.read()
+    def test_event_types_file_exists(self):
+        """Verify the analytics event type definition file exists"""
+        filepath = os.path.join(self.REPO_DIR, self.EVENT_TYPES_PATH)
+        assert os.path.exists(filepath), f"Event types file not found at {filepath}"
 
-    def _find_file(self, filename, start_dir=None):
-        start = start_dir or self.REPO_DIR
-        for root, _dirs, files in os.walk(start):
-            if filename in files:
-                return os.path.join(root, filename)
-        return None
+    def test_analytics_module_exists(self):
+        """Verify collections/analytics.ts tracking functions file was created"""
+        filepath = os.path.join(self.REPO_DIR, self.ANALYTICS_PATH)
+        assert os.path.exists(filepath), f"Analytics module not found at {filepath}"
 
-    # ---- file_path_check ----
+    def test_bookmark_component_exists(self):
+        """Verify CollectionBookmark.tsx exists"""
+        filepath = os.path.join(self.REPO_DIR, self.BOOKMARK_COMP)
+        assert os.path.exists(filepath), f"CollectionBookmark.tsx not found at {filepath}"
 
-    def test_frontend_src_exists(self):
-        """Verifies frontend/src directory exists."""
-        path = os.path.join(self.REPO_DIR, "frontend/src")
-        assert os.path.exists(path), f"Expected path not found: {path}"
+    def test_bookmark_list_component_exists(self):
+        """Verify BookmarkList.tsx exists"""
+        filepath = os.path.join(self.REPO_DIR, self.BOOKMARK_LIST)
+        assert os.path.exists(filepath), f"BookmarkList.tsx not found at {filepath}"
 
-    def test_event_ts_exists(self):
-        """Verifies metabase-types/analytics/event.ts exists."""
-        path = os.path.join(self.REPO_DIR, "metabase-types/analytics/event.ts")
-        assert os.path.exists(path), f"Expected file not found: {path}"
+    # === Semantic Checks ===
 
-    def test_analytics_ts_exists(self):
-        """Verifies metabase/collections/analytics.ts exists."""
-        path = os.path.join(self.REPO_DIR, "metabase/collections/analytics.ts")
-        assert os.path.exists(path), f"Expected file not found: {path}"
-
-    def test_collection_bookmark_tsx_exists(self):
-        """Verifies CollectionBookmark.tsx exists."""
-        path = os.path.join(
-            self.REPO_DIR,
-            "metabase/collections/components/CollectionBookmark.tsx",
-        )
-        assert os.path.exists(path), f"Expected file not found: {path}"
-
-    # ---- semantic_check ----
-
-    def test_sem_event_ts_readable(self):
-        """Reads event.ts file."""
-        event_ts = os.path.join(self.REPO_DIR, "metabase-types/analytics/event.ts")
-        event_text = self._read(event_ts)
-        assert len(event_text) > 0, "event.ts is empty"
-
-    def test_sem_event_types_defined(self):
-        """Verifies all bookmark event types are defined in event.ts."""
-        event_ts = os.path.join(self.REPO_DIR, "metabase-types/analytics/event.ts")
-        event_text = self._read(event_ts)
-        for etype in [
-            "CollectionBookmarkCreatedEvent",
-            "CollectionBookmarkRemovedEvent",
-            "CollectionBookmarkReorderedEvent",
-            "CollectionBookmarkItemClickedEvent",
-        ]:
-            assert etype in event_text, f"{etype} not found in event.ts"
-
-    def test_sem_union_type(self):
-        """Verifies CollectionBookmarkEvent union type (edge case)."""
-        event_ts = os.path.join(self.REPO_DIR, "metabase-types/analytics/event.ts")
-        event_text = self._read(event_ts)
-        assert (
-            "CollectionBookmarkEvent" in event_text
-        ), "CollectionBookmarkEvent union type missing"
-
-    def test_sem_analytics_event_union(self):
-        """Verifies events added to AnalyticsEvent union."""
-        event_ts = os.path.join(self.REPO_DIR, "metabase-types/analytics/event.ts")
-        event_text = self._read(event_ts)
-        assert (
-            "AnalyticsEvent" in event_text
-        ), "CollectionBookmarkEvent not added to AnalyticsEvent union"
-
-    def test_sem_validate_event(self):
-        """Verifies ValidateEvent used for new event types."""
-        event_ts = os.path.join(self.REPO_DIR, "metabase-types/analytics/event.ts")
-        event_text = self._read(event_ts)
-        assert (
-            "ValidateEvent" in event_text
-        ), "ValidateEvent not used for new event types"
-
-    # ---- functional_check ----
-
-    def test_func_bookmark_tsx_readable(self):
-        """Reads CollectionBookmark.tsx file."""
-        bookmark_tsx = os.path.join(
-            self.REPO_DIR,
-            "metabase/collections/components/CollectionBookmark.tsx",
-        )
-        bookmark_text = self._read(bookmark_tsx)
-        assert len(bookmark_text) > 0, "CollectionBookmark.tsx is empty"
-
-    def test_func_bookmark_created_tracking(self):
-        """Verifies bookmark created tracking integrated."""
-        bookmark_tsx = os.path.join(
-            self.REPO_DIR,
-            "metabase/collections/components/CollectionBookmark.tsx",
-        )
-        bookmark_text = self._read(bookmark_tsx)
-        assert (
-            "collection_bookmark_created" in bookmark_text
-            or "trackCollectionBookmarkCreated" in bookmark_text
-            or "analytics" in bookmark_text.lower()
-        ), "Bookmark created tracking not integrated"
-
-    def test_func_bookmark_removed_tracking(self):
-        """Verifies bookmark removed tracking integrated."""
-        bookmark_tsx = os.path.join(
-            self.REPO_DIR,
-            "metabase/collections/components/CollectionBookmark.tsx",
-        )
-        bookmark_text = self._read(bookmark_tsx)
-        assert (
-            "collection_bookmark_removed" in bookmark_text
-            or "trackCollectionBookmarkRemoved" in bookmark_text
-        ), "Bookmark removed tracking not integrated"
-
-    def test_func_bookmark_list_readable(self):
-        """Reads BookmarkList component file."""
-        # Try to find BookmarkList.tsx
-        bookmark_list = self._find_file("BookmarkList.tsx")
-        assert bookmark_list is not None, "BookmarkList.tsx not found"
-        list_text = self._read(bookmark_list)
-        assert len(list_text) > 0, "BookmarkList.tsx is empty"
-
-    def test_func_reorder_tracking(self):
-        """Verifies reorder tracking in BookmarkList."""
-        bookmark_list = self._find_file("BookmarkList.tsx")
-        assert bookmark_list is not None, "BookmarkList.tsx not found"
-        list_text = self._read(bookmark_list)
-        assert (
-            "collection_bookmark_reordered" in list_text
-            or "trackCollectionBookmarkReordered" in list_text
-            or "reorder" in list_text.lower()
-        ), "Reorder tracking not in BookmarkList.tsx"
-
-    def test_func_item_clicked_tracking(self):
-        """Verifies item clicked tracking in BookmarkList."""
-        bookmark_list = self._find_file("BookmarkList.tsx")
-        assert bookmark_list is not None, "BookmarkList.tsx not found"
-        list_text = self._read(bookmark_list)
-        assert (
-            "collection_bookmark_item_clicked" in list_text
-            or "trackCollectionBookmarkItemClicked" in list_text
-        ), "Item clicked tracking not in BookmarkList.tsx"
-
-    def test_func_triggered_from_literals(self):
-        """Verifies triggered_from literal values in event.ts."""
-        event_ts = os.path.join(self.REPO_DIR, "metabase-types/analytics/event.ts")
-        event_text = self._read(event_ts)
-        assert (
-            "'collection-header'" in event_text or '"collection-header"' in event_text
-        ), "triggered_from literal values missing"
-
-    def test_func_event_detail_moved_up(self):
-        """Verifies event_detail moved-up literal in event.ts."""
-        event_ts = os.path.join(self.REPO_DIR, "metabase-types/analytics/event.ts")
-        event_text = self._read(event_ts)
-        assert (
-            "'moved-up'" in event_text or '"moved-up"' in event_text
-        ), "event_detail moved-up literal missing"
-
-    def test_func_failure_missing_event_type(self):
-        """Failure case: all event types must be present for TS compilation."""
-        event_ts = os.path.join(self.REPO_DIR, "metabase-types/analytics/event.ts")
-        event_text = self._read(event_ts)
-        required = [
+    def test_four_event_types_defined(self):
+        """Verify all four bookmark event types are defined in event.ts"""
+        filepath = os.path.join(self.REPO_DIR, self.EVENT_TYPES_PATH)
+        with open(filepath) as f:
+            content = f.read()
+        expected_types = [
             "CollectionBookmarkCreatedEvent",
             "CollectionBookmarkRemovedEvent",
             "CollectionBookmarkReorderedEvent",
             "CollectionBookmarkItemClickedEvent",
         ]
-        missing = [e for e in required if e not in event_text]
-        assert len(missing) == 0, f"Missing event types: {missing}"
+        for event_type in expected_types:
+            assert event_type in content, \
+                f"Event type '{event_type}' not found in event.ts"
+
+    def test_union_type_registered(self):
+        """Verify CollectionBookmarkEvent union type exists and is in AnalyticsEvent"""
+        filepath = os.path.join(self.REPO_DIR, self.EVENT_TYPES_PATH)
+        with open(filepath) as f:
+            content = f.read()
+        assert "CollectionBookmarkEvent" in content, \
+            "CollectionBookmarkEvent union type should be defined"
+
+    def test_event_names_follow_snake_case_convention(self):
+        """Verify event names use collection_bookmark_* snake_case prefix"""
+        filepath = os.path.join(self.REPO_DIR, self.EVENT_TYPES_PATH)
+        with open(filepath) as f:
+            content = f.read()
+        expected_events = [
+            "collection_bookmark_created",
+            "collection_bookmark_removed",
+            "collection_bookmark_reordered",
+            "collection_bookmark_item_clicked",
+        ]
+        for event_name in expected_events:
+            assert event_name in content, \
+                f"Event name '{event_name}' not found in event types"
+
+    def test_event_types_use_simple_event_schema(self):
+        """Verify event types use SimpleEventSchema via ValidateEvent"""
+        filepath = os.path.join(self.REPO_DIR, self.EVENT_TYPES_PATH)
+        with open(filepath) as f:
+            content = f.read()
+        assert "SimpleEventSchema" in content or "ValidateEvent" in content, \
+            "Event types should use SimpleEventSchema via ValidateEvent"
+
+    def test_tracking_functions_call_track_simple_event(self):
+        """Verify tracking functions use trackSimpleEvent from metabase/lib/analytics"""
+        filepath = os.path.join(self.REPO_DIR, self.ANALYTICS_PATH)
+        with open(filepath) as f:
+            content = f.read()
+        assert "trackSimpleEvent" in content, \
+            "Tracking functions should call trackSimpleEvent"
+        # Should have at least 4 exported tracking functions
+        export_count = len(re.findall(r'export\s+(function|const)\s+track', content))
+        assert export_count >= 4, \
+            f"Expected at least 4 tracking functions, found {export_count}"
+
+    def test_tracking_functions_have_strict_params(self):
+        """Verify tracking functions accept strictly typed parameters"""
+        filepath = os.path.join(self.REPO_DIR, self.ANALYTICS_PATH)
+        with open(filepath) as f:
+            content = f.read()
+        # Should reference triggered_from with literal types
+        has_triggered_from = "triggered_from" in content or "triggeredFrom" in content
+        assert has_triggered_from, \
+            "Tracking functions should include triggered_from parameter"
+        # Should reference target_id
+        has_target_id = "target_id" in content or "targetId" in content
+        assert has_target_id, \
+            "Tracking functions should include target_id parameter"
+
+    def test_bookmark_component_imports_tracking(self):
+        """Verify CollectionBookmark.tsx imports and uses tracking functions"""
+        filepath = os.path.join(self.REPO_DIR, self.BOOKMARK_COMP)
+        with open(filepath) as f:
+            content = f.read()
+        has_tracking = ("analytics" in content or "track" in content.lower())
+        assert has_tracking, \
+            "CollectionBookmark.tsx should import tracking functions from analytics module"
+
+    def test_bookmark_list_imports_tracking(self):
+        """Verify BookmarkList.tsx imports and uses tracking functions"""
+        filepath = os.path.join(self.REPO_DIR, self.BOOKMARK_LIST)
+        with open(filepath) as f:
+            content = f.read()
+        has_tracking = ("analytics" in content or "track" in content.lower())
+        assert has_tracking, \
+            "BookmarkList.tsx should import tracking functions from analytics module"
+
+    def test_event_types_include_target_id_field(self):
+        """Verify event types include target_id field where required"""
+        filepath = os.path.join(self.REPO_DIR, self.EVENT_TYPES_PATH)
+        with open(filepath) as f:
+            content = f.read()
+        assert "target_id" in content, \
+            "Event types should include target_id field for created/removed/clicked events"
+
+    def test_event_types_include_event_detail_field(self):
+        """Verify event types include event_detail field for reordered and clicked events"""
+        filepath = os.path.join(self.REPO_DIR, self.EVENT_TYPES_PATH)
+        with open(filepath) as f:
+            content = f.read()
+        assert "event_detail" in content, \
+            "Event types should include event_detail field"
+
+    # === Functional Checks ===
+
+    def test_analytics_module_is_valid_typescript(self):
+        """Verify analytics.ts compiles without TypeScript errors"""
+        # Check if npx tsc is available
+        result = subprocess.run(
+            ["npx", "tsc", "--noEmit", "--strict",
+             os.path.join(self.REPO_DIR, self.ANALYTICS_PATH)],
+            cwd=self.REPO_DIR,
+            capture_output=True, text=True, timeout=120
+        )
+        # TypeScript check may fail due to missing deps; verify no syntax errors at least
+        if result.returncode != 0:
+            # Check it's not a basic syntax error
+            assert "SyntaxError" not in result.stderr, \
+                f"analytics.ts has syntax errors: {result.stderr[:500]}"
+
+    def test_event_types_file_is_valid_typescript(self):
+        """Verify event.ts is valid TypeScript (no syntax errors)"""
+        filepath = os.path.join(self.REPO_DIR, self.EVENT_TYPES_PATH)
+        with open(filepath) as f:
+            content = f.read()
+        # Basic syntax checks: balanced braces
+        open_braces = content.count('{')
+        close_braces = content.count('}')
+        assert abs(open_braces - close_braces) <= 1, \
+            f"event.ts has unbalanced braces: {open_braces} open, {close_braces} close"
+
+    def test_bookmark_component_tracks_create_and_remove(self):
+        """Verify CollectionBookmark.tsx calls tracking for both create and remove"""
+        filepath = os.path.join(self.REPO_DIR, self.BOOKMARK_COMP)
+        with open(filepath) as f:
+            content = f.read()
+        content_lower = content.lower()
+        has_create = ("created" in content_lower or "create" in content_lower or
+                      "add" in content_lower)
+        assert has_create, \
+            "CollectionBookmark.tsx should track bookmark creation"
+        has_remove = ("removed" in content_lower or "remove" in content_lower or
+                      "delete" in content_lower)
+        assert has_remove, \
+            "CollectionBookmark.tsx should track bookmark removal"

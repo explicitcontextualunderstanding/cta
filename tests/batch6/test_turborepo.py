@@ -1,150 +1,226 @@
 """
-Tests for 'turborepo' skill — Turborepo Monorepo Build System.
-Validates that the Agent configured a Turborepo monorepo with correct
-turbo.json pipeline, proper dependency ordering (^build), caching policies,
-workspace globs, and JSON validity.
+Test skill: turborepo
+Verify that the Agent correctly configures a Turborepo monorepo for a design system
+with proper task pipelines, caching, environment variables, and CI workflow.
 """
 
-import glob
-import json
 import os
 import re
+import json
 import subprocess
-
 import pytest
 
 
 class TestTurborepo:
-    """Verify Turborepo monorepo configuration."""
-
     REPO_DIR = "/workspace/turbo"
 
-    # ── helpers ──────────────────────────────────────────────────────────
-
-    @staticmethod
-    def _safe_read(path: str) -> str:
-        with open(path, "r", encoding="utf-8", errors="ignore") as fh:
-            return fh.read()
-
-    @staticmethod
-    def _load_json(path: str):
-        with open(path, "r", encoding="utf-8", errors="ignore") as fh:
-            return json.load(fh)
-
-    @classmethod
-    def _run_in_repo(cls, cmd: str, timeout: int = 120) -> subprocess.CompletedProcess:
-        return subprocess.run(
-            cmd,
-            cwd=cls.REPO_DIR,
-            shell=True,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-        )
-
-    # ── file_path_check (static) ────────────────────────────────────────
+    # === File Path Checks ===
 
     def test_turbo_json_exists(self):
-        """Verify turbo.json configuration file exists at the workspace root."""
+        """Verify that turbo.json configuration file exists"""
         path = os.path.join(self.REPO_DIR, "turbo.json")
-        assert os.path.isfile(path), f"Missing {path}"
+        assert os.path.exists(path), f"turbo.json not found at {path}"
+
+    def test_root_package_json_exists(self):
+        """Verify that root package.json exists"""
+        path = os.path.join(self.REPO_DIR, "package.json")
+        assert os.path.exists(path), f"Root package.json not found at {path}"
+
+    def test_ui_package_json_exists(self):
+        """Verify that packages/ui/package.json exists"""
+        path = os.path.join(self.REPO_DIR, "packages/ui/package.json")
+        assert os.path.exists(path), f"packages/ui/package.json not found at {path}"
+
+    def test_utils_package_json_exists(self):
+        """Verify that packages/utils/package.json exists"""
+        path = os.path.join(self.REPO_DIR, "packages/utils/package.json")
+        assert os.path.exists(path), f"packages/utils/package.json not found at {path}"
+
+    def test_web_app_package_json_exists(self):
+        """Verify that apps/web/package.json exists"""
+        path = os.path.join(self.REPO_DIR, "apps/web/package.json")
+        assert os.path.exists(path), f"apps/web/package.json not found at {path}"
+
+    def test_docs_app_package_json_exists(self):
+        """Verify that apps/docs/package.json exists"""
+        path = os.path.join(self.REPO_DIR, "apps/docs/package.json")
+        assert os.path.exists(path), f"apps/docs/package.json not found at {path}"
+
+    def test_ci_workflow_exists(self):
+        """Verify that GitHub Actions CI workflow file exists"""
+        path = os.path.join(self.REPO_DIR, ".github/workflows/ci.yml")
+        alt_path = os.path.join(self.REPO_DIR, ".github/workflows/ci.yaml")
+        assert os.path.exists(path) or os.path.exists(alt_path), (
+            f"CI workflow file not found at {path} or {alt_path}"
+        )
+
+    # === Semantic Checks ===
+
+    def test_turbo_json_has_required_tasks(self):
+        """Verify that turbo.json defines all required task pipelines"""
+        path = os.path.join(self.REPO_DIR, "turbo.json")
+        with open(path, "r") as f:
+            turbo = json.load(f)
+
+        # turbo.json may have tasks under "pipeline" (v1) or "tasks" (v2)
+        tasks = turbo.get("tasks", turbo.get("pipeline", {}))
+        assert isinstance(tasks, dict), "turbo.json should have tasks/pipeline object"
+
+        required_tasks = ["build", "lint", "test", "dev"]
+        for task in required_tasks:
+            assert task in tasks, (
+                f"turbo.json missing required task: {task}"
+            )
+
+    def test_turbo_build_depends_on_caret_build(self):
+        """Verify that build task has ^build dependency (packages build before apps)"""
+        path = os.path.join(self.REPO_DIR, "turbo.json")
+        with open(path, "r") as f:
+            turbo = json.load(f)
+
+        tasks = turbo.get("tasks", turbo.get("pipeline", {}))
+        build_task = tasks.get("build", {})
+        depends_on = build_task.get("dependsOn", [])
+        assert "^build" in depends_on, (
+            f"build task should depend on '^build', got dependsOn: {depends_on}"
+        )
+
+    def test_turbo_dev_is_persistent_and_not_cached(self):
+        """Verify that dev task is persistent: true and cache: false"""
+        path = os.path.join(self.REPO_DIR, "turbo.json")
+        with open(path, "r") as f:
+            turbo = json.load(f)
+
+        tasks = turbo.get("tasks", turbo.get("pipeline", {}))
+        dev_task = tasks.get("dev", {})
+        assert dev_task.get("persistent") == True, (
+            "dev task should have persistent: true"
+        )
+        assert dev_task.get("cache") == False, (
+            "dev task should have cache: false"
+        )
+
+    def test_turbo_build_has_outputs(self):
+        """Verify that build task defines correct output directories for caching"""
+        path = os.path.join(self.REPO_DIR, "turbo.json")
+        with open(path, "r") as f:
+            turbo = json.load(f)
+
+        tasks = turbo.get("tasks", turbo.get("pipeline", {}))
+        build_task = tasks.get("build", {})
+        outputs = build_task.get("outputs", [])
+        assert len(outputs) >= 1, (
+            "build task should define outputs for caching"
+        )
+        # Check for common output patterns
+        outputs_str = str(outputs)
+        assert "dist" in outputs_str or ".next" in outputs_str or "storybook" in outputs_str, (
+            f"build outputs should include dist/**, .next/**, or storybook-static/**. Got: {outputs}"
+        )
+
+    def test_root_package_json_uses_turbo_run(self):
+        """Verify that root package.json scripts delegate via turbo run"""
+        path = os.path.join(self.REPO_DIR, "package.json")
+        with open(path, "r") as f:
+            pkg = json.load(f)
+
+        scripts = pkg.get("scripts", {})
+        for task in ["build", "lint", "test"]:
+            if task in scripts:
+                assert "turbo" in scripts[task], (
+                    f"Root script '{task}' should delegate via 'turbo run', "
+                    f"got: {scripts[task]}"
+                )
 
     def test_root_package_json_has_workspaces(self):
-        """Verify root package.json exists and contains workspaces field."""
+        """Verify that root package.json defines workspace directories"""
         path = os.path.join(self.REPO_DIR, "package.json")
-        assert os.path.isfile(path), f"Missing {path}"
-        pkg = self._load_json(path)
-        assert "workspaces" in pkg, "root package.json missing 'workspaces' field"
+        with open(path, "r") as f:
+            pkg = json.load(f)
 
-    def test_packages_directory_has_multiple_packages(self):
-        """Verify packages/ directory contains at least 2 sub-packages."""
-        patterns = [
-            os.path.join(self.REPO_DIR, "packages", "*", "package.json"),
-            os.path.join(self.REPO_DIR, "apps", "*", "package.json"),
-            os.path.join(self.REPO_DIR, "crates", "*", "Cargo.toml"),
-        ]
-        total = sum(len(glob.glob(p)) for p in patterns)
-        assert total >= 2, f"Expected >= 2 sub-packages, found {total}"
-
-    # ── semantic_check (static) ─────────────────────────────────────────
-
-    def test_build_depends_on_caret_build(self):
-        """Verify build task uses '^build' in dependsOn for topological ordering."""
-        turbo_path = os.path.join(self.REPO_DIR, "turbo.json")
-        turbo = self._load_json(turbo_path)
-        pipeline = turbo.get("pipeline", turbo.get("tasks", {}))
-        build = pipeline.get("build", {})
-        deps = build.get("dependsOn", [])
-        assert "^build" in deps, f"build.dependsOn should contain '^build', got {deps}"
-
-    def test_dev_cache_false(self):
-        """Verify dev task has cache explicitly set to false."""
-        turbo_path = os.path.join(self.REPO_DIR, "turbo.json")
-        turbo = self._load_json(turbo_path)
-        pipeline = turbo.get("pipeline", turbo.get("tasks", {}))
-        dev = pipeline.get("dev", {})
-        assert (
-            dev.get("cache") is False
-        ), f"dev.cache should be false, got {dev.get('cache')!r}"
-
-    def test_env_or_global_env_declared(self):
-        """Verify globalEnv or per-task env arrays are present for cache busting."""
-        turbo_path = os.path.join(self.REPO_DIR, "turbo.json")
-        turbo = self._load_json(turbo_path)
-        global_env = turbo.get("globalEnv", [])
-        pipeline = turbo.get("pipeline", turbo.get("tasks", {}))
-        any_task_env = any(
-            t.get("env") for t in pipeline.values() if isinstance(t, dict)
-        )
-        assert (
-            global_env or any_task_env
-        ), "No globalEnv or per-task env declarations found"
-
-    # ── functional_check ────────────────────────────────────────────────
-
-    def test_turbo_json_valid_json_parse(self):
-        """Verify turbo.json is valid JSON parseable without errors."""
-        turbo_path = os.path.join(self.REPO_DIR, "turbo.json")
-        data = self._load_json(turbo_path)
-        assert isinstance(data, dict), "turbo.json root should be an object"
-
-    def test_pipeline_has_build_task(self):
-        """Verify turbo.json pipeline/tasks contains a build task definition."""
-        turbo_path = os.path.join(self.REPO_DIR, "turbo.json")
-        turbo = self._load_json(turbo_path)
-        pipeline = turbo.get("pipeline", turbo.get("tasks", {}))
-        assert "build" in pipeline, "'build' task not found in pipeline/tasks"
-
-    def test_test_task_has_outputs(self):
-        """Verify test task outputs is defined for caching test results."""
-        turbo_path = os.path.join(self.REPO_DIR, "turbo.json")
-        turbo = self._load_json(turbo_path)
-        pipeline = turbo.get("pipeline", turbo.get("tasks", {}))
-        test_task = pipeline.get("test", {})
-        outputs = test_task.get("outputs", [])
-        assert outputs, f"test.outputs should be non-empty, got {outputs!r}"
-
-    def test_workspaces_array_has_glob_patterns(self):
-        """Verify root package.json workspaces contain glob patterns."""
-        pkg_path = os.path.join(self.REPO_DIR, "package.json")
-        pkg = self._load_json(pkg_path)
         workspaces = pkg.get("workspaces", [])
         if isinstance(workspaces, dict):
             workspaces = workspaces.get("packages", [])
-        has_glob = any("*" in w for w in workspaces)
-        assert has_glob, f"workspaces should contain glob patterns, got {workspaces}"
+        assert len(workspaces) >= 2, (
+            f"Root package.json should define workspaces, got: {workspaces}"
+        )
+        workspaces_str = str(workspaces)
+        assert "apps" in workspaces_str or "packages" in workspaces_str, (
+            f"Workspaces should include apps/* and packages/*. Got: {workspaces}"
+        )
 
-    def test_turbo_json_syntax_error_detected(self):
-        """Verify that a malformed JSON string raises JSONDecodeError."""
-        with pytest.raises(json.JSONDecodeError):
-            json.loads("{invalid json}")
+    def test_ui_package_uses_workspace_deps(self):
+        """Verify that apps/web depends on @myorg/ui via workspace protocol"""
+        path = os.path.join(self.REPO_DIR, "apps/web/package.json")
+        with open(path, "r") as f:
+            pkg = json.load(f)
 
-    def test_build_without_caret_detected(self):
-        """Verify detection when build.dependsOn uses 'build' instead of '^build'."""
-        turbo_path = os.path.join(self.REPO_DIR, "turbo.json")
-        turbo = self._load_json(turbo_path)
-        pipeline = turbo.get("pipeline", turbo.get("tasks", {}))
-        deps = pipeline.get("build", {}).get("dependsOn", [])
-        assert (
-            "^build" in deps
-        ), "build.dependsOn missing '^build' — packages could build out of order"
+        deps = pkg.get("dependencies", {})
+        # Check for workspace dependency (could be @myorg/ui or similar)
+        has_workspace_dep = any(
+            "workspace" in str(v) for v in deps.values()
+        ) or any("@myorg" in k or "ui" in k for k in deps.keys())
+        assert has_workspace_dep, (
+            f"apps/web should depend on UI package via workspace:* protocol. "
+            f"Dependencies: {deps}"
+        )
+
+    def test_ci_workflow_uses_affected(self):
+        """Verify that CI workflow uses --affected flag for changed packages"""
+        ci_path = None
+        for ext in ["yml", "yaml"]:
+            p = os.path.join(self.REPO_DIR, f".github/workflows/ci.{ext}")
+            if os.path.exists(p):
+                ci_path = p
+                break
+
+        assert ci_path is not None, "CI workflow file not found"
+        with open(ci_path, "r") as f:
+            content = f.read()
+
+        assert "--affected" in content, (
+            "CI workflow should use --affected flag for changed packages"
+        )
+
+    def test_ci_workflow_has_fetch_depth_zero(self):
+        """Verify that CI checkout uses fetch-depth: 0 (needed for --affected)"""
+        ci_path = None
+        for ext in ["yml", "yaml"]:
+            p = os.path.join(self.REPO_DIR, f".github/workflows/ci.{ext}")
+            if os.path.exists(p):
+                ci_path = p
+                break
+
+        assert ci_path is not None, "CI workflow file not found"
+        with open(ci_path, "r") as f:
+            content = f.read()
+
+        assert "fetch-depth" in content and "0" in content, (
+            "CI workflow checkout should use fetch-depth: 0 for --affected to work"
+        )
+
+    def test_turbo_json_has_environment_variables(self):
+        """Verify that turbo.json declares environment variables for build task"""
+        path = os.path.join(self.REPO_DIR, "turbo.json")
+        with open(path, "r") as f:
+            turbo = json.load(f)
+
+        tasks = turbo.get("tasks", turbo.get("pipeline", {}))
+        build_task = tasks.get("build", {})
+
+        has_env = "env" in build_task or "passThroughEnv" in build_task
+        assert has_env, (
+            "build task should declare env or passThroughEnv variables"
+        )
+
+    def test_ui_package_has_peer_dependencies(self):
+        """Verify that packages/ui defines peerDependencies for react"""
+        path = os.path.join(self.REPO_DIR, "packages/ui/package.json")
+        with open(path, "r") as f:
+            pkg = json.load(f)
+
+        peer_deps = pkg.get("peerDependencies", {})
+        assert "react" in peer_deps, (
+            f"packages/ui should declare react as peerDependency. "
+            f"peerDependencies: {peer_deps}"
+        )

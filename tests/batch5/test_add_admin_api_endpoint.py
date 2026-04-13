@@ -1,172 +1,159 @@
 """
-Test for 'add-admin-api-endpoint' skill — Ghost Bookmarks Admin API
-Validates that the Agent added a bookmarks CRUD endpoint to Ghost's Admin API,
-including controller, model, schema, and route registration.
+Test skill: add-admin-api-endpoint
+Verify that the Agent correctly adds a Bookmarks Admin API endpoint
+to the Ghost publishing platform.
 """
 
-import json
 import os
 import re
+import json
 import subprocess
-
 import pytest
 
 
 class TestAddAdminApiEndpoint:
-    """Verify Ghost Admin API bookmarks endpoint."""
-
     REPO_DIR = "/workspace/Ghost"
 
-    # ── file_path_check ─────────────────────────────────────────────────────
+    BOOKMARKS_CTRL = "ghost/core/core/server/api/endpoints/bookmarks.js"
+    ENDPOINTS_INDEX = "ghost/core/core/server/api/endpoints/index.js"
+    BOOKMARK_MODEL = "ghost/core/core/server/models/bookmark.js"
+    SCHEMA_FILE = "ghost/core/core/server/data/schema/schema.js"
+    E2E_TEST = "ghost/core/test/e2e-api/admin/bookmarks.test.js"
 
-    def test_bookmark_controller_files_exist(self):
-        """Verify bookmarks controller, model, and schema files exist."""
-        required = [
-            "core/server/api/endpoints/bookmarks.js",
-            "core/server/models/bookmark.js",
-            "core/server/data/schema/schema.js",
-        ]
-        missing = [
-            f for f in required if not os.path.isfile(os.path.join(self.REPO_DIR, f))
-        ]
-        assert not missing, f"Missing bookmarks files: {missing}"
+    def _read_file(self, rel_path):
+        filepath = os.path.join(self.REPO_DIR, rel_path)
+        with open(filepath) as f:
+            return f.read()
 
-    def test_schema_table_definition_exists(self):
-        """Verify schema.js contains the bookmarks table definition."""
-        schema_path = os.path.join(self.REPO_DIR, "core/server/data/schema/schema.js")
-        assert os.path.isfile(schema_path), "schema.js is missing"
-        with open(schema_path, "r", errors="ignore") as fh:
-            content = fh.read()
-        assert (
-            "bookmarks" in content
-        ), "schema.js does not contain a 'bookmarks' table definition"
+    # === File Path Checks ===
 
-    # ── semantic_check ──────────────────────────────────────────────────────
+    def test_bookmarks_controller_exists(self):
+        """Verify bookmarks.js controller file exists"""
+        filepath = os.path.join(self.REPO_DIR, self.BOOKMARKS_CTRL)
+        assert os.path.exists(filepath), f"bookmarks.js not found at {filepath}"
 
-    def test_controller_exports_five_crud_actions(self):
-        """Verify bookmarks controller exports browse, read, add, edit, destroy."""
-        ctrl_path = os.path.join(
-            self.REPO_DIR, "core/server/api/endpoints/bookmarks.js"
-        )
-        assert os.path.isfile(ctrl_path), "bookmarks.js controller is missing"
-        with open(ctrl_path, "r", errors="ignore") as fh:
-            content = fh.read()
+    def test_bookmark_model_exists(self):
+        """Verify bookmark.js model file exists"""
+        filepath = os.path.join(self.REPO_DIR, self.BOOKMARK_MODEL)
+        assert os.path.exists(filepath), f"bookmark.js model not found at {filepath}"
+
+    def test_e2e_test_file_exists(self):
+        """Verify e2e test file for bookmarks exists"""
+        filepath = os.path.join(self.REPO_DIR, self.E2E_TEST)
+        assert os.path.exists(filepath), f"E2E test file not found at {filepath}"
+
+    # === Semantic Checks ===
+
+    def test_controller_has_all_crud_actions(self):
+        """Verify bookmarks controller implements browse, read, add, edit, destroy"""
+        content = self._read_file(self.BOOKMARKS_CTRL)
         for action in ["browse", "read", "add", "edit", "destroy"]:
-            assert action in content, f"bookmarks controller missing '{action}' export"
+            assert action in content, \
+                f"Bookmarks controller missing '{action}' action"
 
-    def test_model_defines_table_and_tags(self):
-        """Verify Bookmark model references tableName and tags relation."""
-        model_path = os.path.join(self.REPO_DIR, "core/server/models/bookmark.js")
-        assert os.path.isfile(model_path), "bookmark.js model is missing"
-        with open(model_path, "r", errors="ignore") as fh:
-            content = fh.read()
-        assert re.search(
-            r"tableName", content
-        ), "Bookmark model does not define tableName"
+    def test_controller_registered_in_index(self):
+        """Verify bookmarks controller is registered in the endpoints index"""
+        content = self._read_file(self.ENDPOINTS_INDEX)
+        assert "bookmark" in content.lower(), \
+            "Bookmarks controller not registered in endpoints/index.js"
 
-    def test_schema_has_required_columns(self):
-        """Verify schema defines title, url, description, created_by columns."""
-        schema_path = os.path.join(self.REPO_DIR, "core/server/data/schema/schema.js")
-        assert os.path.isfile(schema_path), "schema.js is missing"
-        with open(schema_path, "r", errors="ignore") as fh:
-            content = fh.read()
-        for col in ["title", "url", "description", "created_by"]:
-            assert col in content, f"Schema missing column '{col}' for bookmarks table"
+    def test_schema_defines_bookmarks_table(self):
+        """Verify schema.js defines the bookmarks table with required columns"""
+        content = self._read_file(self.SCHEMA_FILE)
+        assert "bookmarks" in content, \
+            "Schema file missing 'bookmarks' table definition"
+        required_columns = ["title", "url"]
+        for col in required_columns:
+            assert col in content, \
+                f"Schema missing required column '{col}' in bookmarks table"
 
-    def test_index_js_registers_bookmarks_route(self):
-        """Verify the admin API index or router registers the bookmarks endpoint."""
-        candidates = [
-            "core/server/api/endpoints/index.js",
-            "core/server/web/api/endpoints/admin/index.js",
-        ]
-        found = False
-        for rel_path in candidates:
-            full = os.path.join(self.REPO_DIR, rel_path)
-            if os.path.isfile(full):
-                with open(full, "r", errors="ignore") as fh:
-                    content = fh.read()
-                if "bookmarks" in content:
-                    found = True
-                    break
-        assert found, "No admin API index file registers the 'bookmarks' endpoint"
+    def test_bookmark_model_defines_table_name(self):
+        """Verify bookmark model references the bookmarks table"""
+        content = self._read_file(self.BOOKMARK_MODEL)
+        assert "bookmarks" in content or "Bookmark" in content, \
+            "Bookmark model missing table name reference"
 
-    # ── functional_check ────────────────────────────────────────────────────
+    def test_controller_validates_required_fields(self):
+        """Verify controller or model validates title and url as required"""
+        ctrl_content = self._read_file(self.BOOKMARKS_CTRL)
+        model_content = self._read_file(self.BOOKMARK_MODEL)
+        combined = ctrl_content + model_content
+        has_title_required = bool(re.search(
+            r'(required|notNull|validate.*title|title.*required)', combined, re.IGNORECASE
+        ))
+        has_url_required = bool(re.search(
+            r'(required|notNull|validate.*url|url.*required)', combined, re.IGNORECASE
+        ))
+        assert has_title_required, \
+            "No validation found requiring 'title' field for bookmarks"
+        assert has_url_required, \
+            "No validation found requiring 'url' field for bookmarks"
 
-    def test_controller_syntax_valid(self):
-        """Verify bookmarks controller is syntactically valid JavaScript."""
-        ctrl_path = os.path.join(
-            self.REPO_DIR, "core/server/api/endpoints/bookmarks.js"
+    def test_schema_has_bookmarks_tags_join_table(self):
+        """Verify schema defines bookmarks_tags join table for many-to-many"""
+        content = self._read_file(self.SCHEMA_FILE)
+        assert "bookmarks_tags" in content, \
+            "Schema missing bookmarks_tags join table for tag associations"
+
+    def test_e2e_test_covers_crud_and_validation(self):
+        """Verify e2e tests cover all CRUD actions and validation errors"""
+        content = self._read_file(self.E2E_TEST)
+        for action_keyword in ["POST", "GET", "PUT", "DELETE"]:
+            assert action_keyword in content, \
+                f"E2E tests missing {action_keyword} request coverage"
+        has_validation_test = bool(re.search(
+            r'(422|validation|required|error)', content, re.IGNORECASE
+        ))
+        assert has_validation_test, \
+            "E2E tests missing validation error scenario"
+
+    # === Functional Checks ===
+
+    def test_bookmarks_controller_is_valid_javascript(self):
+        """Verify bookmarks.js is parseable JavaScript using Node.js"""
+        filepath = os.path.join(self.REPO_DIR, self.BOOKMARKS_CTRL)
+        result = subprocess.run(
+            ["node", "-e", f"require('{filepath}')"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            cwd=self.REPO_DIR,
         )
-        assert os.path.isfile(ctrl_path), "bookmarks.js controller is missing"
-        try:
+        if result.returncode != 0:
+            # Try syntax check only
             result = subprocess.run(
-                ["node", "--check", ctrl_path],
+                ["node", "--check", filepath],
                 capture_output=True,
                 text=True,
                 timeout=30,
             )
-        except FileNotFoundError:
-            pytest.skip("node not available")
-        assert (
-            result.returncode == 0
-        ), f"bookmarks.js has syntax errors:\n{result.stderr}"
+        assert result.returncode == 0, \
+            f"bookmarks.js has JavaScript errors: {result.stderr[:500]}"
 
-    def test_post_creates_bookmark_returns_201(self):
-        """Verify POST /bookmarks returns 201 (or the controller supports add)."""
-        ctrl_path = os.path.join(
-            self.REPO_DIR, "core/server/api/endpoints/bookmarks.js"
+    def test_bookmark_model_is_valid_javascript(self):
+        """Verify bookmark.js model is parseable JavaScript"""
+        filepath = os.path.join(self.REPO_DIR, self.BOOKMARK_MODEL)
+        result = subprocess.run(
+            ["node", "--check", filepath],
+            capture_output=True,
+            text=True,
+            timeout=30,
         )
-        assert os.path.isfile(ctrl_path), "bookmarks.js controller is missing"
-        with open(ctrl_path, "r", errors="ignore") as fh:
-            content = fh.read()
-        assert "add" in content, "POST handler (add) missing from controller"
-        # Check that a status code of 201 is defined or a frame response is used
-        has_status = re.search(r"201|statusCode|frame", content)
-        assert (
-            has_status
-        ), "Controller add action does not reference 201 status code or frame"
+        assert result.returncode == 0, \
+            f"bookmark.js model has JavaScript errors: {result.stderr[:500]}"
 
-    def test_get_browse_supports_pagination(self):
-        """Verify the browse action supports a limit/pagination parameter."""
-        ctrl_path = os.path.join(
-            self.REPO_DIR, "core/server/api/endpoints/bookmarks.js"
+    def test_controller_exports_standard_api_shape(self):
+        """Verify controller module exports object with expected action keys"""
+        filepath = os.path.join(self.REPO_DIR, self.BOOKMARKS_CTRL)
+        content = self._read_file(self.BOOKMARKS_CTRL)
+        # Ghost controllers export an object with action names as keys
+        has_module_export = bool(re.search(
+            r'module\.exports\s*=', content
+        ))
+        assert has_module_export, \
+            "bookmarks.js controller does not export via module.exports"
+        exported_actions = re.findall(
+            r'(browse|read|add|edit|destroy)\s*[:\(]', content
         )
-        assert os.path.isfile(ctrl_path), "bookmarks.js controller is missing"
-        with open(ctrl_path, "r", errors="ignore") as fh:
-            content = fh.read()
-        assert "browse" in content, "browse action missing from controller"
-
-    def test_delete_returns_204_or_destroy(self):
-        """Verify DELETE handler (destroy) is present in controller."""
-        ctrl_path = os.path.join(
-            self.REPO_DIR, "core/server/api/endpoints/bookmarks.js"
-        )
-        assert os.path.isfile(ctrl_path), "bookmarks.js controller is missing"
-        with open(ctrl_path, "r", errors="ignore") as fh:
-            content = fh.read()
-        assert (
-            "destroy" in content
-        ), "DELETE handler (destroy) missing from bookmarks controller"
-
-    def test_post_missing_url_returns_validation_error(self):
-        """Verify schema or validation logic requires a url field for bookmarks."""
-        schema_path = os.path.join(self.REPO_DIR, "core/server/data/schema/schema.js")
-        assert os.path.isfile(schema_path), "schema.js is missing"
-        with open(schema_path, "r", errors="ignore") as fh:
-            content = fh.read()
-        assert (
-            "url" in content
-        ), "Schema does not define 'url' column for bookmarks (required field)"
-
-    def test_unauthenticated_request_requires_auth(self):
-        """Verify controller references authentication or permissions."""
-        ctrl_path = os.path.join(
-            self.REPO_DIR, "core/server/api/endpoints/bookmarks.js"
-        )
-        assert os.path.isfile(ctrl_path), "bookmarks.js controller is missing"
-        with open(ctrl_path, "r", errors="ignore") as fh:
-            content = fh.read()
-        auth_patterns = [r"permissions", r"auth", r"session", r"middleware"]
-        assert any(
-            re.search(p, content, re.IGNORECASE) for p in auth_patterns
-        ), "Controller does not reference authentication or permissions"
+        assert len(set(exported_actions)) >= 5, \
+            f"Expected 5 CRUD actions exported, found: {set(exported_actions)}"

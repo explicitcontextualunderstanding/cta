@@ -1,223 +1,214 @@
 """
-Tests for 'prompt-engineering-patterns' skill.
-Generated from benchmark case definitions for prompt-engineering-patterns.
+Test skill: prompt-engineering-patterns
+Verify that the Agent builds a multi-stage prompt pipeline for SQL
+generation with few-shot selection, chain-of-thought decomposition,
+SQL validation, and injection detection.
 """
 
-import ast
-import base64
-import glob
-import json
 import os
-import py_compile
 import re
+import ast
+import json
 import subprocess
-import textwrap
-
 import pytest
-
-try:
-    import yaml
-except ModuleNotFoundError:
-    yaml = None
 
 
 class TestPromptEngineeringPatterns:
-    """Verify the prompt-engineering-patterns skill output."""
+    REPO_DIR = "/workspace/langchain"
 
-    REPO_DIR = '/workspace/langchain'
+    # === File Path Checks ===
 
+    def test_templates_file_exists(self):
+        path = os.path.join(self.REPO_DIR, "src/prompt_pipeline/templates.py")
+        assert os.path.exists(path), f"templates.py not found at {path}"
 
-    # ── helpers ──────────────────────────────────────────────
+    def test_few_shot_file_exists(self):
+        path = os.path.join(self.REPO_DIR, "src/prompt_pipeline/few_shot.py")
+        assert os.path.exists(path), f"few_shot.py not found at {path}"
 
-    _SETUP_CACHE: dict = {}
+    def test_pipeline_file_exists(self):
+        path = os.path.join(self.REPO_DIR, "src/prompt_pipeline/pipeline.py")
+        assert os.path.exists(path), f"pipeline.py not found at {path}"
 
-    @staticmethod
-    def _repo_path(rel: str) -> str:
-        return os.path.join(TestPromptEngineeringPatterns.REPO_DIR, rel)
+    def test_validators_file_exists(self):
+        path = os.path.join(self.REPO_DIR, "src/prompt_pipeline/validators.py")
+        assert os.path.exists(path), f"validators.py not found at {path}"
 
-    @staticmethod
-    def _safe_read(path: str) -> str:
-        with open(path, "r", encoding="utf-8", errors="ignore") as fh:
-            return fh.read()
+    def test_few_shot_examples_exists(self):
+        path = os.path.join(self.REPO_DIR, "data/few_shot_examples.jsonl")
+        assert os.path.exists(path), f"few_shot_examples.jsonl not found at {path}"
 
-    @staticmethod
-    def _load_yaml(path: str):
-        if yaml is None:
-            pytest.skip("PyYAML not available")
-        with open(path, "r", encoding="utf-8", errors="ignore") as fh:
-            return yaml.safe_load(fh)
+    def test_schema_json_exists(self):
+        path = os.path.join(self.REPO_DIR, "data/schema.json")
+        assert os.path.exists(path), f"schema.json not found at {path}"
 
-    @staticmethod
-    def _load_json(path: str):
-        with open(path, "r", encoding="utf-8", errors="ignore") as fh:
-            return json.load(fh)
+    # === Semantic Checks ===
 
-    @classmethod
-    def _run_in_repo(cls, script: str, timeout: int = 120) -> subprocess.CompletedProcess:
-        return subprocess.run(
-            ["python", "-c", textwrap.dedent(script)],
-            cwd=cls.REPO_DIR,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
+    def test_schema_defines_five_tables(self):
+        """Verify schema.json defines users, orders, products, order_items, categories"""
+        path = os.path.join(self.REPO_DIR, "data/schema.json")
+        with open(path, "r") as f:
+            schema = json.load(f)
+
+        if isinstance(schema, dict) and "tables" in schema:
+            tables = schema["tables"]
+            if isinstance(tables, list):
+                table_names = [t.get("name", "") for t in tables]
+            else:
+                table_names = list(tables.keys())
+        else:
+            table_names = list(schema.keys()) if isinstance(schema, dict) else []
+
+        expected = ["users", "orders", "products", "order_items", "categories"]
+        for t in expected:
+            assert t in table_names, f"Schema missing table: {t}. Found: {table_names}"
+
+    def test_few_shot_has_15_examples(self):
+        """Verify few_shot_examples.jsonl has 15 examples"""
+        path = os.path.join(self.REPO_DIR, "data/few_shot_examples.jsonl")
+        with open(path, "r") as f:
+            lines = [l.strip() for l in f.readlines() if l.strip()]
+
+        examples = []
+        for line in lines:
+            try:
+                examples.append(json.loads(line))
+            except json.JSONDecodeError:
+                pass
+
+        assert len(examples) >= 15, (
+            f"Expected 15 few-shot examples, found {len(examples)}"
         )
 
-    @classmethod
-    def _run_cmd(cls, command, args=None, timeout=120):
-        args = args or []
-        if isinstance(command, str) and args:
-            return subprocess.run(
-                [command, *args],
-                cwd=cls.REPO_DIR,
-                capture_output=True,
-                text=True,
-                timeout=timeout,
+    def test_few_shot_examples_have_required_fields(self):
+        """Verify each example has input, sql, explanation"""
+        path = os.path.join(self.REPO_DIR, "data/few_shot_examples.jsonl")
+        with open(path, "r") as f:
+            lines = [l.strip() for l in f.readlines() if l.strip()]
+
+        for i, line in enumerate(lines[:15]):
+            example = json.loads(line)
+            assert "input" in example or "question" in example, (
+                f"Example {i} missing input/question field"
             )
-        return subprocess.run(
-            command if isinstance(command, list) else command,
-            cwd=cls.REPO_DIR,
-            shell=isinstance(command, str),
-            capture_output=True,
-            text=True,
-            timeout=timeout,
+            assert "sql" in example, f"Example {i} missing sql field"
+
+    def test_templates_have_render_method(self):
+        """Verify template classes have render() method"""
+        path = os.path.join(self.REPO_DIR, "src/prompt_pipeline/templates.py")
+        with open(path, "r") as f:
+            content = f.read()
+
+        assert re.search(r"def\s+render", content), (
+            "Template classes must have a render() method"
         )
 
-    @classmethod
-    def _ensure_setup(cls, label, setup_cmds, fallback):
-        if not setup_cmds:
-            return
-        key = tuple(setup_cmds)
-        if key in cls._SETUP_CACHE:
-            ok, msg = cls._SETUP_CACHE[key]
-            if ok:
-                return
-            if fallback == "skip_if_setup_fails":
-                pytest.skip(f"{label} setup failed: {msg}")
-            pytest.fail(f"{label} setup failed: {msg}")
-        for cmd in setup_cmds:
-            r = subprocess.run(cmd, cwd=cls.REPO_DIR, shell=True,
-                               capture_output=True, text=True, timeout=300)
-            if r.returncode != 0:
-                msg = (r.stderr or r.stdout or 'failed').strip()
-                cls._SETUP_CACHE[key] = (False, msg)
-                if fallback == "skip_if_setup_fails":
-                    pytest.skip(f"{label} setup failed: {msg}")
-                pytest.fail(f"{label} setup failed: {msg}")
-        cls._SETUP_CACHE[key] = (True, 'ok')
+    def test_four_template_types_defined(self):
+        """Verify all 4 template types are defined"""
+        path = os.path.join(self.REPO_DIR, "src/prompt_pipeline/templates.py")
+        with open(path, "r") as f:
+            content = f.read()
 
+        content_lower = content.lower()
+        expected = ["schema", "decomposition", "generation", "verification"]
+        found = [t for t in expected if t in content_lower]
+        assert len(found) >= 3, (
+            f"Templates should define 4 types. Found matching: {found}"
+        )
 
-    # ── file_path_check (static) ────────────────────────────────────────
+    def test_few_shot_selector_uses_mmr(self):
+        """Verify FewShotSelector uses MMR for diversity"""
+        path = os.path.join(self.REPO_DIR, "src/prompt_pipeline/few_shot.py")
+        with open(path, "r") as f:
+            content = f.read()
 
-    def test_template_files_exist(self):
-        """Verify all 3 template modules exist"""
-        _p = self._repo_path('templates/chat_prompt.py')
-        assert os.path.isfile(_p), f'Missing file: templates/chat_prompt.py'
-        py_compile.compile(_p, doraise=True)
-        _p = self._repo_path('templates/few_shot.py')
-        assert os.path.isfile(_p), f'Missing file: templates/few_shot.py'
-        py_compile.compile(_p, doraise=True)
-        _p = self._repo_path('templates/chain_of_thought.py')
-        assert os.path.isfile(_p), f'Missing file: templates/chain_of_thought.py'
-        py_compile.compile(_p, doraise=True)
+        assert "FewShotSelector" in content, "Must define FewShotSelector class"
+        has_mmr = (
+            "mmr" in content.lower()
+            or "diversity" in content
+            or "diversity_weight" in content
+        )
+        assert has_mmr, "FewShotSelector should use MMR or diversity weighting"
 
-    def test_tests_file_exists(self):
-        """Verify test file exists"""
-        _p = self._repo_path('tests/test_prompt_templates.py')
-        assert os.path.isfile(_p), f'Missing file: tests/test_prompt_templates.py'
-        py_compile.compile(_p, doraise=True)
+    def test_validator_has_three_validation_functions(self):
+        """Verify validators define syntax, schema, injection detection"""
+        path = os.path.join(self.REPO_DIR, "src/prompt_pipeline/validators.py")
+        with open(path, "r") as f:
+            content = f.read()
 
-    # ── semantic_check (static) ────────────────────────────────────────
+        assert re.search(r"def\s+validate_syntax", content), "Missing validate_syntax"
+        assert re.search(r"def\s+validate_schema", content), "Missing validate_schema"
+        assert re.search(r"def\s+detect_injection", content), "Missing detect_injection"
 
-    def test_chat_prompt_class_defined(self):
-        """Verify ChatPromptTemplate class with format_messages method"""
-        _p = self._repo_path('templates/chat_prompt.py')
-        assert os.path.exists(_p), f'Missing: templates/chat_prompt.py'
-        _contents = self._safe_read(_p)
-        _all = _contents if isinstance(_contents, str) else ''
-        assert 'ChatPromptTemplate' in _all, 'Missing: ChatPromptTemplate'
-        assert 'format_messages' in _all, 'Missing: format_messages'
+    def test_injection_detector_covers_dangerous_keywords(self):
+        """Verify injection detector flags DROP, DELETE, INSERT, UPDATE, ALTER, UNION"""
+        path = os.path.join(self.REPO_DIR, "src/prompt_pipeline/validators.py")
+        with open(path, "r") as f:
+            content = f.read()
 
-    def test_few_shot_class_defined(self):
-        """Verify FewShotPromptTemplate with example selector"""
-        _p = self._repo_path('templates/few_shot.py')
-        assert os.path.exists(_p), f'Missing: templates/few_shot.py'
-        _contents = self._safe_read(_p)
-        _all = _contents if isinstance(_contents, str) else ''
-        assert 'FewShotPromptTemplate' in _all, 'Missing: FewShotPromptTemplate'
-        assert 'example_selector' in _all, 'Missing: example_selector'
-        assert 'format_prompt' in _all, 'Missing: format_prompt'
+        dangerous = ["DROP", "DELETE", "INSERT", "UPDATE", "ALTER", "UNION"]
+        found = [kw for kw in dangerous if kw in content or kw.lower() in content]
+        assert len(found) >= 4, (
+            f"Injection detector should flag dangerous keywords. Found: {found}"
+        )
 
-    def test_cot_prompt_defined(self):
-        """Verify ChainOfThoughtPrompt adds reasoning instruction"""
-        _p = self._repo_path('templates/chain_of_thought.py')
-        assert os.path.exists(_p), f'Missing: templates/chain_of_thought.py'
-        _contents = self._safe_read(_p)
-        _all = _contents if isinstance(_contents, str) else ''
-        assert 'ChainOfThoughtPrompt' in _all, 'Missing: ChainOfThoughtPrompt'
-        assert 'step by step' in _all, 'Missing: step by step'
+    def test_pipeline_has_generate_method(self):
+        """Verify SQLPromptPipeline has generate() method"""
+        path = os.path.join(self.REPO_DIR, "src/prompt_pipeline/pipeline.py")
+        with open(path, "r") as f:
+            content = f.read()
 
-    def test_langchain_imports(self):
-        """Verify langchain imports in template files"""
-        _p = self._repo_path('templates/chat_prompt.py')
-        assert os.path.exists(_p), f'Missing: templates/chat_prompt.py'
-        _contents = self._safe_read(_p)
-        _all = _contents if isinstance(_contents, str) else ''
-        assert 'langchain' in _all, 'Missing: langchain'
-        assert 'SystemMessage' in _all, 'Missing: SystemMessage'
-        assert 'HumanMessage' in _all, 'Missing: HumanMessage'
+        assert "SQLPromptPipeline" in content, "Must define SQLPromptPipeline class"
+        assert re.search(r"def\s+generate", content), "Missing generate() method"
 
-    # ── functional_check ────────────────────────────────────────
+    def test_pipeline_has_max_correction_attempts(self):
+        """Verify pipeline limits correction attempts to 2"""
+        path = os.path.join(self.REPO_DIR, "src/prompt_pipeline/pipeline.py")
+        with open(path, "r") as f:
+            content = f.read()
 
-    def test_format_messages_returns_messages(self):
-        """Verify format_messages returns list of BaseMessage instances"""
-        self._ensure_setup('test_format_messages_returns_messages', ['pip install langchain langchain-core'], 'fail_if_missing')
-        result = self._run_cmd('python', args=['-c', "from templates.chat_prompt import ChatPromptTemplate; from langchain.schema import SystemMessage, HumanMessage; t=ChatPromptTemplate.from_messages([('system','You are helpful'),('human','{query}')]); msgs=t.format_messages(query='Hi'); assert len(msgs)==2; assert isinstance(msgs[0],SystemMessage); print('PASS')"], timeout=120)
+        has_limit = "2" in content and ("attempt" in content.lower() or "retri" in content.lower())
+        assert has_limit, "Pipeline should limit correction attempts to 2"
+
+    # === Functional Checks ===
+
+    def test_all_python_files_parse(self):
+        """Verify all Python files parse without syntax errors"""
+        files = [
+            "src/prompt_pipeline/templates.py",
+            "src/prompt_pipeline/few_shot.py",
+            "src/prompt_pipeline/pipeline.py",
+            "src/prompt_pipeline/validators.py",
+        ]
+        for filename in files:
+            path = os.path.join(self.REPO_DIR, filename)
+            with open(path, "r") as f:
+                source = f.read()
+            try:
+                ast.parse(source)
+            except SyntaxError as e:
+                pytest.fail(f"{filename} has syntax error: {e}")
+
+    def test_schema_json_is_valid(self):
+        """Verify schema.json is valid JSON"""
+        path = os.path.join(self.REPO_DIR, "data/schema.json")
+        with open(path, "r") as f:
+            try:
+                data = json.load(f)
+            except json.JSONDecodeError as e:
+                pytest.fail(f"schema.json is invalid JSON: {e}")
+        assert isinstance(data, dict), "schema.json should be a JSON object"
+
+    def test_validators_import(self):
+        """Verify validators module can be imported"""
+        result = subprocess.run(
+            ["python", "-c",
+             "import sys; sys.path.insert(0, 'src'); "
+             "from prompt_pipeline.validators import validate_syntax, detect_injection; "
+             "print('OK')"],
+            capture_output=True, text=True, timeout=30,
+            cwd=self.REPO_DIR,
+        )
         assert result.returncode == 0, (
-            f'test_format_messages_returns_messages failed (exit {result.returncode})\n' + result.stderr[:500]
+            f"Failed to import validators:\n{result.stderr[:500]}"
         )
-        assert 'PASS' in (result.stdout + result.stderr), 'Expected PASS in output'
-
-    def test_missing_variable_error(self):
-        """Verify missing variable raises KeyError"""
-        self._ensure_setup('test_missing_variable_error', ['pip install langchain langchain-core'], 'fail_if_missing')
-        result = self._run_cmd('python', args=['-c', "from templates.chat_prompt import ChatPromptTemplate; t=ChatPromptTemplate.from_messages([('human','{query}')])\ntry:\n    t.format_messages()\n    assert False, 'Should have raised'\nexcept (KeyError, Exception) as e:\n    assert 'query' in str(e).lower() or True; print('PASS')"], timeout=120)
-        assert result.returncode == 0, (
-            f'test_missing_variable_error failed (exit {result.returncode})\n' + result.stderr[:500]
-        )
-        assert 'PASS' in (result.stdout + result.stderr), 'Expected PASS in output'
-
-    def test_few_shot_selects_k(self):
-        """Verify FewShotPromptTemplate honors k parameter"""
-        self._ensure_setup('test_few_shot_selects_k', ['pip install langchain langchain-core'], 'fail_if_missing')
-        result = self._run_cmd('python', args=['-c', "from templates.few_shot import FewShotPromptTemplate; examples=[{'input':'Q1','output':'A1'},{'input':'Q2','output':'A2'},{'input':'Q3','output':'A3'}]; t=FewShotPromptTemplate(examples=examples, k=2); result=str(t.format_prompt(input='test')); assert result.count('A')>=2; print('PASS')"], timeout=120)
-        assert result.returncode == 0, (
-            f'test_few_shot_selects_k failed (exit {result.returncode})\n' + result.stderr[:500]
-        )
-        assert 'PASS' in (result.stdout + result.stderr), 'Expected PASS in output'
-
-    def test_cot_adds_instruction(self):
-        """Verify ChainOfThoughtPrompt adds step-by-step instruction"""
-        self._ensure_setup('test_cot_adds_instruction', ['pip install langchain langchain-core'], 'fail_if_missing')
-        result = self._run_cmd('python', args=['-c', "from templates.chain_of_thought import ChainOfThoughtPrompt; cot=ChainOfThoughtPrompt(); result=str(cot); assert 'step' in result.lower() or 'reason' in result.lower(); print('PASS')"], timeout=120)
-        assert result.returncode == 0, (
-            f'test_cot_adds_instruction failed (exit {result.returncode})\n' + result.stderr[:500]
-        )
-        assert 'PASS' in (result.stdout + result.stderr), 'Expected PASS in output'
-
-    def test_pytest_prompt_templates(self):
-        """Run pytest for prompt template tests"""
-        self._ensure_setup('test_pytest_prompt_templates', ['pip install langchain langchain-core pytest'], 'fail_if_missing')
-        result = self._run_cmd('python', args=['-m', 'pytest', 'tests/test_prompt_templates.py', '-v', '--tb=short'], timeout=120)
-        assert result.returncode == 0, (
-            f'test_pytest_prompt_templates failed (exit {result.returncode})\n' + result.stderr[:500]
-        )
-
-    def test_empty_examples_handled(self):
-        """Verify FewShotPromptTemplate handles empty examples list"""
-        self._ensure_setup('test_empty_examples_handled', ['pip install langchain langchain-core'], 'fail_if_missing')
-        result = self._run_cmd('python', args=['-c', "from templates.few_shot import FewShotPromptTemplate; t=FewShotPromptTemplate(examples=[], k=0); result=t.format_prompt(input='test'); assert result is not None; print('PASS')"], timeout=120)
-        assert result.returncode == 0, (
-            f'test_empty_examples_handled failed (exit {result.returncode})\n' + result.stderr[:500]
-        )
-        assert 'PASS' in (result.stdout + result.stderr), 'Expected PASS in output'
-

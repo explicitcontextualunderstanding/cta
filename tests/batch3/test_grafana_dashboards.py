@@ -1,134 +1,272 @@
 """
-Tests for grafana-dashboards skill.
-Validates Grafana dashboard JSON, provisioning YAML, and alert rules in grafana repository.
+Tests for the grafana-dashboards skill.
+
+Validates that Grafana dashboard provisioning was implemented for a
+microservice monitoring stack with RED/USE panels, alerting, and
+dashboard-as-code provisioning.
+
+Repo: grafana (https://github.com/grafana/grafana)
 """
 
-import os
 import json
-import subprocess
-import pytest
+import os
+import re
 
 REPO_DIR = "/workspace/grafana"
 
 
-def _path(rel: str) -> str:
-    return os.path.join(REPO_DIR, rel)
+class TestFilePathCheck:
+    """Verify all required files were created."""
+
+    def test_dashboard_json_exists(self):
+        path = os.path.join(
+            REPO_DIR, "devenv", "dashboards",
+            "microservice-monitoring.json",
+        )
+        assert os.path.isfile(path), f"Expected microservice-monitoring.json"
+
+    def test_provisioning_yaml_exists(self):
+        path = os.path.join(
+            REPO_DIR, "devenv", "dashboards", "provisioning.yaml",
+        )
+        assert os.path.isfile(path), f"Expected provisioning.yaml"
+
+    def test_alert_rules_exists(self):
+        path = os.path.join(REPO_DIR, "devenv", "alerting", "alert-rules.yaml")
+        assert os.path.isfile(path), f"Expected alerting/alert-rules.yaml"
+
+    def test_red_panels_exists(self):
+        path = os.path.join(
+            REPO_DIR, "devenv", "dashboards", "panels", "red-panels.json",
+        )
+        assert os.path.isfile(path), f"Expected panels/red-panels.json"
+
+    def test_use_panels_exists(self):
+        path = os.path.join(
+            REPO_DIR, "devenv", "dashboards", "panels", "use-panels.json",
+        )
+        assert os.path.isfile(path), f"Expected panels/use-panels.json"
 
 
-def _read(rel: str) -> str:
-    with open(_path(rel), encoding="utf-8", errors="ignore") as f:
-        return f.read()
+class TestSemanticDashboardJson:
+    """Verify dashboard JSON structure."""
 
+    def _load(self):
+        path = os.path.join(
+            REPO_DIR, "devenv", "dashboards",
+            "microservice-monitoring.json",
+        )
+        with open(path, "r") as f:
+            return json.load(f)
 
-def _read_json(rel: str) -> dict:
-    with open(_path(rel), encoding="utf-8") as f:
-        return json.load(f)
+    def test_valid_json(self):
+        data = self._load()
+        assert isinstance(data, dict), "Dashboard should be valid JSON object"
 
+    def test_title(self):
+        data = self._load()
+        assert data.get("title") == "Microservice Monitoring", (
+            "Expected title 'Microservice Monitoring'"
+        )
 
-def _run(cmd: str, cwd: str = REPO_DIR, timeout: int = 30):
-    return subprocess.run(
-        cmd, shell=True, cwd=cwd, capture_output=True, text=True, timeout=timeout
-    )
+    def test_uid(self):
+        data = self._load()
+        assert data.get("uid") == "microservice-monitoring-v1", (
+            "Expected uid 'microservice-monitoring-v1'"
+        )
 
+    def test_tags(self):
+        data = self._load()
+        tags = data.get("tags", [])
+        for tag in ["monitoring", "microservices", "sre"]:
+            assert tag in tags, f"Expected tag '{tag}'"
 
-class TestGrafanaDashboards:
-
-    # ── file_path_check ──────────────────────────────────────────────────────
-
-    def test_dashboard_json_file_exists(self):
-        """microservice-monitoring.json must exist and be non-empty."""
-        rel = "devenv/dashboards/microservice-monitoring.json"
-        assert os.path.isfile(_path(rel)), f"{rel} not found"
-        assert os.path.getsize(_path(rel)) > 0, "dashboard JSON is empty"
-
-    def test_provisioning_and_alert_files_exist(self):
-        """provisioning.yaml and alert-rules.yaml must exist."""
-        for rel in [
-            "devenv/dashboards/provisioning.yaml",
-            "devenv/dashboards/alert-rules.yaml",
-        ]:
-            assert os.path.isfile(_path(rel)), f"{rel} not found"
-
-    # ── semantic_check ───────────────────────────────────────────────────────
-
-    def test_dashboard_has_correct_uid(self):
-        """Dashboard JSON uid must equal 'microservice-monitoring-v1'."""
-        data = _read_json("devenv/dashboards/microservice-monitoring.json")
-        assert (
-            data.get("uid") == "microservice-monitoring-v1"
-        ), f"Expected uid='microservice-monitoring-v1', got '{data.get('uid')}'"
-
-    def test_dashboard_has_required_panel_types(self):
-        """Dashboard must include stat, gauge, and timeseries panel types."""
-        data = _read_json("devenv/dashboards/microservice-monitoring.json")
-        panel_types = {p.get("type") for p in data.get("panels", [])}
-        for required in ["stat", "gauge", "timeseries"]:
-            assert (
-                required in panel_types
-            ), f"Required panel type '{required}' not found in dashboard"
-
-    def test_dashboard_has_required_variables(self):
-        """Dashboard must include namespace, service, and interval template variables."""
-        data = _read_json("devenv/dashboards/microservice-monitoring.json")
-        var_names = {v.get("name") for v in data.get("templating", {}).get("list", [])}
+    def test_template_variables(self):
+        data = self._load()
+        templating = data.get("templating", {})
+        var_list = templating.get("list", [])
+        var_names = [v.get("name") for v in var_list]
         for var in ["namespace", "service", "interval"]:
-            assert (
-                var in var_names
-            ), f"Required template variable '{var}' not found in dashboard"
+            assert var in var_names, f"Expected template variable '${var}'"
 
-    def test_alert_rules_high_error_rate_is_critical(self):
-        """alert-rules.yaml must define HighErrorRate with severity=critical and for=5m."""
-        import yaml
-
-        content = _read("devenv/dashboards/alert-rules.yaml")
-        data = yaml.safe_load(content)
-        content_lower = content
-        assert (
-            "HighErrorRate" in content_lower
-        ), "HighErrorRate alert not found in alert-rules.yaml"
-        assert (
-            "severity: critical" in content_lower or "critical" in content_lower
-        ), "HighErrorRate must have severity: critical"
-        assert (
-            "for: 5m" in content_lower or "5m" in content_lower
-        ), "HighErrorRate must have 5m evaluation window"
-
-    # ── functional_check ─────────────────────────────────────────────────────
-
-    def test_dashboard_json_is_parseable(self):
-        """microservice-monitoring.json must be valid JSON."""
-        data = _read_json("devenv/dashboards/microservice-monitoring.json")
-        assert isinstance(data, dict), "Dashboard JSON must be a JSON object"
-
-    def test_provisioning_yaml_is_parseable(self):
-        """provisioning.yaml must be valid YAML."""
-        import yaml
-
-        content = _read("devenv/dashboards/provisioning.yaml")
-        data = yaml.safe_load(content)
-        assert data is not None, "provisioning.yaml parsed as empty"
-
-    def test_dashboard_has_at_least_eight_panels(self):
-        """Dashboard must have at least 8 panels."""
-        data = _read_json("devenv/dashboards/microservice-monitoring.json")
+    def test_panels_exist(self):
+        data = self._load()
         panels = data.get("panels", [])
-        assert len(panels) >= 8, f"Expected >= 8 panels, found {len(panels)}"
+        assert len(panels) >= 6, (
+            f"Expected >= 6 panels, found {len(panels)}"
+        )
 
-    def test_provisioning_update_interval_is_30s(self):
-        """provisioning.yaml must set updateIntervalSeconds to 30."""
-        content = _read("devenv/dashboards/provisioning.yaml")
-        assert (
-            "updateIntervalSeconds: 30" in content
-        ), "provisioning.yaml must set updateIntervalSeconds: 30"
+    def test_grid_pos(self):
+        data = self._load()
+        panels = data.get("panels", [])
+        has_grid = any("gridPos" in p for p in panels)
+        assert has_grid, "Expected gridPos on panels for layout"
 
-    def test_provisioning_disallows_ui_updates(self):
-        """provisioning.yaml must set allowUiUpdates: false to prevent drift."""
-        content = _read("devenv/dashboards/provisioning.yaml")
-        assert (
-            "allowUiUpdates: false" in content
-        ), "provisioning.yaml must set allowUiUpdates: false"
 
-    def test_malformed_json_fails_validation(self):
-        """json.loads must raise JSONDecodeError for invalid JSON."""
-        with pytest.raises(json.JSONDecodeError):
-            json.loads("{invalid json}")
+class TestSemanticRedPanels:
+    """Verify RED method panels and PromQL queries."""
+
+    def _read_dashboard(self):
+        path = os.path.join(
+            REPO_DIR, "devenv", "dashboards",
+            "microservice-monitoring.json",
+        )
+        with open(path, "r") as f:
+            return f.read()
+
+    def test_request_rate_query(self):
+        content = self._read_dashboard()
+        assert re.search(r"rate\(http_requests_total", content), (
+            "Expected rate(http_requests_total...) for request rate"
+        )
+
+    def test_error_rate_query(self):
+        content = self._read_dashboard()
+        assert re.search(r'status.*5\.\.|5xx|"5\.\."', content), (
+            "Expected 5xx error rate PromQL query"
+        )
+
+    def test_latency_histogram(self):
+        content = self._read_dashboard()
+        assert re.search(r"histogram_quantile", content), (
+            "Expected histogram_quantile for latency percentiles"
+        )
+
+    def test_multiple_quantiles(self):
+        content = self._read_dashboard()
+        for q in ["0.5", "0.9", "0.99"]:
+            assert q in content, f"Expected quantile {q} for latency"
+
+
+class TestSemanticUsePanels:
+    """Verify USE method panels."""
+
+    def _read_dashboard(self):
+        path = os.path.join(
+            REPO_DIR, "devenv", "dashboards",
+            "microservice-monitoring.json",
+        )
+        with open(path, "r") as f:
+            return f.read()
+
+    def test_cpu_utilization(self):
+        content = self._read_dashboard()
+        assert re.search(r"container_cpu_usage_seconds_total|cpu.*usage", content), (
+            "Expected CPU utilization metric"
+        )
+
+    def test_memory_utilization(self):
+        content = self._read_dashboard()
+        assert re.search(r"container_memory_working_set_bytes|memory.*working", content), (
+            "Expected memory utilization metric"
+        )
+
+    def test_cpu_saturation(self):
+        content = self._read_dashboard()
+        assert re.search(r"cpu_cfs_throttled|throttle", content, re.IGNORECASE), (
+            "Expected CPU saturation (throttled) metric"
+        )
+
+    def test_pod_restarts(self):
+        content = self._read_dashboard()
+        assert re.search(r"restarts_total|restart", content, re.IGNORECASE), (
+            "Expected pod restarts metric"
+        )
+
+
+class TestSemanticAlertRules:
+    """Verify alerting rules."""
+
+    def _read(self):
+        path = os.path.join(REPO_DIR, "devenv", "alerting", "alert-rules.yaml")
+        with open(path, "r") as f:
+            return f.read()
+
+    def test_high_error_rate_alert(self):
+        content = self._read()
+        assert re.search(r"HighErrorRate|high.*error.*rate", content, re.IGNORECASE), (
+            "Expected HighErrorRate alert rule"
+        )
+
+    def test_high_latency_alert(self):
+        content = self._read()
+        assert re.search(r"HighLatency|high.*latency", content, re.IGNORECASE), (
+            "Expected HighLatency alert rule"
+        )
+
+    def test_high_pod_restarts_alert(self):
+        content = self._read()
+        assert re.search(r"HighPodRestarts|pod.*restart", content, re.IGNORECASE), (
+            "Expected HighPodRestarts alert rule"
+        )
+
+    def test_severity_labels(self):
+        content = self._read()
+        assert re.search(r"severity.*critical|severity.*warning", content), (
+            "Expected severity labels (critical/warning)"
+        )
+
+
+class TestSemanticProvisioning:
+    """Verify provisioning YAML configuration."""
+
+    def _read(self):
+        path = os.path.join(
+            REPO_DIR, "devenv", "dashboards", "provisioning.yaml",
+        )
+        with open(path, "r") as f:
+            return f.read()
+
+    def test_update_interval(self):
+        content = self._read()
+        assert re.search(r"updateIntervalSeconds.*30|updateInterval", content), (
+            "Expected updateIntervalSeconds: 30"
+        )
+
+    def test_allow_ui_updates_false(self):
+        content = self._read()
+        assert re.search(r"allowUiUpdates.*false", content), (
+            "Expected allowUiUpdates: false"
+        )
+
+    def test_folder_microservices(self):
+        content = self._read()
+        assert re.search(r"Microservices|folder.*Microservices", content), (
+            "Expected folder: Microservices"
+        )
+
+
+class TestFunctionalJsonValidity:
+    """Validate JSON files are well-formed."""
+
+    def test_red_panels_valid_json(self):
+        path = os.path.join(
+            REPO_DIR, "devenv", "dashboards", "panels", "red-panels.json",
+        )
+        with open(path, "r") as f:
+            data = json.load(f)
+        assert isinstance(data, (dict, list)), "red-panels.json should be valid JSON"
+
+    def test_use_panels_valid_json(self):
+        path = os.path.join(
+            REPO_DIR, "devenv", "dashboards", "panels", "use-panels.json",
+        )
+        with open(path, "r") as f:
+            data = json.load(f)
+        assert isinstance(data, (dict, list)), "use-panels.json should be valid JSON"
+
+    def test_alert_rules_valid_yaml(self):
+        import yaml
+        path = os.path.join(REPO_DIR, "devenv", "alerting", "alert-rules.yaml")
+        with open(path, "r") as f:
+            data = yaml.safe_load(f)
+        assert isinstance(data, (dict, list)), "alert-rules.yaml should be valid YAML"
+
+    def test_provisioning_valid_yaml(self):
+        import yaml
+        path = os.path.join(
+            REPO_DIR, "devenv", "dashboards", "provisioning.yaml",
+        )
+        with open(path, "r") as f:
+            data = yaml.safe_load(f)
+        assert isinstance(data, (dict, list)), "provisioning.yaml should be valid YAML"

@@ -1,150 +1,141 @@
 """
-Test for 'gitops-workflow' skill — GitOps Manifest Reconciler
-Validates that the Agent created a Python package for reconciling K8s
-manifests with diff engine, rollout manager, and conflict detection.
+Tests for the gitops-workflow skill.
+Validates a GitOps manifest reconciler for Flux CD with manifest loading,
+diff computation, reconciliation planning, and sync policy enforcement.
 """
 
 import os
 import re
-import sys
+import ast
 
-import pytest
+REPO_DIR = "/workspace/flux2"
+PYTHON_DIR = os.path.join(REPO_DIR, "tests", "python")
 
 
 class TestGitopsWorkflow:
-    """Verify GitOps manifest reconciler implementation."""
+    """Tests for the Flux CD manifest reconciler."""
 
-    REPO_DIR = "/workspace/flux2"
+    # ── file_path_check ──────────────────────────────────────────────
 
-    @staticmethod
-    def _read(path: str) -> str:
-        try:
-            with open(path, "r", errors="ignore") as fh:
-                return fh.read()
-        except OSError:
+    def test_reconciler_exists(self):
+        """ManifestReconciler module must exist."""
+        path = os.path.join(PYTHON_DIR, "reconciler.py")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    def test_manifest_loader_exists(self):
+        """ManifestLoader module must exist."""
+        path = os.path.join(PYTHON_DIR, "manifest_loader.py")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    def test_diff_engine_exists(self):
+        """DiffEngine module must exist."""
+        path = os.path.join(PYTHON_DIR, "diff_engine.py")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    def test_sync_policy_exists(self):
+        """SyncPolicy module must exist."""
+        path = os.path.join(PYTHON_DIR, "sync_policy.py")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    # ── semantic_check ───────────────────────────────────────────────
+
+    def _read(self, filename):
+        path = os.path.join(PYTHON_DIR, filename)
+        if not os.path.isfile(path):
             return ""
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read()
 
-    # ── file_path_check ─────────────────────────────────────────────
+    def test_manifest_loader_class(self):
+        """ManifestLoader must define load_directory and validate_manifest."""
+        content = self._read("manifest_loader.py")
+        assert re.search(r"class\s+ManifestLoader", content), (
+            "ManifestLoader class not defined"
+        )
+        assert re.search(r"def\s+load_directory\b", content), "load_directory not defined"
+        assert re.search(r"def\s+validate_manifest\b", content), "validate_manifest not defined"
 
-    def test_gitops_package_init_exists(self):
-        """Verify __init__.py and reconciler.py exist under src/gitops/."""
-        for rel in ("src/gitops/__init__.py", "src/gitops/reconciler.py"):
-            path = os.path.join(self.REPO_DIR, rel)
-            assert os.path.isfile(path), f"Missing: {rel}"
+    def test_diff_engine_class(self):
+        """DiffEngine must define diff, has_changes, and format_diff."""
+        content = self._read("diff_engine.py")
+        assert re.search(r"class\s+DiffEngine", content), "DiffEngine class not defined"
+        assert re.search(r"def\s+diff\b", content), "diff method not defined"
+        assert re.search(r"def\s+has_changes\b", content), "has_changes method not defined"
 
-    def test_diff_rollout_models_exist(self):
-        """Verify diff.py, rollout.py, and models.py exist."""
-        for rel in ("src/gitops/diff.py", "src/gitops/rollout.py",
-                     "src/gitops/models.py"):
-            path = os.path.join(self.REPO_DIR, rel)
-            assert os.path.isfile(path), f"Missing: {rel}"
+    def test_reconciler_class(self):
+        """ManifestReconciler must define reconcile method."""
+        content = self._read("reconciler.py")
+        assert re.search(r"class\s+ManifestReconciler", content), (
+            "ManifestReconciler class not defined"
+        )
+        assert re.search(r"def\s+reconcile\b", content), "reconcile method not defined"
 
-    def test_all_classes_importable(self):
-        """ManifestReconciler, DiffEngine, RolloutManager can be imported."""
-        if not os.path.isdir(self.REPO_DIR):
-            pytest.skip("Repo dir does not exist")
-        sys.path.insert(0, os.path.join(self.REPO_DIR, "src"))
-        try:
-            from gitops.reconciler import ManifestReconciler  # noqa: F401
-            from gitops.diff import DiffEngine  # noqa: F401
-            from gitops.rollout import RolloutManager  # noqa: F401
-        except ImportError:
-            pytest.skip("gitops not importable")
-        finally:
-            sys.path.pop(0)
+    def test_sync_policy_class(self):
+        """SyncPolicy must define should_include and support prune/force."""
+        content = self._read("sync_policy.py")
+        assert re.search(r"class\s+SyncPolicy", content), "SyncPolicy class not defined"
+        assert "prune" in content, "prune option not found"
+        assert "force" in content, "force option not found"
 
-    # ── semantic_check ──────────────────────────────────────────────
+    def test_ignored_fields_in_diff(self):
+        """DiffEngine must ignore server-managed fields."""
+        content = self._read("diff_engine.py")
+        assert re.search(
+            r"IGNORED|resourceVersion|creationTimestamp|managedFields",
+            content
+        ), "Ignored server-managed fields not found in DiffEngine"
 
-    def test_manifest_reconciler_public_api(self):
-        """Verify ManifestReconciler exposes to_apply, to_delete, unchanged."""
-        content = self._read(os.path.join(self.REPO_DIR, "src/gitops/reconciler.py"))
-        assert content, "reconciler.py is empty or unreadable"
-        for attr in ("to_apply", "to_delete", "unchanged"):
-            assert attr in content, f"'{attr}' not found in reconciler.py"
+    def test_action_types(self):
+        """Reconciler must produce create, update, delete, skip, unchanged actions."""
+        content = self._read("reconciler.py")
+        for action in ["create", "update", "delete", "skip", "unchanged"]:
+            assert action in content, f"Action type '{action}' not found"
 
-    def test_diff_entry_field_diff(self):
-        """Verify DiffEngine returns DiffEntry objects with field-level information."""
-        content = self._read(os.path.join(self.REPO_DIR, "src/gitops/diff.py"))
-        assert content, "diff.py is empty or unreadable"
-        assert "DiffEntry" in content, "DiffEntry not found in diff.py"
-        assert "class DiffEngine" in content, "DiffEngine class not found"
+    # ── functional_check ─────────────────────────────────────────────
 
-    def test_conflict_error_defined(self):
-        """Verify ConflictError exception class is defined."""
-        # Check multiple possible locations
-        found = False
-        for candidate in ("src/gitops/reconciler.py", "src/gitops/exceptions.py",
-                          "src/gitops/models.py"):
-            content = self._read(os.path.join(self.REPO_DIR, candidate))
-            if "ConflictError" in content:
-                found = True
-                break
-        assert found, "ConflictError not found in any gitops module"
-
-    # ── functional_check (import) ───────────────────────────────────
-
-    def _import(self, dotpath: str):
-        if not os.path.isdir(self.REPO_DIR):
-            pytest.skip("Repo dir does not exist")
-        sys.path.insert(0, os.path.join(self.REPO_DIR, "src"))
-        try:
-            return __import__(dotpath, fromlist=[""])
-        except ImportError:
-            pytest.skip(f"{dotpath} not importable")
-        finally:
-            sys.path.pop(0)
-
-    def test_reconcile_new_resource_to_apply(self):
-        """ManifestReconciler.reconcile places new resources in to_apply."""
-        rec_mod = self._import("gitops.reconciler")
-        models_mod = self._import("gitops.models")
-        ns = models_mod.Manifest(kind="Namespace", name="my-ns", namespace="")
-        result = rec_mod.ManifestReconciler().reconcile(desired=[ns], current=[])
-        assert len(result.to_apply) == 1
-        assert len(result.to_delete) == 0
-
-    def test_reconcile_removed_resource_to_delete(self):
-        """ManifestReconciler.reconcile places orphan resources in to_delete."""
-        rec_mod = self._import("gitops.reconciler")
-        models_mod = self._import("gitops.models")
-        old = models_mod.Manifest(kind="Namespace", name="old-ns", namespace="")
-        result = rec_mod.ManifestReconciler().reconcile(desired=[], current=[old])
-        assert len(result.to_apply) == 0
-        assert len(result.to_delete) == 1
-
-    def test_diff_engine_returns_field_diff(self):
-        """DiffEngine returns exactly 1 DiffEntry when one field changes."""
-        mod = self._import("gitops.diff")
-        diffs = mod.DiffEngine().compute({"replicas": 1}, {"replicas": 3})
-        assert len(diffs) == 1, f"Expected 1 diff entry, got {len(diffs)}"
-
-    def test_rollout_namespace_first_ordering(self):
-        """RolloutManager orders Namespace before Deployment in rollout sequence."""
-        rollout_mod = self._import("gitops.rollout")
-        models_mod = self._import("gitops.models")
-        deploy = models_mod.Manifest(kind="Deployment", name="api", namespace="default")
-        ns = models_mod.Manifest(kind="Namespace", name="default", namespace="")
-        plan = rollout_mod.RolloutManager().plan([deploy, ns])
-        assert plan.sequence[0].kind == "Namespace", \
-            f"Expected Namespace first, got {plan.sequence[0].kind}"
-
-    def test_conflict_error_on_duplicate_resource(self):
-        """ManifestReconciler raises ConflictError on duplicate kind+name+namespace."""
-        rec_mod = self._import("gitops.reconciler")
-        models_mod = self._import("gitops.models")
-        # Try to import ConflictError from various locations
-        ConflictError = None
-        for loc in ("gitops.exceptions", "gitops.reconciler", "gitops.models"):
-            try:
-                m = self._import(loc)
-                ConflictError = getattr(m, "ConflictError", None)
-                if ConflictError:
-                    break
-            except Exception:
+    def test_all_files_valid_python(self):
+        """All reconciler Python files must have valid syntax."""
+        errors = []
+        for fname in ["reconciler.py", "manifest_loader.py",
+                       "diff_engine.py", "sync_policy.py"]:
+            content = self._read(fname)
+            if not content:
                 continue
-        if ConflictError is None:
-            pytest.skip("ConflictError not found")
-        ns1 = models_mod.Manifest(kind="Namespace", name="my-ns", namespace="")
-        ns2 = models_mod.Manifest(kind="Namespace", name="my-ns", namespace="")
-        with pytest.raises(ConflictError):
-            rec_mod.ManifestReconciler().reconcile(desired=[ns1, ns2], current=[])
+            try:
+                ast.parse(content)
+            except SyntaxError as e:
+                errors.append(f"{fname}: {e}")
+        assert not errors, "Syntax errors:\n" + "\n".join(errors)
+
+    def test_multi_document_yaml_support(self):
+        """ManifestLoader must handle multi-document YAML files."""
+        content = self._read("manifest_loader.py")
+        assert re.search(r"load_all|safe_load_all|---|\bdocument", content, re.IGNORECASE), (
+            "Multi-document YAML support not found"
+        )
+
+    def test_validation_error_messages(self):
+        """validate_manifest must return specific error messages."""
+        content = self._read("manifest_loader.py")
+        assert re.search(r"Missing apiVersion|Missing kind|Missing metadata", content), (
+            "Validation error messages not found"
+        )
+
+    def test_namespace_filtering(self):
+        """SyncPolicy must support namespace filtering."""
+        content = self._read("sync_policy.py")
+        assert re.search(r"namespace|namespaces", content, re.IGNORECASE), (
+            "Namespace filtering not found in SyncPolicy"
+        )
+
+    def test_excluded_kinds(self):
+        """SyncPolicy must support excluded_kinds list."""
+        content = self._read("sync_policy.py")
+        assert re.search(r"excluded_kinds|excluded.*kind", content, re.IGNORECASE), (
+            "excluded_kinds support not found"
+        )
+
+    def test_test_file_exists(self):
+        """Test file must exist."""
+        path = os.path.join(REPO_DIR, "tests", "test_gitops_workflow.py")
+        assert os.path.isfile(path), f"Missing {path}"

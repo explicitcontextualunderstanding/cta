@@ -1,216 +1,209 @@
 """
-Tests for 'changelog-automation' skill.
-Generated from benchmark case definitions for changelog-automation.
+Test skill: changelog-automation
+Verify that the Agent sets up automated changelog generation from
+Conventional Commits, semantic version bumping, and GitHub Actions
+release workflow.
 """
 
-import ast
-import base64
-import glob
-import json
 import os
-import py_compile
 import re
+import ast
+import json
 import subprocess
-import textwrap
-
 import pytest
 
 try:
     import yaml
-except ModuleNotFoundError:
+except ImportError:
     yaml = None
 
 
 class TestChangelogAutomation:
-    """Verify the changelog-automation skill output."""
+    REPO_DIR = "/workspace/github-changelog-generator"
 
-    REPO_DIR = '/workspace/github-changelog-generator'
+    # === File Path Checks ===
 
-
-    # ── helpers ──────────────────────────────────────────────
-
-    _SETUP_CACHE: dict = {}
-
-    @staticmethod
-    def _repo_path(rel: str) -> str:
-        return os.path.join(TestChangelogAutomation.REPO_DIR, rel)
-
-    @staticmethod
-    def _safe_read(path: str) -> str:
-        with open(path, "r", encoding="utf-8", errors="ignore") as fh:
-            return fh.read()
-
-    @staticmethod
-    def _load_yaml(path: str):
-        if yaml is None:
-            pytest.skip("PyYAML not available")
-        with open(path, "r", encoding="utf-8", errors="ignore") as fh:
-            return yaml.safe_load(fh)
-
-    @staticmethod
-    def _load_json(path: str):
-        with open(path, "r", encoding="utf-8", errors="ignore") as fh:
-            return json.load(fh)
-
-    @classmethod
-    def _run_in_repo(cls, script: str, timeout: int = 120) -> subprocess.CompletedProcess:
-        return subprocess.run(
-            ["python", "-c", textwrap.dedent(script)],
-            cwd=cls.REPO_DIR,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
+    def test_commitlint_config_exists(self):
+        assert os.path.exists(
+            os.path.join(self.REPO_DIR, "commitlint.config.js")
         )
 
-    @classmethod
-    def _run_cmd(cls, command, args=None, timeout=120):
-        args = args or []
-        if isinstance(command, str) and args:
-            return subprocess.run(
-                [command, *args],
-                cwd=cls.REPO_DIR,
-                capture_output=True,
-                text=True,
-                timeout=timeout,
-            )
-        return subprocess.run(
-            command if isinstance(command, list) else command,
-            cwd=cls.REPO_DIR,
-            shell=isinstance(command, str),
-            capture_output=True,
-            text=True,
-            timeout=timeout,
+    def test_husky_hook_exists(self):
+        assert os.path.exists(
+            os.path.join(self.REPO_DIR, ".husky/commit-msg")
         )
-
-    @classmethod
-    def _ensure_setup(cls, label, setup_cmds, fallback):
-        if not setup_cmds:
-            return
-        key = tuple(setup_cmds)
-        if key in cls._SETUP_CACHE:
-            ok, msg = cls._SETUP_CACHE[key]
-            if ok:
-                return
-            if fallback == "skip_if_setup_fails":
-                pytest.skip(f"{label} setup failed: {msg}")
-            pytest.fail(f"{label} setup failed: {msg}")
-        for cmd in setup_cmds:
-            r = subprocess.run(cmd, cwd=cls.REPO_DIR, shell=True,
-                               capture_output=True, text=True, timeout=300)
-            if r.returncode != 0:
-                msg = (r.stderr or r.stdout or 'failed').strip()
-                cls._SETUP_CACHE[key] = (False, msg)
-                if fallback == "skip_if_setup_fails":
-                    pytest.skip(f"{label} setup failed: {msg}")
-                pytest.fail(f"{label} setup failed: {msg}")
-        cls._SETUP_CACHE[key] = (True, 'ok')
-
-
-    # ── file_path_check (static) ────────────────────────────────────────
 
     def test_generate_changelog_script_exists(self):
-        """Verify the changelog generation script exists"""
-        _p = self._repo_path('scripts/generate-changelog.js')
-        assert os.path.isfile(_p), f'Missing file: scripts/generate-changelog.js'
+        assert os.path.exists(
+            os.path.join(self.REPO_DIR, "scripts/generate-changelog.js")
+        )
+
+    def test_bump_version_script_exists(self):
+        assert os.path.exists(
+            os.path.join(self.REPO_DIR, "scripts/bump-version.js")
+        )
 
     def test_release_workflow_exists(self):
-        """Verify GitHub Actions release workflow exists"""
-        _p = self._repo_path('.github/workflows/release.yml')
-        assert os.path.isfile(_p), f'Missing file: .github/workflows/release.yml'
-        self._load_yaml(_p)  # parse check
-
-    def test_package_json_exists(self):
-        """Verify package.json with version field exists"""
-        _p = self._repo_path('package.json')
-        assert os.path.isfile(_p), f'Missing file: package.json'
-        self._load_json(_p)  # parse check
-
-    # ── semantic_check (static) ────────────────────────────────────────
-
-    def test_conventional_commit_parsing(self):
-        """Verify script parses conventional commit format (type: description)"""
-        _p = self._repo_path('scripts/generate-changelog.js')
-        assert os.path.exists(_p), f'Missing: scripts/generate-changelog.js'
-        _contents = self._safe_read(_p)
-        _all = _contents if isinstance(_contents, str) else ''
-        assert 'feat' in _all, 'Missing: feat'
-        assert 'fix' in _all, 'Missing: fix'
-        assert 'BREAKING CHANGE' in _all, 'Missing: BREAKING CHANGE'
-        assert 'conventional' in _all, 'Missing: conventional'
-
-    def test_markdown_section_generation(self):
-        """Verify script generates Markdown sections (### Features, ### Bug Fixes)"""
-        _p = self._repo_path('scripts/generate-changelog.js')
-        assert os.path.exists(_p), f'Missing: scripts/generate-changelog.js'
-        _contents = self._safe_read(_p)
-        _all = _contents if isinstance(_contents, str) else ''
-        assert 'Features' in _all, 'Missing: Features'
-        assert 'Bug Fixes' in _all, 'Missing: Bug Fixes'
-        assert 'Breaking Changes' in _all, 'Missing: Breaking Changes'
-        assert '###' in _all, 'Missing: ###'
-
-    def test_release_workflow_tag_trigger(self):
-        """Verify release.yml triggers on version tag push (v*)"""
-        _p = self._repo_path('.github/workflows/release.yml')
-        assert os.path.exists(_p), f'Missing: .github/workflows/release.yml'
-        _contents = self._safe_read(_p)
-        _all = _contents if isinstance(_contents, str) else ''
-        assert 'tags' in _all, 'Missing: tags'
-        assert 'v*' in _all, 'Missing: v*'
-        assert 'push' in _all, 'Missing: push'
-
-    def test_changelog_prepend_not_overwrite(self):
-        """Verify script prepends to existing CHANGELOG.md rather than overwriting"""
-        _p = self._repo_path('scripts/generate-changelog.js')
-        assert os.path.exists(_p), f'Missing: scripts/generate-changelog.js'
-        _contents = self._safe_read(_p)
-        _all = _contents if isinstance(_contents, str) else ''
-        assert 'readFile' in _all, 'Missing: readFile'
-        assert 'writeFile' in _all, 'Missing: writeFile'
-        assert 'prepend' in _all, 'Missing: prepend'
-        assert 'concat' in _all, 'Missing: concat'
-        assert 'existing' in _all, 'Missing: existing'
-
-    # ── functional_check ────────────────────────────────────────
-
-    def test_release_yml_valid_yaml(self):
-        """Verify release.yml is valid YAML"""
-        result = self._run_cmd('python', args=['-c', "import yaml; yaml.safe_load(open('.github/workflows/release.yml')); print('PASS')"], timeout=120)
-        assert result.returncode == 0, (
-            f'test_release_yml_valid_yaml failed (exit {result.returncode})\n' + result.stderr[:500]
-        )
-        assert 'PASS' in (result.stdout + result.stderr), 'Expected PASS in output'
-
-    def test_package_json_valid(self):
-        """Verify package.json is valid JSON with version field"""
-        result = self._run_cmd('python', args=['-c', "import json; p=json.load(open('package.json')); assert 'version' in p, 'No version field'; print('PASS')"], timeout=120)
-        assert result.returncode == 0, (
-            f'test_package_json_valid failed (exit {result.returncode})\n' + result.stderr[:500]
-        )
-        assert 'PASS' in (result.stdout + result.stderr), 'Expected PASS in output'
-
-    def test_changelog_script_help(self):
-        """Verify script provides help/usage information"""
-        self._ensure_setup('test_changelog_script_help', ['npm install'], 'skip_if_setup_fails')
-        result = self._run_cmd('node', args=['scripts/generate-changelog.js', '--help'], timeout=120)
-        assert result.returncode == 0, (
-            f'test_changelog_script_help failed (exit {result.returncode})\n' + result.stderr[:500]
+        assert os.path.exists(
+            os.path.join(self.REPO_DIR, ".github/workflows/release.yml")
         )
 
-    def test_missing_version_arg_exits_nonzero(self):
-        """Verify script exits non-zero when --version argument is missing"""
-        self._ensure_setup('test_missing_version_arg_exits_nonzero', ['npm install'], 'skip_if_setup_fails')
-        result = self._run_cmd('node', args=['scripts/generate-changelog.js'], timeout=120)
-        assert result.returncode == 0, (
-            f'test_missing_version_arg_exits_nonzero failed (exit {result.returncode})\n' + result.stderr[:500]
+    def test_changelog_md_exists(self):
+        assert os.path.exists(
+            os.path.join(self.REPO_DIR, "CHANGELOG.md")
         )
 
-    def test_breaking_change_section_priority(self):
-        """Verify Breaking Changes section appears before Features in output template"""
-        _p = self._repo_path('scripts/generate-changelog.js')
-        assert os.path.exists(_p), f'Missing: scripts/generate-changelog.js'
-        _contents = self._safe_read(_p)
-        _all = _contents if isinstance(_contents, str) else ''
-        assert 'Breaking Changes' in _all, 'Missing: Breaking Changes'
-        assert 'Features' in _all, 'Missing: Features'
+    # === Semantic Checks ===
 
+    def test_commitlint_extends_conventional(self):
+        """commitlint.config.js should extend @commitlint/config-conventional"""
+        path = os.path.join(self.REPO_DIR, "commitlint.config.js")
+        with open(path) as f:
+            content = f.read()
+        assert "@commitlint/config-conventional" in content, (
+            "Must extend @commitlint/config-conventional"
+        )
+
+    def test_commitlint_type_enum(self):
+        """commitlint should define type-enum with at least feat, fix, docs"""
+        path = os.path.join(self.REPO_DIR, "commitlint.config.js")
+        with open(path) as f:
+            content = f.read()
+        for t in ("feat", "fix", "docs", "chore", "refactor", "perf", "test"):
+            assert f"'{t}'" in content or f'"{t}"' in content, (
+                f"Missing type '{t}' in type-enum"
+            )
+
+    def test_commitlint_subject_max_length(self):
+        """commitlint should enforce subject max length of 72"""
+        path = os.path.join(self.REPO_DIR, "commitlint.config.js")
+        with open(path) as f:
+            content = f.read()
+        assert "72" in content, "Subject max length should be 72"
+
+    def test_changelog_generator_has_parse_commits(self):
+        """generate-changelog.js should have parseCommits function"""
+        path = os.path.join(self.REPO_DIR, "scripts/generate-changelog.js")
+        with open(path) as f:
+            content = f.read()
+        assert re.search(r"(function\s+parseCommits|parseCommits\s*=|parseCommits\s*\()", content), (
+            "Missing parseCommits function"
+        )
+
+    def test_changelog_generator_has_categorize(self):
+        """generate-changelog.js should have categorizeCommits function"""
+        path = os.path.join(self.REPO_DIR, "scripts/generate-changelog.js")
+        with open(path) as f:
+            content = f.read()
+        assert re.search(r"categorize", content, re.IGNORECASE), (
+            "Missing categorizeCommits function"
+        )
+
+    def test_changelog_generator_maps_types_to_sections(self):
+        """Changelog maps commit types to Keep a Changelog sections"""
+        path = os.path.join(self.REPO_DIR, "scripts/generate-changelog.js")
+        with open(path) as f:
+            content = f.read()
+        assert "Added" in content, "Missing 'Added' section mapping"
+        assert "Fixed" in content, "Missing 'Fixed' section mapping"
+        assert "Changed" in content, "Missing 'Changed' section mapping"
+
+    def test_changelog_generator_detects_breaking_changes(self):
+        """Changelog should detect BREAKING CHANGE: footer or ! suffix"""
+        path = os.path.join(self.REPO_DIR, "scripts/generate-changelog.js")
+        with open(path) as f:
+            content = f.read()
+        assert "BREAKING" in content or "breaking" in content, (
+            "Must detect breaking changes"
+        )
+
+    def test_bump_version_has_determine_next(self):
+        """bump-version.js should have determineNextVersion logic"""
+        path = os.path.join(self.REPO_DIR, "scripts/bump-version.js")
+        with open(path) as f:
+            content = f.read()
+        assert re.search(r"determine|nextVersion|bump", content, re.IGNORECASE), (
+            "Missing version determination logic"
+        )
+
+    def test_bump_version_handles_semver(self):
+        """bump-version.js should handle major/minor/patch bumps"""
+        path = os.path.join(self.REPO_DIR, "scripts/bump-version.js")
+        with open(path) as f:
+            content = f.read()
+        assert "major" in content, "Missing major version bump"
+        assert "minor" in content, "Missing minor version bump"
+        assert "patch" in content, "Missing patch version bump"
+
+    def test_release_workflow_has_dispatch_trigger(self):
+        """Release workflow should have workflow_dispatch trigger"""
+        path = os.path.join(self.REPO_DIR, ".github/workflows/release.yml")
+        with open(path) as f:
+            content = f.read()
+        assert "workflow_dispatch" in content, "Missing workflow_dispatch trigger"
+
+    def test_release_workflow_has_full_history(self):
+        """Release workflow should checkout with full git history"""
+        path = os.path.join(self.REPO_DIR, ".github/workflows/release.yml")
+        with open(path) as f:
+            content = f.read()
+        assert "fetch-depth: 0" in content or "fetch-depth: '0'" in content, (
+            "Checkout should use fetch-depth: 0"
+        )
+
+    def test_release_workflow_creates_github_release(self):
+        """Release workflow should create a GitHub Release"""
+        path = os.path.join(self.REPO_DIR, ".github/workflows/release.yml")
+        with open(path) as f:
+            content = f.read()
+        assert "gh-release" in content or "create-release" in content or "softprops" in content, (
+            "Should use GitHub release action"
+        )
+
+    def test_changelog_follows_keep_a_changelog(self):
+        """CHANGELOG.md should follow Keep a Changelog format"""
+        path = os.path.join(self.REPO_DIR, "CHANGELOG.md")
+        with open(path) as f:
+            content = f.read()
+        assert "Keep a Changelog" in content or "keepachangelog" in content.lower(), (
+            "Should reference Keep a Changelog format"
+        )
+        assert "Semantic Versioning" in content or "semver" in content.lower(), (
+            "Should reference Semantic Versioning"
+        )
+
+    # === Functional Checks ===
+
+    def test_changelog_generator_valid_js(self):
+        """generate-changelog.js should be valid JavaScript"""
+        path = os.path.join(self.REPO_DIR, "scripts/generate-changelog.js")
+        result = subprocess.run(
+            ["node", "--check", path],
+            capture_output=True, text=True, timeout=30
+        )
+        assert result.returncode == 0, (
+            f"generate-changelog.js syntax error: {result.stderr}"
+        )
+
+    def test_bump_version_valid_js(self):
+        """bump-version.js should be valid JavaScript"""
+        path = os.path.join(self.REPO_DIR, "scripts/bump-version.js")
+        result = subprocess.run(
+            ["node", "--check", path],
+            capture_output=True, text=True, timeout=30
+        )
+        assert result.returncode == 0, (
+            f"bump-version.js syntax error: {result.stderr}"
+        )
+
+    def test_release_workflow_valid_yaml(self):
+        """Release workflow should be valid YAML"""
+        if yaml is None:
+            pytest.skip("PyYAML not available")
+        path = os.path.join(self.REPO_DIR, ".github/workflows/release.yml")
+        with open(path) as f:
+            try:
+                data = yaml.safe_load(f)
+            except yaml.YAMLError as e:
+                pytest.fail(f"release.yml YAML error: {e}")
+        assert "jobs" in data, "Workflow must have jobs"

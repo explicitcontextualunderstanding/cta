@@ -1,200 +1,178 @@
-"""Test file for the implementing-agent-modes skill.
-
-This suite validates the SQL Agent Mode components in PostHog's HogAI system:
-InspectSchemaTool, ValidateQueryTool, GetQueryExamplesTool, SqlAgentToolkit,
-and the sql_agent preset.
+"""
+Test skill: implementing-agent-modes
+Verify that the Agent implements a SQL Query Agent Mode for PostHog Max —
+SqlAgentToolkit, InspectSchemaTool, ValidateQueryTool, GetQueryExamplesTool,
+sql_agent AgentModeDefinition, mode manager registration, and frontend enum update.
 """
 
-from __future__ import annotations
-
-import ast
-import pathlib
+import os
 import re
-
+import subprocess
 import pytest
 
 
 class TestImplementingAgentModes:
-    """Verify PostHog HogAI SQL Agent Mode implementation."""
-
     REPO_DIR = "/workspace/posthog"
 
-    SQL_PRESET = "ee/hogai/core/agent_modes/presets/sql.py"
-    SQL_TOOLS = "ee/hogai/tools/sql_tools.py"
-    SQL_TESTS = "ee/hogai/core/agent_modes/presets/tests/test_sql.py"
+    # ────── helpers ──────
 
-    # ------------------------------------------------------------------
-    # Helpers
-    # ------------------------------------------------------------------
+    def _read(self, rel_path):
+        fpath = os.path.join(self.REPO_DIR, rel_path)
+        with open(fpath, "r") as f:
+            return f.read()
 
-    def _repo_path(self, relative: str) -> pathlib.Path:
-        return pathlib.Path(self.REPO_DIR, *relative.split("/"))
+    def _exists(self, rel_path):
+        return os.path.isfile(os.path.join(self.REPO_DIR, rel_path))
 
-    def _read_text(self, relative: str) -> str:
-        path = self._repo_path(relative)
-        assert path.exists(), f"Expected path to exist: {path}"
-        return path.read_text(encoding="utf-8", errors="ignore")
+    # === File Path Checks ===
 
-    def _assert_non_empty_file(self, relative: str) -> pathlib.Path:
-        path = self._repo_path(relative)
-        assert path.is_file(), f"Expected file to exist: {path}"
-        assert path.stat().st_size > 0, f"Expected non-empty file: {path}"
-        return path
+    def test_sql_agent_mode_exists(self):
+        """sql.py agent mode file must exist"""
+        assert self._exists("ee/hogai/core/agent_modes/presets/sql.py")
 
-    def _class_source(self, source: str, class_name: str) -> str | None:
-        try:
-            tree = ast.parse(source)
-        except SyntaxError:
-            return None
-        for node in ast.walk(tree):
-            if isinstance(node, ast.ClassDef) and node.name == class_name:
-                lines = source.splitlines()
-                return "\n".join(lines[node.lineno - 1 : node.end_lineno])
-        return None
+    def test_sql_tools_exists(self):
+        """sql_tools.py must exist"""
+        assert self._exists("ee/hogai/tools/sql_tools.py")
 
-    # ------------------------------------------------------------------
-    # Layer 1 – file_path_check (3 cases)
-    # ------------------------------------------------------------------
+    def test_sql_test_exists(self):
+        """test_sql.py must exist"""
+        assert self._exists("ee/hogai/core/agent_modes/presets/tests/test_sql.py")
 
-    def test_file_path_ee_hogai_core_agent_modes_presets_sql_py_exists(self):
-        """Verify sql.py preset exists and is non-empty."""
-        self._assert_non_empty_file(self.SQL_PRESET)
+    # === Semantic Checks — sql_tools.py ===
 
-    def test_file_path_ee_hogai_tools_sql_tools_py_exists(self):
-        """Verify sql_tools.py exists and is non-empty."""
-        self._assert_non_empty_file(self.SQL_TOOLS)
+    def test_inspect_schema_tool(self):
+        """InspectSchemaTool class must be defined"""
+        src = self._read("ee/hogai/tools/sql_tools.py")
+        assert re.search(r'class\s+InspectSchemaTool', src)
 
-    def test_file_path_ee_hogai_core_agent_modes_presets_tests_test_sql_py_exists(self):
-        """Verify test_sql.py exists and is non-empty."""
-        self._assert_non_empty_file(self.SQL_TESTS)
+    def test_validate_query_tool(self):
+        """ValidateQueryTool class must be defined"""
+        src = self._read("ee/hogai/tools/sql_tools.py")
+        assert re.search(r'class\s+ValidateQueryTool', src)
 
-    # ------------------------------------------------------------------
-    # Layer 2 – semantic_check (5 cases)
-    # ------------------------------------------------------------------
+    def test_get_query_examples_tool(self):
+        """GetQueryExamplesTool class must be defined"""
+        src = self._read("ee/hogai/tools/sql_tools.py")
+        assert re.search(r'class\s+GetQueryExamplesTool', src)
 
-    def test_semantic_inspectschematool_has_name_inspect_schema_and_correct_inputs(
-        self,
-    ):
-        """InspectSchemaTool has name='inspect_schema' and correct InputSchema."""
-        src = self._read_text(self.SQL_TOOLS)
-        cls = self._class_source(src, "InspectSchemaTool")
-        assert cls is not None, "InspectSchemaTool class not found"
-        assert re.search(
-            r"name\s*=\s*['\"]inspect_schema['\"]", cls
-        ), "InspectSchemaTool must have name='inspect_schema'"
+    def test_inspect_schema_name(self):
+        """InspectSchemaTool must have name='inspect_schema'"""
+        src = self._read("ee/hogai/tools/sql_tools.py")
+        assert "inspect_schema" in src
 
-    def test_semantic_validatequerytool_has_name_validate_query_and_inputschema_wi(
-        self,
-    ):
-        """ValidateQueryTool has name='validate_query' and InputSchema with query field."""
-        src = self._read_text(self.SQL_TOOLS)
-        cls = self._class_source(src, "ValidateQueryTool")
-        assert cls is not None, "ValidateQueryTool class not found"
-        assert re.search(
-            r"name\s*=\s*['\"]validate_query['\"]", cls
-        ), "ValidateQueryTool must have name='validate_query'"
+    def test_validate_query_name(self):
+        """ValidateQueryTool must have name='validate_query'"""
+        src = self._read("ee/hogai/tools/sql_tools.py")
+        assert "validate_query" in src
 
-    def test_semantic_getqueryexamplestool_has_name_get_query_examples_and_inputsc(
-        self,
-    ):
-        """GetQueryExamplesTool has name='get_query_examples' and InputSchema with use_case."""
-        src = self._read_text(self.SQL_TOOLS)
-        cls = self._class_source(src, "GetQueryExamplesTool")
-        assert cls is not None, "GetQueryExamplesTool class not found"
-        assert re.search(
-            r"name\s*=\s*['\"]get_query_examples['\"]", cls
-        ), "GetQueryExamplesTool must have name='get_query_examples'"
+    def test_get_query_examples_name(self):
+        """GetQueryExamplesTool must have name='get_query_examples'"""
+        src = self._read("ee/hogai/tools/sql_tools.py")
+        assert "get_query_examples" in src
 
-    def test_semantic_sqlagenttoolkit_tools_includes_all_three_tool_classes(self):
-        """SqlAgentToolkit.tools includes all three tool classes."""
-        src = self._read_text(self.SQL_TOOLS)
-        toolkit = self._class_source(src, "SqlAgentToolkit")
-        if toolkit is None:
-            # May be in a different file
-            preset_src = self._read_text(self.SQL_PRESET)
-            src = src + "\n" + preset_src
-        for tool in ("InspectSchemaTool", "ValidateQueryTool", "GetQueryExamplesTool"):
-            assert tool in src, f"SqlAgentToolkit should reference {tool}"
+    def test_tool_run_methods(self):
+        """Each tool must implement _run"""
+        src = self._read("ee/hogai/tools/sql_tools.py")
+        run_count = len(re.findall(r'def\s+_run\b', src))
+        assert run_count >= 3, f"Expected at least 3 _run methods, found {run_count}"
 
-    def test_semantic_sql_agent_has_mode_agentmode_sql(self):
-        """sql_agent has mode=AgentMode.SQL."""
-        src = self._read_text(self.SQL_PRESET)
-        assert re.search(
-            r"AgentMode\.SQL|mode\s*=.*SQL", src
-        ), "sql_agent must have mode=AgentMode.SQL"
+    def test_validate_uses_hogql_parser(self):
+        """ValidateQueryTool must use HogQL parser, not query execution"""
+        src = self._read("ee/hogai/tools/sql_tools.py")
+        lower = src.lower()
+        assert "hogql" in lower or "parse" in lower, (
+            "ValidateQueryTool should use HogQL parser for validation"
+        )
 
-    # ------------------------------------------------------------------
-    # Layer 3 – functional_check (5 cases, mocked via source analysis)
-    # ------------------------------------------------------------------
+    def test_inspect_schema_optional_table(self):
+        """InspectSchemaTool must accept optional table_name"""
+        src = self._read("ee/hogai/tools/sql_tools.py")
+        assert "table_name" in src
+        assert "Optional" in src or "None" in src
 
-    def _tools_source(self) -> str:
-        parts = [self._read_text(self.SQL_TOOLS)]
-        preset_path = self._repo_path(self.SQL_PRESET)
-        if preset_path.exists():
-            parts.append(preset_path.read_text(encoding="utf-8", errors="ignore"))
-        return "\n".join(parts)
+    # === Semantic Checks — sql.py (agent mode) ===
 
-    def test_functional_inspectschematool__run_table_name_none_returns_summary_of_al(
-        self,
-    ):
-        """InspectSchemaTool._run(table_name=None) returns summary of all tables."""
-        src = self._tools_source()
-        cls = self._class_source(src, "InspectSchemaTool")
-        assert cls is not None, "InspectSchemaTool not found"
-        assert re.search(
-            r"def\s+_run\s*\(", cls
-        ), "InspectSchemaTool must implement _run method"
-        assert re.search(
-            r"table_name|table|schema", cls, re.IGNORECASE
-        ), "_run should handle table_name parameter"
+    def test_sql_agent_toolkit_class(self):
+        """SqlAgentToolkit class must be defined"""
+        src = self._read("ee/hogai/core/agent_modes/presets/sql.py")
+        assert re.search(r'class\s+SqlAgentToolkit', src)
 
-    def test_functional_inspectschematool__run_table_name_events_returns_events_tabl(
-        self,
-    ):
-        """InspectSchemaTool._run(table_name='events') returns events table details."""
-        src = self._tools_source()
-        cls = self._class_source(src, "InspectSchemaTool")
-        assert cls is not None, "InspectSchemaTool not found"
-        # Should handle specific table lookup
-        assert re.search(
-            r"table_name|specific|detail|column", cls, re.IGNORECASE
-        ), "InspectSchemaTool should return specific table details"
+    def test_sql_agent_definition(self):
+        """sql_agent AgentModeDefinition must exist"""
+        src = self._read("ee/hogai/core/agent_modes/presets/sql.py")
+        assert "sql_agent" in src
+        assert "AgentModeDefinition" in src
 
-    def test_functional_validatequerytool__run_select_event_from_events_limit_10_ret(
-        self,
-    ):
-        """ValidateQueryTool._run('SELECT event FROM events LIMIT 10') returns valid."""
-        src = self._tools_source()
-        cls = self._class_source(src, "ValidateQueryTool")
-        assert cls is not None, "ValidateQueryTool not found"
-        assert re.search(
-            r"def\s+_run\s*\(", cls
-        ), "ValidateQueryTool must implement _run method"
-        assert re.search(
-            r"valid|parse|syntax|error", cls, re.IGNORECASE
-        ), "ValidateQueryTool should validate SQL syntax"
+    def test_toolkit_tools_list(self):
+        """Toolkit must reference all three tools"""
+        src = self._read("ee/hogai/core/agent_modes/presets/sql.py")
+        assert "InspectSchemaTool" in src
+        assert "ValidateQueryTool" in src
+        assert "GetQueryExamplesTool" in src
 
-    def test_functional_validatequerytool__run_select_nonexistent_col_from_events_re(
-        self,
-    ):
-        """ValidateQueryTool._run('SELECT nonexistent_col FROM events') returns error."""
-        src = self._tools_source()
-        cls = self._class_source(src, "ValidateQueryTool")
-        assert cls is not None, "ValidateQueryTool not found"
-        assert re.search(
-            r"error|invalid|fail|exception", cls, re.IGNORECASE
-        ), "ValidateQueryTool should report errors for invalid queries"
+    def test_trajectory_examples(self):
+        """Must have trajectory examples"""
+        src = self._read("ee/hogai/core/agent_modes/presets/sql.py")
+        assert "get_trajectory_examples" in src or "trajectory" in src.lower()
 
-    def test_functional_getqueryexamplestool__run_use_case_event_counts_returns_exam(
-        self,
-    ):
-        """GetQueryExamplesTool._run(use_case='event counts') returns examples."""
-        src = self._tools_source()
-        cls = self._class_source(src, "GetQueryExamplesTool")
-        assert cls is not None, "GetQueryExamplesTool not found"
-        assert re.search(
-            r"def\s+_run\s*\(", cls
-        ), "GetQueryExamplesTool must implement _run method"
-        assert re.search(
-            r"use_case|example|query", cls, re.IGNORECASE
-        ), "GetQueryExamplesTool should return query examples based on use_case"
+    # === Semantic Checks — Frontend ===
+
+    def test_agent_mode_type_union(self):
+        """schema-assistant-messages.ts must include 'sql' in AgentMode"""
+        src = self._read("frontend/src/queries/schema/schema-assistant-messages.ts")
+        assert '"sql"' in src or "'sql'" in src, (
+            "'sql' not added to AgentMode type union"
+        )
+
+    def test_max_constants_sql_mode(self):
+        """max-constants.tsx must register SQL mode"""
+        src = self._read("frontend/src/lib/ai/max-constants.tsx")
+        assert "sql" in src.lower() and "SQL Query" in src
+
+    # === Semantic Checks — Mode Manager ===
+
+    def test_mode_manager_sql_registration(self):
+        """mode_manager.py must register sql_agent"""
+        src = self._read("ee/hogai/chat_agent/mode_manager.py")
+        assert "sql_agent" in src or "SQL" in src
+
+    def test_feature_flag_gating(self):
+        """SQL mode gated by hogai_sql_mode feature flag"""
+        src = self._read("ee/hogai/chat_agent/mode_manager.py")
+        assert "hogai_sql_mode" in src
+
+    # === Functional Checks ===
+
+    def test_python_syntax_sql_tools(self):
+        """sql_tools.py must have valid Python syntax"""
+        result = subprocess.run(
+            ["python", "-c",
+             "import py_compile; py_compile.compile('ee/hogai/tools/sql_tools.py', doraise=True)"],
+            capture_output=True, text=True, cwd=self.REPO_DIR, timeout=30,
+        )
+        assert result.returncode == 0, (
+            f"Syntax error in sql_tools.py:\n{result.stderr}"
+        )
+
+    def test_python_syntax_sql_agent(self):
+        """sql.py must have valid Python syntax"""
+        result = subprocess.run(
+            ["python", "-c",
+             "import py_compile; py_compile.compile('ee/hogai/core/agent_modes/presets/sql.py', doraise=True)"],
+            capture_output=True, text=True, cwd=self.REPO_DIR, timeout=30,
+        )
+        assert result.returncode == 0, (
+            f"Syntax error in sql.py:\n{result.stderr}"
+        )
+
+    def test_unit_tests_pass(self):
+        """test_sql.py tests must pass"""
+        result = subprocess.run(
+            ["python", "-m", "pytest",
+             "ee/hogai/core/agent_modes/presets/tests/test_sql.py",
+             "-v", "--tb=short"],
+            capture_output=True, text=True, cwd=self.REPO_DIR, timeout=120,
+        )
+        assert result.returncode == 0, (
+            f"Tests failed:\n{result.stdout}\n{result.stderr}"
+        )

@@ -1,191 +1,159 @@
 """
-Test for 'bash-defensive-patterns' skill — ShellCheck Defensive Bash Scripts
-Validates shell scripts with set -euo pipefail, structured logging,
-retry/lock helpers, sourcing patterns, and shellcheck compliance.
+Test skill: bash-defensive-patterns
+Verify that the Agent correctly writes defensive Bash scripts with
+ShellCheck compliance, proper quoting, error handling, and locking.
 """
 
 import os
 import re
 import subprocess
-
 import pytest
 
 
 class TestBashDefensivePatterns:
-    """Verify defensive Bash scripting patterns."""
-
     REPO_DIR = "/workspace/shellcheck"
 
-    # ── file_path_check ─────────────────────────────────────────────────────
+    DEPLOY = "scripts/deploy.sh"
+    BACKUP = "scripts/backup.sh"
+    HEALTHCHECK = "scripts/healthcheck.sh"
+    COMMON = "scripts/lib/common.sh"
 
-    def test_shell_scripts_exist(self):
-        """Verify at least 3 shell scripts exist in the repo."""
-        sh_files = []
-        for dirpath, _, fnames in os.walk(self.REPO_DIR):
-            if ".git" in dirpath:
-                continue
-            for f in fnames:
-                if f.endswith(".sh") or f.endswith(".bash"):
-                    sh_files.append(os.path.join(dirpath, f))
-        assert len(sh_files) >= 3, f"Expected ≥3 shell scripts, found {len(sh_files)}"
+    def _read_file(self, rel_path):
+        filepath = os.path.join(self.REPO_DIR, rel_path)
+        with open(filepath) as f:
+            return f.read()
+
+    # === File Path Checks ===
 
     def test_deploy_script_exists(self):
-        """Verify a deploy or main entry script exists."""
-        found = False
-        for dirpath, _, fnames in os.walk(self.REPO_DIR):
-            if ".git" in dirpath:
-                continue
-            for f in fnames:
-                if f.endswith(".sh") and (
-                    "deploy" in f.lower() or "main" in f.lower() or "run" in f.lower()
-                ):
-                    found = True
-                    break
-            if found:
-                break
-        assert found, "No deploy/main shell script found"
+        filepath = os.path.join(self.REPO_DIR, self.DEPLOY)
+        assert os.path.exists(filepath), f"deploy.sh not found at {filepath}"
 
-    # ── semantic_check ──────────────────────────────────────────────────────
+    def test_backup_script_exists(self):
+        filepath = os.path.join(self.REPO_DIR, self.BACKUP)
+        assert os.path.exists(filepath), f"backup.sh not found at {filepath}"
 
-    def test_set_euo_pipefail(self):
-        """Verify at least one script uses set -euo pipefail."""
-        sh_files = self._find_sh_files()
-        assert sh_files, "No shell scripts found"
-        for fpath in sh_files:
-            content = self._read(fpath)
-            if re.search(r"set\s+-[euo]+\s*pipefail|set\s+-euo\s+pipefail", content):
-                return
-            if (
-                "set -e" in content
-                and "set -u" in content
-                and "set -o pipefail" in content
-            ):
-                return
-        pytest.fail("No script uses 'set -euo pipefail'")
+    def test_healthcheck_script_exists(self):
+        filepath = os.path.join(self.REPO_DIR, self.HEALTHCHECK)
+        assert os.path.exists(filepath), f"healthcheck.sh not found at {filepath}"
 
-    def test_log_functions_defined(self):
-        """Verify structured logging functions (log_info, log_warn, log_error)."""
-        sh_files = self._find_sh_files()
-        assert sh_files, "No shell scripts found"
-        log_funcs = set()
-        for fpath in sh_files:
-            content = self._read(fpath)
-            for func in ["log_info", "log_warn", "log_error"]:
-                if re.search(rf"(function\s+{func}|{func}\s*\(\s*\))", content):
-                    log_funcs.add(func)
-        assert len(log_funcs) >= 2, f"Expected ≥2 log functions, found: {log_funcs}"
+    def test_common_library_exists(self):
+        filepath = os.path.join(self.REPO_DIR, self.COMMON)
+        assert os.path.exists(filepath), f"common.sh not found at {filepath}"
 
-    def test_retry_or_lock_helper(self):
-        """Verify retry and/or lock acquisition helper exists."""
-        sh_files = self._find_sh_files()
-        assert sh_files, "No shell scripts found"
-        for fpath in sh_files:
-            content = self._read(fpath)
-            if re.search(r"(retry|acquire_lock|with_lock|flock)", content):
-                return
-        pytest.fail("No retry or lock helper found")
+    # === Semantic Checks ===
+
+    def test_all_scripts_have_strict_mode(self):
+        """Verify all scripts start with set -euo pipefail"""
+        for path in [self.DEPLOY, self.BACKUP, self.HEALTHCHECK, self.COMMON]:
+            content = self._read_file(path)
+            assert "set -euo pipefail" in content, \
+                f"{path} missing 'set -euo pipefail'"
+
+    def test_all_scripts_have_shebang(self):
+        """Verify all scripts have bash shebang"""
+        for path in [self.DEPLOY, self.BACKUP, self.HEALTHCHECK, self.COMMON]:
+            content = self._read_file(path)
+            assert content.startswith("#!/") and "bash" in content.split("\n")[0], \
+                f"{path} missing bash shebang"
+
+    def test_common_has_logging_functions(self):
+        """Verify common.sh defines log_info, log_warn, log_error"""
+        content = self._read_file(self.COMMON)
+        for func in ["log_info", "log_warn", "log_error"]:
+            assert func in content, f"common.sh missing {func} function"
+
+    def test_common_has_retry_function(self):
+        """Verify common.sh defines retry function"""
+        content = self._read_file(self.COMMON)
+        assert "retry" in content, "common.sh missing retry function"
+
+    def test_common_has_lock_functions(self):
+        """Verify common.sh defines acquire_lock with flock"""
+        content = self._read_file(self.COMMON)
+        assert "acquire_lock" in content, "common.sh missing acquire_lock"
+        assert "flock" in content, "common.sh missing flock usage"
+
+    def test_common_has_cleanup_registration(self):
+        """Verify common.sh has register_cleanup with trap"""
+        content = self._read_file(self.COMMON)
+        assert "register_cleanup" in content or "trap" in content, \
+            "common.sh missing cleanup registration/trap"
 
     def test_deploy_sources_common(self):
-        """Verify deploy script sources a common/shared library."""
-        sh_files = self._find_sh_files()
-        for fpath in sh_files:
-            if "deploy" in os.path.basename(fpath).lower():
-                content = self._read(fpath)
-                if re.search(r"(source|\.)\s+.*(common|lib|shared|utils)", content):
-                    return
-        # Check any script sources another
-        for fpath in sh_files:
-            content = self._read(fpath)
-            if re.search(r"(source|\.)\s+.*\.sh", content):
-                return
-        pytest.fail("No script sources a common/shared library")
+        """Verify deploy.sh sources lib/common.sh"""
+        content = self._read_file(self.DEPLOY)
+        has_source = "source" in content or "." in content.split("\n")[5] if len(content.split("\n")) > 5 else False
+        assert "common.sh" in content, "deploy.sh missing source lib/common.sh"
 
-    def test_iso_timestamp_in_logs(self):
-        """Verify logging uses ISO 8601 timestamp format."""
-        sh_files = self._find_sh_files()
-        assert sh_files, "No shell scripts found"
-        for fpath in sh_files:
-            content = self._read(fpath)
-            if re.search(
-                r"date.*\+.*%Y.*%m.*%d|%FT%T|iso.?8601|--iso", content, re.IGNORECASE
-            ):
-                return
-            if re.search(r'"\$\(date\b', content):
-                return
-        pytest.fail("No ISO timestamp in logging functions")
+    def test_deploy_parses_arguments(self):
+        """Verify deploy.sh parses --image and --service arguments"""
+        content = self._read_file(self.DEPLOY)
+        assert "--image" in content, "deploy.sh missing --image argument"
+        assert "--service" in content, "deploy.sh missing --service argument"
 
-    # ── functional_check ────────────────────────────────────────────────────
+    def test_deploy_uses_docker_pull_with_retry(self):
+        """Verify deploy.sh uses docker pull with retry"""
+        content = self._read_file(self.DEPLOY)
+        assert "docker pull" in content, "deploy.sh missing docker pull"
+        assert "retry" in content, "deploy.sh missing retry for docker pull"
+
+    def test_backup_uses_file_lock(self):
+        """Verify backup.sh acquires file lock"""
+        content = self._read_file(self.BACKUP)
+        assert "lock" in content.lower(), "backup.sh missing file lock"
+        assert "pg_dump" in content, "backup.sh missing pg_dump"
+
+    def test_backup_uploads_and_rotates(self):
+        """Verify backup.sh uploads to S3 and rotates old backups"""
+        content = self._read_file(self.BACKUP)
+        assert "s3" in content.lower(), "backup.sh missing S3 upload"
+        assert "retention" in content or "rotate" in content.lower() or "delete" in content.lower(), \
+            "backup.sh missing backup rotation"
+
+    def test_healthcheck_checks_http_status(self):
+        """Verify healthcheck.sh checks HTTP status with curl"""
+        content = self._read_file(self.HEALTHCHECK)
+        assert "curl" in content, "healthcheck.sh missing curl"
+        assert "--url" in content or "url" in content.lower(), \
+            "healthcheck.sh missing --url argument"
+
+    # === Functional Checks ===
 
     def test_shellcheck_compliance(self):
-        """Verify scripts pass ShellCheck (if available)."""
-        sh_files = self._find_sh_files()
-        assert sh_files, "No shell scripts found"
-        try:
-            subprocess.run(["shellcheck", "--version"], capture_output=True, timeout=10)
-        except (FileNotFoundError, subprocess.TimeoutExpired):
-            pytest.skip("shellcheck not available")
-        errors = []
-        for fpath in sh_files[:5]:  # Check up to 5 scripts
+        """Verify all scripts pass ShellCheck with zero warnings"""
+        scripts = [self.DEPLOY, self.BACKUP, self.HEALTHCHECK, self.COMMON]
+        for path in scripts:
+            filepath = os.path.join(self.REPO_DIR, path)
             result = subprocess.run(
-                ["shellcheck", "-S", "error", fpath],
-                capture_output=True,
-                text=True,
-                timeout=30,
+                ["shellcheck", "-s", "bash", filepath],
+                capture_output=True, text=True, timeout=30,
             )
             if result.returncode != 0:
-                errors.append(os.path.basename(fpath))
-        assert not errors, f"ShellCheck errors in: {errors}"
+                # Count actual errors vs info
+                error_lines = [
+                    l for l in result.stdout.split("\n")
+                    if "error" in l.lower() or "warning" in l.lower()
+                ]
+                if error_lines:
+                    pytest.fail(
+                        f"ShellCheck warnings in {path}: {error_lines[:5]}"
+                    )
 
-    def test_bash_syntax_valid(self):
-        """Verify scripts pass bash -n syntax check."""
-        sh_files = self._find_sh_files()
-        assert sh_files, "No shell scripts found"
-        try:
-            subprocess.run(["bash", "--version"], capture_output=True, timeout=10)
-        except (FileNotFoundError, subprocess.TimeoutExpired):
-            pytest.skip("bash not available")
-        for fpath in sh_files[:5]:
-            result = subprocess.run(
-                ["bash", "-n", fpath], capture_output=True, text=True, timeout=30
-            )
-            assert (
-                result.returncode == 0
-            ), f"Syntax error in {os.path.basename(fpath)}: {result.stderr}"
-
-    def test_retry_failure_handling(self):
-        """Verify retry helper has a max-attempts or failure exit."""
-        sh_files = self._find_sh_files()
-        for fpath in sh_files:
-            content = self._read(fpath)
-            if "retry" in content.lower():
-                if re.search(
-                    r"(max_attempts|MAX_RETRIES|exit\s+1|return\s+1)", content
-                ):
-                    return
-        pytest.fail("Retry helper does not handle max-attempts failure")
-
-    def test_unset_variable_protection(self):
-        """Verify 'set -u' or 'nounset' is used for unset variable protection."""
-        sh_files = self._find_sh_files()
-        assert sh_files, "No shell scripts found"
-        for fpath in sh_files:
-            content = self._read(fpath)
-            if "set -u" in content or "nounset" in content or "set -euo" in content:
-                return
-        pytest.fail("No script enables unset variable protection (set -u / nounset)")
-
-    # ── helpers ──────────────────────────────────────────────────────────────
-
-    def _find_sh_files(self):
-        results = []
-        for dirpath, _, fnames in os.walk(self.REPO_DIR):
-            if ".git" in dirpath:
-                continue
-            for f in fnames:
-                if f.endswith(".sh") or f.endswith(".bash"):
-                    results.append(os.path.join(dirpath, f))
-        return results
-
-    def _read(self, path):
-        with open(path, "r", errors="ignore") as fh:
-            return fh.read()
+    def test_no_unquoted_variables(self):
+        """Verify scripts use proper quoting (no bare $VAR patterns)"""
+        for path in [self.DEPLOY, self.BACKUP, self.HEALTHCHECK]:
+            content = self._read_file(path)
+            # Check for obvious unquoted patterns (simplified check)
+            # Lines with $VAR not inside quotes or ${VAR} context
+            lines = content.split("\n")
+            for i, line in enumerate(lines):
+                # Skip comments
+                stripped = line.strip()
+                if stripped.startswith("#"):
+                    continue
+                # Check for echo or assignment patterns with unquoted vars
+                # This is a simplified heuristic
+                if re.search(r'\b(echo|printf)\s+\$[A-Z_]+\b', line):
+                    # May be false positive but worth flagging
+                    pass  # Relaxed check

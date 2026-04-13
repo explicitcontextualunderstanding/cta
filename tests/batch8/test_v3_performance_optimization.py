@@ -1,140 +1,154 @@
 """
-Test for 'v3-performance-optimization' skill — Flash Attention Performance
-Validates that the Agent implemented attention benchmark, kernel profiler,
-and performance summary modules with CUDA availability gates and TFLOPS metrics.
+Tests for the v3-performance-optimization skill.
+Validates a Flash Attention benchmarking suite with attention benchmarks,
+memory profiling, performance analysis, and report generation.
 """
 
 import os
 import re
-import sys
+import ast
 
-import pytest
+REPO_DIR = "/workspace/flash-attention"
+BENCH_DIR = os.path.join(REPO_DIR, "benchmarks")
 
 
 class TestV3PerformanceOptimization:
-    """Verify Flash Attention performance optimization implementation."""
+    """Tests for the Flash Attention benchmark suite."""
 
-    REPO_DIR = "/workspace/flash-attention"
+    # ── file_path_check ──────────────────────────────────────────────
 
-    @staticmethod
-    def _read(path: str) -> str:
-        try:
-            with open(path, "r", errors="ignore") as fh:
-                return fh.read()
-        except OSError:
+    def test_attention_benchmark_exists(self):
+        """AttentionBenchmark module must exist."""
+        path = os.path.join(BENCH_DIR, "attention_benchmark.py")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    def test_memory_profiler_exists(self):
+        """MemoryProfiler module must exist."""
+        path = os.path.join(BENCH_DIR, "memory_profiler.py")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    def test_performance_analyzer_exists(self):
+        """PerformanceAnalyzer module must exist."""
+        path = os.path.join(BENCH_DIR, "performance_analyzer.py")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    def test_benchmark_report_exists(self):
+        """BenchmarkReport module must exist."""
+        path = os.path.join(BENCH_DIR, "benchmark_report.py")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    # ── semantic_check ───────────────────────────────────────────────
+
+    def _read(self, filename):
+        path = os.path.join(BENCH_DIR, filename)
+        if not os.path.isfile(path):
             return ""
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read()
 
-    def _find_file(self, *candidates):
-        for c in candidates:
-            p = os.path.join(self.REPO_DIR, c)
-            if os.path.isfile(p):
-                return p
-        return None
+    def test_benchmark_class_methods(self):
+        """AttentionBenchmark must define benchmark_standard_attention, benchmark_flash_attention, sweep."""
+        content = self._read("attention_benchmark.py")
+        assert re.search(r"class\s+AttentionBenchmark", content), (
+            "AttentionBenchmark class not defined"
+        )
+        for method in ["benchmark_standard_attention", "benchmark_flash_attention", "sweep"]:
+            assert re.search(rf"def\s+{method}\b", content), f"{method} not defined"
 
-    # ── file_path_check ─────────────────────────────────────────────
+    def test_memory_profiler_class(self):
+        """MemoryProfiler must define profile_operation, compare_memory, estimate_memory."""
+        content = self._read("memory_profiler.py")
+        assert re.search(r"class\s+MemoryProfiler", content), (
+            "MemoryProfiler class not defined"
+        )
+        for method in ["profile_operation", "compare_memory", "estimate_memory"]:
+            assert re.search(rf"def\s+{method}\b", content), f"{method} not defined"
 
-    def test_attention_benchmark_module_exists(self):
-        """Verify v3_performance/attention_benchmark.py or benchmark.py exists."""
-        candidates = ("v3_performance/attention_benchmark.py", "benchmark.py")
-        found = any(
-            os.path.isfile(os.path.join(self.REPO_DIR, c)) for c in candidates)
-        assert found, f"Missing: none of {candidates} found"
+    def test_analyzer_class(self):
+        """PerformanceAnalyzer must define compute_speedup_summary, pareto_frontier, find_crossover_point, optimal_config."""
+        content = self._read("performance_analyzer.py")
+        assert re.search(r"class\s+PerformanceAnalyzer", content), (
+            "PerformanceAnalyzer class not defined"
+        )
+        for method in ["compute_speedup_summary", "pareto_frontier",
+                        "find_crossover_point", "optimal_config"]:
+            assert re.search(rf"def\s+{method}\b", content), f"{method} not defined"
 
-    def test_kernel_profiler_module_exists(self):
-        """Verify v3_performance/kernel_profiler.py or profiler.py exists."""
-        candidates = ("v3_performance/kernel_profiler.py", "profiler.py")
-        found = any(
-            os.path.isfile(os.path.join(self.REPO_DIR, c)) for c in candidates)
-        assert found, f"Missing: none of {candidates} found"
+    def test_report_class(self):
+        """BenchmarkReport must define generate and to_markdown."""
+        content = self._read("benchmark_report.py")
+        assert re.search(r"class\s+BenchmarkReport", content), (
+            "BenchmarkReport class not defined"
+        )
+        assert re.search(r"def\s+generate\b", content), "generate method not defined"
+        assert re.search(r"def\s+to_markdown\b", content), "to_markdown method not defined"
 
-    def test_performance_summary_module_exists(self):
-        """Verify v3_performance/performance_summary.py or summary.py exists."""
-        candidates = ("v3_performance/performance_summary.py", "summary.py")
-        found = any(
-            os.path.isfile(os.path.join(self.REPO_DIR, c)) for c in candidates)
-        assert found, f"Missing: none of {candidates} found"
+    def test_flops_calculation(self):
+        """Benchmark must compute FLOPs for attention operations."""
+        content = self._read("attention_benchmark.py")
+        assert re.search(r"flops|FLOPS|FLOPs", content, re.IGNORECASE), (
+            "FLOPs calculation not found"
+        )
 
-    # ── semantic_check ──────────────────────────────────────────────
+    def test_oom_handling(self):
+        """Sweep must handle OOM errors gracefully."""
+        content = self._read("attention_benchmark.py")
+        assert re.search(r"OOM|OutOfMemory|oom|RuntimeError|CUDA.*memory", content, re.IGNORECASE), (
+            "OOM error handling not found"
+        )
 
-    def test_cuda_availability_gate(self):
-        """Verify torch.cuda.is_available() is checked before CUDA operations."""
-        path = self._find_file("v3_performance/attention_benchmark.py",
-                               "benchmark.py")
-        assert path, "Benchmark module not found"
-        content = self._read(path)
-        assert "cuda.is_available" in content, \
-            "cuda.is_available guard not found"
+    def test_speedup_computation(self):
+        """Benchmark must compute speedup ratios (standard/flash)."""
+        content = self._read("attention_benchmark.py") + self._read("performance_analyzer.py")
+        assert re.search(r"speedup|speed_up", content, re.IGNORECASE), (
+            "Speedup computation not found"
+        )
 
-    def test_profiler_timing_reference(self):
-        """Verify triton.testing.do_bench or torch.profiler is used for timing."""
-        path = self._find_file("v3_performance/kernel_profiler.py", "profiler.py")
-        assert path, "Profiler module not found"
-        content = self._read(path)
-        found = any(kw in content for kw in (
-            "do_bench", "torch.profiler", "time.perf_counter"))
-        assert found, "No timing mechanism found in profiler"
+    def test_memory_savings_formula(self):
+        """MemoryProfiler must compute savings_pct."""
+        content = self._read("memory_profiler.py")
+        assert re.search(r"savings_pct|savings.*percent", content, re.IGNORECASE), (
+            "Memory savings percentage not computed"
+        )
 
-    def test_speedup_calculation_present(self):
-        """Verify speedup or ratio calculation is present in PerformanceSummary."""
-        path = self._find_file("v3_performance/performance_summary.py",
-                               "summary.py")
-        assert path, "Performance summary module not found"
-        content = self._read(path)
-        found = any(kw in content for kw in (
-            "speedup", "baseline_time", "optimized_time"))
-        assert found, "Speedup calculation not found"
+    # ── functional_check ─────────────────────────────────────────────
 
-    def test_tflops_metric_present(self):
-        """Verify TFLOPS or throughput metric is computed."""
-        path = self._find_file("v3_performance/performance_summary.py",
-                               "summary.py")
-        assert path, "Performance summary module not found"
-        content = self._read(path)
-        found = any(kw in content.lower() for kw in ("tflops", "throughput"))
-        assert found, "TFLOPS or throughput metric not found"
+    def test_all_files_valid_python(self):
+        """All benchmark Python files must have valid syntax."""
+        errors = []
+        for fname in ["attention_benchmark.py", "memory_profiler.py",
+                       "performance_analyzer.py", "benchmark_report.py"]:
+            content = self._read(fname)
+            if not content:
+                continue
+            try:
+                ast.parse(content)
+            except SyntaxError as e:
+                errors.append(f"{fname}: {e}")
+        assert not errors, "Syntax errors:\n" + "\n".join(errors)
 
-    # ── functional_check (import) ───────────────────────────────────
+    def test_cuda_requirement(self):
+        """Benchmark must check CUDA availability."""
+        content = self._read("attention_benchmark.py")
+        assert re.search(r"cuda|CUDA|is_available", content), (
+            "CUDA availability check not found"
+        )
 
-    def _skip_unless_importable(self):
-        if not os.path.isdir(self.REPO_DIR):
-            pytest.skip("Repo dir does not exist")
-        if self.REPO_DIR not in sys.path:
-            sys.path.insert(0, self.REPO_DIR)
+    def test_recommendations_in_report(self):
+        """Report must generate recommendations based on results."""
+        content = self._read("benchmark_report.py")
+        assert re.search(r"recommendation|Recommended|recommend", content, re.IGNORECASE), (
+            "Recommendations not found in report"
+        )
 
-    def test_kernel_profiler_returns_positive_time(self):
-        """KernelProfiler.profile(lambda: sum(range(1000))) returns positive value."""
-        self._skip_unless_importable()
-        try:
-            from v3_performance.kernel_profiler import KernelProfiler
-        except Exception as exc:
-            pytest.skip(f"Cannot import: {exc}")
-        t = KernelProfiler().profile(lambda: sum(range(1000)))
-        assert isinstance(t, (int, float)) and t > 0, \
-            f"Expected positive time, got {t}"
+    def test_crossover_binary_search(self):
+        """find_crossover_point must use binary search approach."""
+        content = self._read("performance_analyzer.py")
+        assert re.search(r"binary.*search|low.*high|mid|crossover", content, re.IGNORECASE), (
+            "Binary search for crossover point not found"
+        )
 
-    def test_performance_summary_speedup_with_mock(self):
-        """PerformanceSummary.report() with mock data yields speedup > 1.0."""
-        self._skip_unless_importable()
-        try:
-            from v3_performance.performance_summary import PerformanceSummary
-        except Exception as exc:
-            pytest.skip(f"Cannot import: {exc}")
-        rows = PerformanceSummary().report(
-            standard_ms=10.0, flash_ms=3.0, seq_len=512)
-        assert isinstance(rows, list) and len(rows) > 0, \
-            "report() must return non-empty list"
-        assert rows[0]["speedup"] > 1.0, \
-            f"Expected speedup > 1.0, got {rows[0]['speedup']}"
-
-    def test_cuda_unavailable_run_returns_none_or_empty(self):
-        """AttentionBenchmark.run([512]) returns None/empty on CPU-only host."""
-        self._skip_unless_importable()
-        try:
-            from unittest.mock import patch
-            from v3_performance.attention_benchmark import AttentionBenchmark
-        except Exception as exc:
-            pytest.skip(f"Cannot import: {exc}")
-        with patch("torch.cuda.is_available", return_value=False):
-            result = AttentionBenchmark().run([512])
-        assert result is None or result == {} or result == [], \
-            f"Expected None/empty on CPU-only, got {result}"
+    def test_test_file_exists(self):
+        """Test file must exist."""
+        path = os.path.join(REPO_DIR, "tests", "test_v3_performance_optimization.py")
+        assert os.path.isfile(path), f"Missing {path}"

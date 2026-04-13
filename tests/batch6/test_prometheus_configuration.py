@@ -1,217 +1,272 @@
 """
-Tests for 'prometheus-configuration' skill.
-Generated from benchmark case definitions for prometheus-configuration.
+Test skill: prometheus-configuration
+Verify that the Agent correctly configures Prometheus monitoring for a
+multi-service e-commerce platform with recording rules, alerting rules,
+alertmanager, and redis exporter.
 """
 
-import ast
-import base64
-import glob
-import json
 import os
-import py_compile
 import re
 import subprocess
-import textwrap
-
 import pytest
 
 try:
     import yaml
-except ModuleNotFoundError:
+except ImportError:
     yaml = None
 
 
 class TestPrometheusConfiguration:
-    """Verify the prometheus-configuration skill output."""
-
-    REPO_DIR = '/workspace/prometheus'
-
-
-    # ── helpers ──────────────────────────────────────────────
-
-    _SETUP_CACHE: dict = {}
+    REPO_DIR = "/workspace/prometheus"
 
     @staticmethod
-    def _repo_path(rel: str) -> str:
-        return os.path.join(TestPrometheusConfiguration.REPO_DIR, rel)
-
-    @staticmethod
-    def _safe_read(path: str) -> str:
-        with open(path, "r", encoding="utf-8", errors="ignore") as fh:
-            return fh.read()
-
-    @staticmethod
-    def _load_yaml(path: str):
+    def _load_yaml(path):
         if yaml is None:
-            pytest.skip("PyYAML not available")
-        with open(path, "r", encoding="utf-8", errors="ignore") as fh:
-            return yaml.safe_load(fh)
+            subprocess.run(["pip", "install", "pyyaml"], capture_output=True, text=True, timeout=30)
+            import yaml as _yaml
+            with open(path, "r") as f:
+                return _yaml.safe_load(f)
+        with open(path, "r") as f:
+            return yaml.safe_load(f)
 
-    @staticmethod
-    def _load_json(path: str):
-        with open(path, "r", encoding="utf-8", errors="ignore") as fh:
-            return json.load(fh)
-
-    @classmethod
-    def _run_in_repo(cls, script: str, timeout: int = 120) -> subprocess.CompletedProcess:
-        return subprocess.run(
-            ["python", "-c", textwrap.dedent(script)],
-            cwd=cls.REPO_DIR,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-        )
-
-    @classmethod
-    def _run_cmd(cls, command, args=None, timeout=120):
-        args = args or []
-        if isinstance(command, str) and args:
-            return subprocess.run(
-                [command, *args],
-                cwd=cls.REPO_DIR,
-                capture_output=True,
-                text=True,
-                timeout=timeout,
-            )
-        return subprocess.run(
-            command if isinstance(command, list) else command,
-            cwd=cls.REPO_DIR,
-            shell=isinstance(command, str),
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-        )
-
-    @classmethod
-    def _ensure_setup(cls, label, setup_cmds, fallback):
-        if not setup_cmds:
-            return
-        key = tuple(setup_cmds)
-        if key in cls._SETUP_CACHE:
-            ok, msg = cls._SETUP_CACHE[key]
-            if ok:
-                return
-            if fallback == "skip_if_setup_fails":
-                pytest.skip(f"{label} setup failed: {msg}")
-            pytest.fail(f"{label} setup failed: {msg}")
-        for cmd in setup_cmds:
-            r = subprocess.run(cmd, cwd=cls.REPO_DIR, shell=True,
-                               capture_output=True, text=True, timeout=300)
-            if r.returncode != 0:
-                msg = (r.stderr or r.stdout or 'failed').strip()
-                cls._SETUP_CACHE[key] = (False, msg)
-                if fallback == "skip_if_setup_fails":
-                    pytest.skip(f"{label} setup failed: {msg}")
-                pytest.fail(f"{label} setup failed: {msg}")
-        cls._SETUP_CACHE[key] = (True, 'ok')
-
-
-    # ── file_path_check (static) ────────────────────────────────────────
+    # === File Path Checks ===
 
     def test_prometheus_yml_exists(self):
-        """Verify prometheus.yml and rules files exist"""
-        _p = self._repo_path('monitoring/prometheus/prometheus.yml')
-        assert os.path.isfile(_p), f'Missing file: monitoring/prometheus/prometheus.yml'
-        self._load_yaml(_p)  # parse check
-        _p = self._repo_path('monitoring/prometheus/recording-rules.yml')
-        assert os.path.isfile(_p), f'Missing file: monitoring/prometheus/recording-rules.yml'
-        self._load_yaml(_p)  # parse check
-        _p = self._repo_path('monitoring/prometheus/alerting-rules.yml')
-        assert os.path.isfile(_p), f'Missing file: monitoring/prometheus/alerting-rules.yml'
-        self._load_yaml(_p)  # parse check
+        """Verify that the main Prometheus config file exists"""
+        path = os.path.join(self.REPO_DIR, "monitoring/prometheus/prometheus.yml")
+        assert os.path.exists(path), f"prometheus.yml not found at {path}"
 
-    def test_alertmanager_yml_exists(self):
-        """Verify alertmanager.yml exists"""
-        _p = self._repo_path('monitoring/alertmanager/alertmanager.yml')
-        assert os.path.isfile(_p), f'Missing file: monitoring/alertmanager/alertmanager.yml'
-        self._load_yaml(_p)  # parse check
+    def test_recording_rules_file_exists(self):
+        """Verify that recording rules file exists"""
+        path = os.path.join(self.REPO_DIR, "monitoring/prometheus/rules/recording-rules.yml")
+        assert os.path.exists(path), f"recording-rules.yml not found at {path}"
 
-    # ── semantic_check (static) ────────────────────────────────────────
+    def test_alerting_rules_file_exists(self):
+        """Verify that alerting rules file exists"""
+        path = os.path.join(self.REPO_DIR, "monitoring/prometheus/rules/alerting-rules.yml")
+        assert os.path.exists(path), f"alerting-rules.yml not found at {path}"
 
-    def test_prometheus_has_global_and_scrape(self):
-        """Verify prometheus.yml has global and scrape_configs keys"""
-        _p = self._repo_path('monitoring/prometheus/prometheus.yml')
-        assert os.path.exists(_p), f'Missing: monitoring/prometheus/prometheus.yml'
-        _contents = self._safe_read(_p)
-        _all = _contents if isinstance(_contents, str) else ''
-        assert 'global' in _all, 'Missing: global'
-        assert 'scrape_configs' in _all, 'Missing: scrape_configs'
+    def test_node_alerts_file_exists(self):
+        """Verify that node-level alerts file exists"""
+        path = os.path.join(self.REPO_DIR, "monitoring/prometheus/rules/node-alerts.yml")
+        assert os.path.exists(path), f"node-alerts.yml not found at {path}"
 
-    def test_recording_rules_has_record(self):
-        """Verify recording-rules.yml has groups with record entries"""
-        _p = self._repo_path('monitoring/prometheus/recording-rules.yml')
-        assert os.path.exists(_p), f'Missing: monitoring/prometheus/recording-rules.yml'
-        _contents = self._safe_read(_p)
-        _all = _contents if isinstance(_contents, str) else ''
-        assert 'groups' in _all, 'Missing: groups'
-        assert 'record' in _all, 'Missing: record'
+    def test_alertmanager_config_exists(self):
+        """Verify that Alertmanager configuration exists"""
+        path = os.path.join(self.REPO_DIR, "monitoring/alertmanager/alertmanager.yml")
+        assert os.path.exists(path), f"alertmanager.yml not found at {path}"
 
-    def test_alerting_rules_has_alert(self):
-        """Verify alerting-rules.yml has alert definitions with expr and for"""
-        _p = self._repo_path('monitoring/prometheus/alerting-rules.yml')
-        assert os.path.exists(_p), f'Missing: monitoring/prometheus/alerting-rules.yml'
-        _contents = self._safe_read(_p)
-        _all = _contents if isinstance(_contents, str) else ''
-        assert 'alert' in _all, 'Missing: alert'
-        assert 'expr' in _all, 'Missing: expr'
-        assert 'for' in _all, 'Missing: for'
+    def test_redis_exporter_yaml_exists(self):
+        """Verify that Redis exporter Kubernetes manifest exists"""
+        path = os.path.join(self.REPO_DIR, "monitoring/exporters/redis-exporter.yaml")
+        assert os.path.exists(path), f"redis-exporter.yaml not found at {path}"
 
-    def test_alertmanager_has_receivers(self):
-        """Verify alertmanager.yml has route and receivers keys"""
-        _p = self._repo_path('monitoring/alertmanager/alertmanager.yml')
-        assert os.path.exists(_p), f'Missing: monitoring/alertmanager/alertmanager.yml'
-        _contents = self._safe_read(_p)
-        _all = _contents if isinstance(_contents, str) else ''
-        assert 'route' in _all, 'Missing: route'
-        assert 'receivers' in _all, 'Missing: receivers'
+    # === Semantic Checks ===
 
-    # ── functional_check ────────────────────────────────────────
+    def test_prometheus_yml_global_settings(self):
+        """Verify Prometheus global settings (scrape_interval, evaluation_interval)"""
+        path = os.path.join(self.REPO_DIR, "monitoring/prometheus/prometheus.yml")
+        data = self._load_yaml(path)
+        assert data is not None, "prometheus.yml is empty or invalid"
 
-    def test_all_yaml_parseable(self):
-        """Verify all Prometheus YAML files parse without error"""
-        result = self._run_cmd('python', args=['-c', "import yaml; [yaml.safe_load(open(f)) for f in ['monitoring/prometheus/prometheus.yml','monitoring/prometheus/recording-rules.yml','monitoring/prometheus/alerting-rules.yml','monitoring/alertmanager/alertmanager.yml']]; print('PASS')"], timeout=120)
-        assert result.returncode == 0, (
-            f'test_all_yaml_parseable failed (exit {result.returncode})\n' + result.stderr[:500]
+        g = data.get("global", {})
+        assert "scrape_interval" in g, "Missing global scrape_interval"
+        assert "evaluation_interval" in g, "Missing global evaluation_interval"
+
+    def test_prometheus_has_kubernetes_sd(self):
+        """Verify that scrape configs use kubernetes_sd_configs"""
+        path = os.path.join(self.REPO_DIR, "monitoring/prometheus/prometheus.yml")
+        with open(path, "r") as f:
+            content = f.read()
+
+        assert "kubernetes_sd_configs" in content, (
+            "Prometheus should use kubernetes_sd_configs for service discovery"
         )
-        assert 'PASS' in (result.stdout + result.stderr), 'Expected PASS in output'
 
-    def test_scrape_jobs_count(self):
-        """Verify at least 3 scrape jobs defined"""
-        result = self._run_cmd('python', args=['-c', "import yaml; config=yaml.safe_load(open('monitoring/prometheus/prometheus.yml')); jobs=config['scrape_configs']; assert len(jobs)>=3, f'Only {len(jobs)} scrape jobs'; print('PASS')"], timeout=120)
-        assert result.returncode == 0, (
-            f'test_scrape_jobs_count failed (exit {result.returncode})\n' + result.stderr[:500]
+    def test_prometheus_has_required_scrape_jobs(self):
+        """Verify that Prometheus defines required scrape jobs"""
+        path = os.path.join(self.REPO_DIR, "monitoring/prometheus/prometheus.yml")
+        data = self._load_yaml(path)
+        scrape_configs = data.get("scrape_configs", [])
+        job_names = [sc.get("job_name", "") for sc in scrape_configs]
+
+        expected_jobs = ["kubernetes-pods", "node-exporter", "redis-exporter"]
+        for job in expected_jobs:
+            found = any(job in jn for jn in job_names)
+            assert found, f"Missing scrape job: {job}. Found jobs: {job_names}"
+
+    def test_prometheus_drops_high_cardinality_metrics(self):
+        """Verify metric relabeling drops go_* and promhttp_* metrics"""
+        path = os.path.join(self.REPO_DIR, "monitoring/prometheus/prometheus.yml")
+        with open(path, "r") as f:
+            content = f.read()
+
+        assert "go_" in content or "go_.*" in content, (
+            "Should have metric relabeling to drop go_* metrics"
         )
-        assert 'PASS' in (result.stdout + result.stderr), 'Expected PASS in output'
 
-    def test_recording_rules_count(self):
-        """Verify at least 2 recording rules exist"""
-        result = self._run_cmd('python', args=['-c', "import yaml; rules=yaml.safe_load(open('monitoring/prometheus/recording-rules.yml')); records=[r for g in rules['groups'] for r in g['rules'] if 'record' in r]; assert len(records)>=2, f'Only {len(records)} recording rules'; print('PASS')"], timeout=120)
-        assert result.returncode == 0, (
-            f'test_recording_rules_count failed (exit {result.returncode})\n' + result.stderr[:500]
+    def test_recording_rules_has_red_metrics(self):
+        """Verify recording rules define RED metrics (rate, errors, duration)"""
+        path = os.path.join(self.REPO_DIR, "monitoring/prometheus/rules/recording-rules.yml")
+        data = self._load_yaml(path)
+        assert data is not None
+
+        groups = data.get("groups", [])
+        assert len(groups) >= 1, "Recording rules should have at least 1 group"
+
+        all_records = []
+        for group in groups:
+            for rule in group.get("rules", []):
+                if "record" in rule:
+                    all_records.append(rule["record"])
+
+        # Check RED metrics
+        has_rate = any("request" in r and "rate" in r for r in all_records)
+        has_error = any("error" in r for r in all_records)
+        has_duration = any("duration" in r or "latency" in r for r in all_records)
+
+        assert has_rate, f"Recording rules missing request rate metric. Records: {all_records}"
+        assert has_error, f"Recording rules missing error rate metric. Records: {all_records}"
+        assert has_duration, f"Recording rules missing latency/duration metric. Records: {all_records}"
+
+    def test_recording_rules_has_percentile_metrics(self):
+        """Verify recording rules include P50, P95, P99 latency percentiles"""
+        path = os.path.join(self.REPO_DIR, "monitoring/prometheus/rules/recording-rules.yml")
+        with open(path, "r") as f:
+            content = f.read()
+
+        assert "histogram_quantile" in content, (
+            "Recording rules should use histogram_quantile for latency percentiles"
         )
-        assert 'PASS' in (result.stdout + result.stderr), 'Expected PASS in output'
+        assert "0.95" in content, "Missing P95 latency recording rule"
+        assert "0.99" in content, "Missing P99 latency recording rule"
 
-    def test_alert_rules_count(self):
-        """Verify at least 3 alert rules defined"""
-        result = self._run_cmd('python', args=['-c', "import yaml; a=yaml.safe_load(open('monitoring/prometheus/alerting-rules.yml')); alerts=[r for g in a['groups'] for r in g['rules'] if 'alert' in r]; assert len(alerts)>=3, f'Only {len(alerts)} alerts'; print('PASS')"], timeout=120)
-        assert result.returncode == 0, (
-            f'test_alert_rules_count failed (exit {result.returncode})\n' + result.stderr[:500]
+    def test_alerting_rules_has_service_alerts(self):
+        """Verify alerting rules include service-level alerts"""
+        path = os.path.join(self.REPO_DIR, "monitoring/prometheus/rules/alerting-rules.yml")
+        data = self._load_yaml(path)
+        assert data is not None
+
+        groups = data.get("groups", [])
+        all_alerts = []
+        for group in groups:
+            for rule in group.get("rules", []):
+                if "alert" in rule:
+                    all_alerts.append(rule["alert"])
+
+        assert any("ErrorRate" in a or "Error" in a for a in all_alerts), (
+            f"Missing error rate alert. Alerts: {all_alerts}"
         )
-        assert 'PASS' in (result.stdout + result.stderr), 'Expected PASS in output'
-
-    def test_alertmanager_receivers_nonempty(self):
-        """Verify alertmanager has at least one receiver"""
-        result = self._run_cmd('python', args=['-c', "import yaml; am=yaml.safe_load(open('monitoring/alertmanager/alertmanager.yml')); assert len(am.get('receivers',[]))>=1, 'No receivers'; print('PASS')"], timeout=120)
-        assert result.returncode == 0, (
-            f'test_alertmanager_receivers_nonempty failed (exit {result.returncode})\n' + result.stderr[:500]
+        assert any("Latency" in a or "Slow" in a for a in all_alerts), (
+            f"Missing latency alert. Alerts: {all_alerts}"
         )
-        assert 'PASS' in (result.stdout + result.stderr), 'Expected PASS in output'
 
-    def test_unique_job_names(self):
-        """Verify all scrape job_names are unique"""
-        result = self._run_cmd('python', args=['-c', "import yaml; config=yaml.safe_load(open('monitoring/prometheus/prometheus.yml')); names=[j['job_name'] for j in config['scrape_configs']]; assert len(set(names))==len(names), f'Duplicate job names: {names}'; print('PASS')"], timeout=120)
-        assert result.returncode == 0, (
-            f'test_unique_job_names failed (exit {result.returncode})\n' + result.stderr[:500]
+    def test_alerting_rules_checkout_stricter_threshold(self):
+        """Verify that checkout service has stricter latency threshold (500ms vs 1s)"""
+        path = os.path.join(self.REPO_DIR, "monitoring/prometheus/rules/alerting-rules.yml")
+        with open(path, "r") as f:
+            content = f.read()
+
+        assert "checkout" in content.lower(), (
+            "Alerting rules should have checkout-specific alert with stricter threshold"
         )
-        assert 'PASS' in (result.stdout + result.stderr), 'Expected PASS in output'
+        assert "0.5" in content, (
+            "Checkout latency threshold should be 0.5s (500ms)"
+        )
 
+    def test_alertmanager_has_routing_and_receivers(self):
+        """Verify Alertmanager has route tree and receivers"""
+        path = os.path.join(self.REPO_DIR, "monitoring/alertmanager/alertmanager.yml")
+        data = self._load_yaml(path)
+        assert data is not None
+
+        assert "route" in data, "Alertmanager missing route configuration"
+        assert "receivers" in data, "Alertmanager missing receivers"
+
+        receivers = data.get("receivers", [])
+        receiver_names = [r.get("name", "") for r in receivers]
+        assert len(receiver_names) >= 2, (
+            f"Alertmanager should have at least 2 receivers, got: {receiver_names}"
+        )
+
+    def test_alertmanager_has_pagerduty_and_slack(self):
+        """Verify Alertmanager has PagerDuty and Slack receivers"""
+        path = os.path.join(self.REPO_DIR, "monitoring/alertmanager/alertmanager.yml")
+        with open(path, "r") as f:
+            content = f.read()
+
+        assert "pagerduty" in content.lower(), "Alertmanager missing PagerDuty receiver"
+        assert "slack" in content.lower(), "Alertmanager missing Slack receiver"
+
+    def test_alertmanager_has_inhibition_rules(self):
+        """Verify Alertmanager has inhibition rules"""
+        path = os.path.join(self.REPO_DIR, "monitoring/alertmanager/alertmanager.yml")
+        data = self._load_yaml(path)
+        assert data is not None
+
+        inhibit_rules = data.get("inhibit_rules", [])
+        assert len(inhibit_rules) >= 1, (
+            "Alertmanager should have inhibition rules"
+        )
+
+    def test_redis_exporter_is_valid_k8s_manifest(self):
+        """Verify Redis exporter YAML is a valid Kubernetes manifest"""
+        path = os.path.join(self.REPO_DIR, "monitoring/exporters/redis-exporter.yaml")
+        data = self._load_yaml(path)
+        assert data is not None
+
+        # Could be a single doc or multi-doc
+        if isinstance(data, dict):
+            assert "kind" in data, "Redis exporter YAML missing 'kind' field"
+        # Verify it's a Deployment or has Deployment
+        with open(path, "r") as f:
+            content = f.read()
+        assert "Deployment" in content or "deployment" in content, (
+            "Redis exporter should have a Deployment resource"
+        )
+        assert "9121" in content, (
+            "Redis exporter should expose port 9121"
+        )
+
+    # === Functional Checks ===
+
+    def test_all_yaml_files_are_valid(self):
+        """Verify that all monitoring YAML files parse without errors"""
+        monitoring_dir = os.path.join(self.REPO_DIR, "monitoring")
+        if not os.path.exists(monitoring_dir):
+            pytest.fail("monitoring/ directory not found")
+
+        yaml_files = []
+        for root, dirs, files in os.walk(monitoring_dir):
+            for f in files:
+                if f.endswith((".yml", ".yaml")):
+                    yaml_files.append(os.path.join(root, f))
+
+        assert len(yaml_files) >= 5, (
+            f"Expected at least 5 YAML files in monitoring/, found {len(yaml_files)}"
+        )
+
+        for yf in yaml_files:
+            try:
+                self._load_yaml(yf)
+            except Exception as e:
+                pytest.fail(f"Invalid YAML in {yf}: {e}")
+
+    def test_node_alerts_cover_cpu_memory_disk(self):
+        """Verify node alerts cover CPU, memory, and disk"""
+        path = os.path.join(self.REPO_DIR, "monitoring/prometheus/rules/node-alerts.yml")
+        data = self._load_yaml(path)
+        groups = data.get("groups", [])
+
+        all_alerts = []
+        for group in groups:
+            for rule in group.get("rules", []):
+                if "alert" in rule:
+                    all_alerts.append(rule["alert"])
+
+        alerts_str = " ".join(all_alerts).lower()
+        assert "cpu" in alerts_str, f"Node alerts missing CPU alert. Alerts: {all_alerts}"
+        assert "memory" in alerts_str or "mem" in alerts_str, (
+            f"Node alerts missing memory alert. Alerts: {all_alerts}"
+        )
+        assert "disk" in alerts_str, f"Node alerts missing disk alert. Alerts: {all_alerts}"
