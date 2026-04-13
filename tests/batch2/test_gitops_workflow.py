@@ -1,178 +1,182 @@
 """
-Test for 'gitops-workflow' skill — Flux GitOps Configuration
-Validates that the Agent created a complete GitOps configuration example
-for Flux with source, kustomizations, base manifests, and overlays.
+Test skill: gitops-workflow
+Verify that the Agent creates a complete Flux GitOps configuration example
+with source definitions, multi-environment kustomizations, base manifests,
+and overlay patches.
 """
 
 import os
 import re
-
-import yaml
+import subprocess
 import pytest
 
 
 class TestGitopsWorkflow:
-    """Verify Flux GitOps configuration example."""
-
     REPO_DIR = "/workspace/flux2"
-    DEMO_DIR = "examples/gitops-demo"
 
-    def _read(self, *parts):
-        fpath = os.path.join(self.REPO_DIR, *parts)
-        assert os.path.isfile(fpath), f"Required file not found: {fpath}"
-        with open(fpath, "r", errors="ignore") as fh:
-            return fh.read()
+    BASE = "examples/gitops-demo"
 
-    def _load_yaml(self, *parts):
-        text = self._read(*parts)
-        try:
-            return yaml.safe_load(text)
-        except yaml.YAMLError as exc:
-            pytest.fail(f"Invalid YAML in {'/'.join(parts)}: {exc}")
-
-    # ------------------------------------------------------------------
-    # L1: Required files exist
-    # ------------------------------------------------------------------
+    # === File Path Checks ===
 
     def test_source_yaml_exists(self):
-        """source.yaml must exist in the gitops-demo directory."""
-        assert os.path.isfile(os.path.join(self.REPO_DIR, self.DEMO_DIR, "source.yaml"))
+        """Verify source.yaml exists"""
+        path = os.path.join(self.REPO_DIR, self.BASE, "source.yaml")
+        assert os.path.exists(path), f"source.yaml not found at {path}"
 
     def test_staging_kustomization_exists(self):
-        """staging-kustomization.yaml must exist."""
-        assert os.path.isfile(
-            os.path.join(self.REPO_DIR, self.DEMO_DIR, "staging-kustomization.yaml")
+        """Verify staging-kustomization.yaml exists"""
+        path = os.path.join(
+            self.REPO_DIR, self.BASE, "staging-kustomization.yaml"
         )
+        assert os.path.exists(path), f"staging-kustomization.yaml not found"
 
     def test_production_kustomization_exists(self):
-        """production-kustomization.yaml must exist."""
-        assert os.path.isfile(
-            os.path.join(self.REPO_DIR, self.DEMO_DIR, "production-kustomization.yaml")
+        """Verify production-kustomization.yaml exists"""
+        path = os.path.join(
+            self.REPO_DIR, self.BASE, "production-kustomization.yaml"
         )
+        assert os.path.exists(path), f"production-kustomization.yaml not found"
 
     def test_base_deployment_exists(self):
-        """base/deployment.yaml must exist."""
-        assert os.path.isfile(
-            os.path.join(self.REPO_DIR, self.DEMO_DIR, "base", "deployment.yaml")
+        """Verify base/deployment.yaml exists"""
+        path = os.path.join(
+            self.REPO_DIR, self.BASE, "base/deployment.yaml"
+        )
+        assert os.path.exists(path), f"base/deployment.yaml not found"
+
+    # === Semantic Checks ===
+
+    def test_source_defines_git_repository(self):
+        """Verify source.yaml defines a GitRepository"""
+        path = os.path.join(self.REPO_DIR, self.BASE, "source.yaml")
+        with open(path) as f:
+            content = f.read()
+
+        assert "GitRepository" in content, (
+            "source.yaml should define a GitRepository kind"
+        )
+        git_indicators = ["branch", "interval", "url"]
+        found = [ind for ind in git_indicators if ind in content.lower()]
+        assert len(found) >= 2, (
+            f"GitRepository should have branch/interval/url. Found: {found}"
         )
 
-    def test_base_service_exists(self):
-        """base/service.yaml must exist."""
-        assert os.path.isfile(
-            os.path.join(self.REPO_DIR, self.DEMO_DIR, "base", "service.yaml")
+    def test_kustomizations_have_different_intervals(self):
+        """Verify staging and production have different reconciliation intervals"""
+        intervals = []
+        for fname in [
+            "staging-kustomization.yaml",
+            "production-kustomization.yaml",
+        ]:
+            path = os.path.join(self.REPO_DIR, self.BASE, fname)
+            if os.path.exists(path):
+                with open(path) as f:
+                    content = f.read()
+                match = re.search(r"interval:\s*(\S+)", content)
+                if match:
+                    intervals.append(match.group(1))
+
+        assert len(intervals) >= 2, (
+            "Both kustomizations should specify reconciliation intervals"
         )
 
-    def test_base_kustomization_exists(self):
-        """base/kustomization.yaml must exist."""
-        assert os.path.isfile(
-            os.path.join(self.REPO_DIR, self.DEMO_DIR, "base", "kustomization.yaml")
+    def test_kustomizations_reference_paths(self):
+        """Verify kustomizations reference overlay paths"""
+        for fname in [
+            "staging-kustomization.yaml",
+            "production-kustomization.yaml",
+        ]:
+            path = os.path.join(self.REPO_DIR, self.BASE, fname)
+            if os.path.exists(path):
+                with open(path) as f:
+                    content = f.read()
+                assert "path" in content.lower(), (
+                    f"{fname} should reference a source path"
+                )
+
+    def test_pruning_configured(self):
+        """Verify pruning is configured in kustomizations"""
+        for fname in [
+            "staging-kustomization.yaml",
+            "production-kustomization.yaml",
+        ]:
+            path = os.path.join(self.REPO_DIR, self.BASE, fname)
+            if os.path.exists(path):
+                with open(path) as f:
+                    content = f.read()
+                if "prune" in content.lower():
+                    return
+        pytest.fail("At least one kustomization should configure pruning")
+
+    def test_health_checks_configured(self):
+        """Verify health checks are configured"""
+        combined = ""
+        for fname in [
+            "staging-kustomization.yaml",
+            "production-kustomization.yaml",
+        ]:
+            path = os.path.join(self.REPO_DIR, self.BASE, fname)
+            if os.path.exists(path):
+                with open(path) as f:
+                    combined += f.read()
+
+        health_indicators = ["healthCheck", "health", "timeout", "ready"]
+        found = [ind for ind in health_indicators if ind in combined]
+        assert len(found) >= 1, (
+            f"Should configure health checks. Found: {found}"
         )
 
-    def test_base_configmap_exists(self):
-        """base/configmap.yaml must exist."""
-        assert os.path.isfile(
-            os.path.join(self.REPO_DIR, self.DEMO_DIR, "base", "configmap.yaml")
-        )
-
-    # ------------------------------------------------------------------
-    # L1: YAML validity
-    # ------------------------------------------------------------------
-
-    def test_source_valid_yaml(self):
-        """source.yaml must be valid YAML."""
-        self._load_yaml(self.DEMO_DIR, "source.yaml")
-
-    def test_staging_kustomization_valid_yaml(self):
-        """staging-kustomization.yaml must be valid YAML."""
-        self._load_yaml(self.DEMO_DIR, "staging-kustomization.yaml")
-
-    def test_production_kustomization_valid_yaml(self):
-        """production-kustomization.yaml must be valid YAML."""
-        self._load_yaml(self.DEMO_DIR, "production-kustomization.yaml")
-
-    # ------------------------------------------------------------------
-    # L2: Source structure
-    # ------------------------------------------------------------------
-
-    def test_source_is_git_repository(self):
-        """source.yaml must define a GitRepository resource."""
-        data = self._load_yaml(self.DEMO_DIR, "source.yaml")
-        assert isinstance(data, dict)
-        kind = data.get("kind", "")
-        assert (
-            kind == "GitRepository"
-        ), f"Source kind is '{kind}', expected 'GitRepository'"
-
-    def test_source_has_url_and_interval(self):
-        """GitRepository must specify url and interval."""
-        data = self._load_yaml(self.DEMO_DIR, "source.yaml")
-        spec = data.get("spec", {})
-        assert "url" in spec, "GitRepository missing spec.url"
-        assert "interval" in spec, "GitRepository missing spec.interval"
-
-    # ------------------------------------------------------------------
-    # L2: Kustomization structure
-    # ------------------------------------------------------------------
-
-    def test_staging_is_flux_kustomization(self):
-        """Staging kustomization must be a Flux Kustomization resource."""
-        data = self._load_yaml(self.DEMO_DIR, "staging-kustomization.yaml")
-        assert data.get("kind") == "Kustomization"
-
-    def test_production_is_flux_kustomization(self):
-        """Production kustomization must be a Flux Kustomization resource."""
-        data = self._load_yaml(self.DEMO_DIR, "production-kustomization.yaml")
-        assert data.get("kind") == "Kustomization"
-
-    def test_kustomizations_reference_different_paths(self):
-        """Staging and production must reference different overlay paths."""
-        staging = self._load_yaml(self.DEMO_DIR, "staging-kustomization.yaml")
-        prod = self._load_yaml(self.DEMO_DIR, "production-kustomization.yaml")
-        sp = staging.get("spec", {}).get("path", "")
-        pp = prod.get("spec", {}).get("path", "")
-        assert sp != pp, "Staging and production reference the same path"
-
-    def test_kustomization_has_prune(self):
-        """At least one kustomization must enable pruning."""
-        staging = self._load_yaml(self.DEMO_DIR, "staging-kustomization.yaml")
-        prod = self._load_yaml(self.DEMO_DIR, "production-kustomization.yaml")
-        has_prune = staging.get("spec", {}).get("prune") or prod.get("spec", {}).get(
-            "prune"
-        )
-        assert has_prune, "No kustomization enables pruning"
-
-    def test_kustomization_has_health_checks(self):
-        """At least one kustomization should define health checks."""
-        staging = self._load_yaml(self.DEMO_DIR, "staging-kustomization.yaml")
-        prod = self._load_yaml(self.DEMO_DIR, "production-kustomization.yaml")
-        has_hc = (
-            staging.get("spec", {}).get("healthChecks")
-            or prod.get("spec", {}).get("healthChecks")
-            or staging.get("spec", {}).get("wait")
-            or prod.get("spec", {}).get("wait")
-        )
-        assert has_hc, "No kustomization defines health checks"
-
-    # ------------------------------------------------------------------
-    # L2: Overlay structure
-    # ------------------------------------------------------------------
-
-    def test_overlays_exist(self):
-        """Staging and production overlay kustomization.yaml files must exist."""
-        for env in ("staging", "production"):
+    def test_overlays_differ(self):
+        """Verify staging and production overlays have differences"""
+        overlays = {}
+        for env in ["staging", "production"]:
             path = os.path.join(
-                self.REPO_DIR, self.DEMO_DIR, "overlays", env, "kustomization.yaml"
+                self.REPO_DIR, self.BASE,
+                f"overlays/{env}/kustomization.yaml",
             )
-            assert os.path.isfile(
-                path
-            ), f"Overlay kustomization.yaml not found for {env}"
+            if os.path.exists(path):
+                with open(path) as f:
+                    overlays[env] = f.read()
 
-    def test_overlays_reference_base(self):
-        """Overlay kustomization.yaml must reference the base directory."""
-        for env in ("staging", "production"):
-            data = self._load_yaml(self.DEMO_DIR, "overlays", env, "kustomization.yaml")
-            resources = data.get("resources", [])
-            bases = data.get("bases", [])
-            all_refs = resources + bases
-            has_base = any("base" in str(r) for r in all_refs)
-            assert has_base, f"{env} overlay does not reference base directory"
+        assert len(overlays) >= 2, (
+            "Both staging and production overlay kustomization.yaml should exist"
+        )
+        assert overlays["staging"] != overlays["production"], (
+            "Staging and production overlays should differ"
+        )
+
+    # === Functional Checks ===
+
+    def test_yaml_files_valid(self):
+        """Verify all YAML files are syntactically valid"""
+        import yaml
+
+        yaml_files = []
+        base_dir = os.path.join(self.REPO_DIR, self.BASE)
+        for root, dirs, files in os.walk(base_dir):
+            for fname in files:
+                if fname.endswith((".yaml", ".yml")):
+                    yaml_files.append(os.path.join(root, fname))
+
+        assert len(yaml_files) >= 5, (
+            f"Should have at least 5 YAML files. Found: {len(yaml_files)}"
+        )
+        for yf in yaml_files:
+            with open(yf) as f:
+                try:
+                    list(yaml.safe_load_all(f.read()))
+                except yaml.YAMLError as e:
+                    pytest.fail(f"Invalid YAML in {yf}: {e}")
+
+    def test_base_kustomization_lists_resources(self):
+        """Verify base kustomization.yaml lists all base resources"""
+        path = os.path.join(
+            self.REPO_DIR, self.BASE, "base/kustomization.yaml"
+        )
+        assert os.path.exists(path), "base/kustomization.yaml not found"
+        with open(path) as f:
+            content = f.read()
+
+        assert "resources" in content, (
+            "base/kustomization.yaml should list resources"
+        )

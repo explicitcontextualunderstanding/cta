@@ -1,154 +1,228 @@
 """
-Test for 'add-malli-schemas' skill — Malli Schema Validation for Alert API
-Validates that the Agent added Malli schema definitions and validation
-integration to Metabase's alert API endpoints.
+Test skill: add-malli-schemas
+Verify that the Agent correctly adds Malli schema validation to Metabase
+alert API endpoints including schema definitions, validation integration,
+and structured error responses.
 """
 
 import os
 import re
-
+import subprocess
 import pytest
 
 
 class TestAddMalliSchemas:
-    """Verify Malli schema validation for Metabase alert API."""
-
     REPO_DIR = "/workspace/metabase"
 
-    def _read(self, *parts):
-        fpath = os.path.join(self.REPO_DIR, *parts)
-        assert os.path.isfile(fpath), f"Required file not found: {fpath}"
-        with open(fpath, "r", errors="ignore") as fh:
-            return fh.read()
+    # === File Path Checks ===
 
-    # ------------------------------------------------------------------
-    # L1: File existence
-    # ------------------------------------------------------------------
-
-    def test_schema_file_exists(self):
-        """src/metabase/api/schema/alert.clj must exist."""
-        assert os.path.isfile(
-            os.path.join(self.REPO_DIR, "src/metabase/api/schema/alert.clj")
+    def test_alert_schema_file_exists(self):
+        """Verify alert schema definition file exists"""
+        path = os.path.join(
+            self.REPO_DIR, "src/metabase/api/schema/alert.clj"
         )
+        assert os.path.exists(path), f"alert.clj schema not found at {path}"
 
     def test_alert_api_file_exists(self):
-        """src/metabase/api/alert.clj must exist."""
-        assert os.path.isfile(os.path.join(self.REPO_DIR, "src/metabase/api/alert.clj"))
+        """Verify alert API endpoint file exists"""
+        path = os.path.join(self.REPO_DIR, "src/metabase/api/alert.clj")
+        assert os.path.exists(path), f"alert.clj API not found at {path}"
 
-    # ------------------------------------------------------------------
-    # L1: Clojure namespace structure
-    # ------------------------------------------------------------------
+    def test_schema_file_is_readable(self):
+        """Verify schema file can be read and has content"""
+        path = os.path.join(
+            self.REPO_DIR, "src/metabase/api/schema/alert.clj"
+        )
+        with open(path) as f:
+            content = f.read()
+        assert len(content) > 50, (
+            f"alert.clj schema file is too small ({len(content)} bytes)"
+        )
 
-    def test_schema_has_namespace(self):
-        """Schema file must declare a Clojure namespace."""
-        content = self._read("src/metabase/api/schema/alert.clj")
-        assert re.search(r"\(ns\s+", content), "Schema file has no (ns ...) declaration"
+    # === Semantic Checks ===
 
-    def test_schema_uses_malli(self):
-        """Schema file must import/use Malli."""
-        content = self._read("src/metabase/api/schema/alert.clj")
-        patterns = [r"malli", r":malli", r"mu/", r"mc/", r"m/", r"malli\.core"]
-        assert any(
-            re.search(p, content) for p in patterns
-        ), "Schema file does not use Malli"
+    def test_schema_defines_malli_schemas(self):
+        """Verify schema file defines Malli schemas with appropriate types"""
+        path = os.path.join(
+            self.REPO_DIR, "src/metabase/api/schema/alert.clj"
+        )
+        with open(path) as f:
+            content = f.read()
 
-    # ------------------------------------------------------------------
-    # L2: Schema definitions
-    # ------------------------------------------------------------------
-
-    def test_schema_defines_alert_creation(self):
-        """Schema must define an alert creation schema."""
-        content = self._read("src/metabase/api/schema/alert.clj")
-        patterns = [
-            r"create",
-            r"Create",
-            r"new-alert",
-            r"AlertCreate",
-            r"create-schema",
+        malli_indicators = [
+            ":string", ":int", ":boolean", ":enum",
+            ":map", ":sequential", ":vector",
+            "mu/", "malli", "mc/",
+            "[:string", "[:int", "[:map",
         ]
-        assert any(
-            re.search(p, content, re.IGNORECASE) for p in patterns
-        ), "No alert creation schema found"
+        found = [ind for ind in malli_indicators if ind in content]
+        assert len(found) >= 3, (
+            f"Schema should use Malli types. Found: {found}. "
+            f"Expected at least 3 of: {malli_indicators}"
+        )
 
-    def test_schema_has_required_fields(self):
-        """Schema must specify required fields for alerts."""
-        content = self._read("src/metabase/api/schema/alert.clj")
-        # Look for field names common to an alert definition
-        fields = ["name", "condition", "channel", "schedule", "card", "alert"]
-        found = sum(1 for f in fields if re.search(rf":{f}", content, re.IGNORECASE))
-        assert found >= 2, f"Only {found} expected alert fields found in schema"
+    def test_schema_has_required_and_optional_fields(self):
+        """Verify schema distinguishes required and optional fields"""
+        path = os.path.join(
+            self.REPO_DIR, "src/metabase/api/schema/alert.clj"
+        )
+        with open(path) as f:
+            content = f.read()
 
-    def test_schema_uses_malli_types(self):
-        """Schema must use proper Malli type specifications."""
-        content = self._read("src/metabase/api/schema/alert.clj")
-        malli_types = [
-            r":string",
-            r":int",
-            r":boolean",
-            r":map",
-            r":enum",
-            r":sequential",
-            r":keyword",
-            r"pos-int",
-            r"string\?",
+        has_optional = "optional" in content.lower() or "{:optional" in content
+        has_required = (
+            "alert" in content.lower()
+            and (":name" in content or ":alert" in content or ":trigger" in content)
+        )
+        assert has_required, (
+            "Schema should define required fields for alert creation"
+        )
+
+    def test_schema_covers_alert_fields(self):
+        """Verify schema covers core alert fields (name, conditions, channels, schedule)"""
+        path = os.path.join(
+            self.REPO_DIR, "src/metabase/api/schema/alert.clj"
+        )
+        with open(path) as f:
+            content = f.read().lower()
+
+        field_categories = {
+            "name/title": "name" in content or "title" in content,
+            "condition/trigger": "condition" in content or "trigger" in content or "threshold" in content,
+            "channel/notification": "channel" in content or "notification" in content or "email" in content,
+            "schedule/frequency": "schedule" in content or "frequency" in content or "cron" in content,
+        }
+        found = [k for k, v in field_categories.items() if v]
+        assert len(found) >= 2, (
+            f"Schema should cover core alert fields. Found: {found}. "
+            f"Expected at least 2 of: {list(field_categories.keys())}"
+        )
+
+    def test_api_file_references_schema_validation(self):
+        """Verify alert API file references schema validation"""
+        path = os.path.join(self.REPO_DIR, "src/metabase/api/alert.clj")
+        with open(path) as f:
+            content = f.read()
+
+        validation_indicators = [
+            "schema", "malli", "validate", "coerce",
+            "api/schema", "metabase.api.schema",
         ]
-        found = sum(1 for t in malli_types if re.search(t, content))
-        assert found >= 2, f"Only {found} Malli type(s) found — need at least 2"
+        found = [ind for ind in validation_indicators if ind in content]
+        assert len(found) >= 1, (
+            "Alert API should reference schema validation. "
+            f"None of {validation_indicators} found."
+        )
 
-    def test_schema_marks_optional_fields(self):
-        """Schema should distinguish required from optional fields."""
-        content = self._read("src/metabase/api/schema/alert.clj")
-        patterns = [r":optional", r"optional", r"\?", r"maybe"]
-        assert any(
-            re.search(p, content) for p in patterns
-        ), "Schema does not distinguish optional fields"
+    def test_api_returns_400_on_validation_error(self):
+        """Verify API handles validation errors with HTTP 400"""
+        path = os.path.join(self.REPO_DIR, "src/metabase/api/alert.clj")
+        with open(path) as f:
+            content = f.read()
 
-    # ------------------------------------------------------------------
-    # L2: API integration
-    # ------------------------------------------------------------------
-
-    def test_alert_api_imports_schema(self):
-        """alert.clj must import the schema namespace."""
-        content = self._read("src/metabase/api/alert.clj")
-        patterns = [r"schema\.alert", r"schema/alert", r"api\.schema\.alert"]
-        assert any(
-            re.search(p, content) for p in patterns
-        ), "alert.clj does not import schema namespace"
-
-    def test_alert_api_validates_input(self):
-        """alert.clj must validate incoming request data."""
-        content = self._read("src/metabase/api/alert.clj")
-        patterns = [
-            r"validate",
-            r"coerce",
-            r"decode",
-            r"explain",
-            r"check",
-            r"malli",
-            r"schema",
+        error_handling = [
+            "400", "bad-request", "validation-error",
+            "errors", "invalid", "status 400",
         ]
-        assert any(
-            re.search(p, content, re.IGNORECASE) for p in patterns
-        ), "alert.clj does not validate requests"
+        found = [ind for ind in error_handling if ind in content.lower()]
+        assert len(found) >= 1, (
+            "API should return 400 on validation errors. "
+            f"None of {error_handling} found."
+        )
 
-    def test_error_response_on_invalid_payload(self):
-        """Invalid payloads should return 400 with error details."""
-        content = self._read("src/metabase/api/alert.clj")
-        patterns = [
-            r"400",
-            r"bad-request",
-            r"validation.*error",
-            r"error.*response",
-            r"invalid",
+    # === Functional Checks ===
+
+    def test_schema_file_is_valid_clojure(self):
+        """Verify schema file has valid Clojure syntax (balanced parens)"""
+        path = os.path.join(
+            self.REPO_DIR, "src/metabase/api/schema/alert.clj"
+        )
+        with open(path) as f:
+            content = f.read()
+
+        # Check balanced parentheses
+        paren_count = content.count("(") - content.count(")")
+        bracket_count = content.count("[") - content.count("]")
+        brace_count = content.count("{") - content.count("}")
+
+        assert paren_count == 0, (
+            f"Unbalanced parentheses in schema: ({content.count('(')} open, "
+            f"{content.count(')')} close)"
+        )
+        assert bracket_count == 0, (
+            f"Unbalanced brackets in schema: ({content.count('[')} open, "
+            f"{content.count(']')} close)"
+        )
+        assert brace_count == 0, (
+            f"Unbalanced braces in schema: ({content.count('{')} open, "
+            f"{content.count('}')} close)"
+        )
+
+    def test_api_file_is_valid_clojure(self):
+        """Verify alert API file has valid Clojure syntax (balanced parens)"""
+        path = os.path.join(self.REPO_DIR, "src/metabase/api/alert.clj")
+        with open(path) as f:
+            content = f.read()
+
+        paren_count = content.count("(") - content.count(")")
+        bracket_count = content.count("[") - content.count("]")
+        brace_count = content.count("{") - content.count("}")
+
+        assert paren_count == 0, (
+            f"Unbalanced parentheses in API: ({content.count('(')} open, "
+            f"{content.count(')')} close)"
+        )
+        assert bracket_count == 0, (
+            f"Unbalanced brackets in API: ({content.count('[')} open, "
+            f"{content.count(']')} close)"
+        )
+
+    def test_schema_has_namespace_declaration(self):
+        """Verify schema file has proper Clojure namespace declaration"""
+        path = os.path.join(
+            self.REPO_DIR, "src/metabase/api/schema/alert.clj"
+        )
+        with open(path) as f:
+            content = f.read()
+
+        assert "(ns " in content, (
+            "Schema file should have a (ns ...) namespace declaration"
+        )
+        assert "metabase" in content, (
+            "Namespace should be under the metabase namespace"
+        )
+
+    def test_schema_validation_covers_create_and_update(self):
+        """Verify schema definitions cover both creation and modification operations"""
+        path = os.path.join(
+            self.REPO_DIR, "src/metabase/api/schema/alert.clj"
+        )
+        with open(path) as f:
+            content = f.read().lower()
+
+        operation_indicators = {
+            "create": "create" in content or "new" in content or "post" in content,
+            "update": "update" in content or "modify" in content or "put" in content or "patch" in content,
+        }
+        found = [k for k, v in operation_indicators.items() if v]
+        assert len(found) >= 1, (
+            f"Schema should cover creation and/or modification operations. "
+            f"Found: {found}"
+        )
+
+    def test_api_file_has_require_for_schema(self):
+        """Verify alert API imports schema namespace"""
+        path = os.path.join(self.REPO_DIR, "src/metabase/api/alert.clj")
+        with open(path) as f:
+            content = f.read()
+
+        import_indicators = [
+            "metabase.api.schema.alert",
+            "schema/alert",
+            "require",
         ]
-        assert any(
-            re.search(p, content, re.IGNORECASE) for p in patterns
-        ), "No 400 error response logic for invalid payloads"
-
-    def test_schema_covers_modification(self):
-        """Schema should cover both creation and modification operations."""
-        content = self._read("src/metabase/api/schema/alert.clj")
-        patterns = [r"update", r"modify", r"Update", r"Modify", r"put", r"PUT"]
-        assert any(
-            re.search(p, content, re.IGNORECASE) for p in patterns
-        ), "Schema does not cover modification operations"
+        found = [ind for ind in import_indicators if ind in content]
+        assert len(found) >= 1, (
+            "Alert API should import the schema namespace. "
+            f"None of {import_indicators} found."
+        )

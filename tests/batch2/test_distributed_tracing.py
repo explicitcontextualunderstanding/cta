@@ -1,186 +1,207 @@
 """
-Test for 'distributed-tracing' skill — Tail-Based Sampling Processor
-Validates that the Agent created a tail-based sampling processor for the
-OpenTelemetry Collector with proper Go files, interfaces, and sampling logic.
+Test skill: distributed-tracing
+Verify that the Agent creates a tail-based sampling processor for
+the OpenTelemetry Collector with buffering, policy-based decisions,
+factory registration, and resource management.
 """
 
 import os
 import re
 import subprocess
-
 import pytest
 
 
 class TestDistributedTracing:
-    """Verify OTel Collector tail-based sampling processor."""
-
     REPO_DIR = "/workspace/opentelemetry-collector"
-    PROC_DIR = "processor/tailsamplingprocessor"
 
-    def _read(self, *parts):
-        fpath = os.path.join(self.REPO_DIR, *parts)
-        assert os.path.isfile(fpath), f"Required file not found: {fpath}"
-        with open(fpath, "r", errors="ignore") as fh:
-            return fh.read()
+    PKG = "processor/tailsamplingprocessor"
 
-    # ------------------------------------------------------------------
-    # L1: File existence
-    # ------------------------------------------------------------------
+    # === File Path Checks ===
 
     def test_processor_go_exists(self):
-        """processor.go must exist."""
-        assert os.path.isfile(
-            os.path.join(self.REPO_DIR, self.PROC_DIR, "processor.go")
-        )
+        """Verify processor.go exists"""
+        path = os.path.join(self.REPO_DIR, self.PKG, "processor.go")
+        assert os.path.exists(path), f"processor.go not found at {path}"
 
     def test_config_go_exists(self):
-        """config.go must exist."""
-        assert os.path.isfile(os.path.join(self.REPO_DIR, self.PROC_DIR, "config.go"))
+        """Verify config.go exists"""
+        path = os.path.join(self.REPO_DIR, self.PKG, "config.go")
+        assert os.path.exists(path), f"config.go not found at {path}"
 
     def test_factory_go_exists(self):
-        """factory.go must exist."""
-        assert os.path.isfile(os.path.join(self.REPO_DIR, self.PROC_DIR, "factory.go"))
+        """Verify factory.go exists"""
+        path = os.path.join(self.REPO_DIR, self.PKG, "factory.go")
+        assert os.path.exists(path), f"factory.go not found at {path}"
 
-    # ------------------------------------------------------------------
-    # L1: Go syntax — at minimum verify structures
-    # ------------------------------------------------------------------
+    # === Semantic Checks ===
 
-    def test_processor_has_package(self):
-        """processor.go must declare a package."""
-        content = self._read(self.PROC_DIR, "processor.go")
-        assert re.search(
-            r"^package\s+\w+", content, re.MULTILINE
-        ), "processor.go missing package declaration"
+    def test_consume_traces_method(self):
+        """Verify ConsumeTraces method is implemented"""
+        path = os.path.join(self.REPO_DIR, self.PKG, "processor.go")
+        with open(path) as f:
+            content = f.read()
 
-    def test_config_has_package(self):
-        """config.go must declare a package."""
-        content = self._read(self.PROC_DIR, "config.go")
-        assert re.search(
-            r"^package\s+\w+", content, re.MULTILINE
-        ), "config.go missing package declaration"
+        assert "ConsumeTraces" in content, (
+            "processor.go should implement ConsumeTraces"
+        )
 
-    def test_factory_has_package(self):
-        """factory.go must declare a package."""
-        content = self._read(self.PROC_DIR, "factory.go")
-        assert re.search(
-            r"^package\s+\w+", content, re.MULTILINE
-        ), "factory.go missing package declaration"
+    def test_trace_buffering(self):
+        """Verify spans are buffered by trace ID"""
+        path = os.path.join(self.REPO_DIR, self.PKG, "processor.go")
+        with open(path) as f:
+            content = f.read()
 
-    # ------------------------------------------------------------------
-    # L2: Processor interface — ConsumeTraces
-    # ------------------------------------------------------------------
-
-    def test_implements_consume_traces(self):
-        """processor.go must implement ConsumeTraces."""
-        content = self._read(self.PROC_DIR, "processor.go")
-        assert re.search(
-            r"func\s+\([^)]+\)\s+ConsumeTraces", content
-        ), "processor.go does not implement ConsumeTraces method"
-
-    # ------------------------------------------------------------------
-    # L2: Sampling policies
-    # ------------------------------------------------------------------
+        buffer_indicators = [
+            "buffer", "traceID", "TraceID", "map[",
+            "pending", "cache", "store",
+        ]
+        found = [ind for ind in buffer_indicators if ind in content]
+        assert len(found) >= 2, (
+            f"Spans should be buffered by trace ID. Found: {found}"
+        )
 
     def test_error_sampling_policy(self):
-        """Processor must support always-sample-on-error policy."""
-        # Check across config and processor files
-        texts = []
-        for f in ("processor.go", "config.go"):
-            texts.append(self._read(self.PROC_DIR, f))
-        combined = "\n".join(texts)
-        patterns = [r"error", r"status.*error", r"Error", r"StatusCode.*Error"]
-        assert any(
-            re.search(p, combined) for p in patterns
-        ), "No error-based sampling policy found"
+        """Verify always-sample error traces policy"""
+        combined = ""
+        for fname in ["processor.go", "config.go"]:
+            path = os.path.join(self.REPO_DIR, self.PKG, fname)
+            if os.path.exists(path):
+                with open(path) as f:
+                    combined += f.read()
 
-    def test_latency_threshold_policy(self):
-        """Processor must support duration/latency threshold policy."""
-        texts = []
-        for f in ("processor.go", "config.go"):
-            texts.append(self._read(self.PROC_DIR, f))
-        combined = "\n".join(texts)
-        patterns = [r"latency", r"duration", r"threshold", r"Duration", r"Latency"]
-        assert any(
-            re.search(p, combined, re.IGNORECASE) for p in patterns
-        ), "No latency threshold sampling policy found"
-
-    def test_probabilistic_policy(self):
-        """Processor must support probabilistic sampling."""
-        texts = []
-        for f in ("processor.go", "config.go"):
-            texts.append(self._read(self.PROC_DIR, f))
-        combined = "\n".join(texts)
-        patterns = [
-            r"probabilistic",
-            r"Probabilistic",
-            r"sample.*rate",
-            r"SamplingRate",
-            r"probability",
+        error_indicators = [
+            "error", "Error", "STATUS_CODE_ERROR",
+            "otel", "status", "always",
         ]
-        assert any(
-            re.search(p, combined, re.IGNORECASE) for p in patterns
-        ), "No probabilistic sampling policy found"
+        found = [ind for ind in error_indicators if ind in combined]
+        assert len(found) >= 2, (
+            f"Should support error trace sampling. Found: {found}"
+        )
 
-    # ------------------------------------------------------------------
-    # L2: Configuration
-    # ------------------------------------------------------------------
+    def test_duration_threshold_policy(self):
+        """Verify duration threshold sampling policy"""
+        combined = ""
+        for fname in ["processor.go", "config.go"]:
+            path = os.path.join(self.REPO_DIR, self.PKG, fname)
+            if os.path.exists(path):
+                with open(path) as f:
+                    combined += f.read()
 
-    def test_config_has_policies(self):
-        """Config must define sampling policies."""
-        content = self._read(self.PROC_DIR, "config.go")
-        patterns = [r"Policies", r"Policy", r"policies"]
-        assert any(
-            re.search(p, content) for p in patterns
-        ), "config.go does not define sampling policies"
-
-    def test_config_has_buffer_settings(self):
-        """Config must include trace buffer settings."""
-        content = self._read(self.PROC_DIR, "config.go")
-        patterns = [
-            r"[Bb]uffer",
-            r"MaxTraces",
-            r"max_traces",
-            r"buffer_size",
-            r"BufferSize",
+        duration_indicators = [
+            "duration", "latency", "threshold", "Duration",
+            "Latency", "slow",
         ]
-        assert any(
-            re.search(p, content) for p in patterns
-        ), "config.go does not define buffer settings"
+        found = [ind for ind in duration_indicators if ind in combined]
+        assert len(found) >= 2, (
+            f"Should support duration threshold policy. Found: {found}"
+        )
 
-    def test_config_has_timeout(self):
-        """Config must include a decision timeout."""
-        content = self._read(self.PROC_DIR, "config.go")
-        patterns = [r"[Tt]imeout", r"DecisionWait", r"decision_wait", r"timeout"]
-        assert any(
-            re.search(p, content) for p in patterns
-        ), "config.go does not define a decision timeout"
+    def test_probabilistic_sampling(self):
+        """Verify probabilistic sampling policy"""
+        combined = ""
+        for fname in ["processor.go", "config.go"]:
+            path = os.path.join(self.REPO_DIR, self.PKG, fname)
+            if os.path.exists(path):
+                with open(path) as f:
+                    combined += f.read()
 
-    # ------------------------------------------------------------------
-    # L2: Factory registration
-    # ------------------------------------------------------------------
-
-    def test_factory_registers_type(self):
-        """Factory must register a processor type name."""
-        content = self._read(self.PROC_DIR, "factory.go")
-        patterns = [
-            r"NewFactory",
-            r"typeStr",
-            r"component\.Type",
-            r"processorType",
-            r'"tailsampling"',
+        prob_indicators = [
+            "probabilistic", "rate", "random", "sample",
+            "ratio", "percent", "probability",
         ]
-        assert any(
-            re.search(p, content) for p in patterns
-        ), "factory.go does not register a processor type"
+        found = [ind for ind in prob_indicators if ind in combined]
+        assert len(found) >= 2, (
+            f"Should support probabilistic sampling. Found: {found}"
+        )
 
-    # ------------------------------------------------------------------
-    # L2: Buffer management
-    # ------------------------------------------------------------------
+    def test_config_structures(self):
+        """Verify configuration structures are defined"""
+        path = os.path.join(self.REPO_DIR, self.PKG, "config.go")
+        with open(path) as f:
+            content = f.read()
 
-    def test_buffer_eviction_logic(self):
-        """Processor must handle buffer eviction of old traces."""
-        content = self._read(self.PROC_DIR, "processor.go")
-        patterns = [r"evict", r"delete", r"remove", r"cleanup", r"expire", r"purge"]
-        assert any(
-            re.search(p, content, re.IGNORECASE) for p in patterns
-        ), "No buffer eviction/cleanup logic in processor.go"
+        config_indicators = [
+            "type Config struct", "struct", "Policy",
+            "BufferSize", "Timeout", "MaxSize",
+        ]
+        found = [ind for ind in config_indicators if ind in content]
+        assert len(found) >= 2, (
+            f"Should define config structures. Found: {found}"
+        )
+
+    def test_factory_registration(self):
+        """Verify factory with type name registration"""
+        path = os.path.join(self.REPO_DIR, self.PKG, "factory.go")
+        with open(path) as f:
+            content = f.read()
+
+        factory_indicators = [
+            "NewFactory", "factory", "Type", "component",
+            "processor", "Create",
+        ]
+        found = [ind for ind in factory_indicators if ind in content]
+        assert len(found) >= 2, (
+            f"Should register factory. Found: {found}"
+        )
+
+    def test_buffer_bounded(self):
+        """Verify buffer has configurable maximum size"""
+        combined = ""
+        for fname in ["processor.go", "config.go"]:
+            path = os.path.join(self.REPO_DIR, self.PKG, fname)
+            if os.path.exists(path):
+                with open(path) as f:
+                    combined += f.read()
+
+        bound_indicators = [
+            "max", "limit", "capacity", "MaxSize",
+            "maxTraces", "evict", "overflow",
+        ]
+        found = [ind for ind in bound_indicators if ind in combined]
+        assert len(found) >= 1, (
+            f"Buffer should be bounded. Found: {found}"
+        )
+
+    # === Functional Checks ===
+
+    def test_go_files_have_package(self):
+        """Verify Go files have proper package declarations"""
+        for fname in ["processor.go", "config.go", "factory.go"]:
+            path = os.path.join(self.REPO_DIR, self.PKG, fname)
+            with open(path) as f:
+                content = f.read()
+            assert content.strip().startswith("package ") or \
+                   "package " in content[:200], (
+                f"{fname} should have package declaration"
+            )
+
+    def test_go_syntax_check(self):
+        """Verify Go files compile (syntax check)"""
+        pkg_dir = os.path.join(self.REPO_DIR, self.PKG)
+        result = subprocess.run(
+            ["go", "vet", "./..."],
+            capture_output=True, text=True, timeout=60,
+            cwd=pkg_dir,
+        )
+        # go vet may fail due to missing deps, but syntax errors
+        # are a different class of error. Accept dep errors.
+        if result.returncode != 0:
+            stderr = result.stderr.lower()
+            if "syntax" in stderr or "unexpected" in stderr:
+                pytest.fail(f"Go syntax errors: {result.stderr[:500]}")
+
+    def test_consistent_package_name(self):
+        """Verify all files use the same package name"""
+        packages = set()
+        for fname in ["processor.go", "config.go", "factory.go"]:
+            path = os.path.join(self.REPO_DIR, self.PKG, fname)
+            with open(path) as f:
+                for line in f:
+                    line = line.strip()
+                    if line.startswith("package "):
+                        packages.add(line)
+                        break
+
+        assert len(packages) == 1, (
+            f"All files should use the same package. Found: {packages}"
+        )

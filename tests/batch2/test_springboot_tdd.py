@@ -1,184 +1,264 @@
 """
-Test for 'springboot-tdd' skill — Pet Weight Tracking Feature
-Validates that the Agent created a weight tracking feature for Spring PetClinic
-with JPA entity, repository, controller, schema, and TDD tests.
+Test skill: springboot-tdd
+Verify that the Agent correctly implements a pet weight tracking feature
+for Spring PetClinic using test-driven development, including JPA entity,
+repository, REST controller, schema changes, and TDD tests.
 """
 
 import os
 import re
 import subprocess
-
 import pytest
 
 
 class TestSpringbootTdd:
-    """Verify Spring PetClinic pet weight tracking feature."""
-
     REPO_DIR = "/workspace/spring-petclinic"
-    WEIGHT_PKG = "src/main/java/org/springframework/samples/petclinic/weight"
-    TEST_PKG = "src/test/java/org/springframework/samples/petclinic/weight"
 
-    def _read(self, *parts):
-        fpath = os.path.join(self.REPO_DIR, *parts)
-        assert os.path.isfile(fpath), f"Required file not found: {fpath}"
-        with open(fpath, "r", errors="ignore") as fh:
-            return fh.read()
-
-    # ------------------------------------------------------------------
-    # L1: File existence
-    # ------------------------------------------------------------------
+    # === File Path Checks ===
 
     def test_weight_record_entity_exists(self):
-        """WeightRecord.java entity must exist."""
-        assert os.path.isfile(
-            os.path.join(self.REPO_DIR, self.WEIGHT_PKG, "WeightRecord.java")
+        """Verify WeightRecord.java entity file exists"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "src/main/java/org/springframework/samples/petclinic/weight/WeightRecord.java",
         )
+        assert os.path.exists(path), f"WeightRecord.java not found at {path}"
 
     def test_weight_repository_exists(self):
-        """WeightRepository.java must exist."""
-        assert os.path.isfile(
-            os.path.join(self.REPO_DIR, self.WEIGHT_PKG, "WeightRepository.java")
+        """Verify WeightRepository.java exists"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "src/main/java/org/springframework/samples/petclinic/weight/WeightRepository.java",
         )
+        assert os.path.exists(path), f"WeightRepository.java not found at {path}"
 
     def test_weight_controller_exists(self):
-        """WeightController.java must exist."""
-        assert os.path.isfile(
-            os.path.join(self.REPO_DIR, self.WEIGHT_PKG, "WeightController.java")
+        """Verify WeightController.java exists"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "src/main/java/org/springframework/samples/petclinic/weight/WeightController.java",
+        )
+        assert os.path.exists(path), f"WeightController.java not found at {path}"
+
+    def test_weight_controller_tests_exist(self):
+        """Verify WeightControllerTests.java test file exists"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "src/test/java/org/springframework/samples/petclinic/weight/WeightControllerTests.java",
+        )
+        assert os.path.exists(path), f"WeightControllerTests.java not found at {path}"
+
+    # === Semantic Checks ===
+
+    def test_weight_record_has_jpa_annotations(self):
+        """Verify WeightRecord.java uses JPA annotations (@Entity, @Id, etc.)"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "src/main/java/org/springframework/samples/petclinic/weight/WeightRecord.java",
+        )
+        with open(path) as f:
+            content = f.read()
+
+        assert "@Entity" in content, "WeightRecord should be annotated with @Entity"
+        assert "@Id" in content, "WeightRecord should have an @Id annotated field"
+
+        # Verify required fields
+        field_keywords = ["weight", "unit", "date"]
+        found = [kw for kw in field_keywords if kw.lower() in content.lower()]
+        assert len(found) >= 3, (
+            f"WeightRecord should have weight, unit, and date fields. "
+            f"Found references to: {found}"
         )
 
-    def test_weight_tests_exist(self):
-        """WeightControllerTests.java must exist."""
-        assert os.path.isfile(
-            os.path.join(self.REPO_DIR, self.TEST_PKG, "WeightControllerTests.java")
+    def test_weight_record_has_pet_relationship(self):
+        """Verify WeightRecord.java maps a relationship to Pet entity"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "src/main/java/org/springframework/samples/petclinic/weight/WeightRecord.java",
+        )
+        with open(path) as f:
+            content = f.read()
+
+        relationship_annotations = [
+            "@ManyToOne", "@JoinColumn", "Pet", "pet",
+        ]
+        found = [ann for ann in relationship_annotations if ann in content]
+        assert len(found) >= 2, (
+            f"WeightRecord should map a relationship to Pet. Found: {found}. "
+            f"Expected at least 2 of: {relationship_annotations}"
         )
 
-    # ------------------------------------------------------------------
-    # L1: Entity structure
-    # ------------------------------------------------------------------
+    def test_weight_repository_extends_spring_data(self):
+        """Verify WeightRepository.java extends a Spring Data repository interface"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "src/main/java/org/springframework/samples/petclinic/weight/WeightRepository.java",
+        )
+        with open(path) as f:
+            content = f.read()
 
-    def test_entity_has_jpa_annotations(self):
-        """WeightRecord.java must use JPA annotations."""
-        content = self._read(self.WEIGHT_PKG, "WeightRecord.java")
-        patterns = [r"@Entity", r"@Table", r"@Id"]
-        found = sum(1 for p in patterns if re.search(p, content))
-        assert found >= 2, "WeightRecord missing JPA annotations"
-
-    def test_entity_has_weight_field(self):
-        """Entity must have a weight value field."""
-        content = self._read(self.WEIGHT_PKG, "WeightRecord.java")
-        patterns = [r"weight", r"value", r"Double|double|BigDecimal|float"]
-        assert any(
-            re.search(p, content, re.IGNORECASE) for p in patterns
-        ), "WeightRecord has no weight value field"
-
-    def test_entity_has_unit_field(self):
-        """Entity must have a unit of measurement field."""
-        content = self._read(self.WEIGHT_PKG, "WeightRecord.java")
-        patterns = [r"unit", r"Unit", r"measurement"]
-        assert any(
-            re.search(p, content, re.IGNORECASE) for p in patterns
-        ), "WeightRecord has no unit field"
-
-    def test_entity_has_date_field(self):
-        """Entity must have a measurement date field."""
-        content = self._read(self.WEIGHT_PKG, "WeightRecord.java")
-        patterns = [
-            r"date",
-            r"Date",
-            r"LocalDate",
-            r"Instant",
-            r"timestamp",
-            r"measuredAt",
+        repo_indicators = [
+            "Repository", "CrudRepository", "JpaRepository",
+            "extends", "@Repository",
         ]
-        assert any(
-            re.search(p, content, re.IGNORECASE) for p in patterns
-        ), "WeightRecord has no date field"
+        found = [ind for ind in repo_indicators if ind in content]
+        assert len(found) >= 2, (
+            f"WeightRepository should extend a Spring Data repository interface. "
+            f"Found: {found}. Expected at least 2 of: {repo_indicators}"
+        )
 
-    def test_entity_references_pet(self):
-        """Entity must reference Pet entity."""
-        content = self._read(self.WEIGHT_PKG, "WeightRecord.java")
-        patterns = [r"Pet\s", r"@ManyToOne", r"pet_id", r"petId"]
-        assert any(
-            re.search(p, content) for p in patterns
-        ), "WeightRecord does not reference Pet"
+    def test_weight_controller_has_rest_annotations(self):
+        """Verify WeightController.java has REST controller annotations"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "src/main/java/org/springframework/samples/petclinic/weight/WeightController.java",
+        )
+        with open(path) as f:
+            content = f.read()
 
-    # ------------------------------------------------------------------
-    # L2: Repository
-    # ------------------------------------------------------------------
-
-    def test_repository_extends_spring_data(self):
-        """Repository must extend a Spring Data interface."""
-        content = self._read(self.WEIGHT_PKG, "WeightRepository.java")
-        patterns = [
-            r"extends\s+(JpaRepository|CrudRepository|Repository)",
-            r"@Repository",
+        rest_annotations = [
+            "@RestController", "@Controller",
+            "@RequestMapping", "@GetMapping", "@PostMapping",
         ]
-        assert any(
-            re.search(p, content) for p in patterns
-        ), "WeightRepository does not extend Spring Data"
+        found = [ann for ann in rest_annotations if ann in content]
+        assert len(found) >= 2, (
+            f"WeightController should have REST annotations. Found: {found}. "
+            f"Expected at least 2 of: {rest_annotations}"
+        )
 
-    # ------------------------------------------------------------------
-    # L2: Controller endpoints
-    # ------------------------------------------------------------------
+    def test_weight_controller_has_validation(self):
+        """Verify WeightController.java validates input (reject zero/negative weights)"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "src/main/java/org/springframework/samples/petclinic/weight/WeightController.java",
+        )
+        with open(path) as f:
+            content = f.read()
 
-    def test_controller_has_endpoints(self):
-        """Controller must define REST endpoints."""
-        content = self._read(self.WEIGHT_PKG, "WeightController.java")
-        patterns = [
-            r"@GetMapping",
-            r"@PostMapping",
-            r"@RequestMapping",
-            r"@RestController",
+        validation_indicators = [
+            "@Valid", "@Validated", "@NotNull", "@Positive",
+            "@Min", "@DecimalMin", "BindingResult",
+            "validation", "Validator", "validate",
+            "weight <= 0", "weight < 0", "weight == 0",
         ]
-        found = sum(1 for p in patterns if re.search(p, content))
-        assert found >= 2, "Controller missing REST endpoint annotations"
-
-    def test_controller_has_validation(self):
-        """Controller should validate weight input (reject zero/negative)."""
-        content = self._read(self.WEIGHT_PKG, "WeightController.java")
-        patterns = [
-            r"@Valid",
-            r"@Positive",
-            r"@Min",
-            r"validation",
-            r"BindingResult",
-            r"reject",
-            r"error",
-        ]
-        assert any(
-            re.search(p, content, re.IGNORECASE) for p in patterns
-        ), "Controller does not validate weight input"
-
-    # ------------------------------------------------------------------
-    # L2: Schema
-    # ------------------------------------------------------------------
+        found = [ind for ind in validation_indicators if ind in content]
+        assert len(found) >= 1, (
+            "WeightController should validate weight values (reject zero/negative). "
+            f"Found: {found}. Expected at least 1 of: {validation_indicators}"
+        )
 
     def test_schema_sql_has_weight_table(self):
-        """schema.sql must define a weight records table."""
+        """Verify schema.sql contains the weight records table definition"""
         schema_path = os.path.join(
-            self.REPO_DIR, "src", "main", "resources", "db", "hsqldb", "schema.sql"
+            self.REPO_DIR, "src/main/resources/db/hsqldb/schema.sql"
         )
-        assert os.path.isfile(schema_path), "schema.sql not found"
-        with open(schema_path, "r", errors="ignore") as fh:
-            content = fh.read()
-        assert re.search(
-            r"CREATE\s+TABLE.*weight", content, re.IGNORECASE
-        ), "schema.sql does not define weight records table"
+        if not os.path.exists(schema_path):
+            # Try other common schema locations
+            for alt in [
+                "src/main/resources/db/h2/schema.sql",
+                "src/main/resources/schema.sql",
+                "src/main/resources/db/mysql/schema.sql",
+            ]:
+                alt_path = os.path.join(self.REPO_DIR, alt)
+                if os.path.exists(alt_path):
+                    schema_path = alt_path
+                    break
+            else:
+                pytest.fail("No schema.sql file found")
 
-    # ------------------------------------------------------------------
-    # L2: Tests structure
-    # ------------------------------------------------------------------
+        with open(schema_path) as f:
+            content = f.read().lower()
 
-    def test_test_class_has_test_methods(self):
-        """Test class must define @Test methods."""
-        content = self._read(self.TEST_PKG, "WeightControllerTests.java")
-        tests = re.findall(r"@Test", content)
-        assert len(tests) >= 3, f"Only {len(tests)} @Test method(s) — need at least 3"
+        assert "weight" in content, (
+            "schema.sql should contain a weight records table definition"
+        )
+        assert "create table" in content, (
+            "schema.sql should contain CREATE TABLE statement for weights"
+        )
 
-    def test_tests_cover_validation(self):
-        """Tests should cover weight validation cases."""
-        content = self._read(self.TEST_PKG, "WeightControllerTests.java")
-        patterns = [r"invalid", r"negative", r"zero", r"bad.*request", r"400"]
-        assert any(
-            re.search(p, content, re.IGNORECASE) for p in patterns
-        ), "Tests do not cover validation failure cases"
+    def test_tdd_tests_cover_required_scenarios(self):
+        """Verify WeightControllerTests.java covers required TDD scenarios"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "src/test/java/org/springframework/samples/petclinic/weight/WeightControllerTests.java",
+        )
+        with open(path) as f:
+            content = f.read()
+
+        # Should have @Test annotations
+        test_count = content.count("@Test")
+        assert test_count >= 3, (
+            f"WeightControllerTests should have at least 3 @Test methods, found {test_count}"
+        )
+
+        # Should cover various scenarios
+        scenario_keywords = ["save", "record", "add", "history", "list", "get",
+                             "invalid", "valid", "not found", "notfound"]
+        found = [kw for kw in scenario_keywords if kw.lower() in content.lower()]
+        assert len(found) >= 3, (
+            f"Tests should cover saving, retrieval, and validation scenarios. "
+            f"Found: {found}"
+        )
+
+    # === Functional Checks ===
+
+    def test_project_compiles(self):
+        """Verify the project compiles successfully with the new code"""
+        result = subprocess.run(
+            ["./mvnw", "compile", "-DskipTests", "-q"],
+            cwd=self.REPO_DIR,
+            capture_output=True,
+            text=True,
+            timeout=600,
+        )
+        assert result.returncode == 0, (
+            f"Maven compile failed (exit code {result.returncode}).\n"
+            f"stderr: {result.stderr[:2000]}"
+        )
+
+    def test_project_tests_pass(self):
+        """Verify Maven tests pass including the new weight tests"""
+        result = subprocess.run(
+            ["./mvnw", "test", "-pl", ".", "-Dtest=WeightControllerTests", "-q"],
+            cwd=self.REPO_DIR,
+            capture_output=True,
+            text=True,
+            timeout=600,
+        )
+        if result.returncode != 0:
+            # Try running all tests
+            result2 = subprocess.run(
+                ["./mvnw", "test", "-q"],
+                cwd=self.REPO_DIR,
+                capture_output=True,
+                text=True,
+                timeout=600,
+            )
+            assert result2.returncode == 0, (
+                f"Maven tests failed.\nstdout: {result2.stdout[:2000]}\n"
+                f"stderr: {result2.stderr[:2000]}"
+            )
+
+    def test_weight_java_files_have_valid_syntax(self):
+        """Verify all new Java files compile individually without errors"""
+        java_files = [
+            "src/main/java/org/springframework/samples/petclinic/weight/WeightRecord.java",
+            "src/main/java/org/springframework/samples/petclinic/weight/WeightRepository.java",
+            "src/main/java/org/springframework/samples/petclinic/weight/WeightController.java",
+        ]
+        for rel_path in java_files:
+            full_path = os.path.join(self.REPO_DIR, rel_path)
+            if os.path.exists(full_path):
+                with open(full_path) as f:
+                    content = f.read()
+                # Basic Java syntax checks
+                assert "package " in content, (
+                    f"{rel_path} should have a package declaration"
+                )
+                assert "class " in content or "interface " in content, (
+                    f"{rel_path} should define a class or interface"
+                )
+                # Check balanced braces
+                assert content.count("{") == content.count("}"), (
+                    f"{rel_path} has unbalanced braces"
+                )

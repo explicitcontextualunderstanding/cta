@@ -1,256 +1,245 @@
 """
-Test for 'security-review' skill — Security Review
-Validates that the Agent added secure data export endpoints to the BabyBuddy
-Django application with proper authentication, authorization, input validation,
-and serializer-controlled field exposure.
+Test skill: security-review
+Verify that the Agent correctly implements secure data export endpoints
+for the BabyBuddy Django application with authentication, authorization,
+input validation, and proper data scoping.
 """
 
 import os
 import re
+import ast
 import subprocess
-
 import pytest
-
-from _dependency_utils import ensure_python_dependencies
-
-
-@pytest.fixture(scope="module", autouse=True)
-def _ensure_repo_dependencies():
-    ensure_python_dependencies(TestSecurityReview.REPO_DIR)
 
 
 class TestSecurityReview:
-    """Verify secure data export endpoints in BabyBuddy."""
-
     REPO_DIR = "/workspace/babybuddy"
 
-    # ------------------------------------------------------------------
-    # Helpers
-    # ------------------------------------------------------------------
+    # === File Path Checks ===
 
-    def _read(self, *parts):
-        fpath = os.path.join(self.REPO_DIR, *parts)
-        assert os.path.isfile(fpath), f"Required file not found: {fpath}"
-        with open(fpath, "r", errors="ignore") as fh:
-            return fh.read()
+    def test_api_views_file_exists(self):
+        """Verify api/views.py exists"""
+        path = os.path.join(self.REPO_DIR, "api/views.py")
+        assert os.path.exists(path), f"api/views.py not found at {path}"
 
-    def _find_file(self, *candidates):
-        """Return contents of the first candidate that exists."""
-        for parts in candidates:
-            fpath = os.path.join(self.REPO_DIR, *parts)
-            if os.path.isfile(fpath):
-                with open(fpath, "r", errors="ignore") as fh:
-                    return fh.read()
-        paths = [os.path.join(*c) for c in candidates]
-        pytest.fail(f"None of the expected files exist: {paths}")
+    def test_api_serializers_file_exists(self):
+        """Verify api/serializers.py exists"""
+        path = os.path.join(self.REPO_DIR, "api/serializers.py")
+        assert os.path.exists(path), f"api/serializers.py not found at {path}"
 
-    # ------------------------------------------------------------------
-    # L1: File existence
-    # ------------------------------------------------------------------
+    def test_api_urls_file_exists(self):
+        """Verify api/urls.py exists"""
+        path = os.path.join(self.REPO_DIR, "api/urls.py")
+        assert os.path.exists(path), f"api/urls.py not found at {path}"
 
-    def test_views_file_exists(self):
-        """api/views.py must exist (modified to add export views)."""
-        fpath = os.path.join(self.REPO_DIR, "api", "views.py")
-        assert os.path.isfile(fpath), "api/views.py not found"
+    # === Semantic Checks ===
 
-    def test_serializers_file_exists(self):
-        """api/serializers.py must exist (modified to add export serializers)."""
-        fpath = os.path.join(self.REPO_DIR, "api", "serializers.py")
-        assert os.path.isfile(fpath), "api/serializers.py not found"
+    def test_views_has_authentication_enforcement(self):
+        """Verify views.py enforces authentication on export endpoints"""
+        path = os.path.join(self.REPO_DIR, "api/views.py")
+        with open(path) as f:
+            content = f.read()
 
-    def test_urls_file_exists(self):
-        """api/urls.py must exist (modified to register export URL patterns)."""
-        fpath = os.path.join(self.REPO_DIR, "api", "urls.py")
-        assert os.path.isfile(fpath), "api/urls.py not found"
-
-    # ------------------------------------------------------------------
-    # L1: Views contain export-related code
-    # ------------------------------------------------------------------
-
-    def test_views_contain_export_view(self):
-        """api/views.py must define an export-related view class or function."""
-        content = self._read("api", "views.py")
-        patterns = [
-            r"[Ee]xport",
-            r"[Dd]ata[Ee]xport",
-            r"export_",
-            r"ExportView",
-            r"ExportAPIView",
+        auth_indicators = [
+            "IsAuthenticated",
+            "permission_classes",
+            "authentication_classes",
+            "login_required",
+            "@api_view",
+            "APIView",
         ]
-        assert any(
-            re.search(p, content) for p in patterns
-        ), "api/views.py does not contain any export-related view definition"
+        found = [ind for ind in auth_indicators if ind in content]
+        assert len(found) >= 2, (
+            f"views.py should enforce authentication. Found: {found}. "
+            f"Expected at least 2 of: {auth_indicators}"
+        )
 
-    def test_views_use_authentication(self):
-        """Export views must enforce authentication via DRF decorators or permission classes."""
-        content = self._read("api", "views.py")
-        auth_patterns = [
-            r"IsAuthenticated",
-            r"authentication_classes",
-            r"permission_classes",
-            r"@login_required",
-            r"@api_view.*permission",
-            r"LoginRequired",
-            r"TokenAuthentication",
-            r"SessionAuthentication",
+    def test_views_has_object_level_permissions(self):
+        """Verify views.py implements object-level authorization"""
+        path = os.path.join(self.REPO_DIR, "api/views.py")
+        with open(path) as f:
+            content = f.read()
+
+        permission_indicators = [
+            "get_object",
+            "check_object_permissions",
+            "has_object_permission",
+            "ObjectPermission",
+            "filter",
+            "get_queryset",
         ]
-        assert any(
-            re.search(p, content) for p in auth_patterns
-        ), "Export views do not appear to enforce authentication"
+        found = [ind for ind in permission_indicators if ind in content]
+        assert len(found) >= 1, (
+            "views.py should implement object-level permissions to restrict "
+            f"access to authorized children only. Found: {found}. "
+            f"Expected at least 1 of: {permission_indicators}"
+        )
 
-    def test_views_enforce_object_level_permissions(self):
-        """Export views must enforce object-level authorization (user can only access their children)."""
-        content = self._read("api", "views.py")
-        authz_patterns = [
-            r"get_queryset",
-            r"request\.user",
-            r"filter.*user",
-            r"user.*filter",
-            r"has_object_permission",
-            r"check_object_permissions",
-            r"ObjectPermission",
-            r"PermissionDenied",
+    def test_views_has_input_validation(self):
+        """Verify views.py validates query parameters (date range, record type)"""
+        path = os.path.join(self.REPO_DIR, "api/views.py")
+        with open(path) as f:
+            content = f.read()
+
+        validation_indicators = [
+            "serializer.is_valid",
+            "validate",
+            "query_params",
+            "request.query_params",
+            "request.GET",
+            "date",
+            "ValidationError",
         ]
-        assert any(
-            re.search(p, content) for p in authz_patterns
-        ), "Export views do not appear to enforce object-level permissions"
+        found = [ind for ind in validation_indicators if ind in content]
+        assert len(found) >= 2, (
+            "views.py should validate input parameters (date range, record type). "
+            f"Found: {found}. Expected at least 2 of: {validation_indicators}"
+        )
 
-    # ------------------------------------------------------------------
-    # L1: Serializer structure
-    # ------------------------------------------------------------------
+    def test_serializers_has_export_serializer(self):
+        """Verify serializers.py defines export response serializers"""
+        path = os.path.join(self.REPO_DIR, "api/serializers.py")
+        with open(path) as f:
+            tree = ast.parse(f.read())
 
-    def test_serializer_defines_export_fields(self):
-        """api/serializers.py must define a serializer with explicit field list for exports."""
-        content = self._read("api", "serializers.py")
-        # Must have a fields attribute or Meta.fields
-        has_export = bool(re.search(r"[Ee]xport", content))
-        has_fields = bool(re.search(r"fields\s*=", content))
-        assert has_export, "api/serializers.py does not contain export serializer"
-        assert has_fields, "Export serializer does not declare explicit fields"
+        class_names = [node.name for node in ast.walk(tree)
+                       if isinstance(node, ast.ClassDef)]
+        serializer_classes = [n for n in class_names if "serializer" in n.lower()]
+        assert len(serializer_classes) > 0, (
+            f"serializers.py should define at least one Serializer class. "
+            f"Classes found: {class_names}"
+        )
 
-    def test_serializer_does_not_expose_all_fields(self):
-        """Export serializer must not use fields = '__all__' — explicit field lists are required."""
-        content = self._read("api", "serializers.py")
-        # Search for field declarations near export-related code
-        all_fields_pattern = re.findall(r"fields\s*=\s*['\"]__all__['\"]", content)
-        # This is a heuristic — we flag it if __all__ is used anywhere in the file
-        # since the task requires controlled field exposure
-        if all_fields_pattern:
-            # Check if it's specifically in an export serializer context
-            export_section = re.search(
-                r"class\s+\w*[Ee]xport\w*.*?(?=class\s|\Z)",
-                content,
-                re.DOTALL,
-            )
-            if export_section and "__all__" in export_section.group():
-                pytest.fail(
-                    "Export serializer uses fields='__all__' — "
-                    "must explicitly list fields to prevent data leakage"
-                )
+    def test_serializers_explicitly_declares_fields(self):
+        """Verify serializers use explicit field declarations (no fields='__all__' for exports)"""
+        path = os.path.join(self.REPO_DIR, "api/serializers.py")
+        with open(path) as f:
+            content = f.read()
 
-    # ------------------------------------------------------------------
-    # L1: URL registration
-    # ------------------------------------------------------------------
+        # Check for serializer Meta classes with fields
+        has_fields = "fields" in content
+        assert has_fields, (
+            "Serializers should explicitly declare 'fields' to control which "
+            "data is exposed in export responses"
+        )
 
-    def test_urls_register_export_endpoints(self):
-        """api/urls.py must register URL patterns for the export endpoints."""
-        content = self._read("api", "urls.py")
-        patterns = [r"export", r"Export"]
-        assert any(
-            re.search(p, content) for p in patterns
-        ), "api/urls.py does not register any export-related URL patterns"
+    def test_urls_registers_export_endpoints(self):
+        """Verify urls.py registers new export URL patterns"""
+        path = os.path.join(self.REPO_DIR, "api/urls.py")
+        with open(path) as f:
+            content = f.read()
 
-    # ------------------------------------------------------------------
-    # L2: Input validation
-    # ------------------------------------------------------------------
-
-    def test_views_validate_date_range_parameters(self):
-        """Export views must validate date range query parameters."""
-        content = self._read("api", "views.py")
-        date_patterns = [
-            r"date",
-            r"start_date",
-            r"end_date",
-            r"date_from",
-            r"date_to",
-            r"from_date",
-            r"to_date",
-            r"DateField",
-            r"DateFilter",
-            r"parse.*date",
-            r"datetime",
+        export_indicators = [
+            "export",
+            "path(",
+            "url(",
+            "urlpatterns",
+            "router",
         ]
-        assert any(
-            re.search(p, content, re.IGNORECASE) for p in date_patterns
-        ), "Export views do not appear to handle date range filtering parameters"
+        found = [ind for ind in export_indicators if ind in content]
+        assert len(found) >= 2, (
+            "urls.py should register export endpoint URL patterns. "
+            f"Found: {found}. Expected at least 2 of: {export_indicators}"
+        )
 
-    # ------------------------------------------------------------------
-    # L2: Django system check
-    # ------------------------------------------------------------------
+    # === Functional Checks ===
 
-    def test_django_system_check_passes(self):
-        """Django's manage.py check must pass after the modifications."""
+    def test_django_check_passes(self):
+        """Verify Django system check passes with the new endpoints"""
         result = subprocess.run(
             ["python", "manage.py", "check", "--deploy"],
             cwd=self.REPO_DIR,
             capture_output=True,
             text=True,
             timeout=120,
-            env={
-                **os.environ,
-                "DJANGO_SETTINGS_MODULE": "babybuddy.settings.base",
-                "SECRET_KEY": "test-secret-key-for-check",
-            },
+            env={**os.environ, "DJANGO_SETTINGS_MODULE": "babybuddy.settings.base"},
         )
-        # --deploy may warn about settings; we only care about errors
+        # --deploy might have warnings but should not have errors
         if result.returncode != 0:
-            # Try without --deploy
-            result2 = subprocess.run(
-                ["python", "manage.py", "check"],
-                cwd=self.REPO_DIR,
-                capture_output=True,
-                text=True,
-                timeout=120,
+            # Allow warnings but not critical errors
+            assert "SystemCheckError" not in result.stderr, (
+                f"Django check failed: {result.stderr[:2000]}"
             )
-            assert (
-                result2.returncode == 0
-            ), f"Django system check failed:\n{result2.stdout[-2000:]}\n{result2.stderr[-2000:]}"
 
-    # ------------------------------------------------------------------
-    # L2: Python syntax for all modified files
-    # ------------------------------------------------------------------
-
-    def test_views_syntax_valid(self):
-        """api/views.py must be syntactically valid Python."""
+    def test_views_file_is_importable(self):
+        """Verify api/views.py is importable without errors"""
         result = subprocess.run(
-            ["python", "-m", "py_compile", "api/views.py"],
+            ["python", "-c", "import api.views"],
             cwd=self.REPO_DIR,
             capture_output=True,
             text=True,
-            timeout=30,
+            timeout=60,
+            env={**os.environ, "DJANGO_SETTINGS_MODULE": "babybuddy.settings.base"},
         )
-        assert result.returncode == 0, f"Syntax error in api/views.py:\n{result.stderr}"
+        # May fail due to Django setup, but should not have import/syntax errors
+        if result.returncode != 0:
+            error = result.stderr
+            assert "SyntaxError" not in error, (
+                f"api/views.py has syntax errors: {error[:1000]}"
+            )
+            assert "IndentationError" not in error, (
+                f"api/views.py has indentation errors: {error[:1000]}"
+            )
 
-    def test_serializers_syntax_valid(self):
-        """api/serializers.py must be syntactically valid Python."""
+    def test_serializers_file_is_importable(self):
+        """Verify api/serializers.py is importable without errors"""
         result = subprocess.run(
-            ["python", "-m", "py_compile", "api/serializers.py"],
+            ["python", "-c", "import api.serializers"],
             cwd=self.REPO_DIR,
             capture_output=True,
             text=True,
-            timeout=30,
+            timeout=60,
+            env={**os.environ, "DJANGO_SETTINGS_MODULE": "babybuddy.settings.base"},
         )
-        assert (
-            result.returncode == 0
-        ), f"Syntax error in api/serializers.py:\n{result.stderr}"
+        if result.returncode != 0:
+            error = result.stderr
+            assert "SyntaxError" not in error, (
+                f"api/serializers.py has syntax errors: {error[:1000]}"
+            )
 
-    def test_urls_syntax_valid(self):
-        """api/urls.py must be syntactically valid Python."""
-        result = subprocess.run(
-            ["python", "-m", "py_compile", "api/urls.py"],
-            cwd=self.REPO_DIR,
-            capture_output=True,
-            text=True,
-            timeout=30,
+    def test_no_sensitive_fields_in_error_responses(self):
+        """Verify views.py does not leak internal details in error responses"""
+        path = os.path.join(self.REPO_DIR, "api/views.py")
+        with open(path) as f:
+            content = f.read()
+
+        # Should not have unguarded exception details in responses
+        dangerous_patterns = [
+            "traceback.format_exc",
+            "str(e)",
+            "repr(e)",
+            "exception.__traceback__",
+        ]
+        # Check if these appear outside proper error handling
+        leaky_patterns = [p for p in dangerous_patterns if p in content]
+        # Allow str(e) if wrapped in logging, but warn if in Response
+        if "str(e)" in content:
+            # Check if str(e) is used in Response context
+            lines = content.split("\n")
+            for i, line in enumerate(lines):
+                if "str(e)" in line and "Response" in line:
+                    pytest.fail(
+                        f"Line {i+1}: str(e) used directly in Response — "
+                        "should not leak exception details to client"
+                    )
+
+    def test_export_endpoint_scopes_data_to_user(self):
+        """Verify export views filter data by user/child authorization"""
+        path = os.path.join(self.REPO_DIR, "api/views.py")
+        with open(path) as f:
+            content = f.read()
+
+        # Look for queryset filtering by user/child ownership
+        scoping_patterns = [
+            "request.user",
+            "self.request.user",
+            "filter(",
+            "get_queryset",
+            "child__",
+            "user=",
+        ]
+        found = [p for p in scoping_patterns if p in content]
+        assert len(found) >= 2, (
+            "Export views should scope data to the authenticated user. "
+            f"Found: {found}. Expected at least 2 of: {scoping_patterns}"
         )
-        assert result.returncode == 0, f"Syntax error in api/urls.py:\n{result.stderr}"

@@ -1,240 +1,188 @@
 """
-Test for 'analyze-ci' skill — CI Failure Analysis
-Validates that the Agent created a CI failure analysis script that
-parses pytest log output, classifies failures, and reports results.
+Test skill: analyze-ci
+Verify that the Agent creates a CI failure analysis script for Sentry
+that parses pytest logs, categorizes failures, and produces structured
+analysis reports in text and JSON formats.
 """
 
 import os
 import re
+import ast
 import subprocess
-
 import pytest
 
 
 class TestAnalyzeCi:
-    """Verify CI failure analysis script for sentry."""
-
     REPO_DIR = "/workspace/sentry"
 
-    def _read(self, *parts):
-        fpath = os.path.join(self.REPO_DIR, *parts)
-        assert os.path.isfile(fpath), f"Required file not found: {fpath}"
-        with open(fpath, "r", errors="ignore") as fh:
-            return fh.read()
-
-    def _find_script(self):
-        """Locate the CI analysis script in common paths."""
-        candidates = [
-            os.path.join(self.REPO_DIR, "scripts", "analyze_ci_failures.py"),
-            os.path.join(self.REPO_DIR, "tools", "analyze_ci_failures.py"),
-            os.path.join(self.REPO_DIR, "analyze_ci_failures.py"),
-            os.path.join(self.REPO_DIR, "scripts", "analyze_ci.py"),
-            os.path.join(self.REPO_DIR, "tools", "analyze_ci.py"),
-            os.path.join(self.REPO_DIR, "analyze_ci.py"),
-        ]
-        for p in candidates:
-            if os.path.isfile(p):
-                return p
-        # Fallback: search for it
-        for root, _dirs, files in os.walk(self.REPO_DIR):
-            for f in files:
-                if "analyze" in f and "ci" in f and f.endswith(".py"):
-                    return os.path.join(root, f)
-        pytest.fail("CI analysis script not found in common locations")
-
-    # ------------------------------------------------------------------
-    # L1: File existence and syntax
-    # ------------------------------------------------------------------
+    # === File Path Checks ===
 
     def test_script_exists(self):
-        """A CI failure analysis Python script must exist."""
-        self._find_script()
-
-    def test_script_compiles(self):
-        """CI analysis script must be syntactically valid Python."""
-        script = self._find_script()
-        result = subprocess.run(
-            ["python", "-m", "py_compile", script],
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-        assert result.returncode == 0, f"Syntax error:\n{result.stderr}"
-
-    def test_has_main_entry(self):
-        """Script must have a __main__ entry point or CLI interface."""
-        script = self._find_script()
-        with open(script, "r", errors="ignore") as fh:
-            content = fh.read()
-        has_main = re.search(r'if\s+__name__\s*==\s*["\']__main__["\']', content)
-        has_argparse = "argparse" in content or "click" in content or "typer" in content
-        assert (
-            has_main or has_argparse
-        ), "Script has no __main__ guard or CLI entry point"
-
-    # ------------------------------------------------------------------
-    # L1: Parsing capabilities
-    # ------------------------------------------------------------------
-
-    def test_parses_pytest_output(self):
-        """Script must parse pytest-style log output."""
-        script = self._find_script()
-        with open(script, "r", errors="ignore") as fh:
-            content = fh.read()
-        patterns = [
-            r"FAILED",
-            r"ERROR",
-            r"pytest",
-            r"test.*fail",
-            r"::.*::",
-            r"short test summary",
-            r"traceback",
-        ]
-        found = sum(1 for p in patterns if re.search(p, content, re.IGNORECASE))
-        assert (
-            found >= 2
-        ), f"Only {found} pytest-related parsing pattern(s) — need at least 2"
-
-    def test_extracts_test_name(self):
-        """Script must extract test names from failures."""
-        script = self._find_script()
-        with open(script, "r", errors="ignore") as fh:
-            content = fh.read()
-        patterns = [
-            r"test.name",
-            r"test_name",
-            r"node.id",
-            r"nodeid",
-            r"test.id",
-            r"function.name",
-            r"::\w+test",
-        ]
-        assert any(
-            re.search(p, content, re.IGNORECASE) for p in patterns
-        ), "Script does not extract test names"
-
-    def test_extracts_failure_message(self):
-        """Script must extract failure messages."""
-        script = self._find_script()
-        with open(script, "r", errors="ignore") as fh:
-            content = fh.read()
-        patterns = [
-            r"message",
-            r"error.msg",
-            r"reason",
-            r"traceback",
-            r"stderr",
-            r"longrepr",
-        ]
-        assert any(
-            re.search(p, content, re.IGNORECASE) for p in patterns
-        ), "Script does not extract failure messages"
-
-    # ------------------------------------------------------------------
-    # L2: Failure classification
-    # ------------------------------------------------------------------
-
-    def test_classifies_failure_types(self):
-        """Script must categorize failures into types."""
-        script = self._find_script()
-        with open(script, "r", errors="ignore") as fh:
-            content = fh.read()
-        categories = [
-            r"assert",
-            r"import",
-            r"timeout",
-            r"flak[ey]",
-            r"type.error",
-            r"value.error",
-            r"runtime",
-            r"connection",
-            r"permission",
-        ]
-        found = sum(1 for p in categories if re.search(p, content, re.IGNORECASE))
-        assert found >= 3, (
-            f"Only {found} failure category(ies) detected — "
-            "need at least 3 (e.g., assertion, import, timeout)"
+        """Verify scripts/analyze_ci_failures.py exists"""
+        path = os.path.join(self.REPO_DIR, "scripts/analyze_ci_failures.py")
+        assert os.path.exists(path), (
+            f"analyze_ci_failures.py not found at {path}"
         )
 
-    def test_path_extraction(self):
-        """Script must extract file paths from failures."""
-        script = self._find_script()
-        with open(script, "r", errors="ignore") as fh:
-            content = fh.read()
-        patterns = [
-            r"file.?path",
-            r"file_path",
-            r"module",
-            r"\.py",
-            r"path",
-            r"location",
+    # === Semantic Checks ===
+
+    def test_pytest_log_parsing(self):
+        """Verify script parses pytest output logs"""
+        path = os.path.join(self.REPO_DIR, "scripts/analyze_ci_failures.py")
+        with open(path) as f:
+            content = f.read().lower()
+
+        pytest_indicators = [
+            "pytest", "test", "failed", "passed", "error",
+            "traceback", "assert",
         ]
-        assert any(
-            re.search(p, content, re.IGNORECASE) for p in patterns
-        ), "Script does not extract file paths from failures"
+        found = [ind for ind in pytest_indicators if ind in content]
+        assert len(found) >= 3, (
+            f"Should parse pytest output. Found: {found}"
+        )
 
-    # ------------------------------------------------------------------
-    # L2: Output formats
-    # ------------------------------------------------------------------
+    def test_failure_record_extraction(self):
+        """Verify individual failure records are extracted"""
+        path = os.path.join(self.REPO_DIR, "scripts/analyze_ci_failures.py")
+        with open(path) as f:
+            content = f.read().lower()
 
-    def test_supports_text_output(self):
-        """Script must support human-readable text output."""
-        script = self._find_script()
-        with open(script, "r", errors="ignore") as fh:
-            content = fh.read()
-        patterns = [
-            r"print\(",
-            r"format",
-            r"table",
-            r"report",
-            r"stdout",
-            r"text",
-            r"summary",
+        record_indicators = [
+            "test_name", "test name", "file_path", "file path",
+            "failure_type", "failure type", "error_message", "error message",
+            "message", "name",
         ]
-        assert any(
-            re.search(p, content, re.IGNORECASE) for p in patterns
-        ), "Script does not produce text output"
+        found = [ind for ind in record_indicators if ind in content]
+        assert len(found) >= 3, (
+            f"Should extract failure records. Found: {found}"
+        )
 
-    def test_supports_json_output(self):
-        """Script must support structured JSON output."""
-        script = self._find_script()
-        with open(script, "r", errors="ignore") as fh:
-            content = fh.read()
-        assert "json" in content.lower(), "Script does not reference JSON output format"
-        patterns = [
-            r"json\.dump",
-            r"json\.dumps",
-            r"to_json",
-            r"json_output",
-            r"--json",
-            r"format.*json",
+    def test_failure_categorization(self):
+        """Verify failures are categorized into groups"""
+        path = os.path.join(self.REPO_DIR, "scripts/analyze_ci_failures.py")
+        with open(path) as f:
+            content = f.read().lower()
+
+        category_indicators = [
+            "assertion", "import", "timeout", "flake",
+            "infrastructure", "category", "categoriz",
+            "uncategorized",
         ]
-        assert any(
-            re.search(p, content, re.IGNORECASE) for p in patterns
-        ), "Script does not implement JSON serialization"
+        found = [ind for ind in category_indicators if ind in content]
+        assert len(found) >= 3, (
+            f"Should categorize failures. Found: {found}"
+        )
 
-    def test_handles_empty_input(self):
-        """Script should handle empty or no-failure input gracefully."""
-        script = self._find_script()
-        with open(script, "r", errors="ignore") as fh:
-            content = fh.read()
-        patterns = [
-            r"no.*fail",
-            r"empty",
-            r"not.*found",
-            r"len\(.*\)\s*==\s*0",
-            r"if\s+not\s+",
+    def test_traceback_handling(self):
+        """Verify multi-line traceback and exception chain handling"""
+        path = os.path.join(self.REPO_DIR, "scripts/analyze_ci_failures.py")
+        with open(path) as f:
+            content = f.read().lower()
+
+        traceback_indicators = [
+            "traceback", "exception", "chain", "multiline",
+            "multi-line", "nested", "cause",
         ]
-        assert any(
-            re.search(p, content, re.IGNORECASE) for p in patterns
-        ), "Script does not handle empty input case"
+        found = [ind for ind in traceback_indicators if ind in content]
+        assert len(found) >= 1, (
+            f"Should handle multi-line tracebacks. Found: {found}"
+        )
 
-    def test_aggregation_summary(self):
-        """Script should produce an aggregation summary of failures."""
-        script = self._find_script()
-        with open(script, "r", errors="ignore") as fh:
-            content = fh.read()
-        patterns = [r"summary", r"total", r"count", r"stats", r"aggregate", r"group"]
-        assert any(
-            re.search(p, content, re.IGNORECASE) for p in patterns
-        ), "Script does not produce an aggregation summary"
+    def test_summary_statistics(self):
+        """Verify report includes total/passed/failed/skipped counts"""
+        path = os.path.join(self.REPO_DIR, "scripts/analyze_ci_failures.py")
+        with open(path) as f:
+            content = f.read().lower()
+
+        stat_indicators = [
+            "total", "passed", "failed", "skipped",
+            "count", "summary",
+        ]
+        found = [ind for ind in stat_indicators if ind in content]
+        assert len(found) >= 3, (
+            f"Should compute summary statistics. Found: {found}"
+        )
+
+    def test_top_failing_files(self):
+        """Verify report identifies top N most-failing test files"""
+        path = os.path.join(self.REPO_DIR, "scripts/analyze_ci_failures.py")
+        with open(path) as f:
+            content = f.read().lower()
+
+        top_indicators = [
+            "top", "most", "frequent", "common",
+            "file", "counter", "sorted",
+        ]
+        found = [ind for ind in top_indicators if ind in content]
+        assert len(found) >= 2, (
+            f"Should identify top failing files. Found: {found}"
+        )
+
+    def test_json_output_support(self):
+        """Verify JSON output format is supported"""
+        path = os.path.join(self.REPO_DIR, "scripts/analyze_ci_failures.py")
+        with open(path) as f:
+            content = f.read()
+
+        assert "json" in content.lower(), (
+            "Should support JSON output format"
+        )
+        json_indicators = [
+            "json.dump", "json.dumps", "import json",
+        ]
+        found = [ind for ind in json_indicators if ind in content]
+        assert len(found) >= 1, (
+            f"Should use json module for output. Found: {found}"
+        )
+
+    def test_cli_interface(self):
+        """Verify command-line argument parsing"""
+        path = os.path.join(self.REPO_DIR, "scripts/analyze_ci_failures.py")
+        with open(path) as f:
+            content = f.read()
+
+        cli_indicators = [
+            "argparse", "ArgumentParser", "add_argument",
+            "sys.argv", "click", "typer",
+        ]
+        found = [ind for ind in cli_indicators if ind in content]
+        assert len(found) >= 1, (
+            f"Should have CLI argument parsing. Found: {found}"
+        )
+
+    # === Functional Checks ===
+
+    def test_script_valid_python(self):
+        """Verify analyze_ci_failures.py is valid Python"""
+        path = os.path.join(self.REPO_DIR, "scripts/analyze_ci_failures.py")
+        with open(path) as f:
+            source = f.read()
+        try:
+            ast.parse(source)
+        except SyntaxError as e:
+            pytest.fail(f"analyze_ci_failures.py has syntax errors: {e}")
+
+    def test_has_main_entry_point(self):
+        """Verify script has __main__ entry point"""
+        path = os.path.join(self.REPO_DIR, "scripts/analyze_ci_failures.py")
+        with open(path) as f:
+            content = f.read()
+
+        assert '__name__' in content and '__main__' in content, (
+            "Script should have a __main__ entry point"
+        )
+
+    def test_stdin_support(self):
+        """Verify script supports reading from stdin or file"""
+        path = os.path.join(self.REPO_DIR, "scripts/analyze_ci_failures.py")
+        with open(path) as f:
+            content = f.read()
+
+        stdin_indicators = [
+            "stdin", "sys.stdin", "open(", "file",
+            "input", "read()",
+        ]
+        found = [ind for ind in stdin_indicators if ind in content]
+        assert len(found) >= 2, (
+            f"Should support reading from file/stdin. Found: {found}"
+        )

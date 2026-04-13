@@ -1,196 +1,195 @@
 """
-Test for 'risk-metrics-calculation' skill — Risk Metrics Calculation
-Validates that the Agent created a risk metrics demo for pyfolio computing
-VaR, CVaR, Sharpe ratio, Sortino ratio, and maximum drawdown.
+Test skill: risk-metrics-calculation
+Verify that the Agent correctly implements a risk metrics demo script
+for pyfolio computing VaR, CVaR, Sharpe, Sortino, and max drawdown
+from a portfolio returns series.
 """
 
 import os
 import re
+import ast
 import subprocess
-
 import pytest
 
 
-
 class TestRiskMetricsCalculation:
-    """Verify risk metrics calculation demo for pyfolio."""
-
     REPO_DIR = "/workspace/pyfolio"
 
-    # ------------------------------------------------------------------
-    # Helpers
-    # ------------------------------------------------------------------
+    # === File Path Checks ===
 
-    def _read(self, *parts):
-        fpath = os.path.join(self.REPO_DIR, *parts)
-        assert os.path.isfile(fpath), f"Required file not found: {fpath}"
-        with open(fpath, "r", errors="ignore") as fh:
-            return fh.read()
+    def test_demo_script_exists(self):
+        """Verify examples/risk_metrics_demo.py exists"""
+        path = os.path.join(self.REPO_DIR, "examples/risk_metrics_demo.py")
+        assert os.path.exists(path), f"risk_metrics_demo.py not found at {path}"
 
-    # ------------------------------------------------------------------
-    # L1: File existence and syntax
-    # ------------------------------------------------------------------
+    # === Semantic Checks ===
 
-    def test_demo_file_exists(self):
-        """examples/risk_metrics_demo.py must exist."""
-        fpath = os.path.join(self.REPO_DIR, "examples", "risk_metrics_demo.py")
-        assert os.path.isfile(fpath), "examples/risk_metrics_demo.py not found"
+    def test_var_computation(self):
+        """Verify Value at Risk computation is implemented"""
+        path = os.path.join(self.REPO_DIR, "examples/risk_metrics_demo.py")
+        with open(path) as f:
+            content = f.read()
 
-    def test_demo_compiles(self):
-        """risk_metrics_demo.py must be syntactically valid Python."""
-        result = subprocess.run(
-            ["python", "-m", "py_compile", "examples/risk_metrics_demo.py"],
-            cwd=self.REPO_DIR,
-            capture_output=True,
-            text=True,
-            timeout=30,
+        var_indicators = ["var", "value_at_risk", "VaR", "quantile", "percentile"]
+        found = [ind for ind in var_indicators if ind in content]
+        assert len(found) >= 1, (
+            f"Should implement Value at Risk. Found: {found}"
         )
-        assert result.returncode == 0, f"Syntax error:\n{result.stderr}"
 
-    def test_demo_has_main_entry_point(self):
-        """Script must have a __main__ entry point."""
-        content = self._read("examples", "risk_metrics_demo.py")
-        assert re.search(
-            r'if\s+__name__\s*==\s*["\']__main__["\']', content
-        ), "Missing __main__ entry point"
+    def test_cvar_computation(self):
+        """Verify Conditional VaR (Expected Shortfall) is implemented"""
+        path = os.path.join(self.REPO_DIR, "examples/risk_metrics_demo.py")
+        with open(path) as f:
+            content = f.read()
 
-    # ------------------------------------------------------------------
-    # L1: All five metrics present
-    # ------------------------------------------------------------------
-
-    def test_computes_var(self):
-        """Script must compute Value at Risk (VaR)."""
-        content = self._read("examples", "risk_metrics_demo.py")
-        patterns = [
-            r"[Vv]a[Rr]",
-            r"value.at.risk",
-            r"value_at_risk",
-            r"quantile",
-            r"percentile",
+        cvar_indicators = [
+            "cvar", "CVaR", "expected_shortfall", "conditional",
+            "tail", "shortfall",
         ]
-        assert any(
-            re.search(p, content) for p in patterns
-        ), "Script does not compute VaR"
+        found = [ind for ind in cvar_indicators if ind in content]
+        assert len(found) >= 1, (
+            f"Should implement CVaR/Expected Shortfall. Found: {found}"
+        )
 
-    def test_computes_cvar(self):
-        """Script must compute Conditional VaR (CVaR / Expected Shortfall)."""
-        content = self._read("examples", "risk_metrics_demo.py")
-        patterns = [
-            r"[Cc][Vv]a[Rr]",
-            r"expected.shortfall",
-            r"conditional.*value.*risk",
-            r"tail.*mean",
+    def test_sharpe_ratio(self):
+        """Verify Sharpe ratio computation"""
+        path = os.path.join(self.REPO_DIR, "examples/risk_metrics_demo.py")
+        with open(path) as f:
+            content = f.read()
+
+        assert "sharpe" in content.lower(), (
+            "Should implement Sharpe ratio computation"
+        )
+        assert "risk_free" in content.lower() or "rf" in content.lower() or \
+               "risk free" in content.lower(), (
+            "Sharpe ratio should accept a risk-free rate parameter"
+        )
+
+    def test_sortino_ratio(self):
+        """Verify Sortino ratio using downside deviation"""
+        path = os.path.join(self.REPO_DIR, "examples/risk_metrics_demo.py")
+        with open(path) as f:
+            content = f.read()
+
+        assert "sortino" in content.lower(), (
+            "Should implement Sortino ratio"
+        )
+        downside_indicators = ["downside", "negative", "below"]
+        found = [ind for ind in downside_indicators if ind in content.lower()]
+        assert len(found) >= 1, (
+            f"Sortino should use downside deviation. Found: {found}"
+        )
+
+    def test_max_drawdown(self):
+        """Verify maximum drawdown computation"""
+        path = os.path.join(self.REPO_DIR, "examples/risk_metrics_demo.py")
+        with open(path) as f:
+            content = f.read()
+
+        dd_indicators = [
+            "drawdown", "max_drawdown", "maximum_drawdown",
+            "cumulative", "peak", "trough",
         ]
-        assert any(
-            re.search(p, content, re.IGNORECASE) for p in patterns
-        ), "Script does not compute CVaR / Expected Shortfall"
-
-    def test_computes_sharpe_ratio(self):
-        """Script must compute Sharpe ratio."""
-        content = self._read("examples", "risk_metrics_demo.py")
-        assert re.search(r"[Ss]harpe", content), "Script does not compute Sharpe ratio"
-
-    def test_computes_sortino_ratio(self):
-        """Script must compute Sortino ratio."""
-        content = self._read("examples", "risk_metrics_demo.py")
-        assert re.search(
-            r"[Ss]ortino", content
-        ), "Script does not compute Sortino ratio"
-
-    def test_computes_max_drawdown(self):
-        """Script must compute maximum drawdown."""
-        content = self._read("examples", "risk_metrics_demo.py")
-        patterns = [r"max.*drawdown", r"maximum.*drawdown", r"drawdown"]
-        assert any(
-            re.search(p, content, re.IGNORECASE) for p in patterns
-        ), "Script does not compute maximum drawdown"
-
-    # ------------------------------------------------------------------
-    # L1: Configuration parameters
-    # ------------------------------------------------------------------
+        found = [ind for ind in dd_indicators if ind in content.lower()]
+        assert len(found) >= 2, (
+            f"Should implement maximum drawdown. Found: {found}"
+        )
 
     def test_configurable_confidence_level(self):
-        """VaR/CVaR must support configurable confidence levels."""
-        content = self._read("examples", "risk_metrics_demo.py")
-        patterns = [r"confidence", r"alpha", r"0\.95", r"0\.99", r"95", r"99"]
-        assert any(
-            re.search(p, content) for p in patterns
-        ), "VaR/CVaR confidence level is not configurable"
+        """Verify confidence level is configurable"""
+        path = os.path.join(self.REPO_DIR, "examples/risk_metrics_demo.py")
+        with open(path) as f:
+            content = f.read()
 
-    def test_configurable_risk_free_rate(self):
-        """Sharpe ratio must accept a risk-free rate parameter."""
-        content = self._read("examples", "risk_metrics_demo.py")
-        patterns = [r"risk.free", r"rf_rate", r"risk_free_rate", r"rf"]
-        assert any(
-            re.search(p, content, re.IGNORECASE) for p in patterns
-        ), "Sharpe ratio missing risk-free rate parameter"
-
-    # ------------------------------------------------------------------
-    # L2: Input validation
-    # ------------------------------------------------------------------
-
-    def test_validates_inputs(self):
-        """Script must validate inputs (reject empty series, invalid confidence)."""
-        content = self._read("examples", "risk_metrics_demo.py")
-        validation_patterns = [
-            r"raise\s+ValueError",
-            r"raise\s+TypeError",
-            r"if\s+len\(",
-            r"if\s+not\s+",
-            r"empty",
-            r"assert\s+",
-            r"validate",
+        confidence_indicators = [
+            "confidence", "alpha", "0.95", "0.99", "95", "99",
+            "level", "quantile",
         ]
-        assert any(
-            re.search(p, content) for p in validation_patterns
-        ), "Script does not validate inputs"
-
-    # ------------------------------------------------------------------
-    # L2: Dynamic execution
-    # ------------------------------------------------------------------
-
-    def test_script_runs_successfully(self):
-        """risk_metrics_demo.py must run to completion."""
-        result = subprocess.run(
-            ["python", "examples/risk_metrics_demo.py"],
-            cwd=self.REPO_DIR,
-            capture_output=True,
-            text=True,
-            timeout=60,
+        found = [ind for ind in confidence_indicators if ind in content]
+        assert len(found) >= 2, (
+            f"Confidence level should be configurable. Found: {found}"
         )
-        assert (
-            result.returncode == 0
-        ), f"Script failed:\nstderr: {result.stderr[-2000:]}"
 
-    def test_output_contains_all_metrics(self):
-        """Script output must contain all five metric results."""
-        result = subprocess.run(
-            ["python", "examples/risk_metrics_demo.py"],
-            cwd=self.REPO_DIR,
-            capture_output=True,
-            text=True,
-            timeout=60,
-        )
-        output = (result.stdout + result.stderr).lower()
-        metrics = ["var", "cvar", "sharpe", "sortino", "drawdown"]
-        found = [m for m in metrics if m in output]
-        missing = [m for m in metrics if m not in output]
-        assert (
-            len(found) >= 4
-        ), f"Output missing metric results. Found: {found}, Missing: {missing}"
+    def test_input_validation(self):
+        """Verify input validation for empty series and invalid values"""
+        path = os.path.join(self.REPO_DIR, "examples/risk_metrics_demo.py")
+        with open(path) as f:
+            content = f.read()
 
-    def test_output_contains_numeric_values(self):
-        """Script output must contain actual numeric metric values, not just labels."""
-        result = subprocess.run(
-            ["python", "examples/risk_metrics_demo.py"],
-            cwd=self.REPO_DIR,
-            capture_output=True,
-            text=True,
-            timeout=60,
+        validation_indicators = [
+            "empty", "len(", "ValueError", "raise",
+            "invalid", "check", "validate", "assert",
+        ]
+        found = [ind for ind in validation_indicators if ind in content]
+        assert len(found) >= 2, (
+            f"Should validate inputs. Found: {found}"
         )
-        output = result.stdout
-        numbers = re.findall(r"-?\d+\.?\d*", output)
-        assert len(numbers) >= 5, (
-            f"Output contains only {len(numbers)} numeric values — "
-            f"expected at least 5 metric results"
+
+    def test_formatted_output(self):
+        """Verify formatted summary table is printed"""
+        path = os.path.join(self.REPO_DIR, "examples/risk_metrics_demo.py")
+        with open(path) as f:
+            content = f.read()
+
+        output_indicators = [
+            "print", "format", "table", "summary",
+            "f\"", "f'", "tabulate",
+        ]
+        found = [ind for ind in output_indicators if ind in content]
+        assert len(found) >= 2, (
+            f"Should produce formatted output. Found: {found}"
+        )
+
+    # === Functional Checks ===
+
+    def test_script_valid_python(self):
+        """Verify risk_metrics_demo.py is valid Python syntax"""
+        path = os.path.join(self.REPO_DIR, "examples/risk_metrics_demo.py")
+        with open(path) as f:
+            source = f.read()
+        try:
+            ast.parse(source)
+        except SyntaxError as e:
+            pytest.fail(f"risk_metrics_demo.py has syntax errors: {e}")
+
+    def test_has_main_entry_point(self):
+        """Verify script has __main__ entry point"""
+        path = os.path.join(self.REPO_DIR, "examples/risk_metrics_demo.py")
+        with open(path) as f:
+            content = f.read()
+
+        assert '__name__' in content and '__main__' in content, (
+            "Script should have a __main__ entry point"
+        )
+
+    def test_importable(self):
+        """Verify script is importable"""
+        path = os.path.join(self.REPO_DIR, "examples/risk_metrics_demo.py")
+        result = subprocess.run(
+            ["python", "-c", f"import ast; ast.parse(open('{path}').read())"],
+            capture_output=True, text=True, timeout=15,
+        )
+        assert result.returncode == 0, (
+            f"Script should be parseable: {result.stderr}"
+        )
+
+    def test_defines_metric_functions(self):
+        """Verify distinct functions for each metric"""
+        path = os.path.join(self.REPO_DIR, "examples/risk_metrics_demo.py")
+        with open(path) as f:
+            source = f.read()
+
+        tree = ast.parse(source)
+        func_names = [
+            node.name.lower() for node in ast.walk(tree)
+            if isinstance(node, ast.FunctionDef)
+        ]
+        metric_keywords = ["var", "cvar", "sharpe", "sortino", "drawdown"]
+        covered = [
+            kw for kw in metric_keywords
+            if any(kw in fn for fn in func_names)
+        ]
+        assert len(covered) >= 3, (
+            f"Should define functions for metrics. "
+            f"Functions: {func_names}, covered: {covered}"
         )

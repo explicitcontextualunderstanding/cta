@@ -1,189 +1,257 @@
 """
-Test for 'prometheus-configuration' skill — Multi-Job Scrape Config
-Validates that the Agent created a multi-job Prometheus scrape configuration
-with proper YAML structure, multiple jobs, relabeling, and service discovery.
+Test skill: prometheus-configuration
+Verify that the Agent correctly creates a multi-job Prometheus scrape
+configuration example with relabeling rules, service discovery, and
+global settings.
 """
 
 import os
-import re
 import subprocess
-
-import yaml
 import pytest
 
 
 class TestPrometheusConfiguration:
-    """Verify multi-job scrape configuration for Prometheus."""
-
     REPO_DIR = "/workspace/prometheus"
 
-    def _read(self, *parts):
-        fpath = os.path.join(self.REPO_DIR, *parts)
-        assert os.path.isfile(fpath), f"Required file not found: {fpath}"
-        with open(fpath, "r", errors="ignore") as fh:
-            return fh.read()
+    @staticmethod
+    def _load_yaml(path):
+        try:
+            import yaml
+        except ImportError:
+            subprocess.run(["pip", "install", "pyyaml"], capture_output=True, timeout=60)
+            import yaml
+        with open(path) as f:
+            return yaml.safe_load(f)
 
-    def _find_config(self):
-        """Find the multi-job scrape configuration file."""
-        candidates = [
+    # === File Path Checks ===
+
+    def test_multi_job_scrape_config_exists(self):
+        """Verify multi_job_scrape.yml exists in documentation/examples/"""
+        path = os.path.join(
+            self.REPO_DIR, "documentation/examples/multi_job_scrape.yml"
+        )
+        assert os.path.exists(path), f"multi_job_scrape.yml not found at {path}"
+
+    def test_test_fixture_config_exists(self):
+        """Verify test fixture multi_job.good.yml exists"""
+        path = os.path.join(self.REPO_DIR, "config/testdata/multi_job.good.yml")
+        assert os.path.exists(path), f"multi_job.good.yml not found at {path}"
+
+    def test_configs_are_valid_yaml(self):
+        """Verify both config files are parseable YAML"""
+        files = [
             "documentation/examples/multi_job_scrape.yml",
-            "documentation/examples/multi_job_scrape.yaml",
-            "examples/multi_job_scrape.yml",
-            "examples/multi_job_scrape.yaml",
-        ]
-        for rel in candidates:
-            fpath = os.path.join(self.REPO_DIR, rel)
-            if os.path.isfile(fpath):
-                return fpath
-        # Fallback: search for any multi_job YAML
-        for root, _dirs, files in os.walk(self.REPO_DIR):
-            for f in files:
-                if "multi_job" in f and f.endswith((".yml", ".yaml")):
-                    return os.path.join(root, f)
-        pytest.fail("Multi-job scrape configuration file not found")
-
-    def _load_config(self):
-        """Load and parse the YAML configuration."""
-        path = self._find_config()
-        with open(path, "r", errors="ignore") as fh:
-            return yaml.safe_load(fh)
-
-    # ------------------------------------------------------------------
-    # L1: YAML validity and top-level structure
-    # ------------------------------------------------------------------
-
-    def test_config_file_exists(self):
-        """multi_job_scrape.yml must exist."""
-        self._find_config()
-
-    def test_valid_yaml(self):
-        """Configuration file must be valid YAML."""
-        path = self._find_config()
-        with open(path, "r", errors="ignore") as fh:
-            try:
-                data = yaml.safe_load(fh)
-            except yaml.YAMLError as exc:
-                pytest.fail(f"Invalid YAML: {exc}")
-        assert isinstance(data, dict), "Top-level YAML must be a mapping"
-
-    def test_has_global_settings(self):
-        """Configuration must define global settings."""
-        data = self._load_config()
-        assert "global" in data, "Missing 'global' section"
-        g = data["global"]
-        assert "scrape_interval" in g, "Missing global scrape_interval"
-        assert "evaluation_interval" in g, "Missing global evaluation_interval"
-
-    def test_has_external_labels(self):
-        """Global section must include external_labels."""
-        data = self._load_config()
-        g = data.get("global", {})
-        assert "external_labels" in g, "Missing external_labels in global"
-        assert isinstance(
-            g["external_labels"], dict
-        ), "external_labels must be a mapping"
-
-    # ------------------------------------------------------------------
-    # L1: Scrape jobs
-    # ------------------------------------------------------------------
-
-    def test_defines_at_least_three_jobs(self):
-        """Configuration must define at least three scrape jobs."""
-        data = self._load_config()
-        jobs = data.get("scrape_configs", [])
-        assert len(jobs) >= 3, f"Only {len(jobs)} scrape job(s) — need at least 3"
-
-    def test_jobs_have_names(self):
-        """Each scrape job must have a job_name."""
-        data = self._load_config()
-        jobs = data.get("scrape_configs", [])
-        for i, job in enumerate(jobs):
-            assert "job_name" in job, f"Job #{i} missing job_name"
-
-    def test_jobs_have_scrape_settings(self):
-        """At least one job should have custom scrape_interval or metrics_path."""
-        data = self._load_config()
-        jobs = data.get("scrape_configs", [])
-        has_custom = any("scrape_interval" in j or "metrics_path" in j for j in jobs)
-        assert has_custom, "No job defines custom scrape_interval or metrics_path"
-
-    # ------------------------------------------------------------------
-    # L2: Service discovery
-    # ------------------------------------------------------------------
-
-    def test_uses_static_config(self):
-        """At least one job must use static_configs."""
-        data = self._load_config()
-        jobs = data.get("scrape_configs", [])
-        has_static = any("static_configs" in j for j in jobs)
-        assert has_static, "No job uses static_configs"
-
-    def test_uses_dynamic_service_discovery(self):
-        """At least one job must use a dynamic SD mechanism."""
-        data = self._load_config()
-        jobs = data.get("scrape_configs", [])
-        sd_keys = [
-            "file_sd_configs",
-            "dns_sd_configs",
-            "kubernetes_sd_configs",
-            "consul_sd_configs",
-            "ec2_sd_configs",
-            "http_sd_configs",
-        ]
-        has_sd = any(any(k in j for k in sd_keys) for j in jobs)
-        assert has_sd, "No job uses a dynamic service discovery mechanism"
-
-    # ------------------------------------------------------------------
-    # L2: Relabeling
-    # ------------------------------------------------------------------
-
-    def test_uses_relabel_configs(self):
-        """At least one job must include relabel_configs."""
-        data = self._load_config()
-        jobs = data.get("scrape_configs", [])
-        has_relabel = any("relabel_configs" in j for j in jobs)
-        assert has_relabel, "No job uses relabel_configs"
-
-    def test_relabel_includes_actions(self):
-        """Relabeling rules should include keep/drop, replace, or labelmap."""
-        data = self._load_config()
-        jobs = data.get("scrape_configs", [])
-        actions = set()
-        for job in jobs:
-            for rule in job.get("relabel_configs", []):
-                if "action" in rule:
-                    actions.add(rule["action"])
-        # default action is 'replace' if no action specified
-        if not actions:
-            # check if there are rules at all
-            has_rules = any(job.get("relabel_configs") for job in jobs)
-            if has_rules:
-                actions.add("replace")
-        assert len(actions) >= 1, "Relabeling rules have no actions"
-
-    # ------------------------------------------------------------------
-    # L2: Test data fixture
-    # ------------------------------------------------------------------
-
-    def test_test_fixture_exists(self):
-        """Test fixture multi_job.good.yml should exist."""
-        candidates = [
             "config/testdata/multi_job.good.yml",
-            "config/testdata/multi_job.good.yaml",
         ]
-        found = any(os.path.isfile(os.path.join(self.REPO_DIR, c)) for c in candidates)
-        if not found:
-            # Not strictly required, just check it's referenced
-            config_text = (
-                self._read(os.path.relpath(self._find_config(), self.REPO_DIR))
-                if False
-                else ""
-            )
-            pytest.skip("Test fixture not created (optional)")
+        for rel_path in files:
+            path = os.path.join(self.REPO_DIR, rel_path)
+            if os.path.exists(path):
+                config = self._load_yaml(path)
+                assert config is not None, f"{rel_path} is empty or invalid YAML"
+                assert isinstance(config, dict), f"{rel_path} root should be a mapping"
 
-    def test_distinct_job_types(self):
-        """Jobs should target distinct service types."""
-        data = self._load_config()
-        jobs = data.get("scrape_configs", [])
-        names = [j.get("job_name", "") for j in jobs]
-        assert len(set(names)) == len(names), f"Duplicate job names: {names}"
+    # === Semantic Checks ===
+
+    def test_config_has_global_settings(self):
+        """Verify config defines global scrape_interval, evaluation_interval, and external_labels"""
+        path = os.path.join(
+            self.REPO_DIR, "documentation/examples/multi_job_scrape.yml"
+        )
+        config = self._load_yaml(path)
+
+        global_config = config.get("global", {})
+        assert "scrape_interval" in global_config, (
+            "Global config should define 'scrape_interval'"
+        )
+        assert "evaluation_interval" in global_config, (
+            "Global config should define 'evaluation_interval'"
+        )
+        assert "external_labels" in global_config, (
+            "Global config should define 'external_labels'"
+        )
+        ext_labels = global_config["external_labels"]
+        assert isinstance(ext_labels, dict) and len(ext_labels) >= 1, (
+            f"external_labels should have at least one label. Got: {ext_labels}"
+        )
+
+    def test_config_has_at_least_three_scrape_jobs(self):
+        """Verify config defines at least 3 distinct scrape jobs"""
+        path = os.path.join(
+            self.REPO_DIR, "documentation/examples/multi_job_scrape.yml"
+        )
+        config = self._load_yaml(path)
+
+        scrape_configs = config.get("scrape_configs", [])
+        assert len(scrape_configs) >= 3, (
+            f"Config should have at least 3 scrape jobs. Found {len(scrape_configs)}"
+        )
+
+        # Verify jobs have distinct names
+        job_names = [job.get("job_name", f"unnamed_{i}")
+                     for i, job in enumerate(scrape_configs)]
+        unique_names = set(job_names)
+        assert len(unique_names) >= 3, (
+            f"Jobs should have distinct names. Found: {job_names}"
+        )
+
+    def test_config_jobs_have_scrape_settings(self):
+        """Verify each job has appropriate scrape_interval and metrics_path"""
+        path = os.path.join(
+            self.REPO_DIR, "documentation/examples/multi_job_scrape.yml"
+        )
+        config = self._load_yaml(path)
+
+        scrape_configs = config.get("scrape_configs", [])
+        jobs_with_settings = 0
+        for job in scrape_configs:
+            has_interval = "scrape_interval" in job
+            has_path = "metrics_path" in job
+            if has_interval or has_path:
+                jobs_with_settings += 1
+
+        assert jobs_with_settings >= 1, (
+            "At least one job should have custom scrape_interval or metrics_path"
+        )
+
+    def test_config_has_relabeling_rules(self):
+        """Verify at least one job has relabel_configs with multiple actions"""
+        path = os.path.join(
+            self.REPO_DIR, "documentation/examples/multi_job_scrape.yml"
+        )
+        config = self._load_yaml(path)
+
+        scrape_configs = config.get("scrape_configs", [])
+        relabel_actions = []
+        for job in scrape_configs:
+            relabel_configs = job.get("relabel_configs", [])
+            for rule in relabel_configs:
+                action = rule.get("action", "replace")
+                relabel_actions.append(action)
+
+        assert len(relabel_actions) >= 2, (
+            f"At least one job should have relabel_configs with multiple rules. "
+            f"Actions found: {relabel_actions}"
+        )
+
+        # Should demonstrate keep or drop for target filtering
+        action_types = set(relabel_actions)
+        has_filtering = "keep" in action_types or "drop" in action_types
+        has_replacement = "replace" in action_types or "labelmap" in action_types
+        assert has_filtering or has_replacement, (
+            f"Relabeling should demonstrate filtering (keep/drop) or replacement. "
+            f"Action types found: {action_types}"
+        )
+
+    def test_config_has_static_targets(self):
+        """Verify at least one job uses static_configs"""
+        path = os.path.join(
+            self.REPO_DIR, "documentation/examples/multi_job_scrape.yml"
+        )
+        config = self._load_yaml(path)
+
+        scrape_configs = config.get("scrape_configs", [])
+        has_static = False
+        for job in scrape_configs:
+            if "static_configs" in job:
+                has_static = True
+                static = job["static_configs"]
+                assert isinstance(static, list) and len(static) >= 1, (
+                    f"static_configs should have at least one target group"
+                )
+                break
+
+        assert has_static, "At least one job should use static_configs"
+
+    def test_config_has_dynamic_service_discovery(self):
+        """Verify at least one job uses a dynamic service discovery mechanism"""
+        path = os.path.join(
+            self.REPO_DIR, "documentation/examples/multi_job_scrape.yml"
+        )
+        config = self._load_yaml(path)
+
+        scrape_configs = config.get("scrape_configs", [])
+        sd_types = [
+            "file_sd_configs", "dns_sd_configs", "kubernetes_sd_configs",
+            "consul_sd_configs", "ec2_sd_configs", "gce_sd_configs",
+            "azure_sd_configs", "http_sd_configs",
+        ]
+
+        found_sd = []
+        for job in scrape_configs:
+            for sd in sd_types:
+                if sd in job:
+                    found_sd.append(sd)
+
+        assert len(found_sd) >= 1, (
+            f"At least one job should use dynamic service discovery. "
+            f"None of {sd_types} found in any job."
+        )
+
+    # === Functional Checks ===
+
+    def test_config_passes_promtool_check(self):
+        """Verify config passes promtool check-config if available"""
+        path = os.path.join(
+            self.REPO_DIR, "documentation/examples/multi_job_scrape.yml"
+        )
+        # Try to find promtool
+        promtool = None
+        for candidate in ["promtool", "./promtool", os.path.join(self.REPO_DIR, "promtool")]:
+            check = subprocess.run(
+                ["which", candidate] if not candidate.startswith((".", "/")) else ["test", "-f", candidate],
+                capture_output=True, text=True, timeout=10,
+            )
+            if check.returncode == 0:
+                promtool = candidate
+                break
+
+        if promtool is None:
+            # Try to build promtool
+            result = subprocess.run(
+                ["go", "build", "-o", "/tmp/promtool", "./cmd/promtool"],
+                cwd=self.REPO_DIR,
+                capture_output=True,
+                text=True,
+                timeout=300,
+            )
+            if result.returncode == 0:
+                promtool = "/tmp/promtool"
+            else:
+                pytest.skip("promtool not available and could not be built")
+
+        result = subprocess.run(
+            [promtool, "check", "config", path],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        assert result.returncode == 0, (
+            f"promtool check-config failed: {result.stderr[:1000]}"
+        )
+
+    def test_test_fixture_is_valid_config(self):
+        """Verify test fixture multi_job.good.yml has valid structure"""
+        path = os.path.join(self.REPO_DIR, "config/testdata/multi_job.good.yml")
+        config = self._load_yaml(path)
+
+        assert "scrape_configs" in config or "global" in config, (
+            f"Test fixture should have scrape_configs or global sections. "
+            f"Keys: {list(config.keys())}"
+        )
+
+    def test_config_job_names_are_descriptive(self):
+        """Verify job names are descriptive and not generic"""
+        path = os.path.join(
+            self.REPO_DIR, "documentation/examples/multi_job_scrape.yml"
+        )
+        config = self._load_yaml(path)
+
+        scrape_configs = config.get("scrape_configs", [])
+        for job in scrape_configs:
+            name = job.get("job_name", "")
+            assert len(name) >= 3, (
+                f"Job name '{name}' is too short to be descriptive"
+            )
+            assert name not in ("job1", "job2", "job3", "test"), (
+                f"Job name '{name}' is too generic"
+            )

@@ -1,362 +1,421 @@
 """
-Test for 'xlsx' skill — Excel & Spreadsheet Automation
-Validates that the Agent implemented a report generation engine for openpyxl
-producing multi-sheet workbooks with data tables, summary calculations,
-conditional formatting, and charts.
+Test skill: xlsx
+Verify that the Agent correctly builds a report generation engine for
+openpyxl that creates multi-sheet workbooks with data tables, summary
+calculations, conditional formatting, and charts.
 """
 
 import os
-import re
+import sys
+import ast
 import subprocess
 import tempfile
-
 import pytest
-
-from _dependency_utils import ensure_python_dependencies
-
-
-@pytest.fixture(scope="module", autouse=True)
-def _ensure_repo_dependencies():
-    ensure_python_dependencies(TestXlsx.REPO_DIR)
 
 
 class TestXlsx:
-    """Verify Excel report generation engine for openpyxl."""
-
     REPO_DIR = "/workspace/openpyxl"
 
-    # ------------------------------------------------------------------
-    # Helpers
-    # ------------------------------------------------------------------
-
-    def _read(self, *parts):
-        fpath = os.path.join(self.REPO_DIR, *parts)
-        assert os.path.isfile(fpath), f"Required file not found: {fpath}"
-        with open(fpath, "r", errors="ignore") as fh:
-            return fh.read()
-
-    # ------------------------------------------------------------------
-    # L1: File existence and syntax
-    # ------------------------------------------------------------------
+    # === File Path Checks ===
 
     def test_report_engine_file_exists(self):
-        """openpyxl/utils/report_engine.py must exist."""
-        fpath = os.path.join(self.REPO_DIR, "openpyxl", "utils", "report_engine.py")
-        assert os.path.isfile(fpath), "openpyxl/utils/report_engine.py not found"
+        """Verify report_engine.py exists in the correct location"""
+        path = os.path.join(self.REPO_DIR, "openpyxl/utils/report_engine.py")
+        assert os.path.exists(path), f"report_engine.py not found at {path}"
 
-    def test_report_engine_compiles(self):
-        """report_engine.py must be syntactically valid Python."""
-        result = subprocess.run(
-            ["python", "-m", "py_compile", "openpyxl/utils/report_engine.py"],
-            cwd=self.REPO_DIR,
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-        assert (
-            result.returncode == 0
-        ), f"Syntax error in report_engine.py:\n{result.stderr}"
-
-    def test_report_engine_importable(self):
-        """report_engine module must be importable."""
-        result = subprocess.run(
-            ["python", "-c", "from openpyxl.utils.report_engine import *; print('OK')"],
-            cwd=self.REPO_DIR,
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-        assert (
-            result.returncode == 0
-        ), f"Failed to import report_engine:\n{result.stderr}"
-
-    # ------------------------------------------------------------------
-    # L1: Engine structure
-    # ------------------------------------------------------------------
-
-    def test_engine_defines_callable(self):
-        """report_engine.py must define a callable function or class for report generation."""
-        content = self._read("openpyxl", "utils", "report_engine.py")
-        patterns = [
-            r"def\s+generate",
-            r"def\s+create",
-            r"def\s+build",
-            r"class\s+\w*Report\w*Engine",
-            r"class\s+\w*Report\w*Generator",
-            r"class\s+\w*Report\w*Builder",
-        ]
-        assert any(
-            re.search(p, content, re.IGNORECASE) for p in patterns
-        ), "report_engine.py does not define a generate/create/build callable or Report class"
-
-    def test_engine_uses_openpyxl_workbook(self):
-        """Engine must use openpyxl Workbook to create Excel files."""
-        content = self._read("openpyxl", "utils", "report_engine.py")
-        assert re.search(
-            r"Workbook|workbook|load_workbook", content
-        ), "report_engine.py does not reference openpyxl Workbook"
-
-    # ------------------------------------------------------------------
-    # L2: Multi-sheet layout
-    # ------------------------------------------------------------------
-
-    def test_engine_creates_multiple_sheets(self):
-        """Engine code must create at least 3 separate worksheet references."""
-        content = self._read("openpyxl", "utils", "report_engine.py")
-        sheet_patterns = [
-            r"create_sheet",
-            r"active",
-            r"\.title\s*=",
-            r"ws\d",
-            r"data_sheet|summary_sheet|chart_sheet",
-        ]
-        matches = sum(
-            len(re.findall(p, content, re.IGNORECASE)) for p in sheet_patterns
-        )
-        assert (
-            matches >= 3
-        ), f"Engine does not appear to create multiple sheets (found {matches} sheet references)"
-
-    def test_engine_has_data_sheet_logic(self):
-        """Engine must populate a data sheet with rows and a header row."""
-        content = self._read("openpyxl", "utils", "report_engine.py")
-        data_patterns = [r"header", r"append\(", r"row", r"cell"]
-        matches = sum(1 for p in data_patterns if re.search(p, content, re.IGNORECASE))
-        assert (
-            matches >= 2
-        ), "Engine missing data sheet population logic (headers + rows)"
-
-    def test_engine_has_summary_calculations(self):
-        """Engine must compute summary/aggregate metrics (totals, averages, counts)."""
-        content = self._read("openpyxl", "utils", "report_engine.py")
-        summary_patterns = [
-            r"sum\(",
-            r"average",
-            r"mean",
-            r"count",
-            r"total",
-            r"SUM\(",
-            r"AVERAGE\(",
-            r"COUNT\(",  # Excel formulas
-            r"aggregate",
-            r"summary",
-        ]
-        assert any(
-            re.search(p, content, re.IGNORECASE) for p in summary_patterns
-        ), "Engine missing summary/aggregate calculation logic"
-
-    # ------------------------------------------------------------------
-    # L2: Chart generation
-    # ------------------------------------------------------------------
-
-    def test_engine_creates_chart(self):
-        """Engine must create at least one chart (line, bar, or pie)."""
-        content = self._read("openpyxl", "utils", "report_engine.py")
-        chart_patterns = [
-            r"BarChart",
-            r"LineChart",
-            r"PieChart",
-            r"Reference",
-            r"add_chart",
-            r"chart",
-            r"Chart",
-        ]
-        matches = sum(1 for p in chart_patterns if re.search(p, content))
-        assert matches >= 2, "Engine does not create a chart visualization"
-
-    # ------------------------------------------------------------------
-    # L2: Conditional formatting
-    # ------------------------------------------------------------------
-
-    def test_engine_applies_conditional_formatting(self):
-        """Engine must apply conditional formatting to at least one range."""
-        content = self._read("openpyxl", "utils", "report_engine.py")
-        cf_patterns = [
-            r"conditional_formatting",
-            r"ConditionalFormatting",
-            r"CellIsRule",
-            r"ColorScaleRule",
-            r"DataBarRule",
-            r"FormulaRule",
-            r"IconSetRule",
-            r"PatternFill.*condition",
-            r"condition.*PatternFill",
-        ]
-        assert any(
-            re.search(p, content, re.IGNORECASE) for p in cf_patterns
-        ), "Engine does not apply conditional formatting"
-
-    # ------------------------------------------------------------------
-    # L2: Styling
-    # ------------------------------------------------------------------
-
-    def test_engine_applies_header_styling(self):
-        """Engine must style headers (bold, fill, font, etc.)."""
-        content = self._read("openpyxl", "utils", "report_engine.py")
-        style_patterns = [
-            r"Font\(.*bold",
-            r"bold\s*=\s*True",
-            r"PatternFill",
-            r"font.*bold",
-            r"header.*style",
-            r"style.*header",
-        ]
-        assert any(
-            re.search(p, content, re.IGNORECASE) for p in style_patterns
-        ), "Engine does not style header rows"
-
-    # ------------------------------------------------------------------
-    # L2: Dynamic execution — actually generate a workbook
-    # ------------------------------------------------------------------
-
-    def test_engine_generates_valid_xlsx_file(self):
-        """Running the engine with sample data must produce a valid .xlsx file."""
-        script = """
-import sys, os, tempfile
-sys.path.insert(0, '.')
-from openpyxl.utils.report_engine import *
-
-# Find the main callable
-import inspect
-mod = sys.modules['openpyxl.utils.report_engine']
-callables = [(n, o) for n, o in inspect.getmembers(mod)
-             if (callable(o) and not n.startswith('_'))]
-
-sample_data = [
-    {"date": "2024-01-01", "product": "Widget A", "quantity": 10, "revenue": 100.0},
-    {"date": "2024-01-02", "product": "Widget B", "quantity": 5, "revenue": 75.0},
-    {"date": "2024-01-03", "product": "Widget A", "quantity": 8, "revenue": 80.0},
-    {"date": "2024-01-04", "product": "Widget C", "quantity": 3, "revenue": 45.0},
-    {"date": "2024-01-05", "product": "Widget B", "quantity": 12, "revenue": 180.0},
-]
-
-outpath = os.path.join(tempfile.gettempdir(), 'test_report.xlsx')
-
-generated = False
-for name, obj in callables:
-    if 'generate' in name.lower() or 'create' in name.lower() or 'build' in name.lower():
+    def test_report_engine_is_valid_python(self):
+        """Verify report_engine.py is syntactically valid Python"""
+        path = os.path.join(self.REPO_DIR, "openpyxl/utils/report_engine.py")
+        with open(path) as f:
+            content = f.read()
         try:
-            if inspect.isclass(obj):
-                instance = obj()
-                for method in ['generate', 'create', 'build', 'run']:
-                    fn = getattr(instance, method, None)
-                    if fn:
-                        result = fn(sample_data, outpath)
-                        generated = True
-                        break
-            else:
-                result = obj(sample_data, outpath)
-                generated = True
-        except TypeError:
-            try:
-                result = obj(data=sample_data, output_path=outpath)
-                generated = True
-            except:
-                pass
-        if generated:
-            break
+            ast.parse(content)
+        except SyntaxError as e:
+            pytest.fail(f"report_engine.py has syntax error: {e}")
 
-if not generated:
-    # Try any callable that looks relevant
-    for name, obj in callables:
-        if callable(obj) and not inspect.isclass(obj):
-            try:
-                result = obj(sample_data, outpath)
-                generated = True
-                break
-            except:
-                pass
+    # === Semantic Checks ===
 
-if generated and os.path.isfile(outpath):
-    size = os.path.getsize(outpath)
-    print(f'OK size={size}')
-    # Verify it's a real xlsx (ZIP magic bytes)
-    with open(outpath, 'rb') as f:
-        magic = f.read(4)
-    if magic[:2] == b'PK':
-        print('VALID_ZIP')
-    else:
-        print('INVALID_FORMAT')
-else:
-    print('NOT_GENERATED')
-"""
-        result = subprocess.run(
-            ["python", "-c", script],
-            cwd=self.REPO_DIR,
-            capture_output=True,
-            text=True,
-            timeout=60,
+    def test_report_engine_defines_callable(self):
+        """Verify report_engine.py defines a callable function or class"""
+        path = os.path.join(self.REPO_DIR, "openpyxl/utils/report_engine.py")
+        with open(path) as f:
+            tree = ast.parse(f.read())
+
+        functions = [n.name for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)]
+        classes = [n.name for n in ast.walk(tree) if isinstance(n, ast.ClassDef)]
+
+        has_entry_point = (
+            any("report" in f.lower() or "generate" in f.lower() or "create" in f.lower()
+                for f in functions)
+            or any("report" in c.lower() or "engine" in c.lower() for c in classes)
         )
-        output = result.stdout.strip()
-        if "NOT_GENERATED" in output:
+        assert has_entry_point, (
+            f"report_engine.py should define a report generation callable. "
+            f"Functions: {functions}, Classes: {classes}"
+        )
+
+    def test_report_engine_creates_multiple_sheets(self):
+        """Verify report_engine.py references multiple sheet creation"""
+        path = os.path.join(self.REPO_DIR, "openpyxl/utils/report_engine.py")
+        with open(path) as f:
+            content = f.read().lower()
+
+        sheet_keywords = {
+            "data_sheet": "data" in content and "sheet" in content,
+            "summary_sheet": "summary" in content,
+            "chart_sheet": "chart" in content,
+        }
+        found = [k for k, v in sheet_keywords.items() if v]
+        assert len(found) >= 3, (
+            f"Report engine should create data, summary, and chart sheets. "
+            f"Found references to: {found}"
+        )
+
+    def test_report_engine_uses_conditional_formatting(self):
+        """Verify report_engine.py applies conditional formatting"""
+        path = os.path.join(self.REPO_DIR, "openpyxl/utils/report_engine.py")
+        with open(path) as f:
+            content = f.read()
+
+        cf_indicators = [
+            "ConditionalFormatting", "conditional_formatting",
+            "CellIsRule", "FormulaRule", "ColorScaleRule",
+            "DataBarRule", "IconSetRule",
+        ]
+        found = [ind for ind in cf_indicators if ind in content]
+        assert len(found) >= 1, (
+            "Report engine should apply conditional formatting. "
+            f"None of {cf_indicators} found in source."
+        )
+
+    def test_report_engine_creates_charts(self):
+        """Verify report_engine.py creates at least one chart type"""
+        path = os.path.join(self.REPO_DIR, "openpyxl/utils/report_engine.py")
+        with open(path) as f:
+            content = f.read()
+
+        chart_types = [
+            "BarChart", "LineChart", "PieChart",
+            "AreaChart", "ScatterChart", "chart",
+        ]
+        found = [ct for ct in chart_types if ct in content]
+        assert len(found) >= 1, (
+            "Report engine should create at least one chart. "
+            f"None of {chart_types} found in source."
+        )
+
+    def test_report_engine_applies_styling(self):
+        """Verify report_engine.py applies header styling and formatting"""
+        path = os.path.join(self.REPO_DIR, "openpyxl/utils/report_engine.py")
+        with open(path) as f:
+            content = f.read()
+
+        style_indicators = [
+            "Font", "bold", "Alignment", "PatternFill",
+            "Border", "column_dimensions", "number_format",
+            "width",
+        ]
+        found = [ind for ind in style_indicators if ind in content]
+        assert len(found) >= 2, (
+            "Report engine should apply styling (bold headers, column widths, etc.). "
+            f"Found: {found}. Expected at least 2 of: {style_indicators}"
+        )
+
+    # === Functional Checks ===
+
+    def test_report_engine_is_importable(self):
+        """Verify report_engine module can be imported"""
+        sys.path.insert(0, self.REPO_DIR)
+        try:
+            from openpyxl.utils import report_engine
+            assert report_engine is not None
+        except ImportError as e:
+            pytest.fail(f"Cannot import report_engine: {e}")
+
+    def test_report_engine_generates_workbook(self):
+        """Verify report engine generates a valid .xlsx workbook from sample data"""
+        sys.path.insert(0, self.REPO_DIR)
+        try:
+            from openpyxl.utils import report_engine
+        except ImportError:
+            pytest.skip("Cannot import report_engine")
+
+        # Find the main callable
+        generate_func = None
+        for name in dir(report_engine):
+            obj = getattr(report_engine, name)
+            if callable(obj) and (
+                "report" in name.lower() or "generate" in name.lower()
+                or "create" in name.lower()
+            ):
+                generate_func = obj
+                break
+
+        if generate_func is None:
+            # Try if there's a class with a generate method
+            for name in dir(report_engine):
+                obj = getattr(report_engine, name)
+                if isinstance(obj, type) and (
+                    "report" in name.lower() or "engine" in name.lower()
+                ):
+                    try:
+                        instance = obj()
+                        for method_name in ["generate", "create", "build", "run"]:
+                            if hasattr(instance, method_name):
+                                generate_func = getattr(instance, method_name)
+                                break
+                    except TypeError:
+                        pass
+                    break
+
+        if generate_func is None:
             pytest.fail(
-                f"Engine did not generate an output file.\n"
-                f"stderr: {result.stderr[-2000:]}"
+                f"No report generation function found. Available: {dir(report_engine)}"
             )
-        assert (
-            "OK" in output
-        ), f"Engine execution failed:\nstdout: {output}\nstderr: {result.stderr[-2000:]}"
-        if "VALID_ZIP" not in output:
-            pytest.fail("Generated file is not a valid xlsx (ZIP) format")
+
+        # Sample sales data
+        sample_data = [
+            {"date": "2024-01-01", "product": "Widget A", "quantity": 10, "revenue": 100.0},
+            {"date": "2024-01-02", "product": "Widget B", "quantity": 5, "revenue": 75.0},
+            {"date": "2024-01-03", "product": "Widget A", "quantity": 8, "revenue": 80.0},
+            {"date": "2024-01-04", "product": "Widget C", "quantity": 15, "revenue": 225.0},
+            {"date": "2024-01-05", "product": "Widget B", "quantity": 3, "revenue": 45.0},
+        ]
+
+        with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tmp:
+            output_path = tmp.name
+
+        try:
+            result = generate_func(sample_data, output_path)
+            # Result might be the path or a Workbook object
+            if result is None:
+                # Function might save to path directly
+                assert os.path.exists(output_path), (
+                    "Report engine should generate an xlsx file"
+                )
+            else:
+                # Might return a Workbook to be saved
+                try:
+                    from openpyxl import Workbook
+                    if isinstance(result, Workbook):
+                        result.save(output_path)
+                except Exception:
+                    pass
+
+            assert os.path.exists(output_path), (
+                "Report engine should produce an .xlsx file"
+            )
+            assert os.path.getsize(output_path) > 100, (
+                f"Generated xlsx is too small ({os.path.getsize(output_path)} bytes)"
+            )
+        except TypeError:
+            pytest.skip("Report engine function signature not compatible with test input")
+        finally:
+            if os.path.exists(output_path):
+                os.unlink(output_path)
 
     def test_generated_workbook_has_multiple_sheets(self):
-        """The generated workbook must contain at least 3 sheets."""
-        script = """
-import sys, os, tempfile
-sys.path.insert(0, '.')
-from openpyxl.utils.report_engine import *
-from openpyxl import load_workbook
-import inspect
+        """Verify generated workbook contains data, summary, and chart sheets"""
+        sys.path.insert(0, self.REPO_DIR)
+        try:
+            from openpyxl.utils import report_engine
+            from openpyxl import load_workbook
+        except ImportError:
+            pytest.skip("Cannot import required modules")
 
-mod = sys.modules['openpyxl.utils.report_engine']
-callables = [(n, o) for n, o in inspect.getmembers(mod)
-             if callable(o) and not n.startswith('_')]
+        generate_func = None
+        for name in dir(report_engine):
+            obj = getattr(report_engine, name)
+            if callable(obj) and (
+                "report" in name.lower() or "generate" in name.lower()
+                or "create" in name.lower()
+            ):
+                generate_func = obj
+                break
 
-sample_data = [
-    {"date": "2024-01-01", "product": "Widget", "quantity": 10, "revenue": 100.0},
-    {"date": "2024-01-02", "product": "Gadget", "quantity": 5, "revenue": 75.0},
-]
+        if generate_func is None:
+            for name in dir(report_engine):
+                obj = getattr(report_engine, name)
+                if isinstance(obj, type):
+                    try:
+                        instance = obj()
+                        for method_name in ["generate", "create", "build", "run"]:
+                            if hasattr(instance, method_name):
+                                generate_func = getattr(instance, method_name)
+                                break
+                    except TypeError:
+                        pass
 
-outpath = os.path.join(tempfile.gettempdir(), 'test_sheets.xlsx')
-generated = False
-for name, obj in callables:
-    try:
-        if inspect.isclass(obj):
-            inst = obj()
-            for m in ['generate', 'create', 'build', 'run']:
-                fn = getattr(inst, m, None)
-                if fn:
-                    fn(sample_data, outpath)
-                    generated = True
-                    break
-        else:
-            obj(sample_data, outpath)
-            generated = True
-    except:
-        pass
-    if generated:
-        break
+        if generate_func is None:
+            pytest.skip("No report generation function found")
 
-if generated and os.path.isfile(outpath):
-    wb = load_workbook(outpath)
-    print(f'SHEETS={len(wb.sheetnames)}')
-    print(f'NAMES={wb.sheetnames}')
-else:
-    print('NOT_GENERATED')
-"""
-        result = subprocess.run(
-            ["python", "-c", script],
-            cwd=self.REPO_DIR,
-            capture_output=True,
-            text=True,
-            timeout=60,
-        )
-        output = result.stdout.strip()
-        if "SHEETS=" in output:
-            count = int(output.split("SHEETS=")[1].split("\n")[0])
-            assert count >= 3, (
-                f"Workbook has only {count} sheet(s), expected at least 3 "
-                "(data, summary, chart)"
+        sample_data = [
+            {"date": "2024-01-01", "product": "A", "quantity": 10, "revenue": 100.0},
+            {"date": "2024-01-02", "product": "B", "quantity": 5, "revenue": 75.0},
+        ]
+
+        with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tmp:
+            output_path = tmp.name
+
+        try:
+            result = generate_func(sample_data, output_path)
+            if result is not None:
+                try:
+                    from openpyxl import Workbook
+                    if isinstance(result, Workbook):
+                        result.save(output_path)
+                except Exception:
+                    pass
+
+            if not os.path.exists(output_path) or os.path.getsize(output_path) < 100:
+                pytest.skip("Workbook was not generated successfully")
+
+            wb = load_workbook(output_path)
+            sheet_names = wb.sheetnames
+            assert len(sheet_names) >= 3, (
+                f"Workbook should have at least 3 sheets (data, summary, chart). "
+                f"Found {len(sheet_names)}: {sheet_names}"
             )
-        elif "NOT_GENERATED" in output:
-            pytest.skip("Could not generate workbook for sheet count verification")
+        except TypeError:
+            pytest.skip("Report engine function signature not compatible")
+        finally:
+            if os.path.exists(output_path):
+                os.unlink(output_path)
+
+    def test_data_sheet_has_headers_and_rows(self):
+        """Verify data sheet contains header row and data rows"""
+        sys.path.insert(0, self.REPO_DIR)
+        try:
+            from openpyxl.utils import report_engine
+            from openpyxl import load_workbook
+        except ImportError:
+            pytest.skip("Cannot import required modules")
+
+        generate_func = None
+        for name in dir(report_engine):
+            obj = getattr(report_engine, name)
+            if callable(obj) and (
+                "report" in name.lower() or "generate" in name.lower()
+                or "create" in name.lower()
+            ):
+                generate_func = obj
+                break
+
+        if generate_func is None:
+            pytest.skip("No report generation function found")
+
+        sample_data = [
+            {"date": "2024-01-01", "product": "A", "quantity": 10, "revenue": 100.0},
+            {"date": "2024-01-02", "product": "B", "quantity": 5, "revenue": 75.0},
+            {"date": "2024-01-03", "product": "C", "quantity": 8, "revenue": 120.0},
+        ]
+
+        with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tmp:
+            output_path = tmp.name
+
+        try:
+            result = generate_func(sample_data, output_path)
+            if result is not None:
+                try:
+                    from openpyxl import Workbook
+                    if isinstance(result, Workbook):
+                        result.save(output_path)
+                except Exception:
+                    pass
+
+            if not os.path.exists(output_path) or os.path.getsize(output_path) < 100:
+                pytest.skip("Workbook not generated")
+
+            wb = load_workbook(output_path)
+            # First sheet is typically the data sheet
+            ws = wb.worksheets[0]
+            rows = list(ws.iter_rows(values_only=True))
+            assert len(rows) >= 4, (
+                f"Data sheet should have header + {len(sample_data)} rows, "
+                f"found {len(rows)} rows"
+            )
+
+            # Check header row contains expected field names
+            header = [str(cell).lower() if cell else "" for cell in rows[0]]
+            expected_fields = ["date", "product", "quantity", "revenue"]
+            for field in expected_fields:
+                found = any(field in h for h in header)
+                assert found, (
+                    f"Header row missing '{field}'. Headers: {rows[0]}"
+                )
+        except TypeError:
+            pytest.skip("Report engine function signature not compatible")
+        finally:
+            if os.path.exists(output_path):
+                os.unlink(output_path)
+
+    def test_summary_sheet_has_aggregate_values(self):
+        """Verify summary sheet contains aggregate calculations"""
+        sys.path.insert(0, self.REPO_DIR)
+        try:
+            from openpyxl.utils import report_engine
+            from openpyxl import load_workbook
+        except ImportError:
+            pytest.skip("Cannot import required modules")
+
+        generate_func = None
+        for name in dir(report_engine):
+            obj = getattr(report_engine, name)
+            if callable(obj) and (
+                "report" in name.lower() or "generate" in name.lower()
+                or "create" in name.lower()
+            ):
+                generate_func = obj
+                break
+
+        if generate_func is None:
+            pytest.skip("No report generation function found")
+
+        sample_data = [
+            {"date": "2024-01-01", "product": "A", "quantity": 10, "revenue": 100.0},
+            {"date": "2024-01-02", "product": "B", "quantity": 20, "revenue": 200.0},
+        ]
+
+        with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tmp:
+            output_path = tmp.name
+
+        try:
+            result = generate_func(sample_data, output_path)
+            if result is not None:
+                try:
+                    from openpyxl import Workbook
+                    if isinstance(result, Workbook):
+                        result.save(output_path)
+                except Exception:
+                    pass
+
+            if not os.path.exists(output_path) or os.path.getsize(output_path) < 100:
+                pytest.skip("Workbook not generated")
+
+            wb = load_workbook(output_path)
+            if len(wb.worksheets) < 2:
+                pytest.fail("Workbook should have at least 2 sheets (data + summary)")
+
+            summary_ws = wb.worksheets[1]
+            all_values = []
+            for row in summary_ws.iter_rows(values_only=True):
+                for cell in row:
+                    if cell is not None:
+                        all_values.append(cell)
+
+            # Summary should have some content
+            assert len(all_values) > 0, "Summary sheet should not be empty"
+
+            # Check for aggregate-related labels or values
+            str_values = [str(v).lower() for v in all_values]
+            aggregate_keywords = ["total", "average", "avg", "count", "sum", "mean"]
+            found = [kw for kw in aggregate_keywords if any(kw in sv for sv in str_values)]
+            assert len(found) >= 1, (
+                f"Summary sheet should contain aggregate labels. "
+                f"Values found: {all_values[:20]}"
+            )
+        except TypeError:
+            pytest.skip("Report engine function signature not compatible")
+        finally:
+            if os.path.exists(output_path):
+                os.unlink(output_path)

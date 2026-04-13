@@ -1,179 +1,229 @@
 """
-Test for 'dbt-transformation-patterns' skill — dbt Incremental Merge & Schema Evolution
-Validates that the Agent created incremental_merge.py with merge logic using unique key,
-and schema_evolution.py with on_schema_change handling (ignore, append_new_columns, fail).
-Both must be valid Python.
+Test skill: dbt-transformation-patterns
+Verify that the Agent implements incremental merge materialization for
+dbt core with full-load first run, merge updates, unique key handling,
+schema evolution detection, and error handling.
 """
 
 import os
 import re
+import ast
 import subprocess
-
 import pytest
 
 
 class TestDbtTransformationPatterns:
-    """Verify dbt incremental merge and schema evolution implementations."""
-
     REPO_DIR = "/workspace/dbt-core"
 
-    def _read(self, *parts):
-        fpath = os.path.join(self.REPO_DIR, *parts)
-        assert os.path.isfile(fpath), f"Required file not found: {fpath}"
-        with open(fpath, "r", errors="ignore") as fh:
-            return fh.read()
+    # === File Path Checks ===
 
-    # ------------------------------------------------------------------
-    # L1: File existence
-    # ------------------------------------------------------------------
-
-    def test_incremental_merge_exists(self):
-        """incremental_merge.py must exist."""
-        assert os.path.isfile(
-            os.path.join(
-                self.REPO_DIR, "core", "dbt", "materializations", "incremental_merge.py"
-            )
+    def test_incremental_merge_py_exists(self):
+        """Verify incremental_merge.py exists"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "core", "dbt", "materializations", "incremental_merge.py",
+        )
+        assert os.path.exists(path), (
+            f"incremental_merge.py not found at {path}"
         )
 
-    def test_schema_evolution_exists(self):
-        """schema_evolution.py must exist."""
-        assert os.path.isfile(
-            os.path.join(
-                self.REPO_DIR, "core", "dbt", "materializations", "schema_evolution.py"
-            )
+    def test_schema_evolution_py_exists(self):
+        """Verify schema_evolution.py exists"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "core", "dbt", "materializations", "schema_evolution.py",
+        )
+        assert os.path.exists(path), (
+            f"schema_evolution.py not found at {path}"
         )
 
-    # ------------------------------------------------------------------
-    # L1: Valid Python
-    # ------------------------------------------------------------------
+    # === Semantic Checks ===
+
+    def test_full_table_creation(self):
+        """Verify first-run full table creation logic"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "core", "dbt", "materializations", "incremental_merge.py",
+        )
+        with open(path) as f:
+            content = f.read()
+
+        create_indicators = [
+            "create", "CREATE", "full", "first_run",
+            "table", "TABLE", "exists",
+        ]
+        found = [ind for ind in create_indicators if ind in content]
+        assert len(found) >= 2, (
+            f"Should handle first-run full table creation. Found: {found}"
+        )
+
+    def test_merge_semantics(self):
+        """Verify merge/upsert logic for subsequent runs"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "core", "dbt", "materializations", "incremental_merge.py",
+        )
+        with open(path) as f:
+            content = f.read()
+
+        merge_indicators = [
+            "merge", "MERGE", "upsert", "UPSERT",
+            "insert", "INSERT", "update", "UPDATE",
+            "MATCHED", "matched",
+        ]
+        found = [ind for ind in merge_indicators if ind in content]
+        assert len(found) >= 3, (
+            f"Should implement merge semantics. Found: {found}"
+        )
+
+    def test_unique_key_handling(self):
+        """Verify unique key configuration for merge matching"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "core", "dbt", "materializations", "incremental_merge.py",
+        )
+        with open(path) as f:
+            content = f.read()
+
+        key_indicators = [
+            "unique_key", "unique", "key", "composite",
+            "match", "primary",
+        ]
+        found = [ind for ind in key_indicators if ind in content]
+        assert len(found) >= 2, (
+            f"Should support unique key configuration. Found: {found}"
+        )
+
+    def test_updated_at_column(self):
+        """Verify configurable updated_at column for change detection"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "core", "dbt", "materializations", "incremental_merge.py",
+        )
+        with open(path) as f:
+            content = f.read()
+
+        ts_indicators = [
+            "updated_at", "timestamp", "incremental",
+            "changed", "new_rows", "filter",
+        ]
+        found = [ind for ind in ts_indicators if ind in content]
+        assert len(found) >= 2, (
+            f"Should use updated_at for incremental detection. Found: {found}"
+        )
+
+    def test_schema_evolution_detection(self):
+        """Verify schema evolution detection and on_schema_change config"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "core", "dbt", "materializations", "schema_evolution.py",
+        )
+        with open(path) as f:
+            content = f.read()
+
+        schema_indicators = [
+            "on_schema_change", "schema", "column",
+            "ignore", "append_new_columns", "fail",
+        ]
+        found = [ind for ind in schema_indicators if ind in content]
+        assert len(found) >= 3, (
+            f"Should handle schema evolution. Found: {found}"
+        )
+
+    def test_append_new_columns(self):
+        """Verify append_new_columns alters target table"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "core", "dbt", "materializations", "schema_evolution.py",
+        )
+        with open(path) as f:
+            content = f.read()
+
+        alter_indicators = [
+            "ALTER", "alter", "ADD", "add", "column",
+            "append", "missing",
+        ]
+        found = [ind for ind in alter_indicators if ind in content]
+        assert len(found) >= 2, (
+            f"Should support appending new columns. Found: {found}"
+        )
+
+    def test_missing_unique_key_error(self):
+        """Verify error raised when unique key not specified"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "core", "dbt", "materializations", "incremental_merge.py",
+        )
+        with open(path) as f:
+            content = f.read()
+
+        error_indicators = [
+            "raise", "Error", "error", "required",
+            "must", "missing", "unique_key",
+        ]
+        found = [ind for ind in error_indicators if ind in content]
+        assert len(found) >= 3, (
+            f"Should raise error for missing unique key. Found: {found}"
+        )
+
+    def test_fallback_full_refresh(self):
+        """Verify fallback to full refresh when target table missing"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "core", "dbt", "materializations", "incremental_merge.py",
+        )
+        with open(path) as f:
+            content = f.read()
+
+        fallback_indicators = [
+            "full_refresh", "fallback", "not exist",
+            "dropped", "missing", "create",
+        ]
+        found = [ind for ind in fallback_indicators if ind in content]
+        assert len(found) >= 2, (
+            f"Should fall back to full refresh. Found: {found}"
+        )
+
+    # === Functional Checks ===
 
     def test_incremental_merge_valid_python(self):
-        """incremental_merge.py must be syntactically valid Python."""
-        result = subprocess.run(
-            [
-                "python3",
-                "-m",
-                "py_compile",
-                "core/dbt/materializations/incremental_merge.py",
-            ],
-            cwd=self.REPO_DIR,
-            capture_output=True,
-            text=True,
-            timeout=30,
+        """Verify incremental_merge.py is valid Python"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "core", "dbt", "materializations", "incremental_merge.py",
         )
-        assert result.returncode == 0, f"Syntax error:\n{result.stderr}"
+        with open(path) as f:
+            source = f.read()
+        try:
+            ast.parse(source)
+        except SyntaxError as e:
+            pytest.fail(f"incremental_merge.py has syntax error: {e}")
 
     def test_schema_evolution_valid_python(self):
-        """schema_evolution.py must be syntactically valid Python."""
-        result = subprocess.run(
-            [
-                "python3",
-                "-m",
-                "py_compile",
-                "core/dbt/materializations/schema_evolution.py",
-            ],
-            cwd=self.REPO_DIR,
-            capture_output=True,
-            text=True,
-            timeout=30,
+        """Verify schema_evolution.py is valid Python"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "core", "dbt", "materializations", "schema_evolution.py",
         )
-        assert result.returncode == 0, f"Syntax error:\n{result.stderr}"
+        with open(path) as f:
+            source = f.read()
+        try:
+            ast.parse(source)
+        except SyntaxError as e:
+            pytest.fail(f"schema_evolution.py has syntax error: {e}")
 
-    # ------------------------------------------------------------------
-    # L2: Incremental merge — unique key
-    # ------------------------------------------------------------------
+    def test_callable_definitions(self):
+        """Verify modules define callable functions or classes"""
+        combined = ""
+        for fname in ["incremental_merge.py", "schema_evolution.py"]:
+            path = os.path.join(
+                self.REPO_DIR,
+                "core", "dbt", "materializations", fname,
+            )
+            with open(path) as f:
+                combined += f.read()
 
-    def test_merge_uses_unique_key(self):
-        """incremental_merge.py must implement merge logic with unique_key."""
-        content = self._read("core", "dbt", "materializations", "incremental_merge.py")
-        assert re.search(
-            r"unique_key", content
-        ), "No unique_key reference in incremental_merge.py"
-
-    def test_merge_has_merge_sql(self):
-        """incremental_merge.py must build MERGE or INSERT/UPDATE SQL."""
-        content = self._read("core", "dbt", "materializations", "incremental_merge.py")
-        patterns = [
-            r"MERGE\s+INTO",
-            r"merge",
-            r"INSERT.*ON\s+CONFLICT",
-            r"upsert",
-            r"insert.*update",
-        ]
-        assert any(
-            re.search(p, content, re.IGNORECASE) for p in patterns
-        ), "No MERGE/upsert SQL generation found"
-
-    def test_merge_handles_source_and_target(self):
-        """incremental_merge.py must reference source and target relations."""
-        content = self._read("core", "dbt", "materializations", "incremental_merge.py")
-        has_source = re.search(r"(source|src|tmp|staging)", content, re.IGNORECASE)
-        has_target = re.search(
-            r"(target|dest|destination|existing)", content, re.IGNORECASE
+        defs = re.findall(r"^(?:def |class )\w+", combined, re.MULTILINE)
+        assert len(defs) >= 4, (
+            f"Should define at least 4 functions/classes. Found: {defs}"
         )
-        assert (
-            has_source and has_target
-        ), "Must reference both source and target relations"
-
-    def test_merge_has_function_or_class(self):
-        """incremental_merge.py should define functions or a class."""
-        content = self._read("core", "dbt", "materializations", "incremental_merge.py")
-        assert re.search(
-            r"(def\s+\w+|class\s+\w+)", content
-        ), "No function or class definition found"
-
-    # ------------------------------------------------------------------
-    # L2: Schema evolution — on_schema_change strategies
-    # ------------------------------------------------------------------
-
-    def test_schema_evolution_ignore(self):
-        """schema_evolution.py must handle on_schema_change='ignore'."""
-        content = self._read("core", "dbt", "materializations", "schema_evolution.py")
-        assert re.search(
-            r"ignore", content, re.IGNORECASE
-        ), "Missing 'ignore' schema change strategy"
-
-    def test_schema_evolution_append_new_columns(self):
-        """schema_evolution.py must handle on_schema_change='append_new_columns'."""
-        content = self._read("core", "dbt", "materializations", "schema_evolution.py")
-        assert re.search(
-            r"append_new_columns", content, re.IGNORECASE
-        ), "Missing 'append_new_columns' schema change strategy"
-
-    def test_schema_evolution_fail(self):
-        """schema_evolution.py must handle on_schema_change='fail'."""
-        content = self._read("core", "dbt", "materializations", "schema_evolution.py")
-        assert re.search(
-            r"fail", content, re.IGNORECASE
-        ), "Missing 'fail' schema change strategy"
-
-    def test_schema_evolution_on_schema_change_param(self):
-        """schema_evolution.py must reference on_schema_change parameter."""
-        content = self._read("core", "dbt", "materializations", "schema_evolution.py")
-        assert re.search(
-            r"on_schema_change", content
-        ), "No on_schema_change parameter reference found"
-
-    # ------------------------------------------------------------------
-    # L2: Schema evolution quality
-    # ------------------------------------------------------------------
-
-    def test_schema_evolution_column_handling(self):
-        """Schema evolution should manipulate columns (add/alter/compare)."""
-        content = self._read("core", "dbt", "materializations", "schema_evolution.py")
-        patterns = [
-            r"column",
-            r"ALTER\s+TABLE",
-            r"ADD\s+COLUMN",
-            r"schema.*diff",
-        ]
-        assert any(
-            re.search(p, content, re.IGNORECASE) for p in patterns
-        ), "No column manipulation logic found"
-
-    def test_schema_evolution_has_function_or_class(self):
-        """schema_evolution.py should define functions or a class."""
-        content = self._read("core", "dbt", "materializations", "schema_evolution.py")
-        assert re.search(
-            r"(def\s+\w+|class\s+\w+)", content
-        ), "No function or class definition found"

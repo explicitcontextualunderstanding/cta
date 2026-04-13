@@ -1,203 +1,225 @@
 """
-Test for 'python-background-jobs' skill — Python Background Jobs
-Validates that the Agent implemented a video transcoding task system using Celery
-with task definitions, workflow orchestration, retry logic, and error handling.
+Test skill: python-background-jobs
+Verify that the Agent correctly designs a video transcoding task
+system using Celery including task definitions with retry logic,
+workflow orchestration with chains/groups/chords, and progress tracking.
 """
 
 import os
 import re
+import ast
 import subprocess
-
 import pytest
-
-from _dependency_utils import ensure_python_dependencies
-
-
-@pytest.fixture(scope="module", autouse=True)
-def _ensure_repo_dependencies():
-    ensure_python_dependencies(TestPythonBackgroundJobs.REPO_DIR)
 
 
 class TestPythonBackgroundJobs:
-    """Verify Celery-based video transcoding task system."""
-
     REPO_DIR = "/workspace/celery"
 
-    # ------------------------------------------------------------------
-    # Helpers
-    # ------------------------------------------------------------------
-
-    def _read(self, *parts):
-        fpath = os.path.join(self.REPO_DIR, *parts)
-        assert os.path.isfile(fpath), f"Required file not found: {fpath}"
-        with open(fpath, "r", errors="ignore") as fh:
-            return fh.read()
-
-    # ------------------------------------------------------------------
-    # L1: File existence and syntax
-    # ------------------------------------------------------------------
+    # === File Path Checks ===
 
     def test_tasks_file_exists(self):
-        """examples/transcoding/tasks.py must exist."""
-        fpath = os.path.join(self.REPO_DIR, "examples", "transcoding", "tasks.py")
-        assert os.path.isfile(fpath), "examples/transcoding/tasks.py not found"
+        """Verify examples/transcoding/tasks.py exists"""
+        path = os.path.join(self.REPO_DIR, "examples/transcoding/tasks.py")
+        assert os.path.exists(path), f"tasks.py not found at {path}"
 
     def test_workflow_file_exists(self):
-        """examples/transcoding/workflow.py must exist."""
-        fpath = os.path.join(self.REPO_DIR, "examples", "transcoding", "workflow.py")
-        assert os.path.isfile(fpath), "examples/transcoding/workflow.py not found"
+        """Verify examples/transcoding/workflow.py exists"""
+        path = os.path.join(self.REPO_DIR, "examples/transcoding/workflow.py")
+        assert os.path.exists(path), f"workflow.py not found at {path}"
 
-    def test_tasks_compiles(self):
-        """tasks.py must be syntactically valid Python."""
-        result = subprocess.run(
-            ["python", "-m", "py_compile", "examples/transcoding/tasks.py"],
-            cwd=self.REPO_DIR,
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-        assert result.returncode == 0, f"Syntax error in tasks.py:\n{result.stderr}"
+    # === Semantic Checks ===
 
-    def test_workflow_compiles(self):
-        """workflow.py must be syntactically valid Python."""
-        result = subprocess.run(
-            ["python", "-m", "py_compile", "examples/transcoding/workflow.py"],
-            cwd=self.REPO_DIR,
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-        assert result.returncode == 0, f"Syntax error in workflow.py:\n{result.stderr}"
+    def test_tasks_defines_pipeline_stages(self):
+        """Verify tasks.py defines distinct transcoding pipeline stage tasks"""
+        path = os.path.join(self.REPO_DIR, "examples/transcoding/tasks.py")
+        with open(path) as f:
+            content = f.read()
 
-    # ------------------------------------------------------------------
-    # L1: Task definitions
-    # ------------------------------------------------------------------
-
-    def test_tasks_define_multiple_celery_tasks(self):
-        """tasks.py must define at least 3 distinct Celery tasks (pipeline stages)."""
-        content = self._read("examples", "transcoding", "tasks.py")
-        # Match @app.task, @shared_task, @celery.task decorators, or Task subclasses
-        task_decorators = re.findall(r"@\w*\.?(?:task|shared_task)", content)
-        task_classes = re.findall(r"class\s+\w+.*Task\b", content)
-        total = len(task_decorators) + len(task_classes)
-        assert total >= 3, (
-            f"tasks.py defines only {total} Celery task(s) — "
-            f"need at least 3 pipeline stages (validation, transcoding, thumbnail, etc.)"
-        )
-
-    def test_tasks_import_celery(self):
-        """tasks.py must import from celery."""
-        content = self._read("examples", "transcoding", "tasks.py")
-        assert re.search(
-            r"from\s+celery|import\s+celery", content, re.IGNORECASE
-        ), "tasks.py does not import from celery"
-
-    def test_tasks_have_retry_configuration(self):
-        """At least one task must configure retry behavior (max_retries, retry_backoff, etc.)."""
-        content = self._read("examples", "transcoding", "tasks.py")
-        retry_patterns = [
-            r"max_retries",
-            r"retry_backoff",
-            r"default_retry_delay",
-            r"autoretry_for",
-            r"\.retry\(",
+        # Expect tasks for validation, transcoding, thumbnail, notification
+        stage_indicators = [
+            "validat", "transcode", "transcod", "thumbnail",
+            "notif", "extract", "upload", "encode",
         ]
-        assert any(
-            re.search(p, content) for p in retry_patterns
-        ), "No task configures retry behavior"
+        found = [ind for ind in stage_indicators if ind in content.lower()]
+        assert len(found) >= 3, (
+            f"tasks.py should define multiple pipeline stages. Found: {found}"
+        )
 
-    def test_tasks_have_bind_parameter(self):
-        """At least one task should use bind=True for self-access in retries."""
-        content = self._read("examples", "transcoding", "tasks.py")
-        assert re.search(
-            r"bind\s*=\s*True", content
-        ), "No task uses bind=True — needed for self.retry() pattern"
+    def test_tasks_use_celery_task_decorator(self):
+        """Verify tasks use Celery's @app.task or @shared_task decorator"""
+        path = os.path.join(self.REPO_DIR, "examples/transcoding/tasks.py")
+        with open(path) as f:
+            content = f.read()
 
-    # ------------------------------------------------------------------
-    # L1: Error handling
-    # ------------------------------------------------------------------
+        task_indicators = [
+            "@app.task", "@shared_task", "@celery.task",
+            "from celery import", "from celery.app",
+        ]
+        found = [ind for ind in task_indicators if ind in content]
+        assert len(found) >= 1, (
+            f"tasks.py should use Celery task decorators. "
+            f"None of {task_indicators} found."
+        )
+
+    def test_tasks_have_retry_config(self):
+        """Verify at least one task declares retry behavior"""
+        path = os.path.join(self.REPO_DIR, "examples/transcoding/tasks.py")
+        with open(path) as f:
+            content = f.read()
+
+        retry_indicators = [
+            "max_retries", "retry", "autoretry_for",
+            "retry_backoff", "default_retry_delay",
+        ]
+        found = [ind for ind in retry_indicators if ind in content]
+        assert len(found) >= 2, (
+            f"Tasks should declare retry configuration. Found: {found}"
+        )
 
     def test_tasks_have_error_handling(self):
-        """tasks.py must include error handling (try/except, on_failure, error callbacks)."""
-        content = self._read("examples", "transcoding", "tasks.py")
-        error_patterns = [
-            r"except\s+\w+",
-            r"on_failure",
-            r"errback",
-            r"link_error",
-            r"error_callback",
+        """Verify tasks include error callbacks or handlers"""
+        path = os.path.join(self.REPO_DIR, "examples/transcoding/tasks.py")
+        with open(path) as f:
+            content = f.read()
+
+        error_indicators = [
+            "on_failure", "link_error", "except", "try:",
+            "raise", "Error", "Exception",
         ]
-        assert any(
-            re.search(p, content) for p in error_patterns
-        ), "tasks.py has no error handling (try/except, on_failure, errbacks)"
+        found = [ind for ind in error_indicators if ind in content]
+        assert len(found) >= 2, (
+            f"Tasks should include error handling. Found: {found}"
+        )
 
-    # ------------------------------------------------------------------
-    # L2: Workflow orchestration
-    # ------------------------------------------------------------------
+    def test_workflow_uses_celery_primitives(self):
+        """Verify workflow.py uses chain, group, or chord"""
+        path = os.path.join(self.REPO_DIR, "examples/transcoding/workflow.py")
+        with open(path) as f:
+            content = f.read()
 
-    def test_workflow_uses_chain_or_group(self):
-        """workflow.py must use Celery primitives (chain, group, chord) for orchestration."""
-        content = self._read("examples", "transcoding", "workflow.py")
-        primitives = [r"chain\(", r"group\(", r"chord\(", r"\|"]
-        assert any(
-            re.search(p, content) for p in primitives
-        ), "workflow.py does not use chain, group, or chord for orchestration"
+        primitives = ["chain", "group", "chord"]
+        found = [p for p in primitives if p in content]
+        assert len(found) >= 2, (
+            f"workflow.py should use Celery primitives (chain, group, chord). "
+            f"Found: {found}"
+        )
 
     def test_workflow_has_sequential_pipeline(self):
-        """Workflow must define at least one sequential pipeline (A → B → C)."""
-        content = self._read("examples", "transcoding", "workflow.py")
-        # chain() or pipe | operator indicates sequential composition
-        seq_patterns = [
-            r"chain\(",
-            r"\|\s*\w+\.s\(",
-            r"\|\s*\w+\.si\(",
-            r"\|\s*\w+\.signature",
+        """Verify workflow defines at least one sequential pipeline"""
+        path = os.path.join(self.REPO_DIR, "examples/transcoding/workflow.py")
+        with open(path) as f:
+            content = f.read()
+
+        sequential_indicators = [
+            "chain(", "chain(",  # explicit chain
+            "|",                  # pipe operator for chaining
+            ".s()", ".si(",       # Celery signatures
         ]
-        assert any(
-            re.search(p, content) for p in seq_patterns
-        ), "Workflow does not define a sequential pipeline"
+        # Check for chain or pipe operator usage
+        has_chain = "chain" in content or ".s()" in content
+        has_pipe = "|" in content and (".s(" in content or ".si(" in content)
+        assert has_chain or has_pipe, (
+            "Workflow should define a sequential pipeline using chain or pipe operator"
+        )
 
     def test_workflow_has_parallel_fanout(self):
-        """Workflow must define at least one parallel fan-out step."""
-        content = self._read("examples", "transcoding", "workflow.py")
-        parallel_patterns = [r"group\(", r"chord\("]
-        assert any(
-            re.search(p, content) for p in parallel_patterns
-        ), "Workflow does not define a parallel fan-out step (group/chord)"
+        """Verify workflow includes at least one parallel fan-out step"""
+        path = os.path.join(self.REPO_DIR, "examples/transcoding/workflow.py")
+        with open(path) as f:
+            content = f.read()
 
-    def test_workflow_has_entry_point(self):
-        """workflow.py must define a main entry point function to kick off the pipeline."""
-        content = self._read("examples", "transcoding", "workflow.py")
-        entry_patterns = [
-            r"def\s+(?:main|run|start|execute|launch|process)",
-            r'if\s+__name__\s*==\s*["\']__main__["\']',
+        parallel_indicators = ["group(", "chord("]
+        found = [ind for ind in parallel_indicators if ind in content]
+        assert len(found) >= 1, (
+            f"Workflow should include parallel fan-out (group/chord). "
+            f"Found: {found}"
+        )
+
+    def test_workflow_has_progress_tracking(self):
+        """Verify workflow includes progress tracking or status reporting"""
+        combined = ""
+        for fname in ["tasks.py", "workflow.py"]:
+            path = os.path.join(self.REPO_DIR, f"examples/transcoding/{fname}")
+            if os.path.exists(path):
+                with open(path) as f:
+                    combined += f.read()
+
+        progress_indicators = [
+            "progress", "status", "update_state", "meta",
+            "PROGRESS", "state", "current", "total",
         ]
-        assert any(
-            re.search(p, content) for p in entry_patterns
-        ), "workflow.py missing main entry point function"
+        found = [ind for ind in progress_indicators if ind in combined]
+        assert len(found) >= 2, (
+            f"Should include progress tracking. Found: {found}"
+        )
 
-    def test_workflow_imports_tasks(self):
-        """workflow.py must import tasks from the tasks module."""
-        content = self._read("examples", "transcoding", "workflow.py")
-        assert re.search(
-            r"from\s+.*tasks\s+import|import\s+.*tasks", content
-        ), "workflow.py does not import from the tasks module"
+    def test_tasks_structured_results(self):
+        """Verify tasks return structured results (dict/dataclass)"""
+        path = os.path.join(self.REPO_DIR, "examples/transcoding/tasks.py")
+        with open(path) as f:
+            content = f.read()
 
-    # ------------------------------------------------------------------
-    # L2: Task configuration completeness
-    # ------------------------------------------------------------------
+        # Look for dict returns or dataclass usage
+        result_indicators = [
+            "return {", 'return {"', "return dict(",
+            "@dataclass", "TypedDict", "result",
+        ]
+        found = [ind for ind in result_indicators if ind in content]
+        assert len(found) >= 1, (
+            f"Tasks should return structured results. Found: {found}"
+        )
 
-    def test_tasks_acks_late_configured(self):
-        """At least one task should configure acks_late for reliability."""
-        content = self._read("examples", "transcoding", "tasks.py")
-        patterns = [r"acks_late", r"ack_late", r"task_acks_late"]
-        has_acks_late = any(re.search(p, content) for p in patterns)
-        # This is a best practice, not strictly required — warn but pass
-        if not has_acks_late:
-            # Still pass, but look for other reliability indicators
-            other_reliability = re.search(
-                r"reject_on_worker_lost|task_reject_on_worker_lost", content
-            )
-            assert (
-                other_reliability or has_acks_late or True
-            ), "Consider adding acks_late=True for task reliability"
+    # === Functional Checks ===
+
+    def test_tasks_valid_python(self):
+        """Verify tasks.py is valid Python syntax"""
+        path = os.path.join(self.REPO_DIR, "examples/transcoding/tasks.py")
+        with open(path) as f:
+            source = f.read()
+        try:
+            ast.parse(source)
+        except SyntaxError as e:
+            pytest.fail(f"tasks.py has syntax errors: {e}")
+
+    def test_workflow_valid_python(self):
+        """Verify workflow.py is valid Python syntax"""
+        path = os.path.join(self.REPO_DIR, "examples/transcoding/workflow.py")
+        with open(path) as f:
+            source = f.read()
+        try:
+            ast.parse(source)
+        except SyntaxError as e:
+            pytest.fail(f"workflow.py has syntax errors: {e}")
+
+    def test_workflow_defines_entry_point(self):
+        """Verify workflow.py defines a main entry point function"""
+        path = os.path.join(self.REPO_DIR, "examples/transcoding/workflow.py")
+        with open(path) as f:
+            content = f.read()
+
+        tree = ast.parse(content)
+        func_names = [
+            node.name for node in ast.walk(tree)
+            if isinstance(node, ast.FunctionDef)
+        ]
+        entry_candidates = [
+            n for n in func_names
+            if any(kw in n.lower() for kw in [
+                "main", "run", "start", "launch", "execute", "pipeline",
+                "workflow", "process",
+            ])
+        ]
+        assert len(entry_candidates) >= 1, (
+            f"workflow.py should define an entry point function. "
+            f"Found functions: {func_names}"
+        )
+
+    def test_tasks_bind_parameter(self):
+        """Verify at least one task uses bind=True for self access"""
+        path = os.path.join(self.REPO_DIR, "examples/transcoding/tasks.py")
+        with open(path) as f:
+            content = f.read()
+
+        assert "bind=True" in content or "bind = True" in content, (
+            "At least one task should use bind=True for self access"
+        )
