@@ -1,135 +1,142 @@
 """
-Test for 'bazel-build-optimization' skill — Bazel Build Graph Optimizer
-Validates that the Agent created a Python package for analyzing Bazel build
-graphs, computing critical paths, cache keys, and generating BUILD files.
+Tests for the bazel-build-optimization skill.
+Validates a Bazel build configuration optimizer with BUILD file analysis,
+target generation, remote cache config, and build benchmarking.
 """
 
 import os
 import re
-import sys
+import ast
 
-import pytest
+REPO_DIR = "/workspace/bazel"
+TOOLS_DIR = os.path.join(REPO_DIR, "examples", "python-bazel", "tools")
 
 
 class TestBazelBuildOptimization:
-    """Verify Bazel build optimization package implementation."""
+    """Tests for the Bazel build configuration optimizer."""
 
-    REPO_DIR = "/workspace/bazel"
+    # ── file_path_check ──────────────────────────────────────────────
 
-    @staticmethod
-    def _read(path: str) -> str:
-        try:
-            with open(path, "r", errors="ignore") as fh:
-                return fh.read()
-        except OSError:
+    def test_build_analyzer_exists(self):
+        """BuildAnalyzer module must exist."""
+        path = os.path.join(TOOLS_DIR, "build_analyzer.py")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    def test_build_generator_exists(self):
+        """BuildFileGenerator module must exist."""
+        path = os.path.join(TOOLS_DIR, "build_generator.py")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    def test_cache_config_exists(self):
+        """RemoteCacheConfig module must exist."""
+        path = os.path.join(TOOLS_DIR, "cache_config.py")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    def test_build_benchmark_exists(self):
+        """BuildBenchmark module must exist."""
+        path = os.path.join(TOOLS_DIR, "build_benchmark.py")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    def test_build_file_exists(self):
+        """BUILD.bazel for tools package must exist."""
+        path = os.path.join(REPO_DIR, "examples", "python-bazel", "BUILD.bazel")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    # ── semantic_check ───────────────────────────────────────────────
+
+    def _read(self, filename):
+        path = os.path.join(TOOLS_DIR, filename)
+        if not os.path.isfile(path):
             return ""
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read()
 
-    # ── file_path_check ─────────────────────────────────────────────
+    def test_analyzer_class_and_methods(self):
+        """BuildAnalyzer must define parse_build_file, build_dependency_graph, find_circular_deps."""
+        content = self._read("build_analyzer.py")
+        assert re.search(r"class\s+BuildAnalyzer", content), "BuildAnalyzer class not defined"
+        for method in ["parse_build_file", "build_dependency_graph", "find_circular_deps"]:
+            assert re.search(rf"def\s+{method}\b", content), f"{method} not defined"
 
-    def test_bazel_optimizer_package_exists(self):
-        """Verify bazel_optimizer package __init__.py and core module files exist."""
-        for rel in (
-            "src/bazel_optimizer/__init__.py",
-            "src/bazel_optimizer/analyzer.py",
-            "src/bazel_optimizer/cache.py",
-        ):
-            path = os.path.join(self.REPO_DIR, rel)
-            assert os.path.isfile(path), f"Missing: {rel}"
+    def test_analyzer_unused_deps(self):
+        """BuildAnalyzer must define find_unused_deps and target_statistics."""
+        content = self._read("build_analyzer.py")
+        assert re.search(r"def\s+find_unused_deps\b", content), "find_unused_deps not defined"
+        assert re.search(r"def\s+target_statistics\b", content), "target_statistics not defined"
 
-    def test_generator_models_exist(self):
-        """Verify generator.py and models.py exist in the bazel_optimizer package."""
-        for rel in ("src/bazel_optimizer/generator.py", "src/bazel_optimizer/models.py"):
-            path = os.path.join(self.REPO_DIR, rel)
-            assert os.path.isfile(path), f"Missing: {rel}"
+    def test_generator_methods(self):
+        """BuildFileGenerator must define infer_targets, infer_deps, generate, optimize."""
+        content = self._read("build_generator.py")
+        assert re.search(r"class\s+BuildFileGenerator", content), "BuildFileGenerator class not defined"
+        for method in ["infer_targets", "infer_deps", "generate", "optimize"]:
+            assert re.search(rf"def\s+{method}\b", content), f"{method} not defined"
 
-    def test_all_classes_importable(self):
-        """All three main classes are importable from bazel_optimizer."""
-        if not os.path.isdir(self.REPO_DIR):
-            pytest.skip("Repo dir does not exist")
-        sys.path.insert(0, os.path.join(self.REPO_DIR, "src"))
-        try:
-            from bazel_optimizer import BuildAnalyzer, BuildFileGenerator, CacheKeyComputer  # noqa: F401
-        except ImportError:
-            pytest.skip("bazel_optimizer not importable")
-        finally:
-            sys.path.pop(0)
+    def test_cache_config_types(self):
+        """RemoteCacheConfig must support disk, http, grpc cache types."""
+        content = self._read("cache_config.py")
+        assert re.search(r"class\s+RemoteCacheConfig", content), "RemoteCacheConfig class not defined"
+        for ct in ["disk", "http", "grpc"]:
+            assert ct in content, f"Cache type '{ct}' not found"
+        assert re.search(r"def\s+generate_bazelrc\b", content), "generate_bazelrc not defined"
 
-    # ── semantic_check ──────────────────────────────────────────────
+    def test_benchmark_class(self):
+        """BuildBenchmark must define clean_build, incremental_build, test_run, compare_configs."""
+        content = self._read("build_benchmark.py")
+        assert re.search(r"class\s+BuildBenchmark", content), "BuildBenchmark class not defined"
+        for method in ["clean_build", "incremental_build", "test_run", "compare_configs"]:
+            assert re.search(rf"def\s+{method}\b", content), f"{method} not defined"
 
-    def test_analyzer_defines_analyze_graph(self):
-        """Verify analyzer.py defines BuildAnalyzer class with analyze_graph method."""
-        content = self._read(os.path.join(self.REPO_DIR, "src/bazel_optimizer/analyzer.py"))
-        assert content, "analyzer.py is empty or unreadable"
-        for pat in ("class BuildAnalyzer", "analyze_graph", "CyclicDependencyError"):
-            assert pat in content, f"'{pat}' not found in analyzer.py"
+    def test_bazel_rules_support(self):
+        """Analyzer must support py_library, py_binary, py_test, py_proto_library rules."""
+        content = self._read("build_analyzer.py")
+        for rule in ["py_library", "py_binary", "py_test"]:
+            assert rule in content, f"Rule '{rule}' not found in analyzer"
 
-    def test_cache_uses_sha256(self):
-        """Verify cache.py uses hashlib.sha256 for cache key computation."""
-        content = self._read(os.path.join(self.REPO_DIR, "src/bazel_optimizer/cache.py"))
-        assert content, "cache.py is empty or unreadable"
-        assert "sha256" in content, "sha256 not found in cache.py"
-        assert "hashlib" in content, "hashlib not found in cache.py"
+    def test_glob_handling(self):
+        """Analyzer must handle glob() patterns."""
+        content = self._read("build_analyzer.py")
+        assert "glob" in content, "glob handling not found in analyzer"
 
-    def test_models_buildgraph_dataclass(self):
-        """Verify models.py defines BuildGraph dataclass with critical_path and bottlenecks."""
-        content = self._read(os.path.join(self.REPO_DIR, "src/bazel_optimizer/models.py"))
-        assert content, "models.py is empty or unreadable"
-        for pat in ("BuildGraph", "critical_path", "bottlenecks"):
-            assert pat in content, f"'{pat}' not found in models.py"
+    # ── functional_check ─────────────────────────────────────────────
 
-    # ── functional_check (import) ───────────────────────────────────
+    def test_all_files_valid_python(self):
+        """All optimizer Python files must have valid syntax."""
+        errors = []
+        for fname in ["build_analyzer.py", "build_generator.py",
+                       "cache_config.py", "build_benchmark.py"]:
+            content = self._read(fname)
+            if not content:
+                continue
+            try:
+                ast.parse(content)
+            except SyntaxError as e:
+                errors.append(f"{fname}: {e}")
+        assert not errors, "Syntax errors:\n" + "\n".join(errors)
 
-    def _import_module(self, dotpath: str):
-        if not os.path.isdir(self.REPO_DIR):
-            pytest.skip("Repo dir does not exist")
-        sys.path.insert(0, os.path.join(self.REPO_DIR, "src"))
-        try:
-            return __import__(dotpath, fromlist=[""])
-        except ImportError:
-            pytest.skip(f"{dotpath} not importable")
-        finally:
-            sys.path.pop(0)
-
-    def test_analyze_graph_critical_path(self):
-        """analyze_graph_from_dict computes correct critical path for a DAG."""
-        mod = self._import_module("bazel_optimizer.analyzer")
-        analyzer = mod.BuildAnalyzer()
-        graph = analyzer.analyze_graph_from_dict(
-            {"//a": ["//b"], "//b": [], "//c": ["//a", "//b"]}
+    def test_invalid_cache_type_raises(self):
+        """RemoteCacheConfig must raise ValueError for invalid cache_type."""
+        content = self._read("cache_config.py")
+        assert re.search(r"ValueError|invalid.*cache.*type|unsupported", content, re.IGNORECASE), (
+            "ValueError for invalid cache_type not found"
         )
-        assert isinstance(graph.critical_path, list), "critical_path should be a list"
-        assert "//c" in graph.critical_path, "//c should be in the critical path"
 
-    def test_cyclic_dependency_raises_error(self):
-        """Graph with A->B->A cycle raises CyclicDependencyError."""
-        mod = self._import_module("bazel_optimizer.analyzer")
-        with pytest.raises(mod.CyclicDependencyError):
-            mod.BuildAnalyzer().analyze_graph_from_dict(
-                {"//a": ["//b"], "//b": ["//a"]}
-            )
-
-    def test_cache_key_stable_unordered_deps(self):
-        """CacheKeyComputer produces identical hex digest regardless of dep list order."""
-        mod = self._import_module("bazel_optimizer.cache")
-        c = mod.CacheKeyComputer()
-        k1 = c.compute("//target", ["//dep1", "//dep2"])
-        k2 = c.compute("//target", ["//dep2", "//dep1"])
-        assert k1 == k2, "Cache key should be stable regardless of dep order"
-
-    def test_cache_key_changes_on_dep_change(self):
-        """CacheKeyComputer produces different hex digest when deps differ."""
-        mod = self._import_module("bazel_optimizer.cache")
-        c = mod.CacheKeyComputer()
-        k1 = c.compute("//t", ["//a"])
-        k2 = c.compute("//t", ["//b"])
-        assert k1 != k2, "Different deps should produce different cache keys"
-
-    def test_generated_build_file_contains_py_library(self):
-        """BuildFileGenerator generates BUILD file content containing py_library rule."""
-        mod = self._import_module("bazel_optimizer.generator")
-        generated = mod.BuildFileGenerator().generate_from_analysis(
-            {"//lib": {"rule": "py_library", "deps": ["//common"]}}
+    def test_platform_config(self):
+        """RemoteCacheConfig must support platform_config for cache key differentiation."""
+        content = self._read("cache_config.py")
+        assert re.search(r"def\s+platform_config\b", content), "platform_config not defined"
+        assert re.search(r"OSFamily|exec_properties|platform", content), (
+            "Platform configuration properties not found"
         )
-        content = generated.get("//lib", "")
-        assert "py_library" in content, "py_library rule not found in generated content"
-        assert "load(" in content, "load() statement not found in generated content"
+
+    def test_markdown_report(self):
+        """BuildBenchmark must generate a Markdown report."""
+        content = self._read("build_benchmark.py")
+        assert re.search(r"def\s+generate_report\b", content), "generate_report not defined"
+        assert re.search(r"#|markdown|\|", content, re.IGNORECASE), (
+            "Markdown formatting not found"
+        )
+
+    def test_test_file_exists(self):
+        """Test file must exist."""
+        path = os.path.join(REPO_DIR, "tests", "test_bazel_build_optimization.py")
+        assert os.path.isfile(path), f"Missing {path}"

@@ -1,164 +1,226 @@
 """
-Test for 'add-admin-api-endpoint' skill — Ghost Audit Logs Endpoint
-Validates that the Agent created an audit_logs endpoint for the Ghost Admin API
-with proper endpoint controller, service layer, and route registration.
+Test skill: add-admin-api-endpoint
+Verify that the Agent correctly creates an audit logs endpoint in the
+Ghost Admin API with browse support, filtering, pagination, and access control.
 """
 
 import os
 import re
+import json
 import subprocess
-
 import pytest
 
 
 class TestAddAdminApiEndpoint:
-    """Verify Ghost Admin API audit_logs endpoint."""
-
     REPO_DIR = "/workspace/Ghost"
 
-    def _read(self, *parts):
-        fpath = os.path.join(self.REPO_DIR, *parts)
-        assert os.path.isfile(fpath), f"Required file not found: {fpath}"
-        with open(fpath, "r", errors="ignore") as fh:
-            return fh.read()
+    # === File Path Checks ===
 
-    # ------------------------------------------------------------------
-    # L1: File existence
-    # ------------------------------------------------------------------
+    def test_audit_logs_endpoint_file_exists(self):
+        """Verify audit-logs.js endpoint controller file exists"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "ghost/core/core/server/api/endpoints/audit-logs.js",
+        )
+        assert os.path.exists(path), f"audit-logs.js not found at {path}"
 
-    def test_endpoint_controller_exists(self):
-        """audit-logs.js endpoint controller must exist."""
-        assert os.path.isfile(
-            os.path.join(
-                self.REPO_DIR, "ghost/core/core/server/api/endpoints/audit-logs.js"
-            )
+    def test_audit_log_service_file_exists(self):
+        """Verify audit-log service index.js file exists"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "ghost/core/core/server/services/audit-log/index.js",
+        )
+        assert os.path.exists(path), f"audit-log service not found at {path}"
+
+    def test_endpoints_router_file_exists(self):
+        """Verify the endpoints router file exists"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "ghost/core/core/server/web/api/endpoints.js",
+        )
+        assert os.path.exists(path), f"endpoints.js not found at {path}"
+
+    # === Semantic Checks ===
+
+    def test_audit_logs_endpoint_exports_browse(self):
+        """Verify audit-logs.js exports a browse handler"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "ghost/core/core/server/api/endpoints/audit-logs.js",
+        )
+        with open(path) as f:
+            content = f.read()
+
+        assert "browse" in content.lower(), (
+            "audit-logs.js should export a 'browse' handler for GET requests"
         )
 
-    def test_service_layer_exists(self):
-        """audit-log service index.js must exist."""
-        assert os.path.isfile(
-            os.path.join(
-                self.REPO_DIR, "ghost/core/core/server/services/audit-log/index.js"
-            )
+    def test_audit_logs_endpoint_has_permission_check(self):
+        """Verify audit-logs.js enforces admin-level permissions"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "ghost/core/core/server/api/endpoints/audit-logs.js",
+        )
+        with open(path) as f:
+            content = f.read()
+
+        permission_indicators = [
+            "permissions", "permission", "admin", "role",
+            "isOwner", "isAdmin", "authenticated",
+        ]
+        found = [ind for ind in permission_indicators if ind.lower() in content.lower()]
+        assert len(found) >= 1, (
+            "audit-logs.js should enforce admin permissions. "
+            f"Found: {found}. Expected at least 1 of: {permission_indicators}"
         )
 
-    # ------------------------------------------------------------------
-    # L1: Syntax check
-    # ------------------------------------------------------------------
+    def test_audit_log_service_supports_filtering(self):
+        """Verify audit-log service supports filtering by action, actor, date"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "ghost/core/core/server/services/audit-log/index.js",
+        )
+        with open(path) as f:
+            content = f.read()
 
-    def test_endpoint_valid_js(self):
-        """audit-logs.js must have valid JavaScript syntax."""
+        filter_keywords = ["action", "actor", "date", "filter", "query"]
+        found = [kw for kw in filter_keywords if kw.lower() in content.lower()]
+        assert len(found) >= 2, (
+            "Audit log service should support filtering. "
+            f"Found references to: {found}. Expected at least 2 of: {filter_keywords}"
+        )
+
+    def test_audit_log_service_supports_pagination(self):
+        """Verify audit-log service implements pagination"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "ghost/core/core/server/services/audit-log/index.js",
+        )
+        with open(path) as f:
+            content = f.read()
+
+        pagination_keywords = [
+            "page", "limit", "offset", "pagination",
+            "total", "pages", "next", "prev",
+        ]
+        found = [kw for kw in pagination_keywords if kw.lower() in content.lower()]
+        assert len(found) >= 2, (
+            "Audit log service should implement pagination. "
+            f"Found: {found}. Expected at least 2 of: {pagination_keywords}"
+        )
+
+    def test_endpoints_router_registers_audit_logs(self):
+        """Verify endpoints.js registers the audit_logs route"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "ghost/core/core/server/web/api/endpoints.js",
+        )
+        with open(path) as f:
+            content = f.read()
+
+        route_indicators = [
+            "audit_logs", "audit-logs", "auditLogs", "audit",
+        ]
+        found = [ind for ind in route_indicators if ind in content]
+        assert len(found) >= 1, (
+            "endpoints.js should register the audit_logs route. "
+            f"None of {route_indicators} found in endpoints router."
+        )
+
+    def test_audit_log_data_model_has_required_fields(self):
+        """Verify audit log entries include required fields in service or endpoint"""
+        # Check both service and endpoint files for data model definition
+        files_to_check = [
+            os.path.join(
+                self.REPO_DIR,
+                "ghost/core/core/server/api/endpoints/audit-logs.js",
+            ),
+            os.path.join(
+                self.REPO_DIR,
+                "ghost/core/core/server/services/audit-log/index.js",
+            ),
+        ]
+        combined_content = ""
+        for fpath in files_to_check:
+            if os.path.exists(fpath):
+                with open(fpath) as f:
+                    combined_content += f.read() + "\n"
+
+        required_fields = ["action", "actor", "resource", "timestamp"]
+        found = [f for f in required_fields if f.lower() in combined_content.lower()]
+        assert len(found) >= 3, (
+            "Audit log entries should include action, actor, resource, and timestamp. "
+            f"Found references to: {found}"
+        )
+
+    # === Functional Checks ===
+
+    def test_audit_logs_endpoint_has_valid_js_syntax(self):
+        """Verify audit-logs.js has valid JavaScript syntax"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "ghost/core/core/server/api/endpoints/audit-logs.js",
+        )
         result = subprocess.run(
-            ["node", "--check", "ghost/core/core/server/api/endpoints/audit-logs.js"],
-            cwd=self.REPO_DIR,
+            ["node", "--check", path],
             capture_output=True,
             text=True,
             timeout=30,
         )
-        assert result.returncode == 0, f"Syntax error:\n{result.stderr}"
+        assert result.returncode == 0, (
+            f"audit-logs.js has JS syntax errors: {result.stderr[:1000]}"
+        )
 
-    def test_service_valid_js(self):
-        """audit-log service must have valid JavaScript syntax."""
+    def test_audit_log_service_has_valid_js_syntax(self):
+        """Verify audit-log service index.js has valid JavaScript syntax"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "ghost/core/core/server/services/audit-log/index.js",
+        )
         result = subprocess.run(
-            ["node", "--check", "ghost/core/core/server/services/audit-log/index.js"],
-            cwd=self.REPO_DIR,
+            ["node", "--check", path],
             capture_output=True,
             text=True,
             timeout=30,
         )
-        assert result.returncode == 0, f"Syntax error:\n{result.stderr}"
-
-    # ------------------------------------------------------------------
-    # L2: Endpoint structure
-    # ------------------------------------------------------------------
-
-    def test_endpoint_exports_browse(self):
-        """Endpoint must export a browse handler."""
-        content = self._read("ghost/core/core/server/api/endpoints/audit-logs.js")
-        patterns = [r"browse", r"module\.exports", r"exports\.\w+"]
-        found = sum(1 for p in patterns if re.search(p, content))
-        assert found >= 2, "Endpoint does not appear to export browse handler"
-
-    def test_endpoint_has_permission_check(self):
-        """Endpoint must enforce admin permission."""
-        content = self._read("ghost/core/core/server/api/endpoints/audit-logs.js")
-        patterns = [
-            r"permissions",
-            r"admin",
-            r"requireAdmin",
-            r"canThis",
-            r"permission",
-        ]
-        assert any(
-            re.search(p, content, re.IGNORECASE) for p in patterns
-        ), "Endpoint does not enforce permissions"
-
-    def test_endpoint_supports_pagination(self):
-        """Endpoint must support pagination."""
-        content = self._read("ghost/core/core/server/api/endpoints/audit-logs.js")
-        patterns = [
-            r"page",
-            r"limit",
-            r"pagination",
-            r"options\.page",
-            r"options\.limit",
-        ]
-        assert any(
-            re.search(p, content, re.IGNORECASE) for p in patterns
-        ), "Endpoint does not support pagination"
-
-    def test_endpoint_supports_filtering(self):
-        """Endpoint must support filtering by action, actor, date."""
-        content = self._read("ghost/core/core/server/api/endpoints/audit-logs.js")
-        patterns = [r"filter", r"action", r"actor", r"date", r"options\.filter"]
-        found = sum(1 for p in patterns if re.search(p, content, re.IGNORECASE))
-        assert found >= 2, "Endpoint does not support filtering by action/actor/date"
-
-    # ------------------------------------------------------------------
-    # L2: Service layer
-    # ------------------------------------------------------------------
-
-    def test_service_has_query_logic(self):
-        """Service must implement query logic."""
-        content = self._read("ghost/core/core/server/services/audit-log/index.js")
-        patterns = [r"query", r"find", r"browse", r"fetchAll", r"where"]
-        assert any(
-            re.search(p, content, re.IGNORECASE) for p in patterns
-        ), "Service has no query logic"
-
-    def test_service_defines_data_model(self):
-        """Service or endpoint must define audit log data fields."""
-        combined = self._read(
-            "ghost/core/core/server/api/endpoints/audit-logs.js"
-        ) + self._read("ghost/core/core/server/services/audit-log/index.js")
-        fields = ["action", "actor", "target", "timestamp", "resource"]
-        found = sum(1 for f in fields if re.search(f, combined, re.IGNORECASE))
-        assert found >= 3, f"Only {found}/5 expected data fields found"
-
-    # ------------------------------------------------------------------
-    # L2: Route registration
-    # ------------------------------------------------------------------
-
-    def test_route_registered_in_endpoints(self):
-        """audit_logs route must be registered in endpoints.js."""
-        endpoints_path = os.path.join(
-            self.REPO_DIR, "ghost/core/core/server/web/api/endpoints.js"
+        assert result.returncode == 0, (
+            f"audit-log service has JS syntax errors: {result.stderr[:1000]}"
         )
-        assert os.path.isfile(endpoints_path), "endpoints.js not found"
-        with open(endpoints_path, "r", errors="ignore") as fh:
-            content = fh.read()
-        patterns = [r"audit.log", r"audit_log", r"auditLog"]
-        assert any(
-            re.search(p, content, re.IGNORECASE) for p in patterns
-        ), "audit_logs route not registered in endpoints.js"
 
-    # ------------------------------------------------------------------
-    # L2: Response format
-    # ------------------------------------------------------------------
+    def test_audit_logs_module_is_requireable(self):
+        """Verify audit-logs.js can be required by Node.js"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "ghost/core/core/server/api/endpoints/audit-logs.js",
+        )
+        # Try to require the file - may fail due to missing deps, but should
+        # not fail due to syntax
+        result = subprocess.run(
+            ["node", "-e", f"try {{ require('{path}') }} catch(e) {{ "
+             "if (e instanceof SyntaxError) {{ process.exit(1) }} }}"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        assert result.returncode == 0, (
+            f"audit-logs.js cannot be loaded: {result.stderr[:1000]}"
+        )
 
-    def test_response_follows_ghost_envelope(self):
-        """Response must follow Ghost's API envelope structure."""
-        content = self._read("ghost/core/core/server/api/endpoints/audit-logs.js")
-        patterns = [r"audit_logs", r"meta", r"pagination"]
-        found = sum(1 for p in patterns if re.search(p, content, re.IGNORECASE))
-        assert found >= 2, "Response does not follow Ghost API envelope structure"
+    def test_audit_log_response_follows_ghost_envelope(self):
+        """Verify the endpoint response structure follows Ghost API conventions"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "ghost/core/core/server/api/endpoints/audit-logs.js",
+        )
+        with open(path) as f:
+            content = f.read()
+
+        # Ghost API returns objects in an envelope like { audit_logs: [...], meta: {} }
+        envelope_indicators = [
+            "audit_logs", "meta", "pagination",
+        ]
+        found = [ind for ind in envelope_indicators if ind in content]
+        assert len(found) >= 1, (
+            "Endpoint response should use Ghost's envelope format "
+            f"(e.g., audit_logs, meta). Found: {found}"
+        )

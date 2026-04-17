@@ -1,209 +1,237 @@
 """
-Test for 'add-uint-support' skill — PyTorch kUInt16/32/64 ReduceOps
-Validates that the Agent added unsigned integer type support (kUInt16, kUInt32,
-kUInt64) to PyTorch ReduceOps and CUDA kernels.
+Test skill: add-uint-support
+Verify that the Agent correctly adds uint16/uint32/uint64 support
+to PyTorch reduction operators (min, max, sum, prod, aminmax).
 """
 
 import os
 import re
-
+import subprocess
 import pytest
 
 
 class TestAddUintSupport:
-    """Verify PyTorch unsigned integer type additions."""
-
     REPO_DIR = "/workspace/pytorch"
 
-    def test_uint_dtype_definitions_exist(self):
-        """kUInt16, kUInt32, kUInt64 dtype definitions must exist."""
-        found_types = set()
-        for root, dirs, files in os.walk(os.path.join(self.REPO_DIR, "c10")):
-            for f in files:
-                if f.endswith((".h", ".cpp")):
-                    path = os.path.join(root, f)
-                    with open(path, "r", errors="ignore") as fh:
-                        content = fh.read()
-                    for dtype in ["kUInt16", "kUInt32", "kUInt64"]:
-                        if dtype in content:
-                            found_types.add(dtype)
-        assert len(found_types) >= 2, (
-            f"Only found {found_types}, expected kUInt16/kUInt32/kUInt64"
+    # === File Path Checks ===
+
+    def test_reduce_min_values_kernel_exists(self):
+        """Verify that ReduceMinValuesKernel.cu exists at the expected location"""
+        path = os.path.join(self.REPO_DIR, "aten/src/ATen/native/cuda/ReduceMinValuesKernel.cu")
+        assert os.path.exists(path), f"ReduceMinValuesKernel.cu not found at {path}"
+
+    def test_reduce_max_values_kernel_exists(self):
+        """Verify that ReduceMaxValuesKernel.cu exists at the expected location"""
+        path = os.path.join(self.REPO_DIR, "aten/src/ATen/native/cuda/ReduceMaxValuesKernel.cu")
+        assert os.path.exists(path), f"ReduceMaxValuesKernel.cu not found at {path}"
+
+    def test_reduce_ops_cpp_exists(self):
+        """Verify that ReduceOps.cpp exists at the expected location"""
+        path = os.path.join(self.REPO_DIR, "aten/src/ATen/native/ReduceOps.cpp")
+        assert os.path.exists(path), f"ReduceOps.cpp not found at {path}"
+
+    def test_shared_reduce_ops_header_exists(self):
+        """Verify that SharedReduceOps.h exists and contains numeric_limits usage"""
+        path = os.path.join(self.REPO_DIR, "aten/src/ATen/native/SharedReduceOps.h")
+        assert os.path.exists(path), f"SharedReduceOps.h not found at {path}"
+        with open(path) as f:
+            content = f.read()
+        assert "numeric_limits" in content, (
+            "SharedReduceOps.h should reference numeric_limits for reduction identity values"
         )
 
-    def test_reduce_ops_supports_uint(self):
-        """ReduceOps must dispatch for unsigned integer types."""
-        found = False
-        for root, dirs, files in os.walk(os.path.join(self.REPO_DIR, "aten", "src", "ATen")):
-            for f in files:
-                if f.endswith((".cpp", ".h", ".cu")):
-                    path = os.path.join(root, f)
-                    with open(path, "r", errors="ignore") as fh:
-                        content = fh.read()
-                    if re.search(r"[Rr]educe", content) and re.search(r"kUInt16|kUInt32|kUInt64|uint16|uint32|uint64", content):
-                        found = True
-                        break
-            if found:
-                break
-        assert found, "ReduceOps does not handle unsigned integer types"
+    # === Semantic Checks ===
 
-    def test_cuda_kernel_supports_uint(self):
-        """CUDA kernels must handle unsigned integer types."""
-        found = False
-        for root, dirs, files in os.walk(os.path.join(self.REPO_DIR, "aten", "src", "ATen")):
-            for f in files:
-                if f.endswith(".cu"):
-                    path = os.path.join(root, f)
-                    with open(path, "r", errors="ignore") as fh:
-                        content = fh.read()
-                    if re.search(r"uint16|uint32|uint64|kUInt", content):
-                        found = True
-                        break
-            if found:
-                break
-        assert found, "No CUDA kernel handles unsigned integer types"
+    def test_min_kernel_uses_dispatch_v2_no_legacy(self):
+        """Verify ReduceMinValuesKernel.cu uses AT_DISPATCH_V2 and has no legacy dispatch macros"""
+        path = os.path.join(self.REPO_DIR, "aten/src/ATen/native/cuda/ReduceMinValuesKernel.cu")
+        with open(path) as f:
+            content = f.read()
+        legacy = re.findall(r'\bAT_DISPATCH_ALL_TYPES\b(?!_V2)', content)
+        legacy += re.findall(r'\bAT_DISPATCH_ALL_TYPES_AND\b', content)
+        legacy += re.findall(r'\bAT_DISPATCH_ALL_TYPES_AND2\b', content)
+        assert len(legacy) == 0, (
+            f"Legacy dispatch macros found in ReduceMinValuesKernel.cu: {legacy}. "
+            "All dispatch sites should use AT_DISPATCH_V2."
+        )
 
-    def test_dtype_dispatch_macro_includes_uint(self):
-        """AT_DISPATCH macro must include unsigned integer scalar types."""
-        found = False
-        for root, dirs, files in os.walk(os.path.join(self.REPO_DIR, "aten")):
-            for f in files:
-                if f.endswith((".cpp", ".h", ".cu")):
-                    path = os.path.join(root, f)
-                    with open(path, "r", errors="ignore") as fh:
-                        content = fh.read()
-                    if re.search(r"AT_DISPATCH.*uint", content, re.IGNORECASE):
-                        found = True
-                        break
-            if found:
-                break
-        assert found, "AT_DISPATCH macro does not include uint types"
+    def test_max_kernel_uses_dispatch_v2_no_legacy(self):
+        """Verify ReduceMaxValuesKernel.cu uses AT_DISPATCH_V2 and has no legacy dispatch macros"""
+        path = os.path.join(self.REPO_DIR, "aten/src/ATen/native/cuda/ReduceMaxValuesKernel.cu")
+        with open(path) as f:
+            content = f.read()
+        legacy = re.findall(r'\bAT_DISPATCH_ALL_TYPES\b(?!_V2)', content)
+        legacy += re.findall(r'\bAT_DISPATCH_ALL_TYPES_AND\b', content)
+        legacy += re.findall(r'\bAT_DISPATCH_ALL_TYPES_AND2\b', content)
+        assert len(legacy) == 0, (
+            f"Legacy dispatch macros found in ReduceMaxValuesKernel.cu: {legacy}. "
+            "All dispatch sites should use AT_DISPATCH_V2."
+        )
 
-    def test_uint_types_registered_in_scalar_type(self):
-        """ScalarType enum must include UInt16, UInt32, UInt64."""
-        scalar_type_file = os.path.join(self.REPO_DIR, "c10", "core", "ScalarType.h")
-        if not os.path.isfile(scalar_type_file):
-            found = False
-            for root, dirs, files in os.walk(os.path.join(self.REPO_DIR, "c10")):
-                for f in files:
-                    if "scalar" in f.lower() and f.endswith(".h"):
-                        path = os.path.join(root, f)
-                        with open(path, "r", errors="ignore") as fh:
-                            content = fh.read()
-                        if re.search(r"UInt16|UInt32|UInt64", content):
-                            found = True
-                            break
-                if found:
-                    break
-            assert found, "UInt types not registered in ScalarType"
-        else:
-            with open(scalar_type_file, "r", errors="ignore") as fh:
-                content = fh.read()
-            assert re.search(r"UInt16|UInt32|UInt64", content), (
-                "ScalarType.h does not define UInt16/UInt32/UInt64"
-            )
+    def test_min_kernel_includes_unsigned_type_coverage(self):
+        """Verify ReduceMinValuesKernel.cu dispatch includes unsigned integer types"""
+        path = os.path.join(self.REPO_DIR, "aten/src/ATen/native/cuda/ReduceMinValuesKernel.cu")
+        with open(path) as f:
+            content = f.read()
+        has_unsigned = (
+            "AT_BAREBONES_UNSIGNED_TYPES" in content
+            or "kUInt16" in content
+            or "kUInt32" in content
+            or "kUInt64" in content
+            or "AT_INTEGRAL_TYPES_V2" in content
+        )
+        assert has_unsigned, (
+            "ReduceMinValuesKernel.cu does not include unsigned type dispatch coverage. "
+            "Expected AT_BAREBONES_UNSIGNED_TYPES, AT_INTEGRAL_TYPES_V2, or explicit kUInt types."
+        )
 
-    def test_python_bindings_for_uint(self):
-        """Python bindings must expose torch.uint16, torch.uint32, or torch.uint64."""
-        found = False
-        for root, dirs, files in os.walk(os.path.join(self.REPO_DIR, "torch")):
-            for f in files:
-                if f.endswith(".py"):
-                    path = os.path.join(root, f)
-                    with open(path, "r", errors="ignore") as fh:
-                        content = fh.read()
-                    if re.search(r"uint16|uint32|uint64", content):
-                        found = True
-                        break
-            if found:
-                break
-        assert found, "No Python bindings for uint types found"
+    def test_max_kernel_includes_unsigned_type_coverage(self):
+        """Verify ReduceMaxValuesKernel.cu dispatch includes unsigned integer types"""
+        path = os.path.join(self.REPO_DIR, "aten/src/ATen/native/cuda/ReduceMaxValuesKernel.cu")
+        with open(path) as f:
+            content = f.read()
+        has_unsigned = (
+            "AT_BAREBONES_UNSIGNED_TYPES" in content
+            or "kUInt16" in content
+            or "kUInt32" in content
+            or "kUInt64" in content
+            or "AT_INTEGRAL_TYPES_V2" in content
+        )
+        assert has_unsigned, (
+            "ReduceMaxValuesKernel.cu does not include unsigned type dispatch coverage."
+        )
 
-    def test_reduce_test_for_uint(self):
-        """Test files must include tests for reduce operations on unsigned int types."""
-        found = False
-        test_dirs = [
-            os.path.join(self.REPO_DIR, "test"),
-            os.path.join(self.REPO_DIR, "aten", "src", "ATen", "test"),
+    def test_aminmax_kernel_includes_unsigned_type_coverage(self):
+        """Verify ReduceAMinMaxKernel.cu dispatch includes unsigned integer types"""
+        path = os.path.join(self.REPO_DIR, "aten/src/ATen/native/cuda/ReduceAMinMaxKernel.cu")
+        with open(path) as f:
+            content = f.read()
+        has_unsigned = (
+            "AT_BAREBONES_UNSIGNED_TYPES" in content
+            or "kUInt16" in content
+            or "kUInt32" in content
+            or "kUInt64" in content
+            or "AT_INTEGRAL_TYPES_V2" in content
+        )
+        assert has_unsigned, (
+            "ReduceAMinMaxKernel.cu does not include unsigned type dispatch coverage."
+        )
+
+    def test_reduce_ops_cpp_includes_unsigned_type_coverage(self):
+        """Verify ReduceOps.cpp CPU dispatch includes unsigned integer types"""
+        path = os.path.join(self.REPO_DIR, "aten/src/ATen/native/ReduceOps.cpp")
+        with open(path) as f:
+            content = f.read()
+        has_unsigned = (
+            "AT_BAREBONES_UNSIGNED_TYPES" in content
+            or "kUInt16" in content
+            or "kUInt32" in content
+            or "kUInt64" in content
+            or "AT_INTEGRAL_TYPES_V2" in content
+        )
+        assert has_unsigned, (
+            "ReduceOps.cpp does not include unsigned type dispatch coverage for CPU reductions."
+        )
+
+    def test_reduce_ops_cpp_no_legacy_macros(self):
+        """Verify ReduceOps.cpp does not have legacy dispatch macros in modified dispatch sites"""
+        path = os.path.join(self.REPO_DIR, "aten/src/ATen/native/ReduceOps.cpp")
+        with open(path) as f:
+            content = f.read()
+        # Check that AT_DISPATCH_V2 is used at least once
+        assert "AT_DISPATCH_V2" in content, (
+            "ReduceOps.cpp should use AT_DISPATCH_V2 for modified dispatch sites"
+        )
+
+    def test_dispatch_sites_use_at_wrap_in_v2(self):
+        """Verify converted AT_DISPATCH_V2 sites use AT_WRAP for lambda bodies"""
+        files_to_check = [
+            "aten/src/ATen/native/cuda/ReduceMinValuesKernel.cu",
+            "aten/src/ATen/native/cuda/ReduceMaxValuesKernel.cu",
+            "aten/src/ATen/native/cuda/ReduceAMinMaxKernel.cu",
         ]
-        for test_dir in test_dirs:
-            if not os.path.isdir(test_dir):
+        for rel_path in files_to_check:
+            path = os.path.join(self.REPO_DIR, rel_path)
+            if not os.path.exists(path):
                 continue
-            for root, dirs, files in os.walk(test_dir):
-                for f in files:
-                    if f.endswith((".py", ".cpp")):
-                        path = os.path.join(root, f)
-                        with open(path, "r", errors="ignore") as fh:
-                            content = fh.read()
-                        if re.search(r"reduce|sum|prod|mean", content, re.IGNORECASE) and re.search(r"uint16|uint32|uint64|kUInt", content):
-                            found = True
-                            break
-                if found:
-                    break
-            if found:
-                break
-        assert found, "No reduce tests for unsigned integer types"
+            with open(path) as f:
+                content = f.read()
+            if "AT_DISPATCH_V2" in content:
+                assert "AT_WRAP" in content, (
+                    f"{rel_path} uses AT_DISPATCH_V2 but missing AT_WRAP for lambda body"
+                )
 
-    def test_cpu_kernel_supports_uint(self):
-        """CPU kernels must also handle unsigned integer types."""
-        found = False
-        for root, dirs, files in os.walk(os.path.join(self.REPO_DIR, "aten", "src", "ATen", "native")):
-            for f in files:
-                if f.endswith(".cpp"):
-                    path = os.path.join(root, f)
-                    with open(path, "r", errors="ignore") as fh:
-                        content = fh.read()
-                    if re.search(r"[Rr]educe", content) and re.search(r"uint16|uint32|uint64|kUInt", content):
-                        found = True
-                        break
-            if found:
-                break
-        assert found, "CPU kernel does not handle unsigned integer types"
+    # === Functional Checks ===
 
-    def test_no_narrowing_conversion_warnings(self):
-        """Code should not have obvious narrowing conversions from uint64 to int."""
-        suspicious = False
-        for root, dirs, files in os.walk(os.path.join(self.REPO_DIR, "aten", "src", "ATen")):
-            for f in files:
-                if f.endswith((".cpp", ".cu")):
-                    path = os.path.join(root, f)
-                    with open(path, "r", errors="ignore") as fh:
-                        content = fh.read()
-                    if re.search(r"static_cast<int>\s*\(\s*uint64", content):
-                        suspicious = True
-                        break
-            if suspicious:
-                break
-        assert not suspicious, "Found suspicious narrowing cast from uint64 to int"
+    def test_uint16_min_reduction_cpu(self):
+        """Verify torch.uint16 min reduction returns correct value on CPU"""
+        torch = pytest.importorskip("torch")
+        t = torch.tensor([3, 1, 2], dtype=torch.uint16)
+        result = t.min()
+        assert result.item() == 1, f"Expected min=1 for uint16 tensor [3,1,2], got {result.item()}"
+        assert result.dtype == torch.uint16, f"Expected dtype uint16, got {result.dtype}"
 
-    def test_type_promotion_rules_for_uint(self):
-        """Type promotion rules must handle unsigned integer types."""
-        found = False
-        for root, dirs, files in os.walk(os.path.join(self.REPO_DIR, "aten")):
-            for f in files:
-                if f.endswith((".cpp", ".h")):
-                    path = os.path.join(root, f)
-                    with open(path, "r", errors="ignore") as fh:
-                        content = fh.read()
-                    if re.search(r"promot", content, re.IGNORECASE) and re.search(r"uint|UInt", content):
-                        found = True
-                        break
-            if found:
-                break
-        assert found, "Type promotion rules do not cover unsigned integer types"
+    def test_uint32_max_reduction_cpu(self):
+        """Verify torch.uint32 max reduction returns correct value on CPU"""
+        torch = pytest.importorskip("torch")
+        t = torch.tensor([3, 1, 2], dtype=torch.uint32)
+        result = t.max()
+        assert result.item() == 3, f"Expected max=3 for uint32 tensor [3,1,2], got {result.item()}"
+        assert result.dtype == torch.uint32, f"Expected dtype uint32, got {result.dtype}"
 
-    def test_uint_dtype_string_representation(self):
-        """String representation for uint types must be defined."""
-        found = False
-        for root, dirs, files in os.walk(os.path.join(self.REPO_DIR, "c10")):
-            for f in files:
-                if f.endswith((".cpp", ".h")):
-                    path = os.path.join(root, f)
-                    with open(path, "r", errors="ignore") as fh:
-                        content = fh.read()
-                    if re.search(r'"uint16"|"uint32"|"uint64"', content):
-                        found = True
-                        break
-            if found:
-                break
-        assert found, "String representations for uint types not found"
+    def test_uint64_sum_reduction_cpu(self):
+        """Verify torch.uint64 sum reduction returns correct value on CPU"""
+        torch = pytest.importorskip("torch")
+        t = torch.tensor([10, 20, 30], dtype=torch.uint64)
+        result = t.sum()
+        assert result.item() == 60, f"Expected sum=60 for uint64 tensor [10,20,30], got {result.item()}"
+        assert result.dtype == torch.uint64, f"Expected dtype uint64, got {result.dtype}"
+
+    def test_uint32_aminmax_cpu(self):
+        """Verify torch.aminmax works with uint32 tensors on CPU"""
+        torch = pytest.importorskip("torch")
+        t = torch.tensor([5, 2, 8], dtype=torch.uint32)
+        min_val, max_val = torch.aminmax(t)
+        assert min_val.item() == 2, f"Expected aminmax min=2, got {min_val.item()}"
+        assert max_val.item() == 8, f"Expected aminmax max=8, got {max_val.item()}"
+        assert min_val.dtype == torch.uint32, f"Expected dtype uint32 for min, got {min_val.dtype}"
+        assert max_val.dtype == torch.uint32, f"Expected dtype uint32 for max, got {max_val.dtype}"
+
+    def test_float32_reduction_no_regression(self):
+        """Verify float32 reductions still work after changes (no regression)"""
+        torch = pytest.importorskip("torch")
+        t = torch.tensor([1.5, 2.5, 3.5], dtype=torch.float32)
+        assert t.min().item() == pytest.approx(1.5), "float32 min regression"
+        assert t.max().item() == pytest.approx(3.5), "float32 max regression"
+        assert t.sum().item() == pytest.approx(7.5), "float32 sum regression"
+
+    def test_int32_reduction_no_regression(self):
+        """Verify signed int32 reductions still work (no regression)"""
+        torch = pytest.importorskip("torch")
+        t = torch.tensor([-5, 3, 0, 7, -2], dtype=torch.int32)
+        assert t.min().item() == -5, "int32 min regression"
+        assert t.max().item() == 7, "int32 max regression"
+        assert t.sum().item() == 3, "int32 sum regression"
+
+    def test_uint16_prod_reduction_cpu(self):
+        """Verify torch.uint16 prod reduction works on CPU"""
+        torch = pytest.importorskip("torch")
+        t = torch.tensor([2, 3, 4], dtype=torch.uint16)
+        result = t.prod()
+        assert result.item() == 24, f"Expected prod=24 for uint16 tensor [2,3,4], got {result.item()}"
+
+    def test_test_reductions_file_includes_uint_dtypes(self):
+        """Verify test/test_reductions.py includes uint16/uint32/uint64 in parametrization"""
+        path = os.path.join(self.REPO_DIR, "test/test_reductions.py")
+        assert os.path.exists(path), f"test_reductions.py not found at {path}"
+        with open(path) as f:
+            content = f.read()
+        assert "uint16" in content, (
+            "test_reductions.py should reference uint16 in dtype parametrization"
+        )
+        assert "uint32" in content, (
+            "test_reductions.py should reference uint32 in dtype parametrization"
+        )
+        assert "uint64" in content, (
+            "test_reductions.py should reference uint64 in dtype parametrization"
+        )

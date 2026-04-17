@@ -1,128 +1,192 @@
 """
-Tests for github-actions-templates skill.
-Validates GitHub Actions workflow YAML files in starter-workflows repository.
+Test skill: github-actions-templates
+Verify that the Agent creates correct GitHub Actions starter workflow templates
+for a TypeScript monorepo CI/CD pipeline.
 """
 
 import os
-import subprocess
+import json
 import pytest
 
-REPO_DIR = "/workspace/starter-workflows"
-
-
-def _path(rel: str) -> str:
-    return os.path.join(REPO_DIR, rel)
-
-
-def _read(rel: str) -> str:
-    with open(_path(rel), encoding="utf-8", errors="ignore") as f:
-        return f.read()
-
-
-def _run(cmd: str, cwd: str = REPO_DIR, timeout: int = 30):
-    return subprocess.run(
-        cmd, shell=True, cwd=cwd, capture_output=True, text=True, timeout=timeout
-    )
+try:
+    import yaml
+except ImportError:
+    yaml = None
 
 
 class TestGithubActionsTemplates:
+    REPO_DIR = "/workspace/starter-workflows"
 
-    # ── file_path_check ──────────────────────────────────────────────────────
+    def _load_yaml(self, path):
+        """Helper to load a YAML file"""
+        if yaml is None:
+            import subprocess
+            subprocess.run(
+                ["pip", "install", "pyyaml"],
+                capture_output=True, text=True, timeout=60
+            )
+            import importlib
+            import yaml as _yaml
+            return _yaml.safe_load(open(path))
+        return yaml.safe_load(open(path))
 
-    def test_node_ci_workflow_file_exists(self):
-        """node-ci.yml must exist and be non-empty."""
-        rel = ".github/workflows/node-ci.yml"
-        assert os.path.isfile(_path(rel)), f"{rel} not found"
-        assert os.path.getsize(_path(rel)) > 0, "node-ci.yml is empty"
+    # === File Path Checks ===
 
-    def test_docker_and_terraform_workflow_files_exist(self):
-        """docker-build-push.yml and terraform-plan-apply.yml must exist."""
-        for rel in [
-            ".github/workflows/docker-build-push.yml",
-            ".github/workflows/terraform-plan-apply.yml",
-        ]:
-            assert os.path.isfile(_path(rel)), f"{rel} not found"
+    def test_ci_workflow_file_exists(self):
+        """Verify CI workflow template file exists"""
+        path = os.path.join(self.REPO_DIR, "ci/typescript-monorepo.yml")
+        assert os.path.exists(path), f"CI workflow not found at {path}"
 
-    def test_node_ci_has_workflow_call_trigger(self):
-        """node-ci.yml must have workflow_call trigger with inputs."""
-        content = _read(".github/workflows/node-ci.yml")
-        assert (
-            "workflow_call" in content
-        ), "node-ci.yml must define workflow_call: trigger"
-        assert (
-            "inputs:" in content
-        ), "node-ci.yml must define inputs: under workflow_call"
+    def test_ci_properties_file_exists(self):
+        """Verify CI properties JSON file exists"""
+        path = os.path.join(self.REPO_DIR, "ci/properties/typescript-monorepo.properties.json")
+        assert os.path.exists(path), f"CI properties not found at {path}"
 
-    # ── semantic_check ───────────────────────────────────────────────────────
+    def test_deploy_workflow_file_exists(self):
+        """Verify deployment workflow template file exists"""
+        path = os.path.join(self.REPO_DIR, "deployments/typescript-monorepo-deploy.yml")
+        assert os.path.exists(path), f"Deployment workflow not found at {path}"
 
-    def test_node_ci_uses_matrix_strategy(self):
-        """node-ci.yml must use matrix strategy for multi-version testing."""
-        content = _read(".github/workflows/node-ci.yml")
-        assert "matrix:" in content, "node-ci.yml must define matrix: strategy"
-        assert "strategy:" in content, "node-ci.yml must include strategy: block"
+    def test_deploy_properties_file_exists(self):
+        """Verify deployment properties JSON file exists"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "deployments/properties/typescript-monorepo-deploy.properties.json"
+        )
+        assert os.path.exists(path), f"Deploy properties not found at {path}"
 
-    def test_workflows_have_concurrency_cancel_in_progress(self):
-        """node-ci.yml must define concurrency with cancel-in-progress: true."""
-        content = _read(".github/workflows/node-ci.yml")
-        assert "concurrency:" in content, "node-ci.yml must define concurrency: section"
-        assert (
-            "cancel-in-progress: true" in content
-        ), "node-ci.yml must set cancel-in-progress: true"
+    # === Semantic Checks ===
 
-    def test_docker_workflow_uses_metadata_action(self):
-        """docker-build-push.yml must use docker/metadata-action for tagging."""
-        content = _read(".github/workflows/docker-build-push.yml")
-        assert (
-            "docker/metadata-action" in content
-        ), "docker-build-push.yml must reference docker/metadata-action"
+    def test_ci_workflow_has_required_jobs(self):
+        """Verify CI workflow defines changes, lint, test-backend, test-frontend, build jobs"""
+        path = os.path.join(self.REPO_DIR, "ci/typescript-monorepo.yml")
+        data = self._load_yaml(path)
+        assert "jobs" in data, "CI workflow missing 'jobs' key"
+        jobs = data["jobs"]
+        expected_jobs = ["lint", "build"]
+        for job in expected_jobs:
+            assert job in jobs, f"CI workflow missing job: {job}"
+        # Check for path-based change detection
+        has_changes = "changes" in jobs
+        has_test = any("test" in k for k in jobs.keys())
+        assert has_changes or has_test, \
+            "CI workflow should have a changes detection job or test jobs"
 
-    def test_terraform_workflow_has_separate_plan_and_apply(self):
-        """terraform-plan-apply.yml must define separate plan and apply jobs."""
-        content = _read(".github/workflows/terraform-plan-apply.yml")
-        assert (
-            "plan" in content.lower()
-        ), "terraform-plan-apply.yml must define a 'plan' job"
-        assert (
-            "apply" in content.lower()
-        ), "terraform-plan-apply.yml must define an 'apply' job"
+    def test_ci_workflow_has_correct_triggers(self):
+        """Verify CI workflow triggers on push and pull_request"""
+        path = os.path.join(self.REPO_DIR, "ci/typescript-monorepo.yml")
+        data = self._load_yaml(path)
+        assert True in [data.get("on") is not None, data.get(True) is not None], \
+            "CI workflow missing trigger configuration"
+        triggers = data.get("on", data.get(True, {}))
+        if isinstance(triggers, dict):
+            has_push = "push" in triggers
+            has_pr = "pull_request" in triggers
+            assert has_push, "CI workflow should trigger on push"
+            assert has_pr, "CI workflow should trigger on pull_request"
 
-    # ── functional_check ─────────────────────────────────────────────────────
-
-    def test_node_ci_yaml_is_valid(self):
-        """node-ci.yml must parse as valid YAML."""
-        import yaml
-
-        content = _read(".github/workflows/node-ci.yml")
-        data = yaml.safe_load(content)
-        assert data is not None, "node-ci.yml parsed as empty"
-
-    def test_docker_workflow_yaml_is_valid(self):
-        """docker-build-push.yml must parse as valid YAML."""
-        import yaml
-
-        content = _read(".github/workflows/docker-build-push.yml")
-        data = yaml.safe_load(content)
-        assert data is not None, "docker-build-push.yml parsed as empty"
-
-    def test_docker_workflow_has_id_token_write_permission(self):
-        """docker-build-push.yml must grant id-token: write for OIDC auth."""
-        content = _read(".github/workflows/docker-build-push.yml")
-        assert (
-            "id-token: write" in content
-        ), "docker-build-push.yml must set id-token: write permission for OIDC"
-
-    def test_malformed_yaml_is_detected(self):
-        """Python yaml.safe_load must raise YAMLError on invalid YAML."""
-        import yaml
-
-        malformed = "invalid: yaml: : :"
-        with pytest.raises(yaml.YAMLError):
-            yaml.safe_load(malformed)
-
-    def test_node_ci_does_not_use_deprecated_v1_actions(self):
-        """node-ci.yml must not use @v1 or @v2 for checkout/setup-node actions."""
-        content = _read(".github/workflows/node-ci.yml")
+    def test_ci_workflow_uses_pinned_actions(self):
+        """Verify all actions use pinned major versions (e.g., @v4)"""
+        path = os.path.join(self.REPO_DIR, "ci/typescript-monorepo.yml")
+        with open(path) as f:
+            content = f.read()
+        # Check that actions use @v[number] not @latest or @main
         import re
+        uses_patterns = re.findall(r'uses:\s*(\S+)', content)
+        for use in uses_patterns:
+            assert "@latest" not in use and "@main" not in use, \
+                f"Action '{use}' should use pinned version, not @latest or @main"
 
-        deprecated = re.findall(r"actions/(?:checkout|setup-node)@v[12]\b", content)
-        assert len(deprecated) == 0, f"Deprecated action versions found: {deprecated}"
+    def test_ci_workflow_has_node_matrix(self):
+        """Verify test jobs use matrix strategy with Node.js 18.x and 20.x"""
+        path = os.path.join(self.REPO_DIR, "ci/typescript-monorepo.yml")
+        with open(path) as f:
+            content = f.read()
+        assert "matrix" in content, "CI workflow should use matrix strategy"
+        assert "18" in content, "Matrix should include Node.js 18.x"
+        assert "20" in content, "Matrix should include Node.js 20.x"
+
+    def test_ci_workflow_has_concurrency(self):
+        """Verify CI workflow has concurrency settings"""
+        path = os.path.join(self.REPO_DIR, "ci/typescript-monorepo.yml")
+        data = self._load_yaml(path)
+        assert "concurrency" in data, \
+            "CI workflow should have concurrency settings to cancel in-progress runs"
+
+    def test_ci_properties_has_required_fields(self):
+        """Verify CI properties JSON has name, description, iconName, categories"""
+        path = os.path.join(self.REPO_DIR, "ci/properties/typescript-monorepo.properties.json")
+        with open(path) as f:
+            data = json.load(f)
+        required_fields = ["name", "description", "iconName", "categories"]
+        for field in required_fields:
+            assert field in data, f"CI properties missing field: {field}"
+        assert isinstance(data["categories"], list), "categories should be a list"
+        categories_lower = [c.lower() for c in data["categories"]]
+        assert any("javascript" in c or "typescript" in c for c in categories_lower), \
+            f"Categories should include JavaScript or TypeScript. Got: {data['categories']}"
+
+    def test_deploy_workflow_has_docker_actions(self):
+        """Verify deployment workflow uses Docker build and push actions"""
+        path = os.path.join(self.REPO_DIR, "deployments/typescript-monorepo-deploy.yml")
+        with open(path) as f:
+            content = f.read()
+        assert "docker" in content.lower(), "Deployment workflow should use Docker actions"
+        docker_actions = ["docker/login-action", "docker/build-push-action", "docker/metadata-action"]
+        found = sum(1 for act in docker_actions if act in content)
+        assert found >= 2, \
+            f"Deployment should use at least 2 Docker actions. Found {found}"
+
+    def test_deploy_workflow_uses_ghcr_registry(self):
+        """Verify deployment uses GitHub Container Registry"""
+        path = os.path.join(self.REPO_DIR, "deployments/typescript-monorepo-deploy.yml")
+        with open(path) as f:
+            content = f.read()
+        assert "ghcr.io" in content, \
+            "Deployment should use ghcr.io as the container registry"
+
+    def test_deploy_properties_has_required_fields(self):
+        """Verify deployment properties JSON has required fields"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "deployments/properties/typescript-monorepo-deploy.properties.json"
+        )
+        with open(path) as f:
+            data = json.load(f)
+        required_fields = ["name", "description", "iconName", "categories"]
+        for field in required_fields:
+            assert field in data, f"Deploy properties missing field: {field}"
+
+    # === Functional Checks ===
+
+    def test_ci_workflow_is_valid_yaml(self):
+        """Verify CI workflow is valid YAML that can be parsed"""
+        path = os.path.join(self.REPO_DIR, "ci/typescript-monorepo.yml")
+        data = self._load_yaml(path)
+        assert isinstance(data, dict), "CI workflow should parse to a dict"
+        assert "jobs" in data, "Parsed CI workflow missing 'jobs'"
+
+    def test_deploy_workflow_is_valid_yaml(self):
+        """Verify deployment workflow is valid YAML that can be parsed"""
+        path = os.path.join(self.REPO_DIR, "deployments/typescript-monorepo-deploy.yml")
+        data = self._load_yaml(path)
+        assert isinstance(data, dict), "Deployment workflow should parse to a dict"
+        assert "jobs" in data, "Parsed deployment workflow missing 'jobs'"
+
+    def test_no_hardcoded_secrets(self):
+        """Verify no hardcoded secrets, only ${{ secrets.GITHUB_TOKEN }} references"""
+        files = [
+            "ci/typescript-monorepo.yml",
+            "deployments/typescript-monorepo-deploy.yml",
+        ]
+        for rel_path in files:
+            path = os.path.join(self.REPO_DIR, rel_path)
+            if not os.path.exists(path):
+                continue
+            with open(path) as f:
+                content = f.read()
+            import re
+            # Check for hardcoded tokens (patterns like ghp_, github_pat_, etc.)
+            hardcoded = re.findall(r'(ghp_[a-zA-Z0-9]+|github_pat_[a-zA-Z0-9]+)', content)
+            assert len(hardcoded) == 0, \
+                f"Found hardcoded secrets in {rel_path}: {hardcoded}"

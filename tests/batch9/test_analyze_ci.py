@@ -1,163 +1,166 @@
 """
-Test for 'analyze-ci' skill — CI Pipeline Analysis Tool
-Validates CIPipelineParser, DependencyValidator, BottleneckAnalyzer,
-PipelineGraph, custom exceptions, critical path, and edge cases.
+Test skill: analyze-ci
+Verify that the Agent creates a CI failure analyzer for Sentry with log parser,
+failure classifier, GitHub API client, and Markdown report generator.
 """
 
 import os
-import sys
-
+import subprocess
+import ast
+import re
 import pytest
 
 
 class TestAnalyzeCi:
-    """Verify CI analysis tool: parser, validator, analyzer, graph."""
-
     REPO_DIR = "/workspace/sentry"
 
-    # ── helpers ──────────────────────────────────────────────────────────
+    # === File Path Checks ===
 
-    @staticmethod
-    def _read_file(path: str) -> str:
-        try:
-            with open(path, "r", errors="ignore") as fh:
-                return fh.read()
-        except OSError:
-            return ""
+    def test_ci_analyzer_files_exist(self):
+        """Verify CI analyzer files exist"""
+        found = False
+        for root, dirs, files in os.walk(self.REPO_DIR):
+            if ".git" in root or "node_modules" in root:
+                continue
+            for f in files:
+                if f.endswith(".py") and ("ci" in f.lower() or "analyzer" in f.lower() or "failure" in f.lower()):
+                    fpath = os.path.join(root, f)
+                    with open(fpath) as fh:
+                        content = fh.read()
+                    if "parser" in content.lower() or "classifier" in content.lower() or "analyze" in content.lower():
+                        found = True
+                        break
+            if found:
+                break
+        assert found, "CI analyzer files not found"
 
-    def _ci(self, *parts) -> str:
-        return os.path.join(self.REPO_DIR, "examples", "analyze_ci", *parts)
+    # === Semantic Checks ===
 
-    # ── file_path_check ──────────────────────────────────────────────────
+    def test_log_parser_defined(self):
+        """Verify log parser is implemented"""
+        content = self._find_content()
+        content_lower = content.lower()
+        has_parser = "parser" in content_lower and ("log" in content_lower or "parse" in content_lower)
+        assert has_parser, "Log parser not found"
 
-    def test_package_init_exists(self):
-        """analyze_ci __init__.py must exist."""
-        assert os.path.isfile(self._ci("__init__.py")), "__init__.py not found"
+    def test_failure_classifier_defined(self):
+        """Verify failure classifier is implemented with 7 failure types"""
+        content = self._find_content()
+        content_lower = content.lower()
+        has_classifier = "classif" in content_lower or "categoriz" in content_lower
+        assert has_classifier, "Failure classifier not found"
 
-    def test_all_module_files_exist(self):
-        """parser.py, validator.py, analyzer.py, graph.py must exist."""
-        for name in ("parser.py", "validator.py", "analyzer.py", "graph.py"):
-            assert os.path.isfile(self._ci(name)), f"{name} not found"
+    def test_failure_types_defined(self):
+        """Verify multiple failure type categories are defined"""
+        content = self._find_content()
+        content_lower = content.lower()
+        failure_types = ["flaky", "timeout", "dependency", "infrastructure", "test", "build", "configuration"]
+        found = [ft for ft in failure_types if ft in content_lower]
+        assert len(found) >= 4, (
+            f"Expected at least 4 failure types, found {len(found)}: {found}"
+        )
 
-    def test_test_file_exists(self):
-        """tests/test_analyze_ci.py must exist."""
-        path = os.path.join(self.REPO_DIR, "tests", "test_analyze_ci.py")
-        assert os.path.isfile(path), f"{path} not found"
+    def test_github_api_client_defined(self):
+        """Verify GitHub API client is implemented"""
+        content = self._find_content()
+        has_github = (
+            "github" in content.lower()
+            or "GitHubClient" in content
+            or "github_api" in content.lower()
+            or "requests" in content
+        )
+        assert has_github, "GitHub API client not found"
 
-    # ── semantic_check ───────────────────────────────────────────────────
+    def test_markdown_report_generator_defined(self):
+        """Verify Markdown report generator is implemented"""
+        content = self._find_content()
+        content_lower = content.lower()
+        has_report = (
+            "markdown" in content_lower
+            or "report" in content_lower
+            or "render" in content_lower
+        )
+        assert has_report, "Markdown report generator not found"
 
-    def test_parser_has_github_and_gitlab_methods(self):
-        """CIPipelineParser must define parse_github_actions and parse_gitlab_ci."""
-        content = self._read_file(self._ci("parser.py"))
-        if not content:
-            pytest.skip("parser.py not found")
-        assert "CIPipelineParser" in content
-        assert "parse_github_actions" in content
-        assert "parse_gitlab_ci" in content
+    # === Functional Checks ===
 
-    def test_validator_defines_custom_exceptions(self):
-        """DependencyValidator must define CyclicDependencyError and UndefinedJobError."""
-        content = self._read_file(self._ci("validator.py"))
-        if not content:
-            pytest.skip("validator.py not found")
-        assert "CyclicDependencyError" in content
-        assert "UndefinedJobError" in content
-        assert "DependencyValidator" in content
+    def test_analyzer_files_parse(self):
+        """Verify all CI analyzer files have valid Python syntax"""
+        for root, dirs, files in os.walk(self.REPO_DIR):
+            if ".git" in root or "node_modules" in root:
+                continue
+            for f in files:
+                if f.endswith(".py") and ("ci" in f.lower() or "analyzer" in f.lower() or "failure" in f.lower()):
+                    fpath = os.path.join(root, f)
+                    with open(fpath) as fh:
+                        source = fh.read()
+                    if "parser" in source.lower() or "classifier" in source.lower():
+                        try:
+                            ast.parse(source)
+                        except SyntaxError as e:
+                            pytest.fail(f"Syntax error in {fpath}: {e}")
 
-    def test_analyzer_critical_path_returns_list(self):
-        """BottleneckAnalyzer.critical_path must return ordered list."""
-        content = self._read_file(self._ci("analyzer.py"))
-        if not content:
-            pytest.skip("analyzer.py not found")
-        assert "BottleneckAnalyzer" in content
-        assert "critical_path" in content
+    def test_analyzer_module_importable(self):
+        """Verify analyzer module can be parsed"""
+        analyzer_file = None
+        for root, dirs, files in os.walk(self.REPO_DIR):
+            if ".git" in root:
+                continue
+            for f in files:
+                if f.endswith(".py") and ("analyzer" in f.lower() or "ci_failure" in f.lower()):
+                    analyzer_file = os.path.join(root, f)
+                    break
+            if analyzer_file:
+                break
+        if analyzer_file is None:
+            pytest.skip("Analyzer module not found")
+        result = subprocess.run(
+            ["python", "-c", f"import ast; ast.parse(open('{analyzer_file}').read()); print('OK')"],
+            cwd=self.REPO_DIR,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        assert result.returncode == 0, f"Parse failed: {result.stderr}"
 
-    def test_suggestion_dataclass_fields(self):
-        """Suggestion must have priority and description fields."""
-        content = self._read_file(self._ci("analyzer.py"))
-        if not content:
-            pytest.skip("analyzer.py not found")
-        assert "Suggestion" in content
-        assert "priority" in content
-        assert "description" in content
+    def test_report_generates_markdown_format(self):
+        """Verify report generator produces markdown syntax"""
+        content = self._find_content()
+        has_md_syntax = (
+            "# " in content
+            or "## " in content
+            or "```" in content
+            or "|" in content
+            or "---" in content
+        )
+        assert has_md_syntax, "Report generator doesn't produce markdown syntax"
 
-    # ── functional_check ─────────────────────────────────────────────────
+    def test_github_client_uses_http_requests(self):
+        """Verify GitHub client makes HTTP requests"""
+        content = self._find_content()
+        has_http = (
+            "requests" in content
+            or "httpx" in content
+            or "urllib" in content
+            or "aiohttp" in content
+            or "fetch" in content.lower()
+        )
+        assert has_http, "GitHub client missing HTTP request library"
 
-    def test_circular_dependency_raises(self):
-        """Circular A->B->A must raise CyclicDependencyError."""
-        try:
-            sys.path.insert(0, self.REPO_DIR)
-            from examples.analyze_ci.parser import CIPipelineParser
-            from examples.analyze_ci.validator import DependencyValidator, CyclicDependencyError
-        except ImportError:
-            pytest.skip("Cannot import analyze_ci modules")
-        yaml_str = "jobs:\n  a:\n    needs: [b]\n  b:\n    needs: [a]"
-        pipeline = CIPipelineParser().parse_github_actions(yaml_str)
-        with pytest.raises(CyclicDependencyError) as exc_info:
-            DependencyValidator().validate(pipeline)
-        msg = str(exc_info.value)
-        assert "a" in msg and "b" in msg
-
-    def test_undefined_job_raises(self):
-        """needs reference to non-existent job must raise UndefinedJobError."""
-        try:
-            sys.path.insert(0, self.REPO_DIR)
-            from examples.analyze_ci.parser import CIPipelineParser
-            from examples.analyze_ci.validator import DependencyValidator, UndefinedJobError
-        except ImportError:
-            pytest.skip("Cannot import analyze_ci modules")
-        yaml_str = "jobs:\n  build:\n    needs: [ghost_job_that_does_not_exist]"
-        pipeline = CIPipelineParser().parse_github_actions(yaml_str)
-        with pytest.raises(UndefinedJobError) as exc_info:
-            DependencyValidator().validate(pipeline)
-        assert "ghost_job_that_does_not_exist" in str(exc_info.value)
-
-    def test_linear_pipeline_critical_path(self):
-        """A->B->C critical path must be ['a', 'b', 'c']."""
-        try:
-            sys.path.insert(0, self.REPO_DIR)
-            from examples.analyze_ci.parser import CIPipelineParser
-            from examples.analyze_ci.analyzer import BottleneckAnalyzer
-        except ImportError:
-            pytest.skip("Cannot import analyze_ci modules")
-        yaml_str = "jobs:\n  a: {}\n  b:\n    needs: [a]\n  c:\n    needs: [b]"
-        pipeline = CIPipelineParser().parse_github_actions(yaml_str)
-        path = BottleneckAnalyzer().critical_path(pipeline)
-        assert path == ["a", "b", "c"]
-
-    def test_single_job_critical_path(self):
-        """Single job pipeline critical path must be ['only_job']."""
-        try:
-            sys.path.insert(0, self.REPO_DIR)
-            from examples.analyze_ci.parser import CIPipelineParser
-            from examples.analyze_ci.analyzer import BottleneckAnalyzer
-        except ImportError:
-            pytest.skip("Cannot import analyze_ci modules")
-        yaml_str = "jobs:\n  only_job: {}"
-        pipeline = CIPipelineParser().parse_github_actions(yaml_str)
-        path = BottleneckAnalyzer().critical_path(pipeline)
-        assert path == ["only_job"]
-
-    def test_self_referential_raises_cyclic(self):
-        """Job that needs itself must raise CyclicDependencyError."""
-        try:
-            sys.path.insert(0, self.REPO_DIR)
-            from examples.analyze_ci.parser import CIPipelineParser
-            from examples.analyze_ci.validator import DependencyValidator, CyclicDependencyError
-        except ImportError:
-            pytest.skip("Cannot import analyze_ci modules")
-        yaml_str = "jobs:\n  self_referential:\n    needs: [self_referential]"
-        pipeline = CIPipelineParser().parse_github_actions(yaml_str)
-        with pytest.raises(CyclicDependencyError):
-            DependencyValidator().validate(pipeline)
-
-    def test_empty_yaml_zero_jobs(self):
-        """Empty YAML string must produce pipeline with zero jobs."""
-        try:
-            sys.path.insert(0, self.REPO_DIR)
-            from examples.analyze_ci.parser import CIPipelineParser
-        except ImportError:
-            pytest.skip("Cannot import CIPipelineParser")
-        pipeline = CIPipelineParser().parse_github_actions("")
-        jobs = getattr(pipeline, "jobs", getattr(pipeline, "nodes", []))
-        assert len(jobs) == 0
+    def _find_content(self):
+        """Helper to find CI analyzer content"""
+        all_content = ""
+        for root, dirs, files in os.walk(self.REPO_DIR):
+            if ".git" in root or "node_modules" in root:
+                continue
+            for f in files:
+                if f.endswith(".py") and ("ci" in f.lower() or "analyzer" in f.lower() or "failure" in f.lower() or "report" in f.lower()):
+                    fpath = os.path.join(root, f)
+                    try:
+                        with open(fpath) as fh:
+                            content = fh.read()
+                        if any(kw in content.lower() for kw in ["parser", "classifier", "analyzer", "github", "report"]):
+                            all_content += content + "\n"
+                    except (UnicodeDecodeError, PermissionError):
+                        continue
+        return all_content

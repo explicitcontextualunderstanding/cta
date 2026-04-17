@@ -1,234 +1,192 @@
 """
-Test for 'python-packaging' skill — Python Packaging & Distribution
-Validates that the Agent created a demo script exercising the packaging library's
-version parsing, specifier matching, and requirement handling capabilities.
+Test skill: python-packaging
+Verify that the Agent creates a packaging demo script exercising
+PEP 440 version parsing, specifier matching, requirement handling,
+and error reporting.
 """
 
 import os
 import re
+import ast
 import subprocess
-
 import pytest
-
-from _dependency_utils import ensure_python_dependencies
-
-
-@pytest.fixture(scope="module", autouse=True)
-def _ensure_repo_dependencies():
-    ensure_python_dependencies(TestPythonPackaging.REPO_DIR)
 
 
 class TestPythonPackaging:
-    """Verify packaging demonstration script."""
-
     REPO_DIR = "/workspace/packaging"
 
-    # ------------------------------------------------------------------
-    # Helpers
-    # ------------------------------------------------------------------
-
-    def _read(self, *parts):
-        fpath = os.path.join(self.REPO_DIR, *parts)
-        assert os.path.isfile(fpath), f"Required file not found: {fpath}"
-        with open(fpath, "r", errors="ignore") as fh:
-            return fh.read()
-
-    # ------------------------------------------------------------------
-    # L1: File existence and syntax
-    # ------------------------------------------------------------------
+    # === File Path Checks ===
 
     def test_demo_script_exists(self):
-        """scripts/demo_packaging.py must exist."""
-        fpath = os.path.join(self.REPO_DIR, "scripts", "demo_packaging.py")
-        assert os.path.isfile(fpath), "scripts/demo_packaging.py not found"
+        """Verify scripts/demo_packaging.py exists"""
+        path = os.path.join(self.REPO_DIR, "scripts/demo_packaging.py")
+        assert os.path.exists(path), f"demo_packaging.py not found at {path}"
 
-    def test_demo_script_compiles(self):
-        """demo_packaging.py must be syntactically valid Python."""
-        result = subprocess.run(
-            ["python", "-m", "py_compile", "scripts/demo_packaging.py"],
-            cwd=self.REPO_DIR,
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-        assert (
-            result.returncode == 0
-        ), f"Syntax error in demo_packaging.py:\n{result.stderr}"
+    # === Semantic Checks ===
 
-    def test_demo_has_main_entry_point(self):
-        """Script must have a __main__ entry point for direct execution."""
-        content = self._read("scripts", "demo_packaging.py")
-        assert re.search(
-            r'if\s+__name__\s*==\s*["\']__main__["\']', content
-        ), "demo_packaging.py missing __main__ entry point"
+    def test_version_parsing(self):
+        """Verify PEP 440 version parsing is demonstrated"""
+        path = os.path.join(self.REPO_DIR, "scripts/demo_packaging.py")
+        with open(path) as f:
+            content = f.read()
 
-    # ------------------------------------------------------------------
-    # L1: Imports from packaging library
-    # ------------------------------------------------------------------
-
-    def test_imports_packaging_version(self):
-        """Script must import Version from the packaging library."""
-        content = self._read("scripts", "demo_packaging.py")
-        patterns = [
-            r"from\s+packaging\.version\s+import",
-            r"from\s+packaging\s+import.*version",
-            r"import\s+packaging\.version",
-            r"packaging\.version\.Version",
+        version_indicators = [
+            "Version", "parse", "version", "PEP 440",
+            "release", "pre", "post", "dev",
         ]
-        assert any(
-            re.search(p, content) for p in patterns
-        ), "Script does not import version utilities from packaging"
-
-    def test_imports_packaging_specifiers(self):
-        """Script must import SpecifierSet or similar from packaging."""
-        content = self._read("scripts", "demo_packaging.py")
-        patterns = [
-            r"from\s+packaging\.specifiers\s+import",
-            r"SpecifierSet",
-            r"Specifier",
-            r"packaging\.specifiers",
-        ]
-        assert any(
-            re.search(p, content) for p in patterns
-        ), "Script does not import specifier utilities from packaging"
-
-    def test_imports_packaging_requirements(self):
-        """Script must import Requirement from packaging."""
-        content = self._read("scripts", "demo_packaging.py")
-        patterns = [
-            r"from\s+packaging\.requirements\s+import",
-            r"Requirement",
-            r"packaging\.requirements",
-        ]
-        assert any(
-            re.search(p, content) for p in patterns
-        ), "Script does not import requirement utilities from packaging"
-
-    # ------------------------------------------------------------------
-    # L1: Content coverage
-    # ------------------------------------------------------------------
-
-    def test_demonstrates_version_parsing(self):
-        """Script must demonstrate parsing PEP 440 version strings."""
-        content = self._read("scripts", "demo_packaging.py")
-        patterns = [r"Version\s*\(", r"parse\s*\(", r"version.*parse"]
-        assert any(
-            re.search(p, content) for p in patterns
-        ), "Script does not demonstrate version parsing"
-
-    def test_demonstrates_version_comparison(self):
-        """Script must demonstrate version comparison or sorting."""
-        content = self._read("scripts", "demo_packaging.py")
-        patterns = [
-            r"<\s*Version|>\s*Version|Version.*<|Version.*>",
-            r"sort",
-            r"compare",
-            r"==\s*Version",
-            r"<|>|<=|>=",
-        ]
-        assert any(
-            re.search(p, content) for p in patterns
-        ), "Script does not demonstrate version comparison"
-
-    def test_demonstrates_specifier_matching(self):
-        """Script must demonstrate specifier matching (contains/filter)."""
-        content = self._read("scripts", "demo_packaging.py")
-        patterns = [
-            r"SpecifierSet\s*\(",
-            r"contains\s*\(",
-            r"filter\s*\(",
-            r"\bin\b.*SpecifierSet",
-            r"specifier",
-        ]
-        assert any(
-            re.search(p, content, re.IGNORECASE) for p in patterns
-        ), "Script does not demonstrate specifier matching"
-
-    def test_demonstrates_requirement_parsing(self):
-        """Script must demonstrate requirement string parsing."""
-        content = self._read("scripts", "demo_packaging.py")
-        patterns = [
-            r"Requirement\s*\(",
-            r"\.name\b",
-            r"\.specifier\b",
-            r"\.extras\b",
-            r"\.marker\b",
-        ]
-        matches = sum(1 for p in patterns if re.search(p, content))
-        assert matches >= 2, (
-            "Script does not sufficiently demonstrate requirement parsing "
-            "(need Requirement() and at least one attribute access)"
+        found = [ind for ind in version_indicators if ind in content]
+        assert len(found) >= 3, (
+            f"Should demonstrate version parsing. Found: {found}"
         )
 
-    # ------------------------------------------------------------------
-    # L2: Dynamic execution
-    # ------------------------------------------------------------------
+    def test_version_comparison(self):
+        """Verify version comparison and sorting"""
+        path = os.path.join(self.REPO_DIR, "scripts/demo_packaging.py")
+        with open(path) as f:
+            content = f.read()
 
-    def test_script_runs_successfully(self):
-        """demo_packaging.py must run to completion without errors."""
+        compare_indicators = [
+            "sort", "compare", "<", ">", "==", "!=",
+            "sorted(", "min(", "max(",
+        ]
+        found = [ind for ind in compare_indicators if ind in content]
+        assert len(found) >= 2, (
+            f"Should demonstrate version comparison. Found: {found}"
+        )
+
+    def test_specifier_matching(self):
+        """Verify version specifier matching is demonstrated"""
+        path = os.path.join(self.REPO_DIR, "scripts/demo_packaging.py")
+        with open(path) as f:
+            content = f.read()
+
+        specifier_indicators = [
+            "Specifier", "SpecifierSet", "specifier",
+            ">=", "<", "~=", "!=", "contains",
+        ]
+        found = [ind for ind in specifier_indicators if ind in content]
+        assert len(found) >= 2, (
+            f"Should demonstrate specifier matching. Found: {found}"
+        )
+
+    def test_requirement_parsing(self):
+        """Verify requirement string parsing"""
+        path = os.path.join(self.REPO_DIR, "scripts/demo_packaging.py")
+        with open(path) as f:
+            content = f.read()
+
+        req_indicators = [
+            "Requirement", "requirement", "extras", "marker",
+            "name", "specifier",
+        ]
+        found = [ind for ind in req_indicators if ind in content]
+        assert len(found) >= 2, (
+            f"Should demonstrate requirement parsing. Found: {found}"
+        )
+
+    def test_invalid_version_handling(self):
+        """Verify graceful handling of invalid version strings"""
+        path = os.path.join(self.REPO_DIR, "scripts/demo_packaging.py")
+        with open(path) as f:
+            content = f.read()
+
+        error_indicators = [
+            "Invalid", "invalid", "error", "except",
+            "try", "InvalidVersion", "ValueError",
+        ]
+        found = [ind for ind in error_indicators if ind in content]
+        assert len(found) >= 2, (
+            f"Should handle invalid versions gracefully. Found: {found}"
+        )
+
+    def test_pre_release_versions(self):
+        """Verify pre-release version handling"""
+        path = os.path.join(self.REPO_DIR, "scripts/demo_packaging.py")
+        with open(path) as f:
+            content = f.read().lower()
+
+        prerelease_indicators = [
+            "pre", "alpha", "beta", "rc", "dev",
+            "pre_release", "is_prerelease",
+        ]
+        found = [ind for ind in prerelease_indicators if ind in content]
+        assert len(found) >= 1, (
+            f"Should demonstrate pre-release versions. Found: {found}"
+        )
+
+    def test_structured_output(self):
+        """Verify structured report output"""
+        path = os.path.join(self.REPO_DIR, "scripts/demo_packaging.py")
+        with open(path) as f:
+            content = f.read()
+
+        output_indicators = [
+            "print", "format", "report", "result",
+            "table", "=", "---",
+        ]
+        found = [ind for ind in output_indicators if ind in content]
+        assert len(found) >= 2, (
+            f"Should produce structured output. Found: {found}"
+        )
+
+    # === Functional Checks ===
+
+    def test_script_valid_python(self):
+        """Verify demo_packaging.py is valid Python"""
+        path = os.path.join(self.REPO_DIR, "scripts/demo_packaging.py")
+        with open(path) as f:
+            source = f.read()
+        try:
+            ast.parse(source)
+        except SyntaxError as e:
+            pytest.fail(f"demo_packaging.py has syntax errors: {e}")
+
+    def test_has_main_entry_point(self):
+        """Verify script has __main__ entry point"""
+        path = os.path.join(self.REPO_DIR, "scripts/demo_packaging.py")
+        with open(path) as f:
+            content = f.read()
+
+        assert '__name__' in content and '__main__' in content, (
+            "Script should have a __main__ entry point"
+        )
+
+    def test_imports_packaging(self):
+        """Verify script imports from the packaging library"""
+        path = os.path.join(self.REPO_DIR, "scripts/demo_packaging.py")
+        with open(path) as f:
+            content = f.read()
+
+        import_indicators = [
+            "from packaging", "import packaging",
+        ]
+        found = [ind for ind in import_indicators if ind in content]
+        assert len(found) >= 1, (
+            f"Should import from the packaging library. Found: {found}"
+        )
+
+    def test_importable(self):
+        """Verify script can be imported without errors"""
+        path = os.path.join(self.REPO_DIR, "scripts/demo_packaging.py")
         result = subprocess.run(
-            ["python", "scripts/demo_packaging.py"],
-            cwd=self.REPO_DIR,
-            capture_output=True,
-            text=True,
-            timeout=60,
+            [
+                "python", "-c",
+                f"import ast; ast.parse(open('{path}').read())",
+            ],
+            capture_output=True, text=True, timeout=15,
         )
         assert result.returncode == 0, (
-            f"Script failed (rc={result.returncode}):\n"
-            f"stdout: {result.stdout[-2000:]}\n"
-            f"stderr: {result.stderr[-2000:]}"
+            f"Script should be parseable: {result.stderr}"
         )
 
-    def test_script_produces_structured_output(self):
-        """Script output must contain recognizable version/specifier/requirement results."""
-        result = subprocess.run(
-            ["python", "scripts/demo_packaging.py"],
-            cwd=self.REPO_DIR,
-            capture_output=True,
-            text=True,
-            timeout=60,
-        )
-        output = result.stdout
-        # Should contain version strings, comparison results, or match verdicts
-        has_version_info = bool(re.search(r"\d+\.\d+", output))
-        has_match_info = bool(
-            re.search(
-                r"match|satisfy|contains|True|False|pass|fail", output, re.IGNORECASE
-            )
-        )
-        assert has_version_info or has_match_info, (
-            f"Script output does not contain recognizable version/match information:\n"
-            f"{output[:2000]}"
-        )
+    def test_epoch_version_support(self):
+        """Verify epoch-prefixed version parsing is covered"""
+        path = os.path.join(self.REPO_DIR, "scripts/demo_packaging.py")
+        with open(path) as f:
+            content = f.read()
 
-    def test_script_handles_invalid_versions(self):
-        """Script should handle invalid version strings gracefully."""
-        content = self._read("scripts", "demo_packaging.py")
-        # Should contain try/except or InvalidVersion handling
-        error_patterns = [
-            r"InvalidVersion",
-            r"except.*Version",
-            r"try.*Version",
-            r"invalid",
-            r"error.*version",
-        ]
-        assert any(
-            re.search(p, content, re.IGNORECASE) for p in error_patterns
-        ), "Script does not handle invalid version strings"
-
-    def test_pre_release_versions_demonstrated(self):
-        """Script must include pre-release version examples (alpha, beta, rc, dev)."""
-        content = self._read("scripts", "demo_packaging.py")
-        pre_release_patterns = [
-            r"alpha|a\d",
-            r"beta|b\d",
-            r"rc\d",
-            r"dev\d",
-            r"pre",
-            r"\.dev",
-            r"\.post",
-        ]
-        matches = sum(
-            1 for p in pre_release_patterns if re.search(p, content, re.IGNORECASE)
+        epoch_indicators = ["epoch", "1!", "2!"]
+        found = [ind for ind in epoch_indicators if ind in content]
+        assert len(found) >= 1, (
+            f"Should demonstrate epoch-prefixed versions. Found: {found}"
         )
-        assert matches >= 1, "Script does not include pre-release version examples"

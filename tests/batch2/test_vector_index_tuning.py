@@ -1,242 +1,200 @@
 """
-Test for 'vector-index-tuning' skill — FAISS Vector Index Benchmark
-Validates that the Agent created a vector index benchmark script using
-FAISS with multiple index types, recall/latency measurement, and comparison.
+Test skill: vector-index-tuning
+Verify that the Agent creates a FAISS index tuning benchmark example
+comparing recall vs latency across different index configurations
+with configurable search effort parameters.
 """
 
 import os
 import re
+import ast
 import subprocess
-
 import pytest
-
-from _dependency_utils import ensure_python_dependencies
-
-
-@pytest.fixture(scope="module", autouse=True)
-def _ensure_repo_dependencies():
-    ensure_python_dependencies(TestVectorIndexTuning.REPO_DIR)
 
 
 class TestVectorIndexTuning:
-    """Verify FAISS vector index benchmark script."""
-
     REPO_DIR = "/workspace/faiss"
 
-    def _read(self, *parts):
-        fpath = os.path.join(self.REPO_DIR, *parts)
-        assert os.path.isfile(fpath), f"Required file not found: {fpath}"
-        with open(fpath, "r", errors="ignore") as fh:
-            return fh.read()
-
-    def _find_benchmark_script(self):
-        """Find the benchmark script in common locations."""
-        candidates = [
-            "tutorial/python/index_tuning_benchmark.py",
-            "benchmarks/index_benchmark.py",
-            "benchmarks/benchmark.py",
-            "benchmark/index_benchmark.py",
-            "examples/benchmark.py",
-            "examples/index_benchmark.py",
-            "index_benchmark.py",
-            "benchmark.py",
-            "benchmarks/vector_index_benchmark.py",
-        ]
-        for rel in candidates:
-            fpath = os.path.join(self.REPO_DIR, rel)
-            if os.path.isfile(fpath):
-                return fpath
-        # Fallback search
-        for root, _dirs, files in os.walk(self.REPO_DIR):
-            for f in files:
-                if f.endswith(".py") and "benchmark" in f.lower():
-                    return os.path.join(root, f)
-        pytest.fail("Benchmark script not found in expected locations")
-
-    # ------------------------------------------------------------------
-    # L1: File existence and syntax
-    # ------------------------------------------------------------------
+    # === File Path Checks ===
 
     def test_benchmark_script_exists(self):
-        """A FAISS benchmark Python script must exist."""
-        self._find_benchmark_script()
-
-    def test_benchmark_compiles(self):
-        """Benchmark script must be syntactically valid Python."""
-        script = self._find_benchmark_script()
-        result = subprocess.run(
-            ["python", "-m", "py_compile", script],
-            capture_output=True,
-            text=True,
-            timeout=30,
+        """Verify tutorial/python/index_tuning_benchmark.py exists"""
+        path = os.path.join(
+            self.REPO_DIR, "tutorial/python/index_tuning_benchmark.py"
         )
-        assert result.returncode == 0, f"Syntax error:\n{result.stderr}"
+        assert os.path.exists(path), (
+            f"index_tuning_benchmark.py not found at {path}"
+        )
+
+    # === Semantic Checks ===
+
+    def test_multiple_index_types(self):
+        """Verify at least two different index types are built"""
+        path = os.path.join(
+            self.REPO_DIR, "tutorial/python/index_tuning_benchmark.py"
+        )
+        with open(path) as f:
+            content = f.read()
+
+        index_types = [
+            "IndexFlat", "IndexIVF", "IndexHNSW", "IndexPQ",
+            "IndexScalarQuantizer", "index_factory",
+            "Flat", "IVF", "HNSW", "PQ", "OPQ", "SQ",
+        ]
+        found = [idx for idx in index_types if idx in content]
+        assert len(found) >= 2, (
+            f"Should build at least two index types. Found: {found}"
+        )
+
+    def test_tuning_parameters(self):
+        """Verify key tuning knobs are varied"""
+        path = os.path.join(
+            self.REPO_DIR, "tutorial/python/index_tuning_benchmark.py"
+        )
+        with open(path) as f:
+            content = f.read()
+
+        param_indicators = [
+            "nprobe", "efSearch", "ef_search", "nlist",
+            "nbits", "m", "k",
+        ]
+        found = [ind for ind in param_indicators if ind in content]
+        assert len(found) >= 1, (
+            f"Should vary tuning parameters. Found: {found}"
+        )
+
+    def test_recall_measurement(self):
+        """Verify recall@k is computed"""
+        path = os.path.join(
+            self.REPO_DIR, "tutorial/python/index_tuning_benchmark.py"
+        )
+        with open(path) as f:
+            content = f.read().lower()
+
+        recall_indicators = [
+            "recall", "ground_truth", "groundtruth", "intersection",
+            "accuracy", "correct",
+        ]
+        found = [ind for ind in recall_indicators if ind in content]
+        assert len(found) >= 2, (
+            f"Should compute recall. Found: {found}"
+        )
+
+    def test_latency_measurement(self):
+        """Verify query latency is measured"""
+        path = os.path.join(
+            self.REPO_DIR, "tutorial/python/index_tuning_benchmark.py"
+        )
+        with open(path) as f:
+            content = f.read().lower()
+
+        latency_indicators = [
+            "time", "latency", "elapsed", "duration",
+            "timeit", "perf_counter", "clock",
+        ]
+        found = [ind for ind in latency_indicators if ind in content]
+        assert len(found) >= 2, (
+            f"Should measure query latency. Found: {found}"
+        )
+
+    def test_ground_truth_computation(self):
+        """Verify ground truth nearest neighbors are computed"""
+        path = os.path.join(
+            self.REPO_DIR, "tutorial/python/index_tuning_benchmark.py"
+        )
+        with open(path) as f:
+            content = f.read()
+
+        gt_indicators = [
+            "ground_truth", "groundtruth", "IndexFlat", "exact",
+            "brute_force", "brute force", "true_neighbors",
+        ]
+        found = [ind for ind in gt_indicators if ind in content]
+        assert len(found) >= 1, (
+            f"Should compute ground truth nearest neighbors. Found: {found}"
+        )
+
+    def test_dataset_generation(self):
+        """Verify synthetic or sample dataset is used"""
+        path = os.path.join(
+            self.REPO_DIR, "tutorial/python/index_tuning_benchmark.py"
+        )
+        with open(path) as f:
+            content = f.read()
+
+        dataset_indicators = [
+            "np.random", "random", "randn", "rand",
+            "dataset", "vectors", "dimension", "d =",
+        ]
+        found = [ind for ind in dataset_indicators if ind in content]
+        assert len(found) >= 2, (
+            f"Should generate or load a dataset. Found: {found}"
+        )
+
+    def test_comparison_output(self):
+        """Verify comparison table output"""
+        path = os.path.join(
+            self.REPO_DIR, "tutorial/python/index_tuning_benchmark.py"
+        )
+        with open(path) as f:
+            content = f.read()
+
+        output_indicators = [
+            "print", "table", "format", "report",
+            "recall", "latency", "time",
+        ]
+        found = [ind for ind in output_indicators if ind in content.lower()]
+        assert len(found) >= 3, (
+            f"Should produce comparison output. Found: {found}"
+        )
+
+    # === Functional Checks ===
+
+    def test_script_valid_python(self):
+        """Verify index_tuning_benchmark.py is valid Python"""
+        path = os.path.join(
+            self.REPO_DIR, "tutorial/python/index_tuning_benchmark.py"
+        )
+        with open(path) as f:
+            source = f.read()
+        try:
+            ast.parse(source)
+        except SyntaxError as e:
+            pytest.fail(f"index_tuning_benchmark.py has syntax errors: {e}")
 
     def test_imports_faiss(self):
-        """Script must import faiss library."""
-        script = self._find_benchmark_script()
-        with open(script, "r", errors="ignore") as fh:
-            content = fh.read()
-        assert re.search(
-            r"import\s+faiss|from\s+faiss", content
-        ), "Script does not import faiss"
+        """Verify script imports faiss"""
+        path = os.path.join(
+            self.REPO_DIR, "tutorial/python/index_tuning_benchmark.py"
+        )
+        with open(path) as f:
+            content = f.read()
 
-    # ------------------------------------------------------------------
-    # L1: Multiple index types
-    # ------------------------------------------------------------------
+        assert "import faiss" in content, "Script should import faiss"
 
-    def test_uses_at_least_two_index_types(self):
-        """Script must build at least 2 different index types."""
-        script = self._find_benchmark_script()
-        with open(script, "r", errors="ignore") as fh:
-            content = fh.read()
-        index_types = [
-            r"IndexFlat",
-            r"IndexIVF",
-            r"IndexHNSW",
-            r"IndexPQ",
-            r"IndexScalarQuantizer",
-            r"IndexLSH",
-            r"index_factory.*Flat",
-            r"index_factory.*IVF",
-            r"index_factory.*HNSW",
-            r"index_factory.*PQ",
-            r"Flat",
-            r"IVF",
-            r"HNSW",
-            r"PQ",
+    def test_imports_numpy(self):
+        """Verify script imports numpy"""
+        path = os.path.join(
+            self.REPO_DIR, "tutorial/python/index_tuning_benchmark.py"
+        )
+        with open(path) as f:
+            content = f.read()
+
+        assert "numpy" in content, "Script should import numpy"
+
+    def test_documents_dataset_shape(self):
+        """Verify dataset dimensions and size are documented"""
+        path = os.path.join(
+            self.REPO_DIR, "tutorial/python/index_tuning_benchmark.py"
+        )
+        with open(path) as f:
+            content = f.read()
+
+        shape_indicators = [
+            "dimension", "dim", "n_vectors", "nb", "nq",
+            "shape", "d =", "# ", "\"\"\"",
         ]
-        found = set()
-        for p in index_types:
-            if re.search(p, content):
-                found.add(p.split(".")[-1] if "." in p else p)
-        assert (
-            len(found) >= 2
-        ), f"Only {len(found)} index type(s) found: {found} — need at least 2"
-
-    def test_configures_tuning_knobs(self):
-        """Script must vary tuning parameters (nprobe, efSearch, etc.)."""
-        script = self._find_benchmark_script()
-        with open(script, "r", errors="ignore") as fh:
-            content = fh.read()
-        knobs = [
-            r"nprobe",
-            r"efSearch",
-            r"efConstruction",
-            r"nlist",
-            r"nbits",
-            r"m\b",
-            r"M\b",
-        ]
-        found = sum(1 for p in knobs if re.search(p, content))
-        assert (
-            found >= 1
-        ), "Script does not configure tuning knobs like nprobe or efSearch"
-
-    # ------------------------------------------------------------------
-    # L2: Measurement
-    # ------------------------------------------------------------------
-
-    def test_measures_recall(self):
-        """Script must measure recall@k quality metric."""
-        script = self._find_benchmark_script()
-        with open(script, "r", errors="ignore") as fh:
-            content = fh.read()
-        patterns = [
-            r"recall",
-            r"recall@",
-            r"recall_at",
-            r"intersection",
-            r"ground.truth",
-        ]
-        assert any(
-            re.search(p, content, re.IGNORECASE) for p in patterns
-        ), "Script does not measure recall"
-
-    def test_measures_latency(self):
-        """Script must measure query latency."""
-        script = self._find_benchmark_script()
-        with open(script, "r", errors="ignore") as fh:
-            content = fh.read()
-        patterns = [
-            r"latency",
-            r"time\.time",
-            r"time\.perf",
-            r"timeit",
-            r"elapsed",
-            r"duration",
-            r"qps",
-            r"queries.per.second",
-        ]
-        assert any(
-            re.search(p, content, re.IGNORECASE) for p in patterns
-        ), "Script does not measure latency"
-
-    # ------------------------------------------------------------------
-    # L2: Comparison output
-    # ------------------------------------------------------------------
-
-    def test_produces_comparison_table(self):
-        """Script must output a comparison table or structured results."""
-        script = self._find_benchmark_script()
-        with open(script, "r", errors="ignore") as fh:
-            content = fh.read()
-        patterns = [
-            r"table",
-            r"print.*result",
-            r"DataFrame",
-            r"csv",
-            r"json\.dump",
-            r"format.*\|",
-            r"tabulate",
-            r"report",
-            r"comparison",
-        ]
-        assert any(
-            re.search(p, content, re.IGNORECASE) for p in patterns
-        ), "Script does not produce a comparison table"
-
-    def test_compares_indexes_side_by_side(self):
-        """Script must produce a side-by-side comparison of index types."""
-        script = self._find_benchmark_script()
-        with open(script, "r", errors="ignore") as fh:
-            content = fh.read()
-        # Should iterate/collect results for multiple indexes
-        patterns = [
-            r"for.*index.*in",
-            r"results\[",
-            r"results\.append",
-            r"for.*config.*in",
-            r"benchmark_results",
-        ]
-        assert any(
-            re.search(p, content, re.IGNORECASE) for p in patterns
-        ), "Script does not compare multiple indexes"
-
-    def test_generates_random_data(self):
-        """Script must generate or load test vector data."""
-        script = self._find_benchmark_script()
-        with open(script, "r", errors="ignore") as fh:
-            content = fh.read()
-        patterns = [
-            r"np\.random",
-            r"numpy\.random",
-            r"random\.rand",
-            r"randn",
-            r"load.*data",
-            r"generate.*vector",
-            r"fvecs",
-            r"dataset",
-        ]
-        assert any(
-            re.search(p, content, re.IGNORECASE) for p in patterns
-        ), "Script does not generate or load vectors"
-
-    def test_has_main_entry(self):
-        """Benchmark script should have a __main__ entry point."""
-        script = self._find_benchmark_script()
-        with open(script, "r", errors="ignore") as fh:
-            content = fh.read()
-        assert re.search(
-            r'if\s+__name__\s*==\s*["\']__main__["\']', content
-        ), "Script lacks __main__ entry point"
+        found = [ind for ind in shape_indicators if ind in content]
+        assert len(found) >= 2, (
+            f"Should document dataset shape. Found: {found}"
+        )

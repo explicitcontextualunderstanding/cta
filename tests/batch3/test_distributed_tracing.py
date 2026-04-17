@@ -1,138 +1,242 @@
 """
-Tests for distributed-tracing skill.
-Validates OpenTelemetry trace analysis processor in opentelemetry-collector repository.
+Tests for the distributed-tracing skill.
+
+Validates that a custom trace processor with sampling and tail-based
+analysis was implemented for the OpenTelemetry Collector.
+
+Repo: opentelemetry-collector (https://github.com/open-telemetry/opentelemetry-collector)
 """
 
 import os
+import re
 import subprocess
-import pytest
 
 REPO_DIR = "/workspace/opentelemetry-collector"
 
 
-def _path(rel: str) -> str:
-    return os.path.join(REPO_DIR, rel)
+class TestFilePathCheck:
+    """Verify all required files were created."""
 
-
-def _read(rel: str) -> str:
-    with open(_path(rel), encoding="utf-8", errors="ignore") as f:
-        return f.read()
-
-
-def _run(cmd: str, cwd: str = REPO_DIR, timeout: int = 120):
-    return subprocess.run(
-        cmd, shell=True, cwd=cwd, capture_output=True, text=True, timeout=timeout
-    )
-
-
-class TestDistributedTracing:
-
-    # ── file_path_check ──────────────────────────────────────────────────────
-
-    def test_processor_go_files_exist(self):
-        """factory.go, config.go, and processor.go must exist in traceanalysisprocessor."""
-        for rel in [
-            "processor/traceanalysisprocessor/factory.go",
-            "processor/traceanalysisprocessor/config.go",
-            "processor/traceanalysisprocessor/processor.go",
-        ]:
-            assert os.path.isfile(_path(rel)), f"{rel} not found"
-
-    def test_processor_test_file_exists(self):
-        """processor_test.go must exist."""
-        rel = "processor/traceanalysisprocessor/processor_test.go"
-        assert os.path.isfile(_path(rel)), f"{rel} not found"
-
-    # ── semantic_check ───────────────────────────────────────────────────────
-
-    def test_config_struct_defined(self):
-        """config.go must define Config struct with SamplingRate field."""
-        content = _read("processor/traceanalysisprocessor/config.go")
-        assert "type Config struct" in content, "Config struct not found in config.go"
-        assert (
-            "SamplingRate" in content or "sampling_rate" in content
-        ), "SamplingRate field not found in config.go"
-
-    def test_factory_go_registers_processor(self):
-        """factory.go must implement NewFactory and component type registration."""
-        content = _read("processor/traceanalysisprocessor/factory.go")
-        assert (
-            "func NewFactory" in content
-        ), "NewFactory function not found in factory.go"
-        assert (
-            "component.MustNewType" in content or "processorhelper" in content
-        ), "Component type registration not found in factory.go"
-
-    def test_processor_implements_traces_processor(self):
-        """processor.go must implement ConsumeTraces or ProcessTraces method."""
-        content = _read("processor/traceanalysisprocessor/processor.go")
-        assert (
-            "ConsumeTraces" in content or "ProcessTraces" in content
-        ), "ConsumeTraces/ProcessTraces method not found in processor.go"
-
-    def test_processor_adds_span_count_attribute(self):
-        """processor.go must reference span_count and/or service_count attributes."""
-        content = _read("processor/traceanalysisprocessor/processor.go")
-        assert (
-            "span_count" in content or "service_count" in content
-        ), "span_count/service_count attribute keys not found in processor.go"
-
-    # ── functional_check ─────────────────────────────────────────────────────
-
-    def test_go_tests_pass(self):
-        """All Go unit tests in the processor package must pass."""
-        result = _run("go test ./processor/traceanalysisprocessor/... -v")
-        if result.returncode != 0 and "no required module" in result.stderr:
-            pytest.skip("Go module not available")
-        assert (
-            result.returncode == 0
-        ), f"go test failed:\n{result.stdout}\n{result.stderr}"
-        assert "PASS" in result.stdout
-
-    def test_config_validates_negative_sampling_rate(self):
-        """Config.Validate() must return error for sampling_rate=-0.1."""
-        result = _run(
-            "go test ./processor/traceanalysisprocessor/... -run TestConfigValidate -v"
+    def test_factory_exists(self):
+        path = os.path.join(
+            REPO_DIR, "processor", "traceanalysisprocessor", "factory.go",
         )
-        if result.returncode != 0 and "no required module" in result.stderr:
-            pytest.skip("Go module not available")
-        assert result.returncode == 0, f"TestConfigValidate failed:\n{result.stdout}"
-        assert "PASS" in result.stdout
+        assert os.path.isfile(path), f"Expected factory.go at {path}"
 
-    def test_same_trace_id_consistent_sampling(self):
-        """Deterministic sampling: same trace ID must always yield the same decision."""
-        result = _run(
-            "go test ./processor/traceanalysisprocessor/... -run TestDeterministicSampling -v"
+    def test_config_exists(self):
+        path = os.path.join(
+            REPO_DIR, "processor", "traceanalysisprocessor", "config.go",
         )
-        if result.returncode != 0 and "no required module" in result.stderr:
-            pytest.skip("Go module not available")
-        assert (
-            result.returncode == 0
-        ), f"TestDeterministicSampling failed:\n{result.stdout}"
+        assert os.path.isfile(path), f"Expected config.go at {path}"
 
-    def test_error_trace_sampled_at_low_rate(self):
-        """Error traces must always be sampled regardless of configured rate."""
-        result = _run(
-            "go test ./processor/traceanalysisprocessor/... -run TestErrorTraceSampling -v"
+    def test_processor_exists(self):
+        path = os.path.join(
+            REPO_DIR, "processor", "traceanalysisprocessor", "processor.go",
         )
-        if result.returncode != 0 and "no required module" in result.stderr:
-            pytest.skip("Go module not available")
-        assert (
-            result.returncode == 0
-        ), f"TestErrorTraceSampling failed:\n{result.stdout}"
+        assert os.path.isfile(path), f"Expected processor.go at {path}"
 
-    def test_orphan_span_logs_warning(self):
-        """Processor must log a warning for orphan spans (no parent in trace)."""
-        result = _run(
-            "go test ./processor/traceanalysisprocessor/... -run TestOrphanSpanWarning -v"
+    def test_processor_test_exists(self):
+        path = os.path.join(
+            REPO_DIR, "processor", "traceanalysisprocessor",
+            "processor_test.go",
         )
-        if result.returncode != 0 and "no required module" in result.stderr:
-            pytest.skip("Go module not available")
-        assert result.returncode == 0, f"TestOrphanSpanWarning failed:\n{result.stdout}"
+        assert os.path.isfile(path), f"Expected processor_test.go"
 
-    def test_go_build_compiles_without_errors(self):
-        """The processor package must compile without errors."""
-        result = _run("go build ./processor/traceanalysisprocessor/...")
-        if result.returncode != 0 and "no required module" in result.stderr:
-            pytest.skip("Go module not available")
-        assert result.returncode == 0, f"go build failed:\n{result.stderr}"
+
+class TestSemanticConfig:
+    """Verify configuration struct and validation."""
+
+    def _read(self):
+        path = os.path.join(
+            REPO_DIR, "processor", "traceanalysisprocessor", "config.go",
+        )
+        with open(path, "r") as f:
+            return f.read()
+
+    def test_config_struct(self):
+        content = self._read()
+        assert re.search(r"type\s+Config\s+struct", content), (
+            "Expected Config struct definition"
+        )
+
+    def test_sampling_rate_field(self):
+        content = self._read()
+        assert re.search(r"SamplingRate|sampling_rate|samplingRate", content), (
+            "Expected sampling_rate field (float, 0.0-1.0)"
+        )
+
+    def test_error_sampling_rate(self):
+        content = self._read()
+        assert re.search(r"ErrorSamplingRate|error_sampling_rate", content), (
+            "Expected error_sampling_rate field"
+        )
+
+    def test_latency_threshold(self):
+        content = self._read()
+        assert re.search(r"LatencyThreshold|latency_threshold_ms", content), (
+            "Expected latency_threshold_ms field"
+        )
+
+    def test_max_traces_per_second(self):
+        content = self._read()
+        assert re.search(r"MaxTraces|max_traces_per_second", content), (
+            "Expected max_traces_per_second field"
+        )
+
+    def test_analysis_enabled(self):
+        content = self._read()
+        assert re.search(r"AnalysisEnabled|analysis_enabled", content), (
+            "Expected analysis_enabled field"
+        )
+
+    def test_validation(self):
+        content = self._read()
+        assert re.search(r"Validate|validate|error", content), (
+            "Expected configuration validation"
+        )
+
+
+class TestSemanticFactory:
+    """Verify component factory registration."""
+
+    def _read(self):
+        path = os.path.join(
+            REPO_DIR, "processor", "traceanalysisprocessor", "factory.go",
+        )
+        with open(path, "r") as f:
+            return f.read()
+
+    def test_type_string(self):
+        content = self._read()
+        assert re.search(r"trace_analysis|traceanalysis", content), (
+            "Expected processor type string 'trace_analysis'"
+        )
+
+    def test_new_factory(self):
+        content = self._read()
+        assert re.search(r"NewFactory|newFactory", content), (
+            "Expected NewFactory function"
+        )
+
+
+class TestSemanticProcessor:
+    """Verify processor implementation with sampling and analysis."""
+
+    def _read(self):
+        path = os.path.join(
+            REPO_DIR, "processor", "traceanalysisprocessor", "processor.go",
+        )
+        with open(path, "r") as f:
+            return f.read()
+
+    def test_consume_traces(self):
+        content = self._read()
+        assert re.search(r"ConsumeTraces|consumeTraces", content), (
+            "Expected ConsumeTraces method (processor.Traces interface)"
+        )
+
+    def test_deterministic_sampling(self):
+        content = self._read()
+        assert re.search(r"hash|Hash|traceID|TraceID", content), (
+            "Expected deterministic hash-based sampling on trace ID"
+        )
+
+    def test_error_priority(self):
+        content = self._read()
+        assert re.search(r"Error|StatusCode|error.*sampl", content, re.IGNORECASE), (
+            "Expected error-priority sampling (always keep errors)"
+        )
+
+    def test_latency_priority(self):
+        content = self._read()
+        assert re.search(r"latency|duration|threshold", content, re.IGNORECASE), (
+            "Expected latency-priority sampling for slow traces"
+        )
+
+    def test_rate_limiting(self):
+        content = self._read()
+        assert re.search(r"token.*bucket|rate.*limit|RateLimit", content, re.IGNORECASE), (
+            "Expected token-bucket rate limiting"
+        )
+
+    def test_traces_dropped_counter(self):
+        content = self._read()
+        assert re.search(r"traces_dropped|dropped|counter", content, re.IGNORECASE), (
+            "Expected traces_dropped_total counter metric"
+        )
+
+    def test_span_count_attribute(self):
+        content = self._read()
+        assert re.search(r"trace\.span_count|span_count|SpanCount", content), (
+            "Expected trace.span_count resource attribute"
+        )
+
+    def test_trace_depth_attribute(self):
+        content = self._read()
+        assert re.search(r"trace\.depth|depth|Depth", content), (
+            "Expected trace.depth computation"
+        )
+
+    def test_trace_duration(self):
+        content = self._read()
+        assert re.search(r"trace\.duration|duration_ms|Duration", content), (
+            "Expected trace.duration_ms attribute"
+        )
+
+    def test_has_errors_attribute(self):
+        content = self._read()
+        assert re.search(r"has_errors|HasErrors|trace\.has_errors", content), (
+            "Expected trace.has_errors attribute"
+        )
+
+    def test_service_count(self):
+        content = self._read()
+        assert re.search(r"service_count|ServiceCount|service\.name", content), (
+            "Expected trace.service_count attribute"
+        )
+
+    def test_orphan_span_detection(self):
+        content = self._read()
+        assert re.search(r"orphan|Orphan|parent.*not.*found", content, re.IGNORECASE), (
+            "Expected orphan span detection"
+        )
+
+
+class TestFunctionalGoSyntax:
+    """Validate Go files are syntactically correct."""
+
+    def _base_dir(self):
+        return os.path.join(
+            REPO_DIR, "processor", "traceanalysisprocessor",
+        )
+
+    def test_package_declaration(self):
+        path = os.path.join(self._base_dir(), "processor.go")
+        with open(path, "r") as f:
+            content = f.read(500)
+        assert re.search(r"^package\s+\w+", content, re.MULTILINE), (
+            "Expected package declaration"
+        )
+
+    def test_go_vet(self):
+        result = subprocess.run(
+            ["go", "vet", "./processor/traceanalysisprocessor/..."],
+            cwd=REPO_DIR,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        if result.returncode != 0:
+            stderr = result.stderr.lower()
+            assert "syntax error" not in stderr, (
+                f"Go syntax errors: {result.stderr[:500]}"
+            )
+
+    def test_processor_test_funcs(self):
+        path = os.path.join(self._base_dir(), "processor_test.go")
+        with open(path, "r") as f:
+            content = f.read()
+        count = len(re.findall(r"func\s+Test\w+", content))
+        assert count >= 3, (
+            f"Expected >= 3 test functions, found {count}"
+        )

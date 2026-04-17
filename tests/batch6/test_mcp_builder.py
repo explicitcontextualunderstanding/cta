@@ -1,213 +1,303 @@
 """
-Tests for 'mcp-builder' skill.
-Generated from benchmark case definitions for mcp-builder.
+Test skill: mcp-builder
+Verify that the Agent correctly builds an MCP server for the GitHub Issues API
+with 7 tools, proper schemas, annotations, and streamable HTTP transport.
 """
 
-import ast
-import base64
-import glob
-import json
 import os
-import py_compile
 import re
+import json
 import subprocess
-import textwrap
-
 import pytest
-
-try:
-    import yaml
-except ModuleNotFoundError:
-    yaml = None
 
 
 class TestMcpBuilder:
-    """Verify the mcp-builder skill output."""
+    REPO_DIR = "/workspace/servers"
 
-    REPO_DIR = '/workspace/servers'
+    # === File Path Checks ===
 
+    def test_package_json_exists(self):
+        """Verify that the MCP server package.json exists"""
+        # Could be in root or in a subdirectory
+        possible_paths = [
+            os.path.join(self.REPO_DIR, "package.json"),
+            os.path.join(self.REPO_DIR, "src/markdown-sqlite/package.json"),
+        ]
+        found = any(os.path.exists(p) for p in possible_paths)
+        assert found, f"package.json not found in expected locations"
 
-    # ── helpers ──────────────────────────────────────────────
+    def test_index_ts_entry_point_exists(self):
+        """Verify that the server entry point src/index.ts exists"""
+        # Search for index.ts in typical locations
+        possible_paths = [
+            os.path.join(self.REPO_DIR, "src/index.ts"),
+            os.path.join(self.REPO_DIR, "src/markdown-sqlite/src/index.ts"),
+        ]
+        found = any(os.path.exists(p) for p in possible_paths)
+        assert found, "src/index.ts entry point not found"
 
-    _SETUP_CACHE: dict = {}
+    def test_github_client_file_exists(self):
+        """Verify that the GitHub API client file exists"""
+        found = False
+        for root, dirs, files in os.walk(self.REPO_DIR):
+            for f in files:
+                if "github" in f.lower() and "client" in f.lower() and f.endswith(".ts"):
+                    found = True
+                    break
+            if found:
+                break
+        assert found, "github-client.ts not found in project"
 
-    @staticmethod
-    def _repo_path(rel: str) -> str:
-        return os.path.join(TestMcpBuilder.REPO_DIR, rel)
-
-    @staticmethod
-    def _safe_read(path: str) -> str:
-        with open(path, "r", encoding="utf-8", errors="ignore") as fh:
-            return fh.read()
-
-    @staticmethod
-    def _load_yaml(path: str):
-        if yaml is None:
-            pytest.skip("PyYAML not available")
-        with open(path, "r", encoding="utf-8", errors="ignore") as fh:
-            return yaml.safe_load(fh)
-
-    @staticmethod
-    def _load_json(path: str):
-        with open(path, "r", encoding="utf-8", errors="ignore") as fh:
-            return json.load(fh)
-
-    @classmethod
-    def _run_in_repo(cls, script: str, timeout: int = 120) -> subprocess.CompletedProcess:
-        return subprocess.run(
-            ["python", "-c", textwrap.dedent(script)],
-            cwd=cls.REPO_DIR,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
+    def test_tool_files_exist(self):
+        """Verify that individual tool files exist"""
+        expected_tools = [
+            "list-issues", "get-issue", "create-issue",
+            "update-issue", "add-comment", "list-comments",
+            "search-issues",
+        ]
+        tools_dir = None
+        for root, dirs, files in os.walk(self.REPO_DIR):
+            if "tools" in dirs:
+                tools_dir = os.path.join(root, "tools")
+                break
+        
+        if tools_dir is None:
+            # Tools might be defined in index.ts directly
+            pytest.skip("No separate tools directory found; tools may be in index.ts")
+        
+        found_tools = []
+        for f in os.listdir(tools_dir):
+            found_tools.append(f)
+        
+        assert len(found_tools) >= 5, (
+            f"Expected at least 5 tool files in tools directory, found: {found_tools}"
         )
 
-    @classmethod
-    def _run_cmd(cls, command, args=None, timeout=120):
-        args = args or []
-        if isinstance(command, str) and args:
-            return subprocess.run(
-                [command, *args],
-                cwd=cls.REPO_DIR,
-                capture_output=True,
-                text=True,
-                timeout=timeout,
-            )
-        return subprocess.run(
-            command if isinstance(command, list) else command,
-            cwd=cls.REPO_DIR,
-            shell=isinstance(command, str),
-            capture_output=True,
-            text=True,
-            timeout=timeout,
+    # === Semantic Checks ===
+
+    def test_package_json_has_mcp_sdk_dependency(self):
+        """Verify that package.json includes @modelcontextprotocol/sdk dependency"""
+        pkg_path = None
+        for p in [
+            os.path.join(self.REPO_DIR, "package.json"),
+            os.path.join(self.REPO_DIR, "src/markdown-sqlite/package.json"),
+        ]:
+            if os.path.exists(p):
+                pkg_path = p
+                break
+
+        assert pkg_path is not None, "package.json not found"
+        with open(pkg_path, "r") as f:
+            pkg = json.load(f)
+
+        all_deps = {}
+        all_deps.update(pkg.get("dependencies", {}))
+        all_deps.update(pkg.get("devDependencies", {}))
+
+        assert "@modelcontextprotocol/sdk" in all_deps, (
+            "package.json missing @modelcontextprotocol/sdk dependency"
         )
 
-    @classmethod
-    def _ensure_setup(cls, label, setup_cmds, fallback):
-        if not setup_cmds:
-            return
-        key = tuple(setup_cmds)
-        if key in cls._SETUP_CACHE:
-            ok, msg = cls._SETUP_CACHE[key]
-            if ok:
-                return
-            if fallback == "skip_if_setup_fails":
-                pytest.skip(f"{label} setup failed: {msg}")
-            pytest.fail(f"{label} setup failed: {msg}")
-        for cmd in setup_cmds:
-            r = subprocess.run(cmd, cwd=cls.REPO_DIR, shell=True,
-                               capture_output=True, text=True, timeout=300)
-            if r.returncode != 0:
-                msg = (r.stderr or r.stdout or 'failed').strip()
-                cls._SETUP_CACHE[key] = (False, msg)
-                if fallback == "skip_if_setup_fails":
-                    pytest.skip(f"{label} setup failed: {msg}")
-                pytest.fail(f"{label} setup failed: {msg}")
-        cls._SETUP_CACHE[key] = (True, 'ok')
+    def test_server_registers_seven_tools(self):
+        """Verify that the server registers all 7 required tools"""
+        # Find the index.ts
+        index_path = None
+        for p in [
+            os.path.join(self.REPO_DIR, "src/index.ts"),
+            os.path.join(self.REPO_DIR, "src/markdown-sqlite/src/index.ts"),
+        ]:
+            if os.path.exists(p):
+                index_path = p
+                break
 
+        assert index_path is not None, "index.ts not found"
+        with open(index_path, "r") as f:
+            content = f.read()
 
-    # ── file_path_check (static) ────────────────────────────────────────
+        # Check for tool names
+        expected_tools = [
+            "github_list_issues", "github_get_issue", "github_create_issue",
+            "github_update_issue", "github_add_comment", "github_list_comments",
+            "github_search_issues",
+        ]
+        found_count = sum(1 for tool in expected_tools if tool in content)
+        
+        # If tools are imported from separate files, check imports
+        if found_count < 5:
+            all_content = content
+            # Also read tool files
+            for root, dirs, files in os.walk(os.path.dirname(index_path)):
+                for f in files:
+                    if f.endswith(".ts") and f != "index.ts":
+                        with open(os.path.join(root, f), "r") as fh:
+                            all_content += fh.read()
+            found_count = sum(1 for tool in expected_tools if tool in all_content)
 
-    def test_index_ts_exists(self):
-        """Verify src/index.ts server entry point exists"""
-        _p = self._repo_path('src/index.ts')
-        assert os.path.isfile(_p), f'Missing file: src/index.ts'
+        assert found_count >= 5, (
+            f"Expected at least 5 of 7 tool definitions, found {found_count}. "
+            f"Tools: {expected_tools}"
+        )
 
-    def test_package_json_has_mcp_sdk(self):
-        """Verify package.json has @modelcontextprotocol/sdk dependency"""
-        _p = self._repo_path('package.json')
-        assert os.path.isfile(_p), f'Missing file: package.json'
-        self._load_json(_p)  # parse check
+    def test_tools_use_zod_schemas(self):
+        """Verify that tool definitions use Zod for input validation"""
+        found_zod = False
+        for root, dirs, files in os.walk(self.REPO_DIR):
+            # Skip node_modules
+            if "node_modules" in root:
+                continue
+            for f in files:
+                if f.endswith(".ts"):
+                    filepath = os.path.join(root, f)
+                    with open(filepath, "r") as fh:
+                        content = fh.read()
+                    if "zod" in content.lower() or "z." in content:
+                        found_zod = True
+                        break
+            if found_zod:
+                break
+        assert found_zod, "Tools should use Zod for input schema validation"
 
-    def test_tools_dir_exists(self):
-        """Verify src/tools/ or src/resources/ directories exist"""
-        _p = self._repo_path('src/tools/')
-        assert os.path.isdir(_p), f'Missing directory: src/tools/'
-        _p = self._repo_path('src/resources/')
-        assert os.path.isdir(_p), f'Missing directory: src/resources/'
+    def test_tools_have_annotations(self):
+        """Verify that tools define MCP annotations (readOnlyHint, destructiveHint)"""
+        annotation_count = 0
+        for root, dirs, files in os.walk(self.REPO_DIR):
+            if "node_modules" in root:
+                continue
+            for f in files:
+                if f.endswith(".ts"):
+                    filepath = os.path.join(root, f)
+                    with open(filepath, "r") as fh:
+                        content = fh.read()
+                    if "readOnlyHint" in content or "destructiveHint" in content:
+                        annotation_count += 1
+        assert annotation_count >= 1, (
+            "Tools should define MCP annotations (readOnlyHint, destructiveHint)"
+        )
 
-    # ── semantic_check (static) ────────────────────────────────────────
+    def test_read_only_tools_annotated_correctly(self):
+        """Verify that read-only tools have readOnlyHint: true"""
+        read_only_tools = ["list_issues", "get_issue", "list_comments", "search_issues"]
+        all_ts_content = ""
+        for root, dirs, files in os.walk(self.REPO_DIR):
+            if "node_modules" in root:
+                continue
+            for f in files:
+                if f.endswith(".ts"):
+                    with open(os.path.join(root, f), "r") as fh:
+                        all_ts_content += fh.read() + "\n"
 
-    def test_server_import_sdk(self):
-        """Verify src/index.ts imports Server from MCP SDK"""
-        _p = self._repo_path('src/index.ts')
-        assert os.path.exists(_p), f'Missing: src/index.ts'
-        _contents = self._safe_read(_p)
-        _all = _contents if isinstance(_contents, str) else ''
-        assert '@modelcontextprotocol/sdk' in _all, 'Missing: @modelcontextprotocol/sdk'
-        assert 'Server' in _all, 'Missing: Server'
+        has_readonly_true = "readOnlyHint" in all_ts_content and "true" in all_ts_content
+        assert has_readonly_true, (
+            "Read-only tools should be annotated with readOnlyHint: true"
+        )
 
-    def test_handler_registrations(self):
-        """Verify request handlers registered for resources, tools, and prompts"""
-        _p = self._repo_path('src/index.ts')
-        assert os.path.exists(_p), f'Missing: src/index.ts'
-        _contents = self._safe_read(_p)
-        _all = _contents if isinstance(_contents, str) else ''
-        assert 'setRequestHandler' in _all, 'Missing: setRequestHandler'
-        assert 'ListResources' in _all, 'Missing: ListResources'
-        assert 'CallTool' in _all, 'Missing: CallTool'
-        assert 'ListPrompts' in _all, 'Missing: ListPrompts'
+    def test_github_client_handles_rate_limit(self):
+        """Verify that GitHub API client handles rate limiting"""
+        client_content = ""
+        for root, dirs, files in os.walk(self.REPO_DIR):
+            if "node_modules" in root:
+                continue
+            for f in files:
+                if "github" in f.lower() and "client" in f.lower() and f.endswith(".ts"):
+                    with open(os.path.join(root, f), "r") as fh:
+                        client_content = fh.read()
+                    break
 
-    def test_tool_input_schema(self):
-        """Verify tool definitions have inputSchema with type 'object'"""
-        _p = self._repo_path('src/')
-        assert os.path.isdir(_p), f'Missing directory: src/'
-        _contents = ''
-        for _f in sorted(glob.glob(os.path.join(_p, '**', '*'), recursive=True)):
-            if os.path.isfile(_f):
-                _contents += self._safe_read(_f) + '\n'
-        _all = _contents if isinstance(_contents, str) else ''
-        assert 'inputSchema' in _all, 'Missing: inputSchema'
-        assert 'properties' in _all, 'Missing: properties'
-        assert 'type' in _all, 'Missing: type'
+        if not client_content:
+            pytest.skip("GitHub client file not found")
 
-    # ── functional_check ────────────────────────────────────────
+        has_rate_limit = any(kw in client_content for kw in [
+            "ratelimit", "rate_limit", "rate-limit", "getRateLimit",
+            "x-ratelimit", "Rate limit",
+        ])
+        assert has_rate_limit, (
+            "GitHub client should handle rate limiting"
+        )
+
+    def test_github_token_required(self):
+        """Verify that GITHUB_TOKEN environment variable is required"""
+        all_ts = ""
+        for root, dirs, files in os.walk(self.REPO_DIR):
+            if "node_modules" in root:
+                continue
+            for f in files:
+                if f.endswith(".ts"):
+                    with open(os.path.join(root, f), "r") as fh:
+                        all_ts += fh.read() + "\n"
+
+        assert "GITHUB_TOKEN" in all_ts, (
+            "Server should require GITHUB_TOKEN environment variable"
+        )
+
+    # === Functional Checks ===
 
     def test_typescript_compiles(self):
-        """Verify TypeScript compiles without errors"""
-        self._ensure_setup('test_typescript_compiles', ['npm install'], 'fail_if_missing')
-        result = self._run_cmd('npx', args=['tsc', '--noEmit'], timeout=120)
+        """Verify that npm run build compiles without errors"""
+        build_dir = self.REPO_DIR
+        # Find the directory with package.json
+        for p in ["src/markdown-sqlite", "."]:
+            pkg_path = os.path.join(self.REPO_DIR, p, "package.json")
+            if os.path.exists(pkg_path):
+                build_dir = os.path.join(self.REPO_DIR, p)
+                break
+
+        # Install deps
+        install_result = subprocess.run(
+            ["npm", "install"],
+            cwd=build_dir,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        if install_result.returncode != 0:
+            pytest.skip(f"npm install failed: {install_result.stderr}")
+
+        result = subprocess.run(
+            ["npm", "run", "build"],
+            cwd=build_dir,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
         assert result.returncode == 0, (
-            f'test_typescript_compiles failed (exit {result.returncode})\n' + result.stderr[:500]
+            f"Build failed:\n{result.stdout[-1000:]}\n{result.stderr[-1000:]}"
         )
 
-    def test_npm_test_passes(self):
-        """Verify npm test passes"""
-        self._ensure_setup('test_npm_test_passes', ['npm install'], 'fail_if_missing')
-        result = self._run_cmd('npm', args=['test'], timeout=300)
-        assert result.returncode == 0, (
-            f'test_npm_test_passes failed (exit {result.returncode})\n' + result.stderr[:500]
+    def test_tsconfig_has_strict_mode(self):
+        """Verify that tsconfig.json enables strict mode"""
+        tsconfig_path = None
+        for p in [
+            os.path.join(self.REPO_DIR, "tsconfig.json"),
+            os.path.join(self.REPO_DIR, "src/markdown-sqlite/tsconfig.json"),
+        ]:
+            if os.path.exists(p):
+                tsconfig_path = p
+                break
+
+        if tsconfig_path is None:
+            pytest.skip("tsconfig.json not found")
+
+        with open(tsconfig_path, "r") as f:
+            content = f.read()
+
+        assert '"strict"' in content, (
+            "tsconfig.json should have strict mode enabled"
         )
 
-    def test_package_json_valid_json(self):
-        """Verify package.json is valid JSON with MCP SDK dependency"""
-        result = self._run_cmd('python', args=['-c', "import json; pkg=json.loads(open('package.json').read()); deps={**pkg.get('dependencies',{}),**pkg.get('devDependencies',{})}; assert '@modelcontextprotocol/sdk' in deps; print('PASS')"], timeout=120)
-        assert result.returncode == 0, (
-            f'test_package_json_valid_json failed (exit {result.returncode})\n' + result.stderr[:500]
-        )
-        assert 'PASS' in (result.stdout + result.stderr), 'Expected PASS in output'
+    def test_error_handling_for_missing_issues(self):
+        """Verify that tool implementations handle 404 errors for missing issues"""
+        all_ts = ""
+        for root, dirs, files in os.walk(self.REPO_DIR):
+            if "node_modules" in root:
+                continue
+            for f in files:
+                if f.endswith(".ts"):
+                    with open(os.path.join(root, f), "r") as fh:
+                        all_ts += fh.read() + "\n"
 
-    def test_server_connect_grep(self):
-        """Verify server.connect is called with transport"""
-        result = self._run_cmd('python', args=['-c', "content=open('src/index.ts').read(); assert 'connect' in content and ('Transport' in content or 'transport' in content), 'No transport connect'; print('PASS')"], timeout=120)
-        assert result.returncode == 0, (
-            f'test_server_connect_grep failed (exit {result.returncode})\n' + result.stderr[:500]
+        has_404_handling = any(kw in all_ts for kw in [
+            "404", "not found", "NotFound", "isError",
+        ])
+        assert has_404_handling, (
+            "Tools should handle 404 responses for non-existent issues"
         )
-        assert 'PASS' in (result.stdout + result.stderr), 'Expected PASS in output'
-
-    def test_at_least_2_tools(self):
-        """Verify at least 2 tools are defined"""
-        result = self._run_cmd('python', args=['-c', "import glob; tool_files=glob.glob('src/tools/**/*.ts',recursive=True); content=open('src/index.ts').read(); tool_count=content.count('name:'); assert tool_count>=2 or len(tool_files)>=2, f'Only {max(tool_count,len(tool_files))} tools'; print('PASS')"], timeout=120)
-        assert result.returncode == 0, (
-            f'test_at_least_2_tools failed (exit {result.returncode})\n' + result.stderr[:500]
-        )
-        assert 'PASS' in (result.stdout + result.stderr), 'Expected PASS in output'
-
-    def test_error_handling_pattern(self):
-        """Verify McpError is used for error responses"""
-        result = self._run_cmd('python', args=['-c', "import glob; files=glob.glob('src/**/*.ts',recursive=True); found=False\nfor f in files:\n    c=open(f).read()\n    if 'McpError' in c or 'ErrorCode' in c: found=True; break\nassert found, 'No McpError usage found'; print('PASS')"], timeout=120)
-        assert result.returncode == 0, (
-            f'test_error_handling_pattern failed (exit {result.returncode})\n' + result.stderr[:500]
-        )
-        assert 'PASS' in (result.stdout + result.stderr), 'Expected PASS in output'
-

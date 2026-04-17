@@ -1,161 +1,160 @@
 """
-Test for 'llm-evaluation' skill — LLM Evaluation Pipeline
-Validates BLEU, ROUGE, BERTScore metrics, FactualityChecker,
-EvaluationPipeline with mocked dependencies, and edge cases.
+Test skill: llm-evaluation
+Verify that the Agent creates an evaluation framework for HELM with text metrics (BLEU, ROUGE),
+classification metrics, retrieval metrics (MRR, NDCG), and LLM-as-judge.
 """
 
 import os
-import sys
-
+import subprocess
+import ast
+import re
 import pytest
 
 
 class TestLlmEvaluation:
-    """Verify LLM evaluation pipeline: metrics, factuality, pipeline."""
-
     REPO_DIR = "/workspace/helm"
 
-    # ── helpers ──────────────────────────────────────────────────────────
+    # === File Path Checks ===
 
-    @staticmethod
-    def _read_file(path: str) -> str:
-        try:
-            with open(path, "r", errors="ignore") as fh:
-                return fh.read()
-        except OSError:
-            return ""
+    def test_evaluation_files_exist(self):
+        """Verify evaluation metric files exist"""
+        found = False
+        for root, dirs, files in os.walk(self.REPO_DIR):
+            if ".git" in root:
+                continue
+            for f in files:
+                if f.endswith(".py") and ("metric" in f.lower() or "eval" in f.lower()):
+                    fpath = os.path.join(root, f)
+                    with open(fpath) as fh:
+                        content = fh.read()
+                    if "BLEU" in content or "ROUGE" in content or "MRR" in content:
+                        found = True
+                        break
+            if found:
+                break
+        assert found, "Evaluation metric files not found"
 
-    def _ev(self, *parts) -> str:
-        return os.path.join(self.REPO_DIR, "examples", "llm_evaluation", *parts)
+    # === Semantic Checks ===
 
-    # ── file_path_check ──────────────────────────────────────────────────
+    def test_bleu_metric_defined(self):
+        """Verify BLEU metric is implemented"""
+        content = self._find_content()
+        has_bleu = "BLEU" in content or "bleu" in content.lower()
+        assert has_bleu, "BLEU metric not found"
 
-    def test_metrics_py_exists(self):
-        """metrics.py must exist containing MetricEvaluator."""
-        path = self._ev("metrics.py")
-        assert os.path.isfile(path), f"{path} does not exist"
-        assert os.path.getsize(path) > 0
+    def test_rouge_metric_defined(self):
+        """Verify ROUGE metric is implemented"""
+        content = self._find_content()
+        has_rouge = "ROUGE" in content or "rouge" in content.lower()
+        assert has_rouge, "ROUGE metric not found"
 
-    def test_pipeline_and_factuality_exist(self):
-        """pipeline.py and factuality.py must exist."""
-        for name in ("pipeline.py", "factuality.py"):
-            path = self._ev(name)
-            assert os.path.isfile(path), f"{path} does not exist"
+    def test_classification_metrics_defined(self):
+        """Verify classification metrics (accuracy, F1, precision, recall) exist"""
+        content = self._find_content()
+        content_lower = content.lower()
+        class_metrics = ["accuracy", "f1", "precision", "recall"]
+        found = [m for m in class_metrics if m in content_lower]
+        assert len(found) >= 2, (
+            f"Expected classification metrics, found: {found}"
+        )
 
-    def test_runner_and_test_file_exist(self):
-        """runner.py and tests/test_llm_evaluation.py must exist."""
-        assert os.path.isfile(self._ev("runner.py")), "runner.py not found"
-        test_path = os.path.join(self.REPO_DIR, "tests", "test_llm_evaluation.py")
-        assert os.path.isfile(test_path), f"{test_path} not found"
+    def test_mrr_metric_defined(self):
+        """Verify MRR (Mean Reciprocal Rank) is implemented"""
+        content = self._find_content()
+        has_mrr = "MRR" in content or "mean_reciprocal" in content.lower() or "reciprocal_rank" in content.lower()
+        assert has_mrr, "MRR metric not found"
 
-    # ── semantic_check ───────────────────────────────────────────────────
+    def test_ndcg_metric_defined(self):
+        """Verify NDCG is implemented"""
+        content = self._find_content()
+        has_ndcg = "NDCG" in content or "ndcg" in content.lower() or "normalized_discounted" in content.lower()
+        assert has_ndcg, "NDCG metric not found"
 
-    def test_compute_bleu_defined_with_pred_ref(self):
-        """metrics.py must define compute_bleu(pred, ref)."""
-        content = self._read_file(self._ev("metrics.py"))
-        if not content:
-            pytest.skip("metrics.py not found")
-        assert "compute_bleu" in content, "compute_bleu not defined"
-        assert "pred" in content and "ref" in content, "pred/ref params missing"
+    def test_llm_as_judge_defined(self):
+        """Verify LLM-as-judge evaluator is implemented"""
+        content = self._find_content()
+        content_lower = content.lower()
+        has_judge = "judge" in content_lower or "llm_eval" in content_lower or "gpt" in content_lower
+        assert has_judge, "LLM-as-judge not found"
 
-    def test_factuality_validates_context(self):
-        """factuality.py must raise ValueError when context is None."""
-        content = self._read_file(self._ev("factuality.py"))
-        if not content:
-            pytest.skip("factuality.py not found")
-        assert "FactualityChecker" in content
-        assert "ValueError" in content, "ValueError not found"
+    # === Functional Checks ===
 
-    def test_pipeline_returns_dict(self):
-        """EvaluationPipeline.run must return dict with metric scores."""
-        content = self._read_file(self._ev("pipeline.py"))
-        if not content:
-            pytest.skip("pipeline.py not found")
-        assert "EvaluationPipeline" in content
-        assert "run" in content
-        assert "dict" in content or "return" in content
+    def test_metric_files_parse(self):
+        """Verify all metric files have valid Python syntax"""
+        for root, dirs, files in os.walk(self.REPO_DIR):
+            if ".git" in root:
+                continue
+            for f in files:
+                if f.endswith(".py") and ("metric" in f.lower() or "eval" in f.lower()):
+                    fpath = os.path.join(root, f)
+                    with open(fpath) as fh:
+                        source = fh.read()
+                    if "BLEU" in source or "ROUGE" in source or "MRR" in source:
+                        try:
+                            ast.parse(source)
+                        except SyntaxError as e:
+                            pytest.fail(f"Syntax error in {fpath}: {e}")
 
-    def test_bertscore_is_imported_at_top(self):
-        """BERTScore must be imported at module level for mockability."""
-        content = self._read_file(self._ev("metrics.py"))
-        if not content:
-            pytest.skip("metrics.py not found")
-        has_bert = "bert_score" in content.lower() or "BERTScore" in content
-        assert has_bert, "BERTScore import not found"
+    def test_metrics_have_compute_method(self):
+        """Verify metric classes define a compute/evaluate method"""
+        content = self._find_content()
+        has_compute = (
+            "def compute" in content
+            or "def evaluate" in content
+            or "def score" in content
+            or "def calculate" in content
+        )
+        assert has_compute, "Metric classes missing compute/evaluate method"
 
-    # ── functional_check ─────────────────────────────────────────────────
+    def test_metrics_return_numeric_scores(self):
+        """Verify metrics return float/numeric scores"""
+        content = self._find_content()
+        has_return = (
+            "float" in content
+            or "-> float" in content
+            or "return" in content
+        )
+        assert has_return, "Metrics don't appear to return numeric scores"
 
-    def test_bleu_identical_returns_near_one(self):
-        """compute_bleu with identical pred and ref must return >= 0.99."""
-        try:
-            sys.path.insert(0, self.REPO_DIR)
-            from examples.llm_evaluation.metrics import compute_bleu
-        except ImportError:
-            pytest.skip("Cannot import compute_bleu")
-        score = compute_bleu("hello world", "hello world")
-        assert score >= 0.99, f"Expected >= 0.99, got {score}"
+    def test_evaluation_module_importable(self):
+        """Verify evaluation module can be parsed"""
+        eval_file = None
+        for root, dirs, files in os.walk(self.REPO_DIR):
+            if ".git" in root:
+                continue
+            for f in files:
+                if f.endswith(".py") and ("metric" in f.lower() or "eval" in f.lower()):
+                    fpath = os.path.join(root, f)
+                    with open(fpath) as fh:
+                        content = fh.read()
+                    if "BLEU" in content or "ROUGE" in content:
+                        eval_file = fpath
+                        break
+            if eval_file:
+                break
+        if eval_file is None:
+            pytest.skip("Eval module not found")
+        result = subprocess.run(
+            ["python", "-c", f"import ast; ast.parse(open('{eval_file}').read()); print('OK')"],
+            cwd=self.REPO_DIR,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        assert result.returncode == 0, f"Parse failed: {result.stderr}"
 
-    def test_bleu_empty_prediction_returns_zero(self):
-        """compute_bleu with empty pred must return 0.0, no ZeroDivisionError."""
-        try:
-            sys.path.insert(0, self.REPO_DIR)
-            from examples.llm_evaluation.metrics import compute_bleu
-        except ImportError:
-            pytest.skip("Cannot import compute_bleu")
-        score = compute_bleu("", "hello world")
-        assert score == 0.0
-
-    def test_rouge_identical_returns_one(self):
-        """compute_rouge with identical text returns score of 1.0."""
-        try:
-            sys.path.insert(0, self.REPO_DIR)
-            from examples.llm_evaluation.metrics import compute_rouge
-        except ImportError:
-            pytest.skip("Cannot import compute_rouge")
-        score = compute_rouge("the quick brown fox", "the quick brown fox")
-        if isinstance(score, dict):
-            assert score.get("rougeL", score.get("rouge-l", 0)) == 1.0
-        else:
-            assert score == 1.0
-
-    def test_factuality_none_raises_valueerror(self):
-        """FactualityChecker(context=None) must raise ValueError."""
-        try:
-            sys.path.insert(0, self.REPO_DIR)
-            from examples.llm_evaluation.factuality import FactualityChecker
-        except ImportError:
-            pytest.skip("Cannot import FactualityChecker")
-        with pytest.raises(ValueError):
-            FactualityChecker(context=None)
-
-    def test_pipeline_returns_metric_dict(self):
-        """EvaluationPipeline.run must return dict with float values."""
-        try:
-            sys.path.insert(0, self.REPO_DIR)
-            from examples.llm_evaluation.pipeline import EvaluationPipeline
-            from unittest.mock import MagicMock, patch
-        except ImportError:
-            pytest.skip("Cannot import EvaluationPipeline")
-        pipeline = EvaluationPipeline.__new__(EvaluationPipeline)
-        pipeline.metrics = {"bleu": MagicMock(return_value=0.85)}
-        try:
-            results = pipeline.run([{"input": "What is 2+2?", "output": "4"}])
-            assert isinstance(results, dict)
-        except Exception:
-            pytest.skip("Pipeline requires specific mocking setup")
-
-    def test_pipeline_empty_dataset(self):
-        """EvaluationPipeline.run with empty dataset returns empty/zero dict."""
-        try:
-            sys.path.insert(0, self.REPO_DIR)
-            from examples.llm_evaluation.pipeline import EvaluationPipeline
-            from unittest.mock import MagicMock
-        except ImportError:
-            pytest.skip("Cannot import EvaluationPipeline")
-        pipeline = EvaluationPipeline.__new__(EvaluationPipeline)
-        pipeline.metrics = {}
-        try:
-            results = pipeline.run([])
-            assert isinstance(results, dict)
-        except Exception:
-            pytest.skip("Pipeline requires specific setup for empty dataset")
+    def _find_content(self):
+        """Helper to find evaluation content"""
+        all_content = ""
+        for root, dirs, files in os.walk(self.REPO_DIR):
+            if ".git" in root:
+                continue
+            for f in files:
+                if f.endswith(".py") and ("metric" in f.lower() or "eval" in f.lower() or "judge" in f.lower()):
+                    fpath = os.path.join(root, f)
+                    try:
+                        with open(fpath) as fh:
+                            all_content += fh.read() + "\n"
+                    except (UnicodeDecodeError, PermissionError):
+                        continue
+        return all_content

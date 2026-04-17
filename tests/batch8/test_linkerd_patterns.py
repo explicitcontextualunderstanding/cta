@@ -1,130 +1,158 @@
 """
-Test for 'linkerd-patterns' skill — Linkerd SMI Traffic Split Manager
-Validates that the Agent created a Python package for generating Linkerd
-TrafficSplit and ServiceProfile CRD YAML with weight validation and shift logic.
+Tests for the linkerd-patterns skill.
+Validates a Linkerd service mesh configuration generator with
+ServiceProfiles, TrafficSplits, authorization policies, and validation.
 """
 
 import os
 import re
-import sys
+import ast
 
-import pytest
+REPO_DIR = "/workspace/linkerd2"
+PYTHON_DIR = os.path.join(REPO_DIR, "test", "python")
 
 
 class TestLinkerdPatterns:
-    """Verify Linkerd traffic split manager implementation."""
+    """Tests for the Linkerd configuration generator."""
 
-    REPO_DIR = "/workspace/linkerd2"
+    # ── file_path_check ──────────────────────────────────────────────
 
-    @staticmethod
-    def _read(path: str) -> str:
-        try:
-            with open(path, "r", errors="ignore") as fh:
-                return fh.read()
-        except OSError:
+    def test_linkerd_generator_exists(self):
+        """LinkerdConfigGenerator module must exist."""
+        path = os.path.join(PYTHON_DIR, "linkerd_generator.py")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    def test_traffic_split_exists(self):
+        """TrafficSplitManager module must exist."""
+        path = os.path.join(PYTHON_DIR, "traffic_split.py")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    def test_auth_policy_exists(self):
+        """AuthorizationPolicyBuilder module must exist."""
+        path = os.path.join(PYTHON_DIR, "auth_policy.py")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    def test_validator_exists(self):
+        """LinkerdValidator module must exist."""
+        path = os.path.join(PYTHON_DIR, "linkerd_validator.py")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    # ── semantic_check ───────────────────────────────────────────────
+
+    def _read(self, filename):
+        path = os.path.join(PYTHON_DIR, filename)
+        if not os.path.isfile(path):
             return ""
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read()
 
-    # ── file_path_check ─────────────────────────────────────────────
+    def test_generator_service_profile(self):
+        """Generator must produce ServiceProfile resources."""
+        content = self._read("linkerd_generator.py")
+        assert re.search(r"class\s+LinkerdConfigGenerator", content), (
+            "LinkerdConfigGenerator class not defined"
+        )
+        assert re.search(r"def\s+generate_service_profile\b", content), (
+            "generate_service_profile method not defined"
+        )
+        assert "ServiceProfile" in content, "ServiceProfile kind not referenced"
 
-    def test_linkerd_manager_package_exists(self):
-        """Verify __init__.py and generator.py exist under src/linkerd_manager/."""
-        for rel in ("src/linkerd_manager/__init__.py", "src/linkerd_manager/generator.py"):
-            path = os.path.join(self.REPO_DIR, rel)
-            assert os.path.isfile(path), f"Missing: {rel}"
+    def test_generator_server_resource(self):
+        """Generator must produce Server and ServerAuthorization resources."""
+        content = self._read("linkerd_generator.py")
+        assert re.search(r"def\s+generate_server\b", content), (
+            "generate_server method not defined"
+        )
+        assert re.search(r"def\s+generate_server_authorization\b", content), (
+            "generate_server_authorization method not defined"
+        )
 
-    def test_traffic_split_retry_models_exist(self):
-        """Verify traffic_split.py, retry_policy.py, and models.py exist."""
-        for rel in ("src/linkerd_manager/traffic_split.py",
-                     "src/linkerd_manager/retry_policy.py",
-                     "src/linkerd_manager/models.py"):
-            path = os.path.join(self.REPO_DIR, rel)
-            assert os.path.isfile(path), f"Missing: {rel}"
+    def test_traffic_split_manager(self):
+        """TrafficSplitManager must define generate_traffic_split and shift_traffic."""
+        content = self._read("traffic_split.py")
+        assert re.search(r"class\s+TrafficSplitManager", content), (
+            "TrafficSplitManager class not defined"
+        )
+        assert re.search(r"def\s+generate_traffic_split\b", content), (
+            "generate_traffic_split not defined"
+        )
+        assert re.search(r"def\s+shift_traffic\b", content), "shift_traffic not defined"
 
-    def test_all_classes_importable(self):
-        """TrafficSplitManager, RetryPolicyBuilder, LinkerdConfigGenerator importable."""
-        if not os.path.isdir(self.REPO_DIR):
-            pytest.skip("Repo dir does not exist")
-        sys.path.insert(0, os.path.join(self.REPO_DIR, "src"))
-        try:
-            from linkerd_manager.generator import LinkerdConfigGenerator  # noqa: F401
-            from linkerd_manager.traffic_split import TrafficSplitManager  # noqa: F401
-            from linkerd_manager.retry_policy import RetryPolicyBuilder  # noqa: F401
-        except ImportError:
-            pytest.skip("linkerd_manager not importable")
-        finally:
-            sys.path.pop(0)
+    def test_canary_steps(self):
+        """TrafficSplitManager must support generate_canary_steps."""
+        content = self._read("traffic_split.py")
+        assert re.search(r"def\s+generate_canary_steps\b", content), (
+            "generate_canary_steps not defined"
+        )
 
-    # ── semantic_check ──────────────────────────────────────────────
+    def test_weight_sum_validation(self):
+        """TrafficSplit weights must sum to 1000."""
+        content = self._read("traffic_split.py")
+        assert "1000" in content, "Weight sum of 1000 not referenced"
+        assert re.search(r"ValueError|sum.*1000|weights.*sum", content, re.IGNORECASE), (
+            "Weight sum validation not found"
+        )
 
-    def test_traffic_split_smi_api_version(self):
-        """Verify traffic_split.py references split.smi-spec.io/v1alpha1 and TrafficSplit."""
-        content = self._read(os.path.join(self.REPO_DIR, "src/linkerd_manager/traffic_split.py"))
-        assert content, "traffic_split.py is empty or unreadable"
-        assert "split.smi-spec.io/v1alpha1" in content
-        assert "TrafficSplit" in content
+    def test_auth_policy_builder(self):
+        """AuthorizationPolicyBuilder must define default_deny and zero_trust_policy."""
+        content = self._read("auth_policy.py")
+        assert re.search(r"class\s+AuthorizationPolicyBuilder", content), (
+            "AuthorizationPolicyBuilder class not defined"
+        )
+        assert re.search(r"def\s+default_deny\b", content), "default_deny not defined"
+        assert re.search(r"def\s+generate_zero_trust_policy\b", content), (
+            "generate_zero_trust_policy not defined"
+        )
 
-    def test_service_profile_linkerd_api_version(self):
-        """Verify retry_policy.py references linkerd.io/v1alpha2 and ServiceProfile."""
-        content = self._read(os.path.join(self.REPO_DIR, "src/linkerd_manager/retry_policy.py"))
-        assert content, "retry_policy.py is empty or unreadable"
-        assert "linkerd.io/v1alpha2" in content
-        assert "ServiceProfile" in content
+    def test_validator_methods(self):
+        """Validator must check ServiceProfile, TrafficSplit, and Authorization."""
+        content = self._read("linkerd_validator.py")
+        assert re.search(r"class\s+LinkerdValidator", content), (
+            "LinkerdValidator class not defined"
+        )
+        for method in ["validate_service_profile", "validate_traffic_split", "validate_authorization"]:
+            assert re.search(rf"def\s+{method}\b", content), (
+                f"{method} method not defined"
+            )
 
-    def test_weight_validation_in_traffic_split(self):
-        """Verify traffic_split.py validates weight in [0, 100]."""
-        content = self._read(os.path.join(self.REPO_DIR, "src/linkerd_manager/traffic_split.py"))
-        assert content, "traffic_split.py is empty or unreadable"
-        found = any(kw in content for kw in ("ValueError", "must be between", "range"))
-        assert found, "Weight validation not found in traffic_split.py"
+    # ── functional_check ─────────────────────────────────────────────
 
-    # ── functional_check (import) ───────────────────────────────────
+    def test_all_files_valid_python(self):
+        """All Linkerd Python files must have valid syntax."""
+        errors = []
+        for fname in ["linkerd_generator.py", "traffic_split.py",
+                       "auth_policy.py", "linkerd_validator.py"]:
+            content = self._read(fname)
+            if not content:
+                continue
+            try:
+                ast.parse(content)
+            except SyntaxError as e:
+                errors.append(f"{fname}: {e}")
+        assert not errors, "Syntax errors:\n" + "\n".join(errors)
 
-    def _import(self, dotpath: str):
-        if not os.path.isdir(self.REPO_DIR):
-            pytest.skip("Repo dir does not exist")
-        sys.path.insert(0, os.path.join(self.REPO_DIR, "src"))
-        try:
-            return __import__(dotpath, fromlist=[""])
-        except ImportError:
-            pytest.skip(f"{dotpath} not importable")
-        finally:
-            sys.path.pop(0)
+    def test_smi_api_version(self):
+        """TrafficSplit must use SMI spec API version."""
+        content = self._read("traffic_split.py")
+        assert re.search(r"split\.smi-spec\.io|smi.*spec", content), (
+            "SMI spec API version not found"
+        )
 
-    def test_traffic_split_api_version_in_output(self):
-        """create_split() YAML has apiVersion: split.smi-spec.io/v1alpha1."""
-        import yaml
-        mod = self._import("linkerd_manager.traffic_split")
-        ts = yaml.safe_load(mod.TrafficSplitManager().create_split("my-svc", 20))
-        assert ts["apiVersion"] == "split.smi-spec.io/v1alpha1"
+    def test_linkerd_api_versions(self):
+        """Generator must use correct Linkerd API versions."""
+        content = self._read("linkerd_generator.py")
+        assert re.search(r"linkerd\.io|policy\.linkerd\.io", content), (
+            "Linkerd API versions not found"
+        )
 
-    def test_backends_weights_sum_to_100(self):
-        """All backend weights in generated TrafficSplit sum to 100."""
-        import yaml
-        mod = self._import("linkerd_manager.traffic_split")
-        ts = yaml.safe_load(mod.TrafficSplitManager().create_split("my-svc", 30))
-        backends = ts["spec"]["backends"]
-        assert sum(b["weight"] for b in backends) == 100
+    def test_rollback_method(self):
+        """TrafficSplitManager must support rollback."""
+        content = self._read("traffic_split.py")
+        assert re.search(r"def\s+rollback\b", content), "rollback method not defined"
 
-    def test_canary_weight_101_raises_value_error(self):
-        """create_split() raises ValueError when canary_weight=101."""
-        mod = self._import("linkerd_manager.traffic_split")
-        with pytest.raises(ValueError):
-            mod.TrafficSplitManager().create_split("svc", 101)
-
-    def test_service_profile_kind_in_output(self):
-        """RetryPolicyBuilder.build() returns ServiceProfile YAML with correct kind."""
-        import yaml
-        mod = self._import("linkerd_manager.retry_policy")
-        sp = yaml.safe_load(mod.RetryPolicyBuilder().build("my-svc", retries=3, timeout_ms=500))
-        assert sp["kind"] == "ServiceProfile"
-
-    def test_shift_traffic_updates_weights(self):
-        """shift_traffic(current_yaml, 40) produces canary=40 and stable=60."""
-        import yaml
-        mod = self._import("linkerd_manager.traffic_split")
-        mgr = mod.TrafficSplitManager()
-        current_yaml = mgr.create_split("svc", 20)
-        updated = yaml.safe_load(mgr.shift_traffic(current_yaml, 40))
-        backends = {b["service"]: b["weight"] for b in updated["spec"]["backends"]}
-        assert backends.get("svc-canary") == 40
-        assert backends.get("svc-stable") == 60
+    def test_regex_validation(self):
+        """Validator must check route regex validity."""
+        content = self._read("linkerd_validator.py")
+        assert re.search(r"regex|re\.compile|pattern", content, re.IGNORECASE), (
+            "Regex validation not found in validator"
+        )

@@ -1,188 +1,180 @@
 """
-Test for 'python-anti-patterns' skill — Python Anti-Pattern Fixes
-Validates LRU cache with OrderedDict, no bare except, no mutable default
-arguments, proper context manager usage, and defensive coding practices.
+Test skill: python-anti-patterns
+Verify that the Agent correctly refactors boltons iterutils and cacheutils
+to eliminate anti-patterns while preserving public API behavior.
 """
 
 import os
 import re
 import ast
 import sys
-
+import subprocess
 import pytest
 
 
 class TestPythonAntiPatterns:
-    """Verify Python anti-pattern fixes in boltons."""
-
     REPO_DIR = "/workspace/boltons"
 
-    # ── file_path_check ─────────────────────────────────────────────────────
+    ITERUTILS = "boltons/iterutils.py"
+    CACHEUTILS = "boltons/cacheutils.py"
+    TEST_ITERUTILS = "tests/test_iterutils.py"
+    TEST_CACHEUTILS = "tests/test_cacheutils.py"
 
-    def test_python_source_files_exist(self):
-        """Verify Python source files exist."""
-        py_files = self._find_py_files()
-        assert len(py_files) > 0, "No Python files found"
+    def _read_file(self, rel_path):
+        filepath = os.path.join(self.REPO_DIR, rel_path)
+        with open(filepath) as f:
+            return f.read()
 
-    def test_boltons_package_dir(self):
-        """Verify boltons package directory exists."""
-        pkg = os.path.join(self.REPO_DIR, "boltons")
-        assert os.path.isdir(pkg), "boltons/ package directory not found"
+    # === File Path Checks ===
 
-    # ── semantic_check ──────────────────────────────────────────────────────
+    def test_iterutils_exists(self):
+        """Verify boltons/iterutils.py exists"""
+        filepath = os.path.join(self.REPO_DIR, self.ITERUTILS)
+        assert os.path.exists(filepath), f"iterutils.py not found at {filepath}"
 
-    def test_no_bare_except(self):
-        """Verify no 'except:' without exception type (bare except)."""
-        py_files = self._find_py_files()
-        violations = []
-        for fpath in py_files:
-            content = self._read(fpath)
-            # Match bare except: (not except SomeError:)
-            for i, line in enumerate(content.splitlines(), 1):
-                stripped = line.strip()
-                if stripped == "except:" or stripped == "except :":
-                    violations.append(f"{os.path.basename(fpath)}:{i}")
-        assert not violations, f"Bare except found in: {violations[:5]}"
+    def test_cacheutils_exists(self):
+        """Verify boltons/cacheutils.py exists"""
+        filepath = os.path.join(self.REPO_DIR, self.CACHEUTILS)
+        assert os.path.exists(filepath), f"cacheutils.py not found at {filepath}"
 
-    def test_no_mutable_default_arguments(self):
-        """Verify no mutable default arguments (list, dict, set)."""
-        py_files = self._find_py_files()
-        violations = []
-        for fpath in py_files:
-            content = self._read(fpath)
-            # Check for def func(arg=[], arg={}), def func(arg=set())
-            matches = re.findall(
-                r"def \w+\([^)]*=\s*(\[\]|\{\}|set\(\))",
-                content,
-            )
-            if matches:
-                violations.append(os.path.basename(fpath))
-        assert not violations, f"Mutable default args found in: {violations[:5]}"
+    def test_test_files_exist(self):
+        """Verify test files for both modules exist"""
+        for path in [self.TEST_ITERUTILS, self.TEST_CACHEUTILS]:
+            filepath = os.path.join(self.REPO_DIR, path)
+            assert os.path.exists(filepath), f"Test file not found: {filepath}"
 
-    def test_lru_cache_or_ordered_dict(self):
-        """Verify LRU implementation uses OrderedDict or functools.lru_cache."""
-        py_files = self._find_py_files()
-        for fpath in py_files:
-            content = self._read(fpath)
-            if re.search(r"(OrderedDict|lru_cache|LRU|cacheutils)", content):
-                return
-        pytest.fail("No LRU / OrderedDict / lru_cache usage found")
+    # === Semantic Checks ===
 
-    def test_context_managers_used(self):
-        """Verify context managers are used for resource management."""
-        py_files = self._find_py_files()
-        for fpath in py_files:
-            content = self._read(fpath)
-            if re.search(
-                r"(with\s+open|__enter__|__exit__|contextmanager|@contextlib)", content
-            ):
-                return
-        pytest.fail("No context manager usage found")
+    def test_no_bare_except_in_iterutils(self):
+        """Verify iterutils.py has no bare except: clauses"""
+        content = self._read_file(self.ITERUTILS)
+        tree = ast.parse(content)
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ExceptHandler):
+                # Bare except has type=None
+                if node.type is None:
+                    pytest.fail(
+                        f"Bare 'except:' found in iterutils.py at line {node.lineno}"
+                    )
 
-    def test_no_import_star(self):
-        """Verify no 'from x import *' in source files."""
-        py_files = self._find_py_files()
-        violations = []
-        for fpath in py_files:
-            content = self._read(fpath)
-            if re.search(r"from\s+\S+\s+import\s+\*", content):
-                violations.append(os.path.basename(fpath))
-        assert not violations, f"import * found in: {violations[:5]}"
+    def test_no_bare_except_in_cacheutils(self):
+        """Verify cacheutils.py has no bare except: clauses"""
+        content = self._read_file(self.CACHEUTILS)
+        tree = ast.parse(content)
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ExceptHandler):
+                if node.type is None:
+                    pytest.fail(
+                        f"Bare 'except:' found in cacheutils.py at line {node.lineno}"
+                    )
 
-    # ── functional_check ────────────────────────────────────────────────────
+    def test_no_broad_exception_handler_in_iterutils(self):
+        """Verify iterutils.py does not catch broad Exception class"""
+        content = self._read_file(self.ITERUTILS)
+        tree = ast.parse(content)
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ExceptHandler) and node.type is not None:
+                if isinstance(node.type, ast.Name) and node.type.id == "Exception":
+                    pytest.fail(
+                        f"Broad 'except Exception' found in iterutils.py at line {node.lineno}"
+                    )
 
-    def test_source_files_parse(self):
-        """Verify all Python source files parse as valid AST."""
-        py_files = self._find_py_files()
-        for fpath in py_files[:20]:  # sample first 20
-            content = self._read(fpath)
-            try:
-                ast.parse(content, filename=fpath)
-            except SyntaxError as e:
-                pytest.fail(f"SyntaxError in {os.path.basename(fpath)}: {e}")
+    def test_no_mutable_default_arguments_in_iterutils(self):
+        """Verify iterutils.py has no mutable default arguments in function signatures"""
+        content = self._read_file(self.ITERUTILS)
+        tree = ast.parse(content)
+        mutable_types = (ast.List, ast.Dict, ast.Set)
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                for default in node.args.defaults + node.args.kw_defaults:
+                    if default is not None and isinstance(default, mutable_types):
+                        pytest.fail(
+                            f"Mutable default argument in '{node.name}' at line {node.lineno}"
+                        )
 
-    def test_cacheutils_module_import(self):
-        """Verify cacheutils module can be imported."""
-        cache_path = os.path.join(self.REPO_DIR, "boltons", "cacheutils.py")
-        if not os.path.exists(cache_path):
-            pytest.skip("boltons/cacheutils.py not found")
-        pkg_dir = os.path.join(self.REPO_DIR, "boltons")
-        if self.REPO_DIR not in sys.path:
-            sys.path.insert(0, self.REPO_DIR)
-        try:
-            import importlib
+    def test_no_mutable_default_arguments_in_cacheutils(self):
+        """Verify cacheutils.py has no mutable default arguments"""
+        content = self._read_file(self.CACHEUTILS)
+        tree = ast.parse(content)
+        mutable_types = (ast.List, ast.Dict, ast.Set)
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                for default in node.args.defaults + node.args.kw_defaults:
+                    if default is not None and isinstance(default, mutable_types):
+                        pytest.fail(
+                            f"Mutable default argument in '{node.name}' at line {node.lineno}"
+                        )
 
-            spec = importlib.util.spec_from_file_location(
-                "boltons.cacheutils", cache_path
-            )
-            mod = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(mod)
-            assert (
-                hasattr(mod, "LRU") or hasattr(mod, "LRI") or hasattr(mod, "cached")
-            ), "cacheutils missing LRU/LRI/cached"
-        except Exception as e:
-            pytest.skip(f"Cannot import cacheutils: {e}")
+    def test_cacheutils_except_handlers_are_specific(self):
+        """Verify cacheutils.py exception handlers catch specific exception types"""
+        content = self._read_file(self.CACHEUTILS)
+        tree = ast.parse(content)
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ExceptHandler):
+                if node.type is None:
+                    pytest.fail(
+                        f"Bare except in cacheutils.py at line {node.lineno}"
+                    )
+                if isinstance(node.type, ast.Name) and node.type.id == "Exception":
+                    pytest.fail(
+                        f"Broad 'except Exception' in cacheutils.py at line {node.lineno}"
+                    )
 
-    def test_lru_max_size_respected(self):
-        """Verify LRU implementation respects max size."""
-        py_files = self._find_py_files()
-        for fpath in py_files:
-            content = self._read(fpath)
-            if "max_size" in content or "maxsize" in content:
-                return
-        pytest.fail("No max_size/maxsize parameter found in LRU impl")
+    # === Functional Checks ===
 
-    def test_type_hints_present(self):
-        """Verify type hints are used in new/modified files."""
-        py_files = self._find_py_files()
-        typed_count = 0
-        for fpath in py_files:
-            content = self._read(fpath)
-            if re.search(
-                r"(->|:\s*(str|int|float|bool|list|dict|Optional|Union|Any))", content
-            ):
-                typed_count += 1
-        # At least some files should have type hints
-        assert typed_count > 0, "No type hints in any source file"
+    def test_chunked_works_with_sequences(self):
+        """Verify chunked still works with standard sequences"""
+        sys.path.insert(0, self.REPO_DIR)
+        from boltons.iterutils import chunked
+        result = chunked([1, 2, 3, 4, 5], 2)
+        assert result == [[1, 2], [3, 4], [5]], \
+            f"chunked([1,2,3,4,5], 2) returned {result}"
 
-    def test_proper_exception_chaining(self):
-        """Verify 'raise X from Y' or proper exception wrapping."""
-        py_files = self._find_py_files()
-        for fpath in py_files:
-            content = self._read(fpath)
-            if "raise " in content and "from " in content:
-                return
-        # Not mandatory; just skip if not found
-        pytest.skip("No exception chaining found (not required)")
+    def test_chunked_raises_on_non_iterable(self):
+        """Verify chunked(42, 3) raises TypeError instead of returning empty"""
+        sys.path.insert(0, self.REPO_DIR)
+        from boltons.iterutils import chunked
+        with pytest.raises(TypeError):
+            chunked(42, 3)
 
-    def test_docstrings_present(self):
-        """Verify public modules and classes have docstrings."""
-        py_files = self._find_py_files()
-        for fpath in py_files[:10]:
-            content = self._read(fpath)
-            tree = ast.parse(content, filename=fpath)
-            docstring = ast.get_docstring(tree)
-            if docstring:
-                return
-        pytest.fail("No module-level docstrings found")
+    def test_bucketize_works_on_empty(self):
+        """Verify bucketize([]) returns empty dict without error"""
+        sys.path.insert(0, self.REPO_DIR)
+        from boltons.iterutils import bucketize
+        result = bucketize([], key=lambda x: x)
+        assert result == {}, f"bucketize([]) should return {{}}, got {result}"
 
-    # ── helpers ──────────────────────────────────────────────────────────────
+    def test_unique_handles_none_values(self):
+        """Verify unique handles None values correctly"""
+        sys.path.insert(0, self.REPO_DIR)
+        from boltons.iterutils import unique
+        result = unique([1, 2, None, 1, None])
+        assert result == [1, 2, None], \
+            f"unique([1, 2, None, 1, None]) should return [1, 2, None], got {result}"
 
-    def _find_py_files(self):
-        results = []
-        pkg_dir = os.path.join(self.REPO_DIR, "boltons")
-        if os.path.isdir(pkg_dir):
-            search_dir = pkg_dir
-        else:
-            search_dir = self.REPO_DIR
-        for dirpath, _, fnames in os.walk(search_dir):
-            if ".git" in dirpath:
-                continue
-            for f in fnames:
-                if f.endswith(".py") and not f.startswith("test_"):
-                    results.append(os.path.join(dirpath, f))
-        return results
+    def test_lru_cache_eviction(self):
+        """Verify LRU cache evicts correctly at capacity"""
+        sys.path.insert(0, self.REPO_DIR)
+        from boltons.cacheutils import LRU
+        cache = LRU(max_size=2)
+        cache["a"] = 1
+        cache["b"] = 2
+        cache["c"] = 3
+        assert len(cache) == 2, \
+            f"LRU(max_size=2) should have 2 items after 3 inserts, got {len(cache)}"
+        assert "a" not in cache, "LRU should have evicted 'a' (least recently used)"
+        assert "b" in cache and "c" in cache, "LRU should keep 'b' and 'c'"
 
-    def _read(self, path):
-        with open(path, "r", errors="ignore") as fh:
-            return fh.read()
+    def test_existing_tests_pass(self):
+        """Verify all existing tests pass after refactoring"""
+        result = subprocess.run(
+            ["python", "-m", "pytest",
+             "tests/test_iterutils.py", "tests/test_cacheutils.py",
+             "-v", "--tb=short"],
+            cwd=self.REPO_DIR,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        assert result.returncode == 0, \
+            f"Existing tests failed:\n{result.stdout[-500:]}\n{result.stderr[-500:]}"

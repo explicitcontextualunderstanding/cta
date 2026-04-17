@@ -1,223 +1,274 @@
 """
-Tests for vector-index-tuning skill.
-REPO_DIR: /workspace/faiss
+Tests for the vector-index-tuning skill.
+
+Validates that HNSW parameter tuning benchmarks, quantization strategy
+evaluation, index recommendation engine, and benchmark report generation
+were implemented for FAISS.
+
+Repo: faiss (https://github.com/facebookresearch/faiss)
 """
 
+import ast
 import os
-import sys
-import importlib
-import pytest
+import re
 
 REPO_DIR = "/workspace/faiss"
 
 
-def _path(rel):
-    return os.path.join(REPO_DIR, rel)
+class TestFilePathCheck:
+    """Verify that all required files were created."""
+
+    def test_hnsw_tuning_file_exists(self):
+        path = os.path.join(REPO_DIR, "benchs", "hnsw_tuning.py")
+        assert os.path.isfile(path), f"Expected hnsw_tuning.py at {path}"
+
+    def test_quantization_benchmark_file_exists(self):
+        path = os.path.join(REPO_DIR, "benchs", "quantization_benchmark.py")
+        assert os.path.isfile(path), f"Expected quantization_benchmark.py at {path}"
+
+    def test_index_selector_file_exists(self):
+        path = os.path.join(REPO_DIR, "benchs", "index_selector.py")
+        assert os.path.isfile(path), f"Expected index_selector.py at {path}"
+
+    def test_benchmark_report_file_exists(self):
+        path = os.path.join(REPO_DIR, "benchs", "benchmark_report.py")
+        assert os.path.isfile(path), f"Expected benchmark_report.py at {path}"
+
+    def test_test_file_exists(self):
+        path = os.path.join(REPO_DIR, "tests", "test_hnsw_tuning.py")
+        assert os.path.isfile(path), f"Expected test_hnsw_tuning.py at {path}"
 
 
-def _read(rel):
-    with open(_path(rel), encoding="utf-8") as f:
-        return f.read()
+class TestSemanticHNSWTuner:
+    """Verify HNSWTuner class and parameter sweep."""
 
+    def _read_hnsw(self):
+        path = os.path.join(REPO_DIR, "benchs", "hnsw_tuning.py")
+        with open(path, "r") as f:
+            return f.read()
 
-class TestVectorIndexTuning:
-    # ── file_path_check ────────────────────────────────────────────────────
-    def test_hnsw_tuning_module_exists(self):
-        """Verify benchs/hnsw_tuning.py exists."""
-        fpath = _path("benchs/hnsw_tuning.py")
-        assert os.path.isfile(fpath), "benchs/hnsw_tuning.py must exist"
-        assert os.path.getsize(fpath) > 0, "benchs/hnsw_tuning.py must be non-empty"
-
-    def test_index_selector_module_exists(self):
-        """Verify benchs/index_selector.py exists."""
-        fpath = _path("benchs/index_selector.py")
-        assert os.path.isfile(fpath), "benchs/index_selector.py must exist"
-        assert os.path.getsize(fpath) > 0, "benchs/index_selector.py must be non-empty"
-
-    # ── semantic_check ─────────────────────────────────────────────────────
-    def test_hnsw_tuner_class_defined(self):
-        """Verify HNSWTuner class is defined with tune or run method."""
-        content = _read("benchs/hnsw_tuning.py")
-        assert "class HNSWTuner" in content, "HNSWTuner class must be defined"
-        has_method = (
-            "def tune" in content or "def run" in content or "def benchmark" in content
+    def test_hnsw_tuner_class(self):
+        content = self._read_hnsw()
+        assert re.search(r"class\s+HNSWTuner", content), (
+            "Expected HNSWTuner class"
         )
-        assert has_method, "HNSWTuner must have tune/run/benchmark method"
-        # M parameter should be iterated
-        has_m_iter = "M" in content and (
-            "for" in content or "range" in content or "values" in content
+
+    def test_m_parameter_values(self):
+        content = self._read_hnsw()
+        for m in ["8", "16", "32", "64"]:
+            assert m in content, f"Expected M value {m} in HNSW tuning parameters"
+
+    def test_ef_construction_values(self):
+        content = self._read_hnsw()
+        for ef in ["40", "100", "200", "400"]:
+            assert ef in content, f"Expected efConstruction value {ef}"
+
+    def test_ef_search_values(self):
+        content = self._read_hnsw()
+        for ef in ["16", "128", "256"]:
+            assert ef in content, f"Expected efSearch value {ef}"
+
+    def test_recall_computation(self):
+        """Recall should be computed against IndexFlatL2 ground truth."""
+        content = self._read_hnsw()
+        assert re.search(r"recall|IndexFlatL2|ground.truth|brute.force", content, re.IGNORECASE), (
+            "Expected recall computation against IndexFlatL2 ground truth"
         )
-        assert has_m_iter, "M parameter iteration must be present in HNSWTuner"
 
-    def test_ground_truth_uses_indexflat_l2(self):
-        """Verify IndexFlatL2 is used as the exhaustive ground truth index."""
-        content = _read("benchs/hnsw_tuning.py")
-        assert (
-            "IndexFlatL2" in content
-        ), "faiss.IndexFlatL2 must be used as ground truth for exact search"
-        # Should compute recall as intersection of approximate vs exact results
-        has_recall = "recall" in content.lower()
-        assert (
-            has_recall
-        ), "recall metric must be computed against IndexFlatL2 ground truth"
-
-    def test_index_selector_defined(self):
-        """Verify IndexSelector class is defined with select method."""
-        content = _read("benchs/index_selector.py")
-        assert "class IndexSelector" in content, "IndexSelector class must be defined"
-        has_select = "def select" in content or "def recommend" in content
-        assert has_select, "IndexSelector must have select or recommend method"
-        for index_type in ["FLAT", "HNSW", "IVF_PQ"]:
-            assert (
-                index_type in content
-            ), f"IndexSelector must reference {index_type} index type in selection logic"
-
-    def test_memory_formula_defined(self):
-        """Verify memory formula num_vectors*(dim*4 + M*8 + 16) or equivalent is defined."""
-        content_hnsw = _read("benchs/hnsw_tuning.py")
-        content_sel = _read("benchs/index_selector.py")
-        combined = content_hnsw + content_sel
-        patterns = [
-            "dim.*4",
-            "M.*8",
-            "memory_bytes",
-            "memory_formula",
-            "estimate_memory",
-        ]
-        has_formula = any(p in combined for p in ["dim", "4", "M", "8", "memory"])
-        # More specific: check for the characteristic factors
-        has_dim4 = "dim * 4" in combined or "dim*4" in combined or "*4" in combined
-        has_memory_func = (
-            "memory_bytes" in combined
-            or "estimate_memory" in combined
-            or "memory_formula" in combined
-            or "memory" in combined.lower()
+    def test_metrics_measured(self):
+        """Should measure build time, index size, query latency, recall."""
+        content = self._read_hnsw()
+        metrics = ["build_time", "index_size", "latency", "recall"]
+        found = sum(1 for m in metrics if re.search(m, content, re.IGNORECASE))
+        assert found >= 3, (
+            f"Expected at least 3 of 4 metrics measured, found {found}"
         )
-        assert (
-            has_memory_func
-        ), "Memory estimation formula must be present in hnsw_tuning.py or index_selector.py"
 
-    # ── functional_check (mocked) ──────────────────────────────────────────
-    def _make_index_selector(self):
-        """Return a mocked IndexSelector for functional tests."""
-
-        class IndexSelector:
-            def select(self, num_vectors, dim, recall_target, memory_budget_gb=None):
-                if recall_target < 0.0 or recall_target > 1.0:
-                    raise ValueError(
-                        f"recall_target must be in [0.0, 1.0], got {recall_target}"
-                    )
-                if num_vectors <= 100_000:
-                    return {"index_type": "FLAT", "M": None}
-                if num_vectors <= 1_000_000:
-                    if recall_target >= 0.99:
-                        return {"index_type": "HNSW", "M": 32}
-                    return {"index_type": "HNSW", "M": 16}
-                # Large vector set: IVF_PQ if memory constrained or high dim
-                if (
-                    memory_budget_gb is not None
-                    and (num_vectors * dim * 4 / 1e9) > memory_budget_gb
-                ):
-                    return {"index_type": "IVF_PQ", "M": None}
-                if recall_target >= 0.99:
-                    return {"index_type": "HNSW", "M": 32}
-                return {"index_type": "HNSW", "M": 16}
-
-        return IndexSelector()
-
-    def _try_import_selector(self):
-        sys.path.insert(0, REPO_DIR)
-        try:
-            mod = importlib.import_module("benchs.index_selector")
-            return mod.IndexSelector()
-        except Exception:
-            return self._make_index_selector()
-
-    def _make_hnsw_tuner(self):
-        class HNSWTuner:
-            def __init__(self, dim):
-                self.dim = dim
-
-            def tune(self, num_vectors, M_values):
-                results = {}
-                for M in M_values:
-                    # Simulated recall increases with M; latency also increases
-                    base_recall = 0.90 + (M - 8) * 0.005
-                    results[M] = {
-                        "M": M,
-                        "recall": min(base_recall, 0.999),
-                        "latency_ms": 0.5 + M * 0.02,
-                    }
-                return results
-
-        return HNSWTuner
-
-    def test_50k_vectors_selects_flat(self):
-        """Verify 50K vectors with any recall target selects FLAT index (brute force)."""
-        sel = self._try_import_selector()
-        result = sel.select(num_vectors=50_000, dim=128, recall_target=0.95)
-        if isinstance(result, dict):
-            assert (
-                result.get("index_type") == "FLAT"
-                or str(result).upper().find("FLAT") >= 0
-            ), "50K vectors must select FLAT index"
-        else:
-            assert str(result) == "FLAT", "50K vectors must select FLAT index"
-
-    def test_500k_recall_0_97_selects_hnsw_m16(self):
-        """Verify 500K vectors with recall_target=0.97 selects HNSW with M=16."""
-        sel = self._try_import_selector()
-        result = sel.select(num_vectors=500_000, dim=128, recall_target=0.97)
-        if isinstance(result, dict):
-            assert (
-                result.get("index_type") == "HNSW"
-            ), "500K vectors with recall=0.97 must select HNSW index"
-            assert result.get("M") == 16, "M must be 16 for recall≈0.97"
-        else:
-            assert "HNSW" in str(
-                result
-            ), "500K vectors with recall=0.97 must select HNSW"
-
-    def test_5m_recall_0_99_selects_hnsw_m32(self):
-        """Verify 5M vectors with recall_target=0.99 selects HNSW with M=32."""
-        sel = self._try_import_selector()
-        result = sel.select(num_vectors=5_000_000, dim=128, recall_target=0.99)
-        if isinstance(result, dict):
-            assert (
-                result.get("index_type") == "HNSW"
-            ), "5M vectors with recall=0.99 must select HNSW index"
-            assert result.get("M") == 32, "M must be 32 for recall≥0.99"
-        else:
-            assert "HNSW" in str(result), "5M vectors with recall=0.99 must select HNSW"
-
-    def test_2m_large_memory_selects_ivf_pq(self):
-        """Verify 2M+ vectors with large dimensionality selects IVF_PQ for memory efficiency."""
-        sel = self._try_import_selector()
-        result = sel.select(
-            num_vectors=2_000_000, dim=512, recall_target=0.9, memory_budget_gb=8
+    def test_random_seed_reproducibility(self):
+        content = self._read_hnsw()
+        assert re.search(r"seed|random_state|np\.random\.seed|RandomState", content), (
+            "Expected random seed for reproducibility"
         )
-        if isinstance(result, dict):
-            assert (
-                result.get("index_type") == "IVF_PQ"
-            ), "2M vectors with large dim and memory constraint must select IVF_PQ"
-        else:
-            assert "IVF_PQ" in str(
-                result
-            ), "memory-constrained 2M vectors must select IVF_PQ"
 
-    def test_m_values_8_16_32_64_all_benchmarked(self):
-        """Verify HNSWTuner iterates over M=[8, 16, 32, 64] values during tuning."""
-        HNSWTuner = self._make_hnsw_tuner()
-        tuner = HNSWTuner(dim=128)
-        results = tuner.tune(num_vectors=10_000, M_values=[8, 16, 32, 64])
-        for m in [8, 16, 32, 64]:
-            assert m in results, f"HNSWTuner must produce results for M={m}"
-            entry = results[m]
-            assert "recall" in entry, f"Entry for M={m} must include recall"
-            assert "latency_ms" in entry, f"Entry for M={m} must include latency_ms"
 
-    def test_recall_out_of_range_raises_error(self):
-        """Verify IndexSelector raises ValueError for recall_target outside [0, 1]."""
-        sel = self._try_import_selector()
-        with pytest.raises((ValueError, Exception)):
-            sel.select(num_vectors=500_000, dim=128, recall_target=1.5)
+class TestSemanticQuantizationBenchmark:
+    """Verify quantization strategy benchmarks."""
+
+    def _read_quant(self):
+        path = os.path.join(REPO_DIR, "benchs", "quantization_benchmark.py")
+        with open(path, "r") as f:
+            return f.read()
+
+    def test_pq_quantization(self):
+        content = self._read_quant()
+        assert re.search(r"PQ|ProductQuantiz|IndexHNSWPQ", content, re.IGNORECASE), (
+            "Expected PQ (Product Quantization) benchmark"
+        )
+
+    def test_sq_quantization(self):
+        content = self._read_quant()
+        assert re.search(r"SQ|ScalarQuantiz|IndexHNSWSQ|QT_8bit|QT_4bit", content, re.IGNORECASE), (
+            "Expected SQ (Scalar Quantization) benchmark"
+        )
+
+    def test_opq_quantization(self):
+        content = self._read_quant()
+        assert re.search(r"OPQ|OPQMatrix|Optimized.*Product", content, re.IGNORECASE), (
+            "Expected OPQ (Optimized Product Quantization) benchmark"
+        )
+
+    def test_compression_ratio(self):
+        content = self._read_quant()
+        assert re.search(r"compression.ratio|original.*index.*size", content, re.IGNORECASE), (
+            "Expected compression ratio computation"
+        )
+
+
+class TestSemanticIndexSelector:
+    """Verify index recommendation engine."""
+
+    def _read_selector(self):
+        path = os.path.join(REPO_DIR, "benchs", "index_selector.py")
+        with open(path, "r") as f:
+            return f.read()
+
+    def test_recommend_index_function(self):
+        content = self._read_selector()
+        assert re.search(r"def\s+recommend_index", content), (
+            "Expected recommend_index function"
+        )
+
+    def test_recommendation_class(self):
+        content = self._read_selector()
+        assert re.search(r"class\s+Recommendation|Recommendation", content), (
+            "Expected Recommendation class or namedtuple"
+        )
+
+    def test_flat_index_for_small_datasets(self):
+        """Should recommend IndexFlatL2 for < 100K vectors."""
+        content = self._read_selector()
+        assert re.search(r"100.?000|100_000|IndexFlatL2|Flat", content), (
+            "Expected IndexFlatL2 recommendation threshold at 100K vectors"
+        )
+
+    def test_ivfpq_for_large_datasets(self):
+        """Should recommend IVF-PQ for >= 1M vectors."""
+        content = self._read_selector()
+        assert re.search(r"1.?000.?000|1_000_000|IndexIVFPQ|IVFPQ", content), (
+            "Expected IndexIVFPQ recommendation for large datasets"
+        )
+
+    def test_memory_estimation(self):
+        content = self._read_selector()
+        assert re.search(r"estimated_memory|memory_mb|memory_budget", content), (
+            "Expected memory estimation in recommendations"
+        )
+
+    def test_reasoning_field(self):
+        content = self._read_selector()
+        assert re.search(r"reasoning", content), (
+            "Expected reasoning field in Recommendation"
+        )
+
+
+class TestSemanticBenchmarkReport:
+    """Verify benchmark report generation."""
+
+    def _read_report(self):
+        path = os.path.join(REPO_DIR, "benchs", "benchmark_report.py")
+        with open(path, "r") as f:
+            return f.read()
+
+    def test_benchmark_report_class(self):
+        content = self._read_report()
+        assert re.search(r"class\s+BenchmarkReport", content), (
+            "Expected BenchmarkReport class"
+        )
+
+    def test_add_result_method(self):
+        content = self._read_report()
+        assert re.search(r"def\s+add_result", content), (
+            "Expected add_result method"
+        )
+
+    def test_generate_table_method(self):
+        content = self._read_report()
+        assert re.search(r"def\s+generate_table", content), (
+            "Expected generate_table method"
+        )
+
+    def test_pareto_frontier_method(self):
+        content = self._read_report()
+        assert re.search(r"def\s+pareto_frontier|def\s+pareto", content), (
+            "Expected pareto_frontier method"
+        )
+
+    def test_csv_export(self):
+        content = self._read_report()
+        assert re.search(r"def\s+to_csv", content), (
+            "Expected to_csv method for CSV export"
+        )
+
+    def test_json_export(self):
+        content = self._read_report()
+        assert re.search(r"def\s+to_json", content), (
+            "Expected to_json method for JSON export"
+        )
+
+
+class TestFunctionalPythonSyntax:
+    """Validate Python syntax of all created files."""
+
+    def _check_syntax(self, filepath):
+        with open(filepath, "r") as f:
+            source = f.read()
+        ast.parse(source)
+
+    def test_hnsw_tuning_syntax(self):
+        self._check_syntax(os.path.join(REPO_DIR, "benchs", "hnsw_tuning.py"))
+
+    def test_quantization_benchmark_syntax(self):
+        self._check_syntax(os.path.join(REPO_DIR, "benchs", "quantization_benchmark.py"))
+
+    def test_index_selector_syntax(self):
+        self._check_syntax(os.path.join(REPO_DIR, "benchs", "index_selector.py"))
+
+    def test_benchmark_report_syntax(self):
+        self._check_syntax(os.path.join(REPO_DIR, "benchs", "benchmark_report.py"))
+
+    def test_test_file_syntax(self):
+        self._check_syntax(os.path.join(REPO_DIR, "tests", "test_hnsw_tuning.py"))
+
+
+class TestFunctionalTestCoverage:
+    """Verify the agent's test file has adequate coverage."""
+
+    def _read_test(self):
+        path = os.path.join(REPO_DIR, "tests", "test_hnsw_tuning.py")
+        with open(path, "r") as f:
+            return f.read()
+
+    def test_sufficient_test_count(self):
+        content = self._read_test()
+        test_count = len(re.findall(r"def\s+test_", content))
+        assert test_count >= 5, (
+            f"Expected at least 5 test functions, found {test_count}"
+        )
+
+    def test_covers_recall_computation(self):
+        content = self._read_test()
+        assert re.search(r"recall", content, re.IGNORECASE), (
+            "Expected test coverage for recall computation"
+        )
+
+    def test_covers_recommendation(self):
+        content = self._read_test()
+        assert re.search(r"recommend|selector", content, re.IGNORECASE), (
+            "Expected test coverage for index recommendation"
+        )
+
+    def test_covers_pareto(self):
+        content = self._read_test()
+        assert re.search(r"pareto", content, re.IGNORECASE), (
+            "Expected test coverage for Pareto frontier"
+        )

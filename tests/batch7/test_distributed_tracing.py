@@ -1,234 +1,194 @@
-"""Test file for the distributed-tracing skill.
-
-This suite validates the tail-sampling processor components in
-opentelemetry-collector: Config, SamplingPolicy interface, StatusCodePolicy,
-LatencyPolicy, ServiceNamePolicy, and policy evaluation logic.
+"""
+Test skill: distributed-tracing
+Verify that the Agent implements a Tail Sampling Processor for the OpenTelemetry
+Collector — tailSamplingProcessor, SamplingPolicy interface (StatusCode, Latency,
+ServiceName, AlwaysSample), TraceBuffer, factory, and configuration.
 """
 
-from __future__ import annotations
-
-import pathlib
+import os
 import re
-
+import subprocess
 import pytest
 
 
 class TestDistributedTracing:
-    """Verify tail-sampling processor in opentelemetry-collector."""
-
     REPO_DIR = "/workspace/opentelemetry-collector"
 
-    PROCESSOR_GO = "processor/tailsamplingprocessor/processor.go"
-    CONFIG_GO = "processor/tailsamplingprocessor/config.go"
-    POLICY_GO = "processor/tailsamplingprocessor/policy.go"
+    # ────── helpers ──────
 
-    # ------------------------------------------------------------------
-    # Helpers
-    # ------------------------------------------------------------------
+    def _read(self, rel_path):
+        fpath = os.path.join(self.REPO_DIR, rel_path)
+        with open(fpath, "r") as f:
+            return f.read()
 
-    def _repo_path(self, relative: str) -> pathlib.Path:
-        return pathlib.Path(self.REPO_DIR, *relative.split("/"))
+    def _exists(self, rel_path):
+        return os.path.isfile(os.path.join(self.REPO_DIR, rel_path))
 
-    def _read_text(self, relative: str) -> str:
-        path = self._repo_path(relative)
-        assert path.exists(), f"Expected path to exist: {path}"
-        return path.read_text(encoding="utf-8", errors="ignore")
+    _PKG = "processor/tailsamplingprocessor"
 
-    def _assert_non_empty_file(self, relative: str) -> pathlib.Path:
-        path = self._repo_path(relative)
-        assert path.is_file(), f"Expected file to exist: {path}"
-        assert path.stat().st_size > 0, f"Expected non-empty file: {path}"
-        return path
+    # === File Path Checks ===
 
-    def _go_struct_body(self, source: str, struct_name: str) -> str | None:
-        """Extract the body of a Go struct definition."""
-        m = re.search(rf"type\s+{struct_name}\s+struct\s*\{{", source)
-        if m is None:
-            return None
-        start = m.end() - 1
-        depth, i = 1, start + 1
-        while i < len(source) and depth > 0:
-            if source[i] == "{":
-                depth += 1
-            elif source[i] == "}":
-                depth -= 1
-            i += 1
-        return source[start:i]
+    def test_processor_go_exists(self):
+        """processor.go must exist"""
+        assert self._exists(f"{self._PKG}/processor.go")
 
-    def _go_interface_body(self, source: str, iface_name: str) -> str | None:
-        """Extract the body of a Go interface definition."""
-        m = re.search(rf"type\s+{iface_name}\s+interface\s*\{{", source)
-        if m is None:
-            return None
-        start = m.end() - 1
-        depth, i = 1, start + 1
-        while i < len(source) and depth > 0:
-            if source[i] == "{":
-                depth += 1
-            elif source[i] == "}":
-                depth -= 1
-            i += 1
-        return source[start:i]
+    def test_config_go_exists(self):
+        """config.go must exist"""
+        assert self._exists(f"{self._PKG}/config.go")
 
-    def _all_go_sources(self) -> str:
-        """Concatenate all Go sources from the tailsamplingprocessor directory."""
-        tsp_dir = self._repo_path("processor/tailsamplingprocessor")
-        if not tsp_dir.is_dir():
-            return ""
-        parts = []
-        for f in sorted(tsp_dir.glob("*.go")):
-            parts.append(f.read_text(encoding="utf-8", errors="ignore"))
-        return "\n".join(parts)
+    def test_policy_go_exists(self):
+        """policy.go must exist"""
+        assert self._exists(f"{self._PKG}/policy.go")
 
-    # ------------------------------------------------------------------
-    # Layer 1 – file_path_check (3 cases)
-    # ------------------------------------------------------------------
+    def test_trace_buffer_exists(self):
+        """trace_buffer.go must exist"""
+        assert self._exists(f"{self._PKG}/trace_buffer.go")
 
-    def test_file_path_processor_tailsamplingprocessor_processor_go_exists(self):
-        """Verify processor.go exists and is non-empty."""
-        self._assert_non_empty_file(self.PROCESSOR_GO)
+    def test_factory_exists(self):
+        """factory.go must exist"""
+        assert self._exists(f"{self._PKG}/factory.go")
 
-    def test_file_path_processor_tailsamplingprocessor_config_go_exists(self):
-        """Verify config.go exists and is non-empty."""
-        self._assert_non_empty_file(self.CONFIG_GO)
+    def test_processor_test_exists(self):
+        """processor_test.go must exist"""
+        assert self._exists(f"{self._PKG}/processor_test.go")
 
-    def test_file_path_processor_tailsamplingprocessor_policy_go_exists(self):
-        """Verify policy.go exists and is non-empty."""
-        self._assert_non_empty_file(self.POLICY_GO)
+    # === Semantic Checks — config.go ===
 
-    # ------------------------------------------------------------------
-    # Layer 2 – semantic_check (5 cases)
-    # ------------------------------------------------------------------
+    def test_config_struct(self):
+        """Config struct must be defined"""
+        src = self._read(f"{self._PKG}/config.go")
+        assert re.search(r'type\s+Config\s+struct', src)
 
-    def test_semantic_config_struct_has_decisionwait_numtraces_policies_policyeval(
-        self,
-    ):
-        """Config struct has DecisionWait, NumTraces, Policies, PolicyEvaluation fields."""
-        src = self._read_text(self.CONFIG_GO)
-        body = self._go_struct_body(src, "Config")
-        assert body is not None, "Config struct not found in config.go"
-        for field in ("DecisionWait", "NumTraces", "Policies", "PolicyEvaluation"):
-            assert field in body, f"Config struct missing field: {field}"
+    def test_policy_config_struct(self):
+        """PolicyConfig struct must be defined"""
+        src = self._read(f"{self._PKG}/config.go")
+        assert "PolicyConfig" in src
 
-    def test_semantic_samplingpolicy_interface_has_evaluate_tracedata_and_name_met(
-        self,
-    ):
-        """SamplingPolicy interface has Evaluate(*TraceData) and Name() methods."""
-        src = self._all_go_sources()
-        iface = self._go_interface_body(src, "SamplingPolicy")
-        if iface is None:
-            # May be named differently — fall back to pattern search
-            assert re.search(
-                r"type\s+\w*[Pp]olicy\w*\s+interface", src
-            ), "No SamplingPolicy-like interface found"
-            iface = src
-        assert re.search(
-            r"Evaluate\s*\(", iface
-        ), "SamplingPolicy must have Evaluate method"
-        assert re.search(r"Name\s*\(", iface), "SamplingPolicy must have Name method"
+    def test_policy_types(self):
+        """Must define policy types: always_sample, status_code, latency, service_name"""
+        src = self._read(f"{self._PKG}/config.go")
+        for pt in ["always_sample", "status_code", "latency", "service_name"]:
+            assert pt in src, f"Missing policy type: {pt}"
 
-    def test_semantic_statuscodepolicy_checks_span_status_codes_against_configured(
-        self,
-    ):
-        """StatusCodePolicy checks span status codes against configured list."""
-        src = self._all_go_sources()
-        assert re.search(
-            r"StatusCode[Pp]olicy|statusCodePolicy", src
-        ), "StatusCodePolicy struct/type not found"
-        assert re.search(
-            r"[Ss]tatus.*[Cc]ode|StatusCode", src
-        ), "StatusCodePolicy should reference status codes"
+    def test_decision_wait_field(self):
+        """Config must have DecisionWait"""
+        src = self._read(f"{self._PKG}/config.go")
+        assert "DecisionWait" in src
 
-    def test_semantic_latencypolicy_computes_max_endtime_min_starttime_across_all_(
-        self,
-    ):
-        """LatencyPolicy computes max(EndTime)-min(StartTime) across all spans."""
-        src = self._all_go_sources()
-        assert re.search(
-            r"[Ll]atency[Pp]olicy|latencyPolicy", src
-        ), "LatencyPolicy struct/type not found"
-        # Should compute duration from span times
-        assert re.search(
-            r"[Ee]nd[Tt]ime|[Ss]tart[Tt]ime|[Dd]uration|[Ll]atency", src
-        ), "LatencyPolicy should compute span duration from EndTime-StartTime"
+    def test_policy_evaluation_field(self):
+        """Config must have PolicyEvaluation (any/all)"""
+        src = self._read(f"{self._PKG}/config.go")
+        assert "PolicyEvaluation" in src
 
-    def test_semantic_servicenamepolicy_checks_service_name_resource_attribute_aga(
-        self,
-    ):
-        """ServiceNamePolicy checks service.name resource attribute against allowlist."""
-        src = self._all_go_sources()
-        assert re.search(
-            r"[Ss]ervice[Nn]ame[Pp]olicy|serviceNamePolicy", src
-        ), "ServiceNamePolicy struct/type not found"
-        assert re.search(
-            r"service\.name|ServiceName|service_name", src
-        ), "ServiceNamePolicy should reference service.name attribute"
+    # === Semantic Checks — policy.go ===
 
-    # ------------------------------------------------------------------
-    # Layer 3 – functional_check (5 cases, mocked via source analysis)
-    # ------------------------------------------------------------------
+    def test_sampling_policy_interface(self):
+        """SamplingPolicy interface must be defined"""
+        src = self._read(f"{self._PKG}/policy.go")
+        assert re.search(r'type\s+SamplingPolicy\s+interface', src)
 
-    def test_functional_trace_with_span_statuscode_error_sampled_by_statuscodepolicy(
-        self,
-    ):
-        """Trace with span StatusCode ERROR → sampled by StatusCodePolicy(['ERROR'])."""
-        src = self._all_go_sources()
-        # Verify StatusCodePolicy evaluates against error codes
-        assert re.search(
-            r"StatusCode[Pp]olicy|statusCodeEvaluator", src
-        ), "StatusCodePolicy implementation required"
-        assert re.search(
-            r"ERROR|Error|STATUS_CODE_ERROR", src
-        ), "StatusCodePolicy should handle ERROR status code"
-        # Verify Sampled decision type
-        assert re.search(
-            r"Sampled|sampled|SAMPLED", src
-        ), "Policy should return Sampled decision"
+    def test_sampling_decision_enum(self):
+        """SamplingDecision type with Pending, Sampled, NotSampled"""
+        src = self._read(f"{self._PKG}/policy.go")
+        assert "SamplingDecision" in src
+        for val in ["Pending", "Sampled", "NotSampled"]:
+            assert val in src, f"Missing SamplingDecision: {val}"
 
-    def test_functional_trace_spanning_250ms_sampled_by_latencypolicy_thresholdms_20(
-        self,
-    ):
-        """Trace spanning 250ms → sampled by LatencyPolicy(ThresholdMs=200)."""
-        src = self._all_go_sources()
-        assert re.search(
-            r"[Ll]atency[Pp]olicy|latencyEvaluator", src
-        ), "LatencyPolicy implementation required"
-        # Verify threshold comparison
-        assert re.search(
-            r"[Tt]hreshold|thresholdMs|ThresholdMs", src
-        ), "LatencyPolicy should have a threshold parameter"
+    def test_trace_data_struct(self):
+        """TraceData struct must be defined"""
+        src = self._read(f"{self._PKG}/policy.go")
+        assert "TraceData" in src
 
-    def test_functional_trace_from_payment_service_sampled_by_servicenamepolicy_paym(
-        self,
-    ):
-        """Trace from 'payment-service' → sampled by ServiceNamePolicy(['payment-service'])."""
-        src = self._all_go_sources()
-        assert re.search(
-            r"[Ss]ervice[Nn]ame[Pp]olicy|serviceNameEvaluator", src
-        ), "ServiceNamePolicy implementation required"
-        # Verify service name matching logic
-        assert re.search(
-            r"[Mm]atch|[Cc]ontains|allowlist|include", src, re.IGNORECASE
-        ), "ServiceNamePolicy should match against an allowlist"
+    def test_status_code_policy(self):
+        """StatusCodePolicy must be implemented"""
+        src = self._read(f"{self._PKG}/policy.go")
+        assert "StatusCodePolicy" in src or "statusCodePolicy" in src
 
-    def test_functional_trace_from_unknown_service_not_sampled_by_servicenamepolicy_(
-        self,
-    ):
-        """Trace from 'unknown-service' → NOT sampled by ServiceNamePolicy(['payment-service'])."""
-        src = self._all_go_sources()
-        # Verify NotSampled / drop decision path
-        assert re.search(
-            r"NotSampled|notSampled|NOT_SAMPLED|Drop|drop", src
-        ), "Policy should return NotSampled for non-matching service names"
+    def test_latency_policy(self):
+        """LatencyPolicy must be implemented"""
+        src = self._read(f"{self._PKG}/policy.go")
+        assert "LatencyPolicy" in src or "latencyPolicy" in src
 
-    def test_functional_policyevaluation_all_requires_all_policies_sampled(self):
-        """PolicyEvaluation='all' requires all policies Sampled."""
-        src = self._all_go_sources()
-        # Verify 'all' evaluation mode
-        assert re.search(
-            r"PolicyEvaluation|policyEvaluation|evaluationMode", src
-        ), "Processor should support PolicyEvaluation modes"
-        # Verify 'all' logic: all policies must agree
-        assert re.search(
-            r'"all"|policyAll|evaluateAll|allPolicies', src, re.IGNORECASE
-        ), "Processor should support 'all' evaluation requiring all policies to sample"
+    def test_service_name_policy(self):
+        """ServiceNamePolicy must be implemented"""
+        src = self._read(f"{self._PKG}/policy.go")
+        assert "ServiceNamePolicy" in src or "serviceNamePolicy" in src
+
+    def test_always_sample_policy(self):
+        """AlwaysSamplePolicy must be implemented"""
+        src = self._read(f"{self._PKG}/policy.go")
+        assert "AlwaysSample" in src or "alwaysSample" in src
+
+    # === Semantic Checks — trace_buffer.go ===
+
+    def test_trace_buffer_struct(self):
+        """TraceBuffer struct must be defined"""
+        src = self._read(f"{self._PKG}/trace_buffer.go")
+        assert re.search(r'type\s+TraceBuffer\s+struct', src)
+
+    def test_trace_buffer_mutex(self):
+        """TraceBuffer must use sync.RWMutex"""
+        src = self._read(f"{self._PKG}/trace_buffer.go")
+        assert "RWMutex" in src or "Mutex" in src
+
+    def test_trace_buffer_methods(self):
+        """TraceBuffer must have Add, Get, Delete, Evict, Size methods"""
+        src = self._read(f"{self._PKG}/trace_buffer.go")
+        for method in ["Add", "Get", "Delete", "Evict", "Size"]:
+            assert method in src, f"Missing method: {method}"
+
+    # === Semantic Checks — processor.go ===
+
+    def test_tail_sampling_processor_struct(self):
+        """tailSamplingProcessor struct must be defined"""
+        src = self._read(f"{self._PKG}/processor.go")
+        assert "tailSamplingProcessor" in src
+
+    def test_consume_traces_method(self):
+        """ConsumeTraces method must be defined"""
+        src = self._read(f"{self._PKG}/processor.go")
+        assert "ConsumeTraces" in src
+
+    def test_make_decisions_method(self):
+        """makeDecisions method must exist"""
+        src = self._read(f"{self._PKG}/processor.go")
+        assert "makeDecisions" in src or "makeDecision" in src
+
+    def test_start_shutdown(self):
+        """Start and Shutdown methods must exist"""
+        src = self._read(f"{self._PKG}/processor.go")
+        assert "Start" in src and "Shutdown" in src
+
+    # === Semantic Checks — factory.go ===
+
+    def test_new_factory(self):
+        """NewFactory function must exist"""
+        src = self._read(f"{self._PKG}/factory.go")
+        assert "NewFactory" in src
+
+    def test_component_type_name(self):
+        """Component type name must be 'tail_sampling'"""
+        src = self._read(f"{self._PKG}/factory.go")
+        assert "tail_sampling" in src
+
+    # === Functional Checks ===
+
+    def test_go_build(self):
+        """Package must build"""
+        result = subprocess.run(
+            ["go", "build", f"./{self._PKG}/..."],
+            capture_output=True, text=True, cwd=self.REPO_DIR, timeout=300,
+        )
+        assert result.returncode == 0, (
+            f"go build failed:\n{result.stdout}\n{result.stderr}"
+        )
+
+    def test_unit_tests_pass(self):
+        """Processor tests must pass"""
+        result = subprocess.run(
+            ["go", "test", "-v", f"./{self._PKG}/..."],
+            capture_output=True, text=True, cwd=self.REPO_DIR, timeout=300,
+        )
+        assert result.returncode == 0, (
+            f"Tests failed:\n{result.stdout}\n{result.stderr}"
+        )

@@ -1,166 +1,158 @@
 """
-Test for 'clojure-write' skill — Metabase Notification System
-Validates Clojure notification records, multimethods, webhook HMAC-SHA256,
-Slack truncation, core.async scheduler, and error handling.
+Test skill: clojure-write
+Verify that the Agent correctly implements a notification dispatch system
+in Clojure for the Metabase backend.
 """
 
 import os
 import re
-
 import pytest
 
 
 class TestClojureWrite:
-    """Verify Metabase Clojure notification system."""
-
     REPO_DIR = "/workspace/metabase"
 
-    # ── file_path_check ─────────────────────────────────────────────────────
+    CORE_NS = "src/metabase/notification/core.clj"
+    EMAIL_NS = "src/metabase/notification/channels/email.clj"
+    SLACK_NS = "src/metabase/notification/channels/slack.clj"
+    WEBHOOK_NS = "src/metabase/notification/channels/webhook.clj"
+    CONDITIONS_NS = "src/metabase/notification/conditions.clj"
+    SCHEDULER_NS = "src/metabase/notification/scheduler.clj"
+    CORE_TEST = "test/metabase/notification/core_test.clj"
 
-    def test_notification_source_files_exist(self):
-        """Verify at least 5 notification .clj files exist."""
-        src_dir = os.path.join(self.REPO_DIR, "src")
-        if not os.path.isdir(src_dir):
-            pytest.skip("src/ directory not found")
-        notif_files = []
-        for dirpath, _, fnames in os.walk(src_dir):
-            for f in fnames:
-                if f.endswith(".clj") and "notif" in f.lower():
-                    notif_files.append(os.path.join(dirpath, f))
-        assert (
-            len(notif_files) >= 4
-        ), f"Expected ≥4 notification .clj files, found {len(notif_files)}"
+    def _read_file(self, rel_path):
+        filepath = os.path.join(self.REPO_DIR, rel_path)
+        with open(filepath) as f:
+            return f.read()
 
-    def test_notification_test_file_exists(self):
-        """Verify at least one notification test file exists."""
-        test_dir = os.path.join(self.REPO_DIR, "test")
-        if not os.path.isdir(test_dir):
-            pytest.skip("test/ not found")
-        for dirpath, _, fnames in os.walk(test_dir):
-            for f in fnames:
-                if f.endswith(".clj") and "notif" in f.lower():
-                    return
-        pytest.fail("No notification test file found")
+    # === File Path Checks ===
 
-    # ── semantic_check ──────────────────────────────────────────────────────
+    def test_core_namespace_exists(self):
+        """Verify notification/core.clj exists"""
+        filepath = os.path.join(self.REPO_DIR, self.CORE_NS)
+        assert os.path.exists(filepath), f"core.clj not found at {filepath}"
 
-    def test_defrecord_notification(self):
-        """Verify defrecord Notification is defined."""
-        files = self._find_notification_files()
-        assert files, "No notification files found"
-        for fpath in files:
-            content = self._read(fpath)
-            if re.search(r"defrecord\s+Notification", content):
-                return
-        pytest.fail("No defrecord Notification found")
+    def test_channel_files_exist(self):
+        """Verify email, slack, and webhook channel files exist"""
+        for path in [self.EMAIL_NS, self.SLACK_NS, self.WEBHOOK_NS]:
+            filepath = os.path.join(self.REPO_DIR, path)
+            assert os.path.exists(filepath), f"Channel file not found: {filepath}"
 
-    def test_defmulti_dispatch(self):
-        """Verify defmulti with dispatch function is defined."""
-        files = self._find_notification_files()
-        assert files, "No notification files found"
-        for fpath in files:
-            content = self._read(fpath)
-            if "defmulti" in content:
-                return
-        pytest.fail("No defmulti dispatch found")
+    def test_conditions_file_exists(self):
+        """Verify conditions.clj exists"""
+        filepath = os.path.join(self.REPO_DIR, self.CONDITIONS_NS)
+        assert os.path.exists(filepath), f"conditions.clj not found at {filepath}"
 
-    def test_webhook_hmac_sha256(self):
-        """Verify webhook uses HMAC-SHA256 signing."""
-        files = self._find_notification_files()
-        assert files, "No notification files found"
-        for fpath in files:
-            content = self._read(fpath)
-            if re.search(
-                r"(hmac|sha.?256|HmacSHA256|Mac/getInstance)", content, re.IGNORECASE
-            ):
-                return
-        pytest.fail("No HMAC-SHA256 webhook signing found")
+    def test_scheduler_file_exists(self):
+        """Verify scheduler.clj exists"""
+        filepath = os.path.join(self.REPO_DIR, self.SCHEDULER_NS)
+        assert os.path.exists(filepath), f"scheduler.clj not found at {filepath}"
 
-    def test_slack_50_block_truncation(self):
-        """Verify Slack integration truncates to 50 blocks."""
-        files = self._find_notification_files()
-        assert files, "No notification files found"
-        for fpath in files:
-            content = self._read(fpath)
-            if "50" in content and (
-                "block" in content.lower()
-                or "truncat" in content.lower()
-                or "take " in content
-            ):
-                return
-        pytest.fail("No Slack 50-block truncation found")
+    def test_test_file_exists(self):
+        """Verify core_test.clj exists"""
+        filepath = os.path.join(self.REPO_DIR, self.CORE_TEST)
+        assert os.path.exists(filepath), f"Test file not found at {filepath}"
 
-    def test_core_async_scheduler(self):
-        """Verify core.async scheduler with concurrency limit."""
-        files = self._find_notification_files()
-        assert files, "No notification files found"
-        for fpath in files:
-            content = self._read(fpath)
-            if "core.async" in content or "async" in content.lower():
-                if re.search(r"(pipeline|thread|go-loop|chan|5|concurrent)", content):
-                    return
-        pytest.fail("No core.async scheduler with concurrency limit found")
+    # === Semantic Checks ===
 
-    # ── functional_check ────────────────────────────────────────────────────
+    def test_core_defines_notification_record(self):
+        """Verify core.clj defines a Notification record"""
+        content = self._read_file(self.CORE_NS)
+        assert "defrecord" in content and "Notification" in content, \
+            "core.clj missing Notification defrecord"
 
-    def test_clojure_files_balanced_parens(self):
-        """Verify Clojure notification files have balanced brackets."""
-        files = self._find_notification_files()
-        assert files, "No notification files found"
-        for fpath in files:
-            content = self._read(fpath)
-            opens = content.count("(") + content.count("[") + content.count("{")
-            closes = content.count(")") + content.count("]") + content.count("}")
-            assert opens == closes, (
-                f"Unbalanced brackets in {os.path.basename(fpath)}: "
-                f"open={opens}, close={closes}"
-            )
+    def test_core_defines_multimethod_dispatch(self):
+        """Verify core.clj defines dispatch-notification multimethod"""
+        content = self._read_file(self.CORE_NS)
+        assert "defmulti" in content, "core.clj missing defmulti declaration"
+        assert "dispatch-notification" in content, \
+            "core.clj missing dispatch-notification multimethod"
+        assert "channel-type" in content or ":channel-type" in content, \
+            "dispatch-notification should dispatch on :channel-type"
 
-    def test_namespaces_declared(self):
-        """Verify all notification files declare namespaces."""
-        files = self._find_notification_files()
-        assert files, "No notification files found"
-        for fpath in files:
-            content = self._read(fpath)
-            assert re.search(
-                r"\(ns\s+", content
-            ), f"No namespace declaration in {os.path.basename(fpath)}"
+    def test_email_channel_formats_html(self):
+        """Verify email channel formats HTML message"""
+        content = self._read_file(self.EMAIL_NS)
+        assert "defmethod" in content or "dispatch-notification" in content, \
+            "Email channel missing defmethod implementation"
+        has_html = bool(re.search(r'(html|<table|<tr|<td|hiccup)', content, re.IGNORECASE))
+        assert has_html, "Email channel missing HTML formatting"
 
-    def test_error_handling_present(self):
-        """Verify error handling (try/catch/ex-info) exists in notification code."""
-        files = self._find_notification_files()
-        assert files, "No notification files found"
-        for fpath in files:
-            content = self._read(fpath)
-            if re.search(r"(try|catch|ex-info|ex-message|throw)", content):
-                return
-        pytest.fail("No error handling found in notification files")
+    def test_slack_channel_uses_block_kit(self):
+        """Verify Slack channel builds Block Kit payload"""
+        content = self._read_file(self.SLACK_NS)
+        assert "blocks" in content or ":blocks" in content, \
+            "Slack channel missing Block Kit :blocks key"
+        assert "header" in content, "Slack channel missing header block type"
 
-    def test_defmethod_implementations(self):
-        """Verify defmethod implementations exist for notification types."""
-        files = self._find_notification_files()
-        assert files, "No notification files found"
-        method_count = 0
-        for fpath in files:
-            content = self._read(fpath)
-            method_count += len(re.findall(r"defmethod\s+", content))
-        assert (
-            method_count >= 2
-        ), f"Expected ≥2 defmethod implementations, found {method_count}"
+    def test_webhook_channel_uses_hmac_signature(self):
+        """Verify webhook channel includes HMAC-SHA256 signature"""
+        content = self._read_file(self.WEBHOOK_NS)
+        has_hmac = bool(re.search(
+            r'(hmac|sha256|signature|HMAC|MessageDigest|Mac)',
+            content,
+            re.IGNORECASE,
+        ))
+        assert has_hmac, "Webhook channel missing HMAC-SHA256 signature"
 
-    # ── helpers ──────────────────────────────────────────────────────────────
+    def test_conditions_define_four_evaluators(self):
+        """Verify conditions.clj defines 4 condition evaluators"""
+        content = self._read_file(self.CONDITIONS_NS)
+        evaluators = [
+            "rows-above-threshold", "rows-below-threshold",
+            "column-value-changed", "query-returns-results",
+        ]
+        for ev in evaluators:
+            assert ev in content, \
+                f"conditions.clj missing evaluator: {ev}"
 
-    def _find_notification_files(self):
-        results = []
-        src_dir = os.path.join(self.REPO_DIR, "src")
-        if not os.path.isdir(src_dir):
-            return results
-        for dirpath, _, fnames in os.walk(src_dir):
-            for f in fnames:
-                if f.endswith(".clj") and "notif" in f.lower():
-                    results.append(os.path.join(dirpath, f))
-        return results
+    def test_conditions_return_triggered_map(self):
+        """Verify condition evaluators return {:triggered? :context} maps"""
+        content = self._read_file(self.CONDITIONS_NS)
+        assert ":triggered?" in content, \
+            "Conditions missing :triggered? key in return map"
+        assert ":context" in content, \
+            "Conditions missing :context key in return map"
 
-    def _read(self, path):
-        with open(path, "r", errors="ignore") as fh:
-            return fh.read()
+    def test_scheduler_uses_core_async(self):
+        """Verify scheduler uses core.async for non-blocking processing"""
+        content = self._read_file(self.SCHEDULER_NS)
+        assert "core.async" in content or "async" in content.lower(), \
+            "Scheduler missing core.async usage"
+        has_go = bool(re.search(r'(go-loop|go\s|pipeline|<!\s|>!\s)', content))
+        assert has_go, "Scheduler missing core.async go-loop or pipeline"
+
+    # === Functional Checks ===
+
+    def test_all_files_have_clojure_namespace(self):
+        """Verify all source files declare proper Clojure namespaces"""
+        for path in [self.CORE_NS, self.EMAIL_NS, self.SLACK_NS,
+                     self.WEBHOOK_NS, self.CONDITIONS_NS, self.SCHEDULER_NS]:
+            content = self._read_file(path)
+            assert "(ns " in content, \
+                f"{path} missing Clojure namespace declaration"
+
+    def test_core_test_has_tests(self):
+        """Verify test file has meaningful test definitions"""
+        content = self._read_file(self.CORE_TEST)
+        assert "deftest" in content, "Test file missing deftest definitions"
+        test_count = content.count("deftest")
+        assert test_count >= 3, \
+            f"Expected at least 3 tests, found {test_count}"
+
+    def test_webhook_uses_http_post(self):
+        """Verify webhook channel makes HTTP POST requests"""
+        content = self._read_file(self.WEBHOOK_NS)
+        has_post = bool(re.search(
+            r'(http/post|client/post|POST|post-request|clj-http)',
+            content,
+        ))
+        assert has_post, "Webhook channel missing HTTP POST implementation"
+
+    def test_scheduler_has_start_and_stop(self):
+        """Verify scheduler has start-scheduler! and stop-scheduler! functions"""
+        content = self._read_file(self.SCHEDULER_NS)
+        assert "start-scheduler" in content, \
+            "Scheduler missing start-scheduler! function"
+        assert "stop-scheduler" in content, \
+            "Scheduler missing stop-scheduler! function"

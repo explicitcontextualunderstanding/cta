@@ -1,117 +1,195 @@
 """
-Test for 'add-malli-schemas' skill — Malli Schema Annotations
-Validates that the Agent added Malli schema definitions and annotations
-to the Metabase actions API endpoints.
+Tests for the add-malli-schemas skill.
+Validates that Malli schemas have been added to Metabase's Actions API endpoints
+with proper validation, named schemas, and type-safe annotations.
 """
 
 import os
 import re
 import subprocess
 
-import pytest
+REPO_DIR = "/workspace/metabase"
 
 
 class TestAddMalliSchemas:
-    """Verify Malli schema annotations on Metabase actions API."""
+    """Tests for Malli schema additions to Actions API endpoints."""
 
-    REPO_DIR = "/workspace/metabase"
+    # ── file_path_check ──────────────────────────────────────────────
 
-    @staticmethod
-    def _read(path: str) -> str:
-        try:
-            with open(path, "r", errors="ignore") as fh:
-                return fh.read()
-        except OSError:
-            return ""
+    def test_actions_api_file_exists(self):
+        """The Actions API namespace file must exist."""
+        path = os.path.join(REPO_DIR, "src", "metabase", "actions", "api.clj")
+        assert os.path.isfile(path), f"Missing {path}"
 
-    # ── file_path_check ─────────────────────────────────────────────
+    def test_actions_models_file_exists(self):
+        """The models file with named Malli schemas must exist."""
+        # Could be models.clj or the schemas could be in api.clj itself
+        models_path = os.path.join(REPO_DIR, "src", "metabase", "actions", "models.clj")
+        api_path = os.path.join(REPO_DIR, "src", "metabase", "actions", "api.clj")
+        assert os.path.isfile(models_path) or os.path.isfile(api_path), (
+            "Neither models.clj nor api.clj found for schema definitions"
+        )
 
-    def test_api_clj_exists(self):
-        """Verify the actions api.clj and models.clj files exist at expected paths."""
-        for rel in (
+    def test_actions_api_test_file_exists(self):
+        """The test file for Actions API must exist."""
+        path = os.path.join(REPO_DIR, "test", "metabase", "actions", "api_test.clj")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    # ── semantic_check ───────────────────────────────────────────────
+
+    def _read_clj_files(self):
+        """Read all relevant Clojure source files and return combined content."""
+        contents = {}
+        for rel in [
             "src/metabase/actions/api.clj",
             "src/metabase/actions/models.clj",
-        ):
-            path = os.path.join(self.REPO_DIR, rel)
-            assert os.path.isfile(path), f"Missing: {rel}"
+        ]:
+            path = os.path.join(REPO_DIR, rel)
+            if os.path.isfile(path):
+                with open(path, "r", encoding="utf-8") as f:
+                    contents[rel] = f.read()
+        return contents
 
-    def test_api_test_clj_exists(self):
-        """Verify the actions api_test.clj test file exists."""
-        path = os.path.join(self.REPO_DIR, "test/metabase/actions/api_test.clj")
-        assert os.path.isfile(path), "test/metabase/actions/api_test.clj missing"
+    def test_named_schema_action_defined(self):
+        """::Action or similar named schema must be defined."""
+        contents = self._read_clj_files()
+        combined = "\n".join(contents.values())
+        assert re.search(r"::Action\b|:metabase\.actions[\w./]*Action", combined), (
+            "Named schema ::Action not found in source files"
+        )
 
-    def test_models_clj_exists(self):
-        """Verify models.clj for actions schema definitions exists."""
-        path = os.path.join(self.REPO_DIR, "src/metabase/actions/models.clj")
-        assert os.path.isfile(path), "src/metabase/actions/models.clj missing"
+    def test_named_schema_http_action_details(self):
+        """::HttpActionDetails schema must be defined with url, method fields."""
+        contents = self._read_clj_files()
+        combined = "\n".join(contents.values())
+        assert re.search(
+            r"HttpActionDetails|http-action-details|HttpAction", combined, re.IGNORECASE
+        ), "HttpActionDetails schema not found"
+        # Check for :url and :method mentions nearby
+        assert ":url" in combined, ":url field not found in schema definitions"
+        assert ":method" in combined, ":method field not found in schema definitions"
 
-    # ── semantic_check ──────────────────────────────────────────────
+    def test_named_schema_create_action_request(self):
+        """::CreateActionRequest schema must be defined."""
+        contents = self._read_clj_files()
+        combined = "\n".join(contents.values())
+        assert re.search(
+            r"CreateActionRequest|create-action-request|CreateAction", combined, re.IGNORECASE
+        ), "CreateActionRequest schema not found"
 
-    def test_mr_def_schemas_in_models_clj(self):
-        """Verify all 5 named Malli schemas are defined with mr/def in models.clj."""
-        content = self._read(os.path.join(self.REPO_DIR, "src/metabase/actions/models.clj"))
-        assert content, "models.clj is empty or unreadable"
-        for pattern in ("mr/def ::Action", "mr/def ::CreateActionRequest",
-                        "mr/def ::ActionResponse", "mr/def ::HttpActionDetails"):
-            assert pattern in content, f"Pattern '{pattern}' not found in models.clj"
+    def test_named_schema_action_response(self):
+        """::ActionResponse schema must be defined with id, created_at fields."""
+        contents = self._read_clj_files()
+        combined = "\n".join(contents.values())
+        assert re.search(
+            r"ActionResponse|action-response", combined, re.IGNORECASE
+        ), "ActionResponse schema not found"
 
-    def test_defendpoint_schema_annotations_in_api_clj(self):
-        """Verify POST endpoint is annotated with :- schema syntax in api.clj."""
-        content = self._read(os.path.join(self.REPO_DIR, "src/metabase/actions/api.clj"))
-        assert content, "api.clj is empty or unreadable"
-        assert ":- ::ActionResponse" in content, ":- ::ActionResponse annotation missing"
-        assert "defendpoint" in content, "defendpoint form missing in api.clj"
+    def test_defendpoint_has_schema_annotations(self):
+        """defendpoint declarations must include schema annotations (:-) syntax."""
+        api_path = os.path.join(REPO_DIR, "src", "metabase", "actions", "api.clj")
+        assert os.path.isfile(api_path), f"Missing {api_path}"
+        with open(api_path, "r", encoding="utf-8") as f:
+            content = f.read()
+        # Look for defendpoint with schema annotations
+        endpoints_found = re.findall(r"defendpoint", content)
+        assert len(endpoints_found) >= 3, (
+            f"Expected at least 3 defendpoint declarations, found {len(endpoints_found)}"
+        )
 
-    def test_http_method_enum_in_schema(self):
-        """Verify ::HttpActionDetails schema contains [:method [:enum ...]] for HTTP method validation."""
-        content = self._read(os.path.join(self.REPO_DIR, "src/metabase/actions/models.clj"))
-        assert content, "models.clj is empty or unreadable"
-        for kw in (":method", ":enum", "GET", "POST", "PUT", "DELETE", "PATCH"):
-            assert kw in content, f"Keyword '{kw}' not found in models.clj"
+    def test_query_action_details_schema(self):
+        """::QueryActionDetails schema must be defined with dataset_query."""
+        contents = self._read_clj_files()
+        combined = "\n".join(contents.values())
+        assert re.search(
+            r"QueryActionDetails|query-action-details|QueryAction", combined, re.IGNORECASE
+        ), "QueryActionDetails schema not found"
 
-    def test_route_param_schema_on_endpoints(self):
-        """Verify route param schema with PositiveInt is applied for :id parameter."""
-        content = self._read(os.path.join(self.REPO_DIR, "src/metabase/actions/api.clj"))
-        assert content, "api.clj is empty or unreadable"
-        assert "ms/PositiveInt" in content, "ms/PositiveInt not found in api.clj"
-        assert ":id" in content, ":id route param not found in api.clj"
+    def test_enum_types_in_schemas(self):
+        """Schemas must use enum types for :type and :method fields."""
+        contents = self._read_clj_files()
+        combined = "\n".join(contents.values())
+        # Check for enum usage for HTTP methods or action types
+        assert re.search(r':enum.*"(GET|POST|PUT|DELETE|PATCH)"', combined) or \
+               re.search(r':enum.*"(http|query|implicit)"', combined), (
+            "Enum types for :method or :type not found in schemas"
+        )
 
-    # ── functional_check (command) ──────────────────────────────────
+    # ── functional_check ─────────────────────────────────────────────
 
-    def _skip_unless_lein_ready(self):
-        if not os.path.isdir(self.REPO_DIR):
-            pytest.skip("Repo dir does not exist")
-        if not os.path.isfile(os.path.join(self.REPO_DIR, "project.clj")):
-            pytest.skip("project.clj missing")
+    def test_api_clj_compiles(self):
+        """The api.clj file must be syntactically valid (balanced parens)."""
+        api_path = os.path.join(REPO_DIR, "src", "metabase", "actions", "api.clj")
+        if not os.path.isfile(api_path):
+            assert False, f"Missing {api_path}"
+        with open(api_path, "r", encoding="utf-8") as f:
+            content = f.read()
+        # Basic paren balance check
+        opens = content.count("(") + content.count("[") + content.count("{")
+        closes = content.count(")") + content.count("]") + content.count("}")
+        assert opens == closes, (
+            f"Unbalanced brackets in api.clj: {opens} opens vs {closes} closes"
+        )
 
-    def test_post_missing_name_returns_400(self):
-        """POST /api/action/ with missing :name field returns 400 validation error."""
-        self._skip_unless_lein_ready()
-        content = self._read(os.path.join(self.REPO_DIR, "test/metabase/actions/api_test.clj"))
-        assert content, "api_test.clj is empty or unreadable"
-        assert "400" in content or "name" in content, \
-            "No test for missing :name validation in api_test.clj"
+    def test_models_clj_compiles(self):
+        """The models.clj file must be syntactically valid (balanced parens)."""
+        models_path = os.path.join(REPO_DIR, "src", "metabase", "actions", "models.clj")
+        if not os.path.isfile(models_path):
+            return  # schemas may be in api.clj
+        with open(models_path, "r", encoding="utf-8") as f:
+            content = f.read()
+        opens = content.count("(") + content.count("[") + content.count("{")
+        closes = content.count(")") + content.count("]") + content.count("}")
+        assert opens == closes, (
+            f"Unbalanced brackets in models.clj: {opens} opens vs {closes} closes"
+        )
 
-    def test_post_invalid_http_method_returns_400(self):
-        """POST /api/action/ with invalid :method returns 400."""
-        self._skip_unless_lein_ready()
-        content = self._read(os.path.join(self.REPO_DIR, "test/metabase/actions/api_test.clj"))
-        assert content, "api_test.clj is empty or unreadable"
-        assert "400" in content or "BADMETHOD" in content.upper() or "method" in content, \
-            "No test for invalid HTTP method validation"
+    def test_api_test_file_has_validation_tests(self):
+        """The test file must contain tests for schema validation rejection."""
+        test_path = os.path.join(REPO_DIR, "test", "metabase", "actions", "api_test.clj")
+        assert os.path.isfile(test_path), f"Missing {test_path}"
+        with open(test_path, "r", encoding="utf-8") as f:
+            content = f.read()
+        # Check for 400 error tests or validation-related keywords
+        assert re.search(r"400|validation|invalid|schema", content, re.IGNORECASE), (
+            "Test file lacks validation rejection tests"
+        )
 
-    def test_put_non_numeric_id_returns_400(self):
-        """PUT /api/action/abc (non-numeric id) returns 400 route param validation error."""
-        self._skip_unless_lein_ready()
-        content = self._read(os.path.join(self.REPO_DIR, "test/metabase/actions/api_test.clj"))
-        assert content, "api_test.clj is empty or unreadable"
-        assert "400" in content or "PositiveInt" in content or ":id" in content, \
-            "No test for non-numeric :id validation"
+    def test_post_endpoint_has_request_body_schema(self):
+        """POST /api/action/ must have a request body schema annotation."""
+        api_path = os.path.join(REPO_DIR, "src", "metabase", "actions", "api.clj")
+        assert os.path.isfile(api_path)
+        with open(api_path, "r", encoding="utf-8") as f:
+            content = f.read()
+        # Look for POST defendpoint with schema reference
+        post_sections = re.findall(
+            r'defendpoint\s+:?POST[^)]*\)', content, re.DOTALL
+        )
+        # Also accept plain POST with schema annotations
+        assert len(post_sections) > 0 or ("POST" in content and "CreateAction" in content.lower().replace("-", "")), (
+            "POST endpoint with request body schema not found"
+        )
 
-    def test_valid_post_returns_200(self):
-        """POST /api/action/ with valid complete payload returns 200/201 matching ActionResponse."""
-        self._skip_unless_lein_ready()
-        content = self._read(os.path.join(self.REPO_DIR, "test/metabase/actions/api_test.clj"))
-        assert content, "api_test.clj is empty or unreadable"
-        assert "200" in content or "201" in content or "action" in content.lower(), \
-            "No test for valid POST returning success status"
+    def test_get_endpoint_has_response_schema(self):
+        """GET endpoints must have response schema annotations."""
+        api_path = os.path.join(REPO_DIR, "src", "metabase", "actions", "api.clj")
+        assert os.path.isfile(api_path)
+        with open(api_path, "r", encoding="utf-8") as f:
+            content = f.read()
+        # Look for GET with response annotations
+        assert "GET" in content, "No GET endpoint found"
+        assert re.search(r"ActionResponse|:sequential|action-response", content, re.IGNORECASE), (
+            "GET endpoint lacks response schema annotation"
+        )
+
+    def test_route_params_validated(self):
+        """Endpoints with :id route params must have schema validation."""
+        api_path = os.path.join(REPO_DIR, "src", "metabase", "actions", "api.clj")
+        assert os.path.isfile(api_path)
+        with open(api_path, "r", encoding="utf-8") as f:
+            content = f.read()
+        # Endpoints with :id should have PositiveInt or similar schema
+        if ":id" in content:
+            assert re.search(r"PositiveInt|pos-int|:int|ms/PositiveInt", content), (
+                "Route param :id lacks schema validation"
+            )

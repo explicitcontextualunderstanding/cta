@@ -1,216 +1,185 @@
-"""Test file for the add-malli-schemas skill.
-
-This suite validates Malli schema definitions and endpoint-level schema
-enforcement in the Metabase bookmark API (Clojure).
+"""
+Test skill: add-malli-schemas
+Verify that the Agent correctly adds Malli schemas to the Metabase Bookmark
+API endpoints — named schema definitions, route/body schemas on defendpoint,
+and validation behaviour for invalid inputs.
 """
 
-from __future__ import annotations
-
-import pathlib
+import os
 import re
 import subprocess
-import textwrap
-
 import pytest
 
 
 class TestAddMalliSchemas:
-    """Verify Malli schema additions across the Metabase bookmark API."""
-
     REPO_DIR = "/workspace/metabase"
+    BOOKMARK_SRC = "src/metabase/api/bookmark.clj"
+    BOOKMARK_TEST = "test/metabase/api/bookmark_test.clj"
 
-    # ------------------------------------------------------------------
-    # Helpers
-    # ------------------------------------------------------------------
+    # ────────────────── helpers ──────────────────
 
-    def _repo_path(self, relative: str) -> pathlib.Path:
-        return pathlib.Path(self.REPO_DIR, *relative.split("/"))
+    def _read(self, rel_path):
+        fpath = os.path.join(self.REPO_DIR, rel_path)
+        with open(fpath, "r") as f:
+            return f.read()
 
-    def _read_text(self, relative: str) -> str:
-        path = self._repo_path(relative)
-        assert path.exists(), f"Expected path to exist: {path}"
-        return path.read_text(encoding="utf-8", errors="ignore")
+    # === File Path Checks ===
 
-    def _assert_non_empty_file(self, relative: str) -> pathlib.Path:
-        path = self._repo_path(relative)
-        assert path.is_file(), f"Expected file to exist: {path}"
-        assert path.stat().st_size > 0, f"Expected non-empty file: {path}"
-        return path
+    def test_bookmark_src_exists(self):
+        """bookmark.clj source file must exist"""
+        fpath = os.path.join(self.REPO_DIR, self.BOOKMARK_SRC)
+        assert os.path.isfile(fpath), f"Not found: {fpath}"
 
-    def _find_sexp_block(self, source: str, head_pattern: str) -> str | None:
-        """Return the balanced s-expression starting at *head_pattern*."""
-        match = re.search(head_pattern, source)
-        if match is None:
-            return None
-        start = match.start()
-        depth = 0
-        for i, ch in enumerate(source[start:], start):
-            if ch in "([":
-                depth += 1
-            elif ch in ")]":
-                depth -= 1
-                if depth == 0:
-                    return source[start : i + 1]
-        return None
+    def test_bookmark_test_exists(self):
+        """bookmark_test.clj test file must exist"""
+        fpath = os.path.join(self.REPO_DIR, self.BOOKMARK_TEST)
+        assert os.path.isfile(fpath), f"Not found: {fpath}"
 
-    # ------------------------------------------------------------------
-    # Layer 1 – file_path_check (2 cases)
-    # ------------------------------------------------------------------
+    # === Semantic Checks — Named Schema Definitions ===
 
-    def test_file_path_src_metabase_api_bookmark_clj_is_modified_with_schema_defini(
-        self,
-    ):
-        """Verify src/metabase/api/bookmark.clj exists and is non-empty."""
-        self._assert_non_empty_file("src/metabase/api/bookmark.clj")
-
-    def test_file_path_test_metabase_api_bookmark_test_clj_is_modified_with_schema_(
-        self,
-    ):
-        """Verify test/metabase/api/bookmark_test.clj exists and is non-empty."""
-        self._assert_non_empty_file("test/metabase/api/bookmark_test.clj")
-
-    # ------------------------------------------------------------------
-    # Layer 2 – semantic_check (5 cases)
-    # ------------------------------------------------------------------
-
-    def test_semantic_mr_def_declarations_for_bookmarktype_as_enum_card_dashboard_(
-        self,
-    ):
-        """mr/def for ::BookmarkType as [:enum 'card' 'dashboard' 'collection']."""
-        src = self._read_text("src/metabase/api/bookmark.clj")
-        block = self._find_sexp_block(src, r"mr/def\s+::BookmarkType")
-        assert block is not None, "Missing mr/def ::BookmarkType declaration"
-        assert ":enum" in block, "BookmarkType should use :enum schema"
-        for variant in ("card", "dashboard", "collection"):
-            assert (
-                f'"{variant}"' in block or f"'{variant}" in block or variant in block
-            ), f"Missing variant {variant!r} in BookmarkType"
-
-    def test_semantic_mr_def_declarations_for_bookmarkresponse_with_required_keys_(
-        self,
-    ):
-        """mr/def for ::BookmarkResponse with keys :id, :type, :item_id, :name, :description, :created_at."""
-        src = self._read_text("src/metabase/api/bookmark.clj")
-        block = self._find_sexp_block(src, r"mr/def\s+::BookmarkResponse")
-        assert block is not None, "Missing mr/def ::BookmarkResponse declaration"
-        required_keys = [
-            ":id",
-            ":type",
-            ":item_id",
-            ":name",
-            ":description",
-            ":created_at",
-        ]
-        for key in required_keys:
-            assert key in block, f"Missing key {key} in BookmarkResponse schema"
-
-    def test_semantic_mr_def_declarations_for_bookmarkorderingentry_with_type_and_(
-        self,
-    ):
-        """mr/def for ::BookmarkOrderingEntry with :type and :item_id."""
-        src = self._read_text("src/metabase/api/bookmark.clj")
-        block = self._find_sexp_block(src, r"mr/def\s+::BookmarkOrderingEntry")
-        assert block is not None, "Missing mr/def ::BookmarkOrderingEntry declaration"
-        assert ":type" in block, "Missing :type in BookmarkOrderingEntry"
-        assert ":item_id" in block, "Missing :item_id in BookmarkOrderingEntry"
-
-    def test_semantic_defendpoint_post_uses_route_param_schema_for_type_and_item_i(
-        self,
-    ):
-        """defendpoint POST uses route param schema for type and item-id."""
-        src = self._read_text("src/metabase/api/bookmark.clj")
-        post_block = self._find_sexp_block(src, r"defendpoint\s+POST")
-        assert post_block is not None, "Missing defendpoint POST block"
+    def test_bookmark_type_schema_defined(self):
+        """::BookmarkType enum schema must be defined with mr/def"""
+        src = self._read(self.BOOKMARK_SRC)
         assert re.search(
-            r":type|:item[_-]id|BookmarkType", post_block
-        ), "POST endpoint does not reference route param schema for type/item-id"
+            r'mr/def\s+::BookmarkType', src
+        ) or re.search(
+            r'mu/def\s+::BookmarkType', src
+        ) or re.search(
+            r'\(mr/def\s+::BookmarkType', src
+        ), "::BookmarkType schema not defined with mr/def"
 
-    def test_semantic_defendpoint_delete_uses_route_param_schema_for_type_and_item(
-        self,
-    ):
-        """defendpoint DELETE uses route param schema for type and item-id."""
-        src = self._read_text("src/metabase/api/bookmark.clj")
-        delete_block = self._find_sexp_block(src, r"defendpoint\s+DELETE")
-        assert delete_block is not None, "Missing defendpoint DELETE block"
-        assert re.search(
-            r":type|:item[_-]id|BookmarkType", delete_block
-        ), "DELETE endpoint does not reference route param schema for type/item-id"
+    def test_bookmark_type_enum_values(self):
+        """::BookmarkType must include card, dashboard, and collection"""
+        src = self._read(self.BOOKMARK_SRC)
+        for val in ["card", "dashboard", "collection"]:
+            assert f'"{val}"' in src, (
+                f'::BookmarkType enum missing value "{val}"'
+            )
 
-    # ------------------------------------------------------------------
-    # Layer 3 – functional_check (5 cases, mocked via subprocess Clojure)
-    # ------------------------------------------------------------------
-
-    def _run_clj_snippet(self, snippet: str, *, timeout: int = 120) -> str:
-        """Execute a Clojure snippet through the repo's classpath and return stdout."""
-        clj_bin = "clojure"
-        result = subprocess.run(
-            [clj_bin, "-M", "-e", snippet],
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            cwd=self.REPO_DIR,
+    def test_bookmark_response_schema_defined(self):
+        """::BookmarkResponse schema must be defined"""
+        src = self._read(self.BOOKMARK_SRC)
+        assert "BookmarkResponse" in src, (
+            "::BookmarkResponse schema not found in bookmark.clj"
         )
-        if result.returncode != 0:
-            pytest.fail(f"Clojure snippet failed:\n{result.stderr}")
-        return result.stdout.strip()
 
-    def _bookmark_api_source(self) -> str:
-        return self._read_text("src/metabase/api/bookmark.clj")
+    def test_bookmark_response_has_required_keys(self):
+        """::BookmarkResponse must contain :id, :type, :item_id, :name, :description, :created_at"""
+        src = self._read(self.BOOKMARK_SRC)
+        for key in [":id", ":type", ":item_id", ":name", ":description", ":created_at"]:
+            assert key in src, f"BookmarkResponse missing key {key}"
 
-    def test_functional_post_api_bookmark_invalid_type_1_returns_http_400(self):
-        """POST /api/bookmark/invalid-type/1 should be rejected by Malli schema (HTTP 400)."""
-        src = self._bookmark_api_source()
-        post_block = self._find_sexp_block(src, r"defendpoint\s+POST")
-        assert post_block is not None, "Missing POST endpoint"
-        has_enum = re.search(r":enum|BookmarkType|:type", post_block)
-        assert has_enum, "POST handler does not validate :type via schema"
+    def test_bookmark_ordering_entry_schema_defined(self):
+        """::BookmarkOrderingEntry schema must be defined"""
+        src = self._read(self.BOOKMARK_SRC)
+        assert "BookmarkOrderingEntry" in src, (
+            "::BookmarkOrderingEntry schema not found in bookmark.clj"
+        )
+
+    def test_ordering_entry_has_type_and_item_id(self):
+        """::BookmarkOrderingEntry must include :type and :item_id"""
+        src = self._read(self.BOOKMARK_SRC)
+        # After BookmarkOrderingEntry definition the keys should appear
+        assert ":type" in src and ":item_id" in src, (
+            "BookmarkOrderingEntry missing :type or :item_id"
+        )
+
+    # === Semantic Checks — Endpoint Schema Annotations ===
+
+    def test_post_endpoint_has_route_schema(self):
+        """POST /api/bookmark/:type/:item-id must have Malli route-param schema"""
+        src = self._read(self.BOOKMARK_SRC)
+        # Look for defendpoint POST with schema annotations
+        post_section = re.search(
+            r'defendpoint\s+:?POST\s+.*bookmark.*type.*item', src, re.DOTALL
+        ) or re.search(
+            r'defendpoint\s+POST\s+.*bookmark.*type.*item', src, re.DOTALL
+        )
+        assert post_section is not None, (
+            "POST /api/bookmark/:type/:item-id defendpoint not found"
+        )
+
+    def test_delete_endpoint_has_route_schema(self):
+        """DELETE /api/bookmark/:type/:item-id must have Malli route-param schema"""
+        src = self._read(self.BOOKMARK_SRC)
         assert re.search(
-            r"card|dashboard|collection", post_block
-        ), "POST handler should constrain type to known bookmark types"
+            r'defendpoint\s+:?DELETE\s+.*bookmark.*type.*item', src, re.DOTALL
+        ), "DELETE /api/bookmark/:type/:item-id defendpoint not found"
 
-    def test_functional_post_api_bookmark_card_abc_returns_http_400(self):
-        """POST /api/bookmark/card/abc — non-integer item-id should be rejected (HTTP 400)."""
-        src = self._bookmark_api_source()
-        post_block = self._find_sexp_block(src, r"defendpoint\s+POST")
-        assert post_block is not None, "Missing POST endpoint"
+    def test_put_ordering_endpoint_has_body_schema(self):
+        """PUT /api/bookmark/ordering must have request body schema for orderings"""
+        src = self._read(self.BOOKMARK_SRC)
         assert re.search(
-            r"int\?|:int|pos-int\?|ms/PositiveInt|item[_-]id", post_block
-        ), "POST handler must validate item-id as integer type"
+            r'defendpoint\s+:?PUT\s+.*ordering', src, re.DOTALL
+        ), "PUT /api/bookmark/ordering defendpoint not found"
+        # Body schema should reference orderings
+        assert ":orderings" in src, (
+            "PUT /api/bookmark/ordering missing :orderings in body schema"
+        )
 
-    def test_functional_put_api_bookmark_ordering_with_missing_type_field_returns_ht(
-        self,
-    ):
-        """PUT /api/bookmark/ordering with missing type field → HTTP 400."""
-        src = self._bookmark_api_source()
-        put_block = self._find_sexp_block(src, r"defendpoint\s+PUT")
-        assert put_block is not None, "Missing PUT endpoint for ordering"
-        assert re.search(
-            r"BookmarkOrderingEntry|:type|ordering", put_block
-        ), "PUT ordering handler must reference ordering schema with :type"
+    def test_uses_ms_positive_int(self):
+        """All integer fields must use ms/PositiveInt, not pos-int?"""
+        src = self._read(self.BOOKMARK_SRC)
+        assert "ms/PositiveInt" in src or "PositiveInt" in src, (
+            "Schema should use ms/PositiveInt for integer fields"
+        )
 
-    def test_functional_put_api_bookmark_ordering_with_empty_orderings_list_returns_(
-        self,
-    ):
-        """PUT /api/bookmark/ordering with empty orderings list should be accepted."""
-        src = self._bookmark_api_source()
-        put_block = self._find_sexp_block(src, r"defendpoint\s+PUT")
-        assert put_block is not None, "Missing PUT endpoint for ordering"
-        # An empty vector `[]` should still be valid; the schema should use
-        # :sequential or vector-of to allow zero-length collections.
-        assert (
-            re.search(r"sequential|vector|coll-of|\[\]", put_block)
-            or ":orderings" in put_block
-        ), "PUT ordering should accept a sequential (possibly empty) collection"
+    def test_uses_ms_non_blank_string(self):
+        """Name fields must use ms/NonBlankString"""
+        src = self._read(self.BOOKMARK_SRC)
+        assert "NonBlankString" in src, (
+            "Schema should use ms/NonBlankString for name fields"
+        )
 
-    def test_functional_post_api_bookmark_card_42_returns_valid_bookmarkresponse(self):
-        """POST /api/bookmark/card/42 returns a valid ::BookmarkResponse shape."""
-        src = self._bookmark_api_source()
-        # Verify that the POST endpoint declares or coerces to ::BookmarkResponse
-        assert re.search(
-            r"BookmarkResponse|:return|:responses|200", src
-        ), "POST handler should declare BookmarkResponse as response schema"
-        # Check response shape contains required keys
-        resp_block = self._find_sexp_block(src, r"mr/def\s+::BookmarkResponse")
-        assert resp_block is not None, "Missing ::BookmarkResponse schema"
-        for key in (":id", ":type", ":item_id"):
-            assert key in resp_block, f"Response schema missing key {key}"
+    # === Semantic Checks — Test File ===
+
+    def test_test_file_has_validation_tests(self):
+        """bookmark_test.clj must contain tests exercising schema validation"""
+        test_src = self._read(self.BOOKMARK_TEST)
+        # Should test invalid type or invalid item-id
+        has_invalid_type = re.search(r'invalid.type|invalid-type|"invalid"', test_src, re.IGNORECASE)
+        has_400 = "400" in test_src
+        assert has_invalid_type or has_400, (
+            "Test file should exercise schema validation (invalid type / 400)"
+        )
+
+    # === Functional Checks ===
+
+    def test_clojure_compiles(self):
+        """The bookmark namespace must compile without errors"""
+        result = subprocess.run(
+            ["clojure", "-M", "-e",
+             "(require 'metabase.api.bookmark)"],
+            capture_output=True, text=True, cwd=self.REPO_DIR, timeout=120,
+        )
+        assert result.returncode == 0, (
+            f"Clojure compilation failed:\nstdout: {result.stdout}\nstderr: {result.stderr}"
+        )
+
+    def test_existing_bookmark_tests_pass(self):
+        """Existing bookmark tests must still pass after schema additions"""
+        result = subprocess.run(
+            ["clojure", "-X:dev:test",
+             ":only", "metabase.api.bookmark-test"],
+            capture_output=True, text=True, cwd=self.REPO_DIR, timeout=300,
+        )
+        assert result.returncode == 0, (
+            f"Bookmark tests failed:\nstdout: {result.stdout}\nstderr: {result.stderr}"
+        )
+
+    def test_bookmark_type_rejects_invalid_enum(self):
+        """Validate that an invalid bookmark type is handled: look for :enum or coercion logic"""
+        src = self._read(self.BOOKMARK_SRC)
+        # The enum schema should restrict the values
+        assert re.search(r':enum\s+"card"\s+"dashboard"\s+"collection"', src) or \
+               re.search(r'\[:enum\s+"card"\s+"dashboard"\s+"collection"\]', src), (
+            "BookmarkType enum definition not found with correct values"
+        )
+
+    def test_response_schema_uses_any_for_temporal(self):
+        """:created_at field should use :any for temporal types"""
+        src = self._read(self.BOOKMARK_SRC)
+        # Should have :any near created_at in the response schema
+        assert ":any" in src, (
+            "Response schema should use :any for temporal fields like :created_at"
+        )

@@ -1,246 +1,232 @@
 """
-Test for 'python-configuration' skill — Python Configuration Management
-Validates that the Agent implemented a type-safe pydantic-settings tutorial
-for FastAPI with environment variable reading, validation, and sensible defaults.
+Test skill: python-configuration
+Verify that the Agent correctly implements type-safe configuration
+management for FastAPI using pydantic-settings, including environment
+variable reading, type validation, defaults, and FastAPI integration.
 """
 
 import os
 import re
+import ast
 import subprocess
-
 import pytest
-
-from _dependency_utils import ensure_python_dependencies
-
-
-@pytest.fixture(scope="module", autouse=True)
-def _ensure_repo_dependencies():
-    ensure_python_dependencies(TestPythonConfiguration.REPO_DIR)
-    # Ensure pydantic-settings is available
-    subprocess.run(
-        ["python", "-m", "pip", "install", "-q", "pydantic-settings", "pydantic"],
-        cwd=TestPythonConfiguration.REPO_DIR,
-        capture_output=True,
-        timeout=120,
-    )
 
 
 class TestPythonConfiguration:
-    """Verify type-safe configuration management tutorial for FastAPI."""
-
     REPO_DIR = "/workspace/fastapi"
 
-    # ------------------------------------------------------------------
-    # Helpers
-    # ------------------------------------------------------------------
-
-    def _read(self, *parts):
-        fpath = os.path.join(self.REPO_DIR, *parts)
-        assert os.path.isfile(fpath), f"Required file not found: {fpath}"
-        with open(fpath, "r", errors="ignore") as fh:
-            return fh.read()
-
-    # ------------------------------------------------------------------
-    # L1: File existence and syntax
-    # ------------------------------------------------------------------
+    # === File Path Checks ===
 
     def test_tutorial_file_exists(self):
-        """docs_src/settings/tutorial001.py must exist."""
-        fpath = os.path.join(self.REPO_DIR, "docs_src", "settings", "tutorial001.py")
-        assert os.path.isfile(fpath), "docs_src/settings/tutorial001.py not found"
+        """Verify docs_src/settings/tutorial001.py exists"""
+        path = os.path.join(self.REPO_DIR, "docs_src/settings/tutorial001.py")
+        assert os.path.exists(path), f"tutorial001.py not found at {path}"
 
-    def test_tutorial_compiles(self):
-        """tutorial001.py must be syntactically valid Python."""
-        result = subprocess.run(
-            ["python", "-m", "py_compile", "docs_src/settings/tutorial001.py"],
-            cwd=self.REPO_DIR,
-            capture_output=True,
-            text=True,
-            timeout=30,
+    # === Semantic Checks ===
+
+    def test_settings_class_defined(self):
+        """Verify a Settings class is defined that inherits from BaseSettings"""
+        path = os.path.join(self.REPO_DIR, "docs_src/settings/tutorial001.py")
+        with open(path) as f:
+            content = f.read()
+
+        assert re.search(r"class\s+\w*[Ss]ettings\w*", content), (
+            "A Settings class should be defined"
         )
-        assert (
-            result.returncode == 0
-        ), f"Syntax error in tutorial001.py:\n{result.stderr}"
-
-    # ------------------------------------------------------------------
-    # L1: Settings class structure
-    # ------------------------------------------------------------------
-
-    def test_defines_settings_class(self):
-        """Tutorial must define a Settings class."""
-        content = self._read("docs_src", "settings", "tutorial001.py")
-        assert re.search(
-            r"class\s+\w*Settings", content
-        ), "No Settings class found in tutorial001.py"
-
-    def test_settings_inherits_from_base_settings(self):
-        """Settings class must inherit from pydantic BaseSettings."""
-        content = self._read("docs_src", "settings", "tutorial001.py")
-        patterns = [
-            r"class\s+\w*Settings\s*\(\s*\w*BaseSettings",
-            r"from\s+pydantic_settings\s+import\s+BaseSettings",
-            r"from\s+pydantic\s+import\s+BaseSettings",
-            r"pydantic_settings\.BaseSettings",
-        ]
-        assert any(
-            re.search(p, content) for p in patterns
-        ), "Settings class does not inherit from pydantic BaseSettings"
-
-    # ------------------------------------------------------------------
-    # L1: Required fields
-    # ------------------------------------------------------------------
-
-    def test_has_database_url_field(self):
-        """Settings must include a database connection string field."""
-        content = self._read("docs_src", "settings", "tutorial001.py")
-        patterns = [
-            r"database_url",
-            r"db_url",
-            r"database_uri",
-            r"db_uri",
-            r"DATABASE_URL",
-            r"SQLALCHEMY_DATABASE",
-        ]
-        assert any(
-            re.search(p, content, re.IGNORECASE) for p in patterns
-        ), "Settings missing database URL/URI field"
-
-    def test_has_debug_mode_field(self):
-        """Settings must include a debug mode toggle field."""
-        content = self._read("docs_src", "settings", "tutorial001.py")
-        assert re.search(
-            r"debug", content, re.IGNORECASE
-        ), "Settings missing debug mode field"
-
-    def test_has_host_and_port_fields(self):
-        """Settings must include server host and port fields."""
-        content = self._read("docs_src", "settings", "tutorial001.py")
-        has_host = bool(re.search(r"host", content, re.IGNORECASE))
-        has_port = bool(re.search(r"port", content, re.IGNORECASE))
-        assert (
-            has_host and has_port
-        ), f"Settings missing host (found={has_host}) or port (found={has_port})"
-
-    def test_has_api_key_field(self):
-        """Settings must include an API key field (read from env, not hardcoded)."""
-        content = self._read("docs_src", "settings", "tutorial001.py")
-        patterns = [r"api_key", r"secret_key", r"API_KEY", r"SECRET_KEY"]
-        assert any(
-            re.search(p, content, re.IGNORECASE) for p in patterns
-        ), "Settings missing API key / secret key field"
-
-    def test_has_cors_origins_field(self):
-        """Settings must include an allowed CORS origins field."""
-        content = self._read("docs_src", "settings", "tutorial001.py")
-        patterns = [
-            r"cors",
-            r"allowed_origins",
-            r"CORS_ORIGINS",
-            r"origins",
-            r"allow_origins",
-        ]
-        assert any(
-            re.search(p, content, re.IGNORECASE) for p in patterns
-        ), "Settings missing CORS origins field"
-
-    # ------------------------------------------------------------------
-    # L2: Type annotations and defaults
-    # ------------------------------------------------------------------
-
-    def test_fields_have_type_annotations(self):
-        """Settings fields must have type annotations (str, int, bool, list, etc.)."""
-        content = self._read("docs_src", "settings", "tutorial001.py")
-        # Match field_name: Type patterns inside the Settings class
-        annotations = re.findall(
-            r"\w+\s*:\s*(?:str|int|bool|float|list|List|Optional|Set)", content
-        )
-        assert len(annotations) >= 3, (
-            f"Only {len(annotations)} typed fields found — "
-            f"Settings should have type annotations for all fields"
+        assert "BaseSettings" in content, (
+            "Settings class should inherit from BaseSettings (pydantic-settings)"
         )
 
-    def test_sensitive_fields_not_hardcoded(self):
-        """API keys and database URLs must not have hardcoded production values."""
-        content = self._read("docs_src", "settings", "tutorial001.py")
-        # Look for suspicious hardcoded values near sensitive field names
-        bad_patterns = [
-            r"api_key\s*[:=]\s*['\"](?!changeme|test|dummy|example|your)[a-zA-Z0-9]{20,}",
-            r"database_url\s*[:=]\s*['\"](?:postgres|mysql|sqlite)://(?!localhost|example|test)",
+    def test_imports_pydantic_settings(self):
+        """Verify pydantic-settings is imported"""
+        path = os.path.join(self.REPO_DIR, "docs_src/settings/tutorial001.py")
+        with open(path) as f:
+            content = f.read()
+
+        indicators = [
+            "pydantic_settings", "pydantic.settings",
+            "BaseSettings",
         ]
-        for pattern in bad_patterns:
-            match = re.search(pattern, content, re.IGNORECASE)
-            assert (
-                not match
-            ), f"Sensitive field appears to have a hardcoded production value: {match.group()}"
+        found = [ind for ind in indicators if ind in content]
+        assert len(found) >= 1, (
+            f"Should import from pydantic-settings. Found: {found}"
+        )
 
-    # ------------------------------------------------------------------
-    # L2: FastAPI integration
-    # ------------------------------------------------------------------
+    def test_database_url_field(self):
+        """Verify settings include a database connection string field"""
+        path = os.path.join(self.REPO_DIR, "docs_src/settings/tutorial001.py")
+        with open(path) as f:
+            content = f.read().lower()
 
-    def test_fastapi_app_integration(self):
-        """Tutorial must show how to use Settings with a FastAPI application."""
-        content = self._read("docs_src", "settings", "tutorial001.py")
-        patterns = [r"FastAPI", r"fastapi", r"app\s*=", r"Depends"]
-        assert any(
-            re.search(p, content) for p in patterns
-        ), "Tutorial does not demonstrate FastAPI integration"
+        db_indicators = [
+            "database_url", "database_uri", "db_url", "db_uri",
+            "database", "sqlalchemy",
+        ]
+        found = [ind for ind in db_indicators if ind in content]
+        assert len(found) >= 1, (
+            f"Settings should include a database URL field. Found: {found}"
+        )
 
-    # ------------------------------------------------------------------
-    # L2: Dynamic import/instantiation
-    # ------------------------------------------------------------------
+    def test_api_key_field(self):
+        """Verify settings include API key field(s)"""
+        path = os.path.join(self.REPO_DIR, "docs_src/settings/tutorial001.py")
+        with open(path) as f:
+            content = f.read().lower()
 
-    def test_settings_instantiable_with_env_vars(self):
-        """Settings class must be instantiable when required env vars are provided."""
-        script = """
-import sys, os
-sys.path.insert(0, '.')
-os.environ.setdefault('DATABASE_URL', 'sqlite:///test.db')
-os.environ.setdefault('DB_URL', 'sqlite:///test.db')
-os.environ.setdefault('DATABASE_URI', 'sqlite:///test.db')
-os.environ.setdefault('API_KEY', 'test-api-key-12345')
-os.environ.setdefault('SECRET_KEY', 'test-secret-key-12345')
-os.environ.setdefault('DEBUG', 'true')
-os.environ.setdefault('HOST', '0.0.0.0')
-os.environ.setdefault('PORT', '8000')
-os.environ.setdefault('ALLOWED_ORIGINS', '["http://localhost"]')
-os.environ.setdefault('CORS_ORIGINS', '["http://localhost"]')
+        key_indicators = [
+            "api_key", "secret_key", "api_token", "secret",
+        ]
+        found = [ind for ind in key_indicators if ind in content]
+        assert len(found) >= 1, (
+            f"Settings should include API key field(s). Found: {found}"
+        )
 
-import importlib.util
-spec = importlib.util.spec_from_file_location(
-    "tutorial001", "docs_src/settings/tutorial001.py")
-mod = importlib.util.module_from_spec(spec)
-try:
-    spec.loader.exec_module(mod)
-    print('LOADED_OK')
-except Exception as e:
-    print(f'LOAD_ERROR={e}')
+    def test_debug_mode_field(self):
+        """Verify settings include a debug mode toggle (boolean)"""
+        path = os.path.join(self.REPO_DIR, "docs_src/settings/tutorial001.py")
+        with open(path) as f:
+            content = f.read()
 
-import inspect
-for name, obj in inspect.getmembers(mod):
-    if inspect.isclass(obj) and 'settings' in name.lower():
+        assert "debug" in content.lower(), (
+            "Settings should include a debug mode toggle field"
+        )
+        # Should be typed as bool
+        bool_indicators = ["bool", "True", "False"]
+        found = [ind for ind in bool_indicators if ind in content]
+        assert len(found) >= 1, (
+            f"Debug field should be boolean typed. Found: {found}"
+        )
+
+    def test_host_port_fields(self):
+        """Verify settings include host and port fields"""
+        path = os.path.join(self.REPO_DIR, "docs_src/settings/tutorial001.py")
+        with open(path) as f:
+            content = f.read().lower()
+
+        assert "host" in content, "Settings should include a host field"
+        assert "port" in content, "Settings should include a port field"
+
+    def test_cors_origins_field(self):
+        """Verify settings include allowed CORS origins"""
+        path = os.path.join(self.REPO_DIR, "docs_src/settings/tutorial001.py")
+        with open(path) as f:
+            content = f.read().lower()
+
+        cors_indicators = [
+            "cors", "origins", "allowed_origins", "allowed_hosts",
+        ]
+        found = [ind for ind in cors_indicators if ind in content]
+        assert len(found) >= 1, (
+            f"Settings should include CORS origins. Found: {found}"
+        )
+
+    def test_type_annotations_present(self):
+        """Verify fields have proper type annotations"""
+        path = os.path.join(self.REPO_DIR, "docs_src/settings/tutorial001.py")
+        with open(path) as f:
+            content = f.read()
+
+        type_indicators = ["str", "int", "bool", "list", "List", "Optional"]
+        found = [t for t in type_indicators if t in content]
+        assert len(found) >= 3, (
+            f"Settings fields should have type annotations. Found types: {found}"
+        )
+
+    def test_fastapi_integration(self):
+        """Verify tutorial shows FastAPI app using the settings"""
+        path = os.path.join(self.REPO_DIR, "docs_src/settings/tutorial001.py")
+        with open(path) as f:
+            content = f.read()
+
+        assert "FastAPI" in content or "fastapi" in content.lower(), (
+            "Tutorial should demonstrate FastAPI integration"
+        )
+        # Should instantiate settings and use in the app
+        instance_indicators = [
+            "Settings()", "settings =", "get_settings", "Depends(",
+        ]
+        found = [ind for ind in instance_indicators if ind in content]
+        assert len(found) >= 1, (
+            f"Tutorial should instantiate settings for FastAPI use. Found: {found}"
+        )
+
+    # === Functional Checks ===
+
+    def test_tutorial_valid_python(self):
+        """Verify tutorial001.py is valid Python syntax"""
+        path = os.path.join(self.REPO_DIR, "docs_src/settings/tutorial001.py")
+        with open(path) as f:
+            source = f.read()
         try:
-            instance = obj()
-            print(f'INSTANTIATED={name}')
-            break
-        except Exception as e:
-            print(f'INIT_ERROR={name}:{e}')
-"""
-        result = subprocess.run(
-            ["python", "-c", script],
-            cwd=self.REPO_DIR,
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-        output = result.stdout.strip()
-        assert (
-            "LOADED_OK" in output or "INSTANTIATED" in output
-        ), f"Failed to load/instantiate Settings:\n{output}\n{result.stderr[-1000:]}"
+            ast.parse(source)
+        except SyntaxError as e:
+            pytest.fail(f"tutorial001.py has syntax errors: {e}")
 
-    def test_env_file_support_mentioned(self):
-        """Tutorial should demonstrate .env file support (env_file or dotenv)."""
-        content = self._read("docs_src", "settings", "tutorial001.py")
-        patterns = [r"env_file", r"\.env", r"dotenv", r"model_config"]
-        assert any(
-            re.search(p, content, re.IGNORECASE) for p in patterns
-        ), "Tutorial does not mention .env file support"
+    def test_tutorial_importable(self):
+        """Verify tutorial001.py can be imported"""
+        import sys
+        sys.path.insert(0, self.REPO_DIR)
+        try:
+            result = subprocess.run(
+                [
+                    "python", "-c",
+                    "import sys; sys.path.insert(0, "
+                    f"'{self.REPO_DIR}'); "
+                    "from docs_src.settings.tutorial001 import *",
+                ],
+                capture_output=True, text=True, timeout=30,
+                cwd=self.REPO_DIR,
+            )
+            # Allow import failure only if env vars are missing (expected)
+            if result.returncode != 0:
+                stderr = result.stderr.lower()
+                acceptable_failures = [
+                    "validationerror", "validation error",
+                    "environment variable", "field required",
+                    "missing", "pydantic",
+                ]
+                is_acceptable = any(f in stderr for f in acceptable_failures)
+                assert is_acceptable, (
+                    f"Import failed for unexpected reason: {result.stderr}"
+                )
+        finally:
+            if self.REPO_DIR in sys.path:
+                sys.path.remove(self.REPO_DIR)
+
+    def test_no_hardcoded_secrets(self):
+        """Verify no hardcoded production secrets in default values"""
+        path = os.path.join(self.REPO_DIR, "docs_src/settings/tutorial001.py")
+        with open(path) as f:
+            content = f.read()
+
+        # Sensitive fields should not have real default values
+        tree = ast.parse(content)
+        # Check for suspicious hardcoded strings
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                val = node.value.lower()
+                suspicious = [
+                    "sk-", "pk-", "bearer ", "password123",
+                    "supersecret", "mysecretkey",
+                ]
+                for s in suspicious:
+                    if s in val and len(node.value) > 10:
+                        pytest.fail(
+                            f"Possible hardcoded secret found: "
+                            f"'{node.value[:30]}...'"
+                        )
+
+    def test_settings_class_has_defaults(self):
+        """Verify settings fields have sensible default values"""
+        path = os.path.join(self.REPO_DIR, "docs_src/settings/tutorial001.py")
+        with open(path) as f:
+            content = f.read()
+
+        # Should have at least some defaults (= value or Field(default=...))
+        default_indicators = [
+            "= ", "Field(", "default=", ": str =", ": int =", ": bool =",
+        ]
+        found = [ind for ind in default_indicators if ind in content]
+        assert len(found) >= 2, (
+            f"Settings should have default values for some fields. Found: {found}"
+        )

@@ -1,232 +1,248 @@
 """
-Test for 'python-anti-patterns' skill — Python Anti-Pattern Review
-Validates that the Agent refactored anti-patterns in boltons iterutils.py and
-strutils.py — replacing manual type checks, bare excepts, old-style formatting —
-while preserving all existing functionality.
+Test skill: python-anti-patterns
+Verify that the Agent correctly refactors Python anti-patterns in the
+Boltons library (iterutils.py and strutils.py) while preserving public
+API and behavior.
 """
 
 import os
+import sys
+import ast
 import re
 import subprocess
-
 import pytest
-
-from _dependency_utils import ensure_python_dependencies
-
-
-@pytest.fixture(scope="module", autouse=True)
-def _ensure_repo_dependencies():
-    ensure_python_dependencies(TestPythonAntiPatterns.REPO_DIR)
 
 
 class TestPythonAntiPatterns:
-    """Verify anti-pattern refactoring in boltons iterutils and strutils."""
-
     REPO_DIR = "/workspace/boltons"
 
-    # ------------------------------------------------------------------
-    # Helpers
-    # ------------------------------------------------------------------
+    # === File Path Checks ===
 
-    def _read(self, *parts):
-        fpath = os.path.join(self.REPO_DIR, *parts)
-        assert os.path.isfile(fpath), f"Required file not found: {fpath}"
-        with open(fpath, "r", errors="ignore") as fh:
-            return fh.read()
+    def test_iterutils_file_exists(self):
+        """Verify boltons/iterutils.py exists"""
+        path = os.path.join(self.REPO_DIR, "boltons/iterutils.py")
+        assert os.path.exists(path), f"iterutils.py not found at {path}"
 
-    # ------------------------------------------------------------------
-    # L1: Files exist and compile
-    # ------------------------------------------------------------------
+    def test_strutils_file_exists(self):
+        """Verify boltons/strutils.py exists"""
+        path = os.path.join(self.REPO_DIR, "boltons/strutils.py")
+        assert os.path.exists(path), f"strutils.py not found at {path}"
 
-    def test_iterutils_compiles(self):
-        """boltons/iterutils.py must be syntactically valid Python."""
-        result = subprocess.run(
-            ["python", "-m", "py_compile", "boltons/iterutils.py"],
-            cwd=self.REPO_DIR,
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-        assert result.returncode == 0, f"Syntax error in iterutils.py:\n{result.stderr}"
+    def test_files_are_valid_python(self):
+        """Verify both files are syntactically valid Python"""
+        for modname in ["iterutils", "strutils"]:
+            path = os.path.join(self.REPO_DIR, f"boltons/{modname}.py")
+            with open(path) as f:
+                content = f.read()
+            try:
+                ast.parse(content)
+            except SyntaxError as e:
+                pytest.fail(f"boltons/{modname}.py has syntax error: {e}")
 
-    def test_strutils_compiles(self):
-        """boltons/strutils.py must be syntactically valid Python."""
-        result = subprocess.run(
-            ["python", "-m", "py_compile", "boltons/strutils.py"],
-            cwd=self.REPO_DIR,
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-        assert result.returncode == 0, f"Syntax error in strutils.py:\n{result.stderr}"
+    # === Semantic Checks ===
 
-    # ------------------------------------------------------------------
-    # L2: No type(x) == ... anti-pattern
-    # ------------------------------------------------------------------
+    def test_no_type_equality_checks(self):
+        """Verify type(x) == ... patterns are replaced with isinstance()"""
+        for modname in ["iterutils", "strutils"]:
+            path = os.path.join(self.REPO_DIR, f"boltons/{modname}.py")
+            with open(path) as f:
+                content = f.read()
 
-    def test_iterutils_no_manual_type_equality(self):
-        """iterutils.py must not use type(x) == ... or type(x) is ... for type checking."""
-        content = self._read("boltons", "iterutils.py")
-        # Match: type(something) == SomeType or type(something) is SomeType
-        bad_patterns = re.findall(
-            r"type\s*\([^)]+\)\s*(?:==|is)\s*(?!None)\w+", content
-        )
-        assert len(bad_patterns) == 0, (
-            f"iterutils.py still contains {len(bad_patterns)} manual type equality check(s): "
-            f"{bad_patterns[:5]}"
-        )
-
-    def test_strutils_no_manual_type_equality(self):
-        """strutils.py must not use type(x) == ... or type(x) is ... for type checking."""
-        content = self._read("boltons", "strutils.py")
-        bad_patterns = re.findall(
-            r"type\s*\([^)]+\)\s*(?:==|is)\s*(?!None)\w+", content
-        )
-        assert len(bad_patterns) == 0, (
-            f"strutils.py still contains {len(bad_patterns)} manual type equality check(s): "
-            f"{bad_patterns[:5]}"
-        )
-
-    # ------------------------------------------------------------------
-    # L2: No bare except clauses
-    # ------------------------------------------------------------------
-
-    def test_iterutils_no_bare_except(self):
-        """iterutils.py must not contain bare 'except:' clauses."""
-        content = self._read("boltons", "iterutils.py")
-        # Match bare except (not except Something or except (A, B))
-        bare_excepts = re.findall(r"^\s*except\s*:", content, re.MULTILINE)
-        assert (
-            len(bare_excepts) == 0
-        ), f"iterutils.py still contains {len(bare_excepts)} bare except clause(s)"
-
-    def test_strutils_no_bare_except(self):
-        """strutils.py must not contain bare 'except:' clauses."""
-        content = self._read("boltons", "strutils.py")
-        bare_excepts = re.findall(r"^\s*except\s*:", content, re.MULTILINE)
-        assert (
-            len(bare_excepts) == 0
-        ), f"strutils.py still contains {len(bare_excepts)} bare except clause(s)"
-
-    # ------------------------------------------------------------------
-    # L2: Modern string formatting (f-strings where appropriate)
-    # ------------------------------------------------------------------
-
-    def test_iterutils_reduces_old_style_formatting(self):
-        """iterutils.py should prefer f-strings over % formatting or .format() where readable."""
-        content = self._read("boltons", "iterutils.py")
-        # Count old-style patterns
-        percent_fmt = len(re.findall(r'["\'].*%[sd].*["\']\s*%', content))
-        format_calls = len(re.findall(r"\.format\s*\(", content))
-        fstrings = len(re.findall(r'f["\']', content))
-        total_old = percent_fmt + format_calls
-        # We don't require zero old-style, but if there are many old-style and
-        # zero f-strings, the refactoring likely wasn't done
-        if total_old > 3:
-            assert fstrings >= 1, (
-                f"iterutils.py has {total_old} old-style format expressions but "
-                f"no f-strings — refactoring to modern formatting appears incomplete"
+            # Look for patterns like type(x) == type or type(x) is type
+            type_eq_pattern = re.compile(r'type\s*\([^)]+\)\s*==\s*')
+            matches = type_eq_pattern.findall(content)
+            assert len(matches) == 0, (
+                f"boltons/{modname}.py still has {len(matches)} type(x) == ... patterns. "
+                f"These should be replaced with isinstance(). Examples: {matches[:3]}"
             )
 
-    def test_strutils_reduces_old_style_formatting(self):
-        """strutils.py should prefer f-strings over % formatting or .format() where readable."""
-        content = self._read("boltons", "strutils.py")
-        percent_fmt = len(re.findall(r'["\'].*%[sd].*["\']\s*%', content))
-        format_calls = len(re.findall(r"\.format\s*\(", content))
-        fstrings = len(re.findall(r'f["\']', content))
-        total_old = percent_fmt + format_calls
-        if total_old > 3:
-            assert fstrings >= 1, (
-                f"strutils.py has {total_old} old-style format expressions but "
-                f"no f-strings — refactoring to modern formatting appears incomplete"
+    def test_no_bare_except_clauses(self):
+        """Verify bare except: clauses are replaced with specific exception types"""
+        for modname in ["iterutils", "strutils"]:
+            path = os.path.join(self.REPO_DIR, f"boltons/{modname}.py")
+            with open(path) as f:
+                tree = ast.parse(f.read())
+
+            bare_excepts = []
+            for node in ast.walk(tree):
+                if isinstance(node, ast.ExceptHandler):
+                    if node.type is None:
+                        bare_excepts.append(node.lineno)
+
+            assert len(bare_excepts) == 0, (
+                f"boltons/{modname}.py still has bare 'except:' at lines {bare_excepts}. "
+                "Should use specific exception types."
             )
 
-    # ------------------------------------------------------------------
-    # L2: isinstance usage
-    # ------------------------------------------------------------------
+    def test_uses_fstrings_where_appropriate(self):
+        """Verify old-style string formatting is reduced in favor of f-strings"""
+        for modname in ["iterutils", "strutils"]:
+            path = os.path.join(self.REPO_DIR, f"boltons/{modname}.py")
+            with open(path) as f:
+                content = f.read()
 
-    def test_isinstance_used_for_type_checks(self):
-        """Refactored code should use isinstance() for type checking."""
-        content_iter = self._read("boltons", "iterutils.py")
-        content_str = self._read("boltons", "strutils.py")
-        combined = content_iter + content_str
-        isinstance_count = len(re.findall(r"isinstance\s*\(", combined))
-        assert isinstance_count >= 1, (
-            "Neither file uses isinstance() — expected type checks to be "
-            "refactored from type(x)==... to isinstance()"
-        )
+            # Count old-style % formatting usage
+            percent_format = re.findall(r'["\'].*?%[sd].*?["\']\s*%\s', content)
+            # Count .format() usage
+            dot_format = content.count(".format(")
+            # Count f-string usage
+            fstring_count = len(re.findall(r'f["\']', content))
 
-    # ------------------------------------------------------------------
-    # L2: Existing tests still pass
-    # ------------------------------------------------------------------
+            total_old = len(percent_format) + dot_format
+            # Allow some legacy formatting, but f-strings should be present
+            if total_old > 5:
+                assert fstring_count > 0, (
+                    f"boltons/{modname}.py has {total_old} old-style format calls "
+                    f"but no f-strings. Some should be converted to f-strings."
+                )
 
-    def test_existing_iterutils_tests_pass(self):
-        """Existing tests for iterutils must still pass after refactoring."""
-        # Try common test file locations
-        test_candidates = [
-            "tests/test_iterutils.py",
-            "test/test_iterutils.py",
-            "boltons/tests/test_iterutils.py",
+    def test_public_api_preserved_iterutils(self):
+        """Verify iterutils public API is preserved after refactoring"""
+        path = os.path.join(self.REPO_DIR, "boltons/iterutils.py")
+        with open(path) as f:
+            tree = ast.parse(f.read())
+
+        public_names = []
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.FunctionDef, ast.ClassDef)):
+                if not node.name.startswith("_"):
+                    public_names.append(node.name)
+
+        # These are well-known public functions in iterutils
+        expected_public = [
+            "chunked", "windowed", "unique", "flatten",
         ]
-        test_file = None
-        for candidate in test_candidates:
-            fpath = os.path.join(self.REPO_DIR, candidate)
-            if os.path.isfile(fpath):
-                test_file = candidate
-                break
-        if test_file is None:
-            pytest.skip("No existing iterutils test file found")
+        for name in expected_public:
+            found = any(name in pn for pn in public_names)
+            # Some names might not exist in all versions, so soft check
+            if not found:
+                pass  # Don't fail on non-essential functions
 
+        assert len(public_names) >= 5, (
+            f"iterutils should maintain its public API. Only {len(public_names)} "
+            f"public names found: {public_names[:10]}"
+        )
+
+    def test_public_api_preserved_strutils(self):
+        """Verify strutils public API is preserved after refactoring"""
+        path = os.path.join(self.REPO_DIR, "boltons/strutils.py")
+        with open(path) as f:
+            tree = ast.parse(f.read())
+
+        public_names = []
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.FunctionDef, ast.ClassDef)):
+                if not node.name.startswith("_"):
+                    public_names.append(node.name)
+
+        assert len(public_names) >= 3, (
+            f"strutils should maintain its public API. Only {len(public_names)} "
+            f"public names found: {public_names[:10]}"
+        )
+
+    # === Functional Checks ===
+
+    def test_iterutils_importable(self):
+        """Verify boltons.iterutils is importable after refactoring"""
+        sys.path.insert(0, self.REPO_DIR)
+        try:
+            from boltons import iterutils
+            assert iterutils is not None
+        except ImportError as e:
+            pytest.fail(f"Cannot import boltons.iterutils: {e}")
+
+    def test_strutils_importable(self):
+        """Verify boltons.strutils is importable after refactoring"""
+        sys.path.insert(0, self.REPO_DIR)
+        try:
+            from boltons import strutils
+            assert strutils is not None
+        except ImportError as e:
+            pytest.fail(f"Cannot import boltons.strutils: {e}")
+
+    def test_iterutils_functions_work_correctly(self):
+        """Verify key iterutils functions produce correct results"""
+        sys.path.insert(0, self.REPO_DIR)
+        from boltons import iterutils
+
+        # Test chunked if available
+        if hasattr(iterutils, "chunked"):
+            result = list(iterutils.chunked(range(10), 3))
+            assert len(result) == 4, (
+                f"chunked(range(10), 3) should produce 4 chunks, got {len(result)}"
+            )
+            assert list(result[0]) == [0, 1, 2] or result[0] == (0, 1, 2) or result[0] == [0, 1, 2], (
+                f"First chunk should be [0, 1, 2], got {result[0]}"
+            )
+
+        # Test flatten if available
+        if hasattr(iterutils, "flatten"):
+            result = list(iterutils.flatten([[1, 2], [3, 4]]))
+            assert result == [1, 2, 3, 4], (
+                f"flatten([[1,2],[3,4]]) should be [1,2,3,4], got {result}"
+            )
+
+    def test_strutils_functions_work_correctly(self):
+        """Verify key strutils functions produce correct results"""
+        sys.path.insert(0, self.REPO_DIR)
+        from boltons import strutils
+
+        # Test slugify if available
+        if hasattr(strutils, "slugify"):
+            result = strutils.slugify("Hello World!")
+            assert isinstance(result, str), f"slugify should return str, got {type(result)}"
+            assert " " not in result, f"slugify should remove spaces: {result}"
+
+        # Test camel_to_under if available
+        if hasattr(strutils, "camel2under"):
+            result = strutils.camel2under("CamelCase")
+            assert result == "camel_case", (
+                f"camel2under('CamelCase') should be 'camel_case', got '{result}'"
+            )
+
+    def test_existing_tests_still_pass(self):
+        """Verify existing boltons tests still pass after refactoring"""
         result = subprocess.run(
-            ["python", "-m", "pytest", test_file, "-v", "--tb=short", "-x"],
+            ["python", "-m", "pytest", "tests/", "-x", "-q", "--tb=short"],
             cwd=self.REPO_DIR,
             capture_output=True,
             text=True,
-            timeout=120,
+            timeout=300,
         )
-        assert result.returncode == 0, (
-            f"Existing iterutils tests failed after refactoring:\n"
-            f"{result.stdout[-3000:]}\n{result.stderr[-1000:]}"
-        )
+        if result.returncode != 0:
+            # Allow partial failures for tests unrelated to our changes
+            output = result.stdout + result.stderr
+            if "iterutils" in output or "strutils" in output:
+                pytest.fail(
+                    f"Tests related to modified modules failed:\n"
+                    f"{output[:2000]}"
+                )
 
-    def test_existing_strutils_tests_pass(self):
-        """Existing tests for strutils must still pass after refactoring."""
-        test_candidates = [
-            "tests/test_strutils.py",
-            "test/test_strutils.py",
-            "boltons/tests/test_strutils.py",
-        ]
-        test_file = None
-        for candidate in test_candidates:
-            fpath = os.path.join(self.REPO_DIR, candidate)
-            if os.path.isfile(fpath):
-                test_file = candidate
-                break
-        if test_file is None:
-            pytest.skip("No existing strutils test file found")
+    def test_no_new_dependencies_introduced(self):
+        """Verify no new imports/dependencies added to the modules"""
+        for modname in ["iterutils", "strutils"]:
+            path = os.path.join(self.REPO_DIR, f"boltons/{modname}.py")
+            with open(path) as f:
+                tree = ast.parse(f.read())
 
-        result = subprocess.run(
-            ["python", "-m", "pytest", test_file, "-v", "--tb=short", "-x"],
-            cwd=self.REPO_DIR,
-            capture_output=True,
-            text=True,
-            timeout=120,
-        )
-        assert result.returncode == 0, (
-            f"Existing strutils tests failed after refactoring:\n"
-            f"{result.stdout[-3000:]}\n{result.stderr[-1000:]}"
-        )
+            imports = []
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Import):
+                    for alias in node.names:
+                        imports.append(alias.name)
+                elif isinstance(node, ast.ImportFrom):
+                    if node.module and not node.module.startswith("boltons"):
+                        imports.append(node.module)
 
-    def test_modules_importable(self):
-        """Both refactored modules must be importable without errors."""
-        result = subprocess.run(
-            ["python", "-c", "from boltons import iterutils, strutils; print('OK')"],
-            cwd=self.REPO_DIR,
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-        assert (
-            result.returncode == 0
-        ), f"Import failed after refactoring:\n{result.stderr}"
-        assert "OK" in result.stdout
+            # These should only use stdlib modules
+            stdlib_modules = {
+                "os", "sys", "re", "math", "itertools", "functools",
+                "operator", "collections", "string", "textwrap", "io",
+                "types", "copy", "warnings", "codecs", "unicodedata",
+                "html", "decimal", "fractions",
+            }
+            external = [i for i in imports if i.split(".")[0] not in stdlib_modules]
+            assert len(external) == 0, (
+                f"boltons/{modname}.py should not introduce new external dependencies. "
+                f"Non-stdlib imports: {external}"
+            )

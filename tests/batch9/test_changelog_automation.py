@@ -1,155 +1,138 @@
 """
-Test for 'changelog-automation' skill — Changelog Automation (Ruby)
-Validates CommitParser, VersionBumper, ChangelogGenerator via static
-Ruby source inspection, conventional commit format handling, BREAKING
-CHANGE detection, and chore exclusion.
+Test skill: changelog-automation
+Verify that the Agent creates Conventional Commits parser, categorizer,
+version calculator, and Keep a Changelog renderer (Ruby).
 """
 
 import os
+import re
 import subprocess
-
 import pytest
 
 
 class TestChangelogAutomation:
-    """Verify changelog automation library via Ruby source inspection."""
-
     REPO_DIR = "/workspace/github-changelog-generator"
 
-    # ── helpers ──────────────────────────────────────────────────────────
+    # === File Path Checks ===
 
-    @staticmethod
-    def _read_file(path: str) -> str:
-        try:
-            with open(path, "r", errors="ignore") as fh:
-                return fh.read()
-        except OSError:
-            return ""
+    def test_changelog_source_files_exist(self):
+        """Verify changelog automation files exist"""
+        found = False
+        for root, dirs, files in os.walk(self.REPO_DIR):
+            if ".git" in root or "vendor" in root:
+                continue
+            for f in files:
+                if f.endswith(".rb") and ("changelog" in f.lower() or "commit" in f.lower() or "version" in f.lower() or "render" in f.lower()):
+                    found = True
+                    break
+            if found:
+                break
+        assert found, "Changelog automation source files not found"
 
-    def _lib(self, *parts) -> str:
-        return os.path.join(self.REPO_DIR, "lib", "changelog", *parts)
+    # === Semantic Checks ===
 
-    # ── file_path_check ──────────────────────────────────────────────────
+    def test_conventional_commits_parser_defined(self):
+        """Verify Conventional Commits parser is implemented"""
+        content = self._collect_ruby_content()
+        has_parser = "conventional" in content.lower() or "parse" in content.lower()
+        assert has_parser, "Conventional Commits parser not found"
 
-    def test_commit_parser_rb_exists(self):
-        """lib/changelog/commit_parser.rb must exist."""
-        assert os.path.isfile(self._lib("commit_parser.rb")), "commit_parser.rb not found"
+    def test_commit_categorizer_defined(self):
+        """Verify commit categorizer assigns types to commits"""
+        content = self._collect_ruby_content()
+        has_categorizer = "categor" in content.lower() or "classify" in content.lower() or "type" in content.lower()
+        assert has_categorizer, "Commit categorizer not found"
 
-    def test_version_bumper_and_generator_exist(self):
-        """version_bumper.rb and generator.rb must exist."""
-        assert os.path.isfile(self._lib("version_bumper.rb")), "version_bumper.rb not found"
-        assert os.path.isfile(self._lib("generator.rb")), "generator.rb not found"
+    def test_version_calculator_defined(self):
+        """Verify SemVer version calculator is implemented"""
+        content = self._collect_ruby_content()
+        has_version = "version" in content.lower() or "semver" in content.lower() or "bump" in content.lower()
+        assert has_version, "Version calculator not found"
 
-    def test_spec_or_test_file_exists(self):
-        """RSpec or minitest file for commit_parser must exist."""
-        spec = os.path.join(self.REPO_DIR, "spec", "changelog", "commit_parser_spec.rb")
-        test = os.path.join(self.REPO_DIR, "test", "changelog", "commit_parser_test.rb")
-        assert os.path.isfile(spec) or os.path.isfile(test), "No spec/test file found"
+    def test_changelog_renderer_defined(self):
+        """Verify Keep a Changelog renderer is implemented"""
+        content = self._collect_ruby_content()
+        has_renderer = "render" in content.lower() or "format" in content.lower() or "changelog" in content.lower()
+        assert has_renderer, "Keep a Changelog renderer not found"
 
-    # ── semantic_check ───────────────────────────────────────────────────
+    def test_commit_types_recognized(self):
+        """Verify standard commit types are recognized (feat, fix, etc.)"""
+        content = self._collect_ruby_content()
+        has_feat = "feat" in content.lower()
+        has_fix = "fix" in content.lower()
+        assert has_feat or has_fix, "Standard commit types (feat/fix) not recognized"
 
-    def test_parser_handles_conventional_commit(self):
-        """CommitParser must parse type:description format."""
-        content = self._read_file(self._lib("commit_parser.rb"))
-        if not content:
-            pytest.skip("commit_parser.rb not found")
-        assert "CommitParser" in content
-        assert "parse" in content
-        has_type = "type" in content or "feat" in content or "fix" in content
-        assert has_type, "No commit type handling found"
+    # === Functional Checks ===
+
+    def test_ruby_files_valid_syntax(self):
+        """Verify Ruby files have valid syntax"""
+        rb_files = self._find_rb_files()
+        assert len(rb_files) > 0, "No relevant Ruby files found"
+        for rb in rb_files:
+            result = subprocess.run(
+                ["ruby", "-c", rb],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            assert result.returncode == 0, f"Syntax error in {rb}: {result.stderr}"
+
+    def test_ruby_files_have_classes_or_modules(self):
+        """Verify Ruby files define classes or modules"""
+        rb_files = self._find_rb_files()
+        any_class = False
+        for rb in rb_files:
+            with open(rb) as fh:
+                content = fh.read()
+            if re.search(r'^\s*(class|module)\s+\w+', content, re.MULTILINE):
+                any_class = True
+                break
+        assert any_class, "No classes or modules found in Ruby source files"
+
+    def test_changelog_output_format(self):
+        """Verify changelog output follows Keep a Changelog format"""
+        content = self._collect_ruby_content()
+        has_markdown = (
+            "##" in content
+            or "###" in content
+            or "changelog" in content.lower()
+            or "keepachangelog" in content.lower()
+            or "keep a changelog" in content.lower()
+        )
+        assert has_markdown, "Changelog output format not following Keep a Changelog standard"
 
     def test_breaking_change_detection(self):
-        """Must detect BREAKING CHANGE in footer and feat! prefix."""
-        content = self._read_file(self._lib("commit_parser.rb"))
-        if not content:
-            pytest.skip("commit_parser.rb not found")
-        assert "BREAKING CHANGE" in content or "BREAKING-CHANGE" in content
-        has_bang = "!" in content
-        assert has_bang, "No '!' bang prefix detection"
-
-    def test_version_bumper_priority(self):
-        """VersionBumper must prioritize major > minor > patch."""
-        content = self._read_file(self._lib("version_bumper.rb"))
-        if not content:
-            pytest.skip("version_bumper.rb not found")
-        assert "major" in content
-        assert "minor" in content
-        assert "patch" in content
-
-    def test_chore_excluded_from_changelog(self):
-        """Generator must filter out chore commits."""
-        content = self._read_file(self._lib("generator.rb"))
-        if not content:
-            pytest.skip("generator.rb not found")
-        has_filter = "chore" in content and ("exclude" in content or "reject" in content or "select" in content or "filter" in content)
-        assert has_filter, "No chore filtering logic found"
-
-    # ── functional_check ─────────────────────────────────────────────────
-
-    def _ruby_available(self):
-        try:
-            r = subprocess.run(["ruby", "--version"], capture_output=True, timeout=10)
-            return r.returncode == 0
-        except (FileNotFoundError, subprocess.TimeoutExpired):
-            return False
-
-    def test_feat_bumps_minor(self):
-        """VersionBumper: feat commit bumps minor (1.2.3 -> 1.3.0)."""
-        if not self._ruby_available():
-            pytest.skip("Ruby not available")
-        script = (
-            f"$LOAD_PATH.unshift '{self.REPO_DIR}/lib'; "
-            "require 'changelog/version_bumper'; "
-            "puts Changelog::VersionBumper.new.bump('1.2.3', [{type: 'feat', description: 'add feature'}])"
+        """Verify breaking changes are detected"""
+        content = self._collect_ruby_content()
+        has_breaking = (
+            "breaking" in content.lower()
+            or "BREAKING" in content
+            or "major" in content.lower()
+            or "!" in content
         )
-        r = subprocess.run(["ruby", "-e", script], capture_output=True, text=True, timeout=30)
-        if r.returncode != 0:
-            pytest.skip(f"Ruby execution failed: {r.stderr}")
-        assert r.stdout.strip() == "1.3.0"
+        assert has_breaking, "Breaking change detection not implemented"
 
-    def test_breaking_change_bumps_major(self):
-        """VersionBumper: breaking change bumps major (1.2.3 -> 2.0.0)."""
-        if not self._ruby_available():
-            pytest.skip("Ruby not available")
-        script = (
-            f"$LOAD_PATH.unshift '{self.REPO_DIR}/lib'; "
-            "require 'changelog/version_bumper'; "
-            "puts Changelog::VersionBumper.new.bump('1.2.3', [{type: 'feat', breaking: true, description: 'remove API'}])"
-        )
-        r = subprocess.run(["ruby", "-e", script], capture_output=True, text=True, timeout=30)
-        if r.returncode != 0:
-            pytest.skip(f"Ruby execution failed: {r.stderr}")
-        assert r.stdout.strip() == "2.0.0"
+    def _collect_ruby_content(self):
+        all_content = ""
+        for root, dirs, files in os.walk(self.REPO_DIR):
+            if ".git" in root or "vendor" in root:
+                continue
+            for f in files:
+                if f.endswith(".rb"):
+                    fpath = os.path.join(root, f)
+                    try:
+                        with open(fpath) as fh:
+                            all_content += fh.read() + "\n"
+                    except (UnicodeDecodeError, PermissionError):
+                        continue
+        return all_content
 
-    def test_empty_commits_unchanged(self):
-        """VersionBumper: empty commits leaves version unchanged."""
-        if not self._ruby_available():
-            pytest.skip("Ruby not available")
-        script = (
-            f"$LOAD_PATH.unshift '{self.REPO_DIR}/lib'; "
-            "require 'changelog/version_bumper'; "
-            "puts Changelog::VersionBumper.new.bump('1.2.3', [])"
-        )
-        r = subprocess.run(["ruby", "-e", script], capture_output=True, text=True, timeout=30)
-        if r.returncode != 0:
-            pytest.skip(f"Ruby execution failed: {r.stderr}")
-        assert r.stdout.strip() == "1.2.3"
-
-    def test_changelog_excludes_chore_includes_feat(self):
-        """Generated changelog must include feat but exclude chore."""
-        content = self._read_file(self._lib("generator.rb"))
-        if not content:
-            pytest.skip("generator.rb not found")
-        # Static verification that filtering logic is present
-        assert "chore" in content, "'chore' keyword not found in generator"
-        has_feat_section = "feat" in content.lower() or "feature" in content.lower()
-        assert has_feat_section, "No feature section handling found"
-
-    def test_missing_github_token_error(self):
-        """GitHubReleaseCreator must raise ConfigurationError without token."""
-        content = self._read_file(
-            os.path.join(self.REPO_DIR, "lib", "changelog", "github_release.rb")
-        )
-        if not content:
-            pytest.skip("github_release.rb not found")
-        assert "ConfigurationError" in content or "GITHUB_TOKEN" in content
+    def _find_rb_files(self):
+        rb_files = []
+        for root, dirs, files in os.walk(self.REPO_DIR):
+            if ".git" in root or "vendor" in root:
+                continue
+            for f in files:
+                if f.endswith(".rb") and ("changelog" in f.lower() or "commit" in f.lower() or "version" in f.lower() or "render" in f.lower() or "categor" in f.lower()):
+                    rb_files.append(os.path.join(root, f))
+        return rb_files

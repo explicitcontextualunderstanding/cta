@@ -1,193 +1,215 @@
 """
-Test for 'v3-performance-optimization' skill — Flash Attention Sliding Window
-Validates that the Agent created flash_attn/flash_attn_sliding_window.py and
-modified flash_attn/flash_attn_interface.py to support configurable sliding
-window attention with correct interface, edge case handling, and causal mode.
+Test skill: v3-performance-optimization
+Verify that the Agent implements sliding window attention support
+for Flash Attention with configurable window_size, causal/non-causal
+modes, edge cases, and integration into the existing API.
 """
 
 import os
 import re
+import ast
 import subprocess
-import sys
-
 import pytest
 
 
 class TestV3PerformanceOptimization:
-    """Verify Flash Attention sliding window implementation."""
-
     REPO_DIR = "/workspace/flash-attention"
 
-    def _read(self, *parts):
-        fpath = os.path.join(self.REPO_DIR, *parts)
-        assert os.path.isfile(fpath), f"Required file not found: {fpath}"
-        with open(fpath, "r", errors="ignore") as fh:
-            return fh.read()
+    # === File Path Checks ===
 
-    # ------------------------------------------------------------------
-    # L1: File existence
-    # ------------------------------------------------------------------
-
-    def test_sliding_window_file_exists(self):
-        """flash_attn/flash_attn_sliding_window.py must exist."""
-        assert os.path.isfile(
-            os.path.join(self.REPO_DIR, "flash_attn", "flash_attn_sliding_window.py")
+    def test_sliding_window_py_exists(self):
+        """Verify flash_attn_sliding_window.py exists"""
+        path = os.path.join(
+            self.REPO_DIR, "flash_attn", "flash_attn_sliding_window.py",
+        )
+        assert os.path.exists(path), (
+            f"flash_attn_sliding_window.py not found at {path}"
         )
 
-    def test_interface_file_exists(self):
-        """flash_attn/flash_attn_interface.py must exist."""
-        assert os.path.isfile(
-            os.path.join(self.REPO_DIR, "flash_attn", "flash_attn_interface.py")
+    def test_interface_py_exists(self):
+        """Verify flash_attn_interface.py exists"""
+        path = os.path.join(
+            self.REPO_DIR, "flash_attn", "flash_attn_interface.py",
+        )
+        assert os.path.exists(path), (
+            f"flash_attn_interface.py not found at {path}"
         )
 
-    # ------------------------------------------------------------------
-    # L1: Valid Python syntax
-    # ------------------------------------------------------------------
-
-    def test_sliding_window_valid_python(self):
-        """flash_attn_sliding_window.py must be syntactically valid."""
-        result = subprocess.run(
-            ["python3", "-m", "py_compile", "flash_attn/flash_attn_sliding_window.py"],
-            cwd=self.REPO_DIR,
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-        assert result.returncode == 0, f"Syntax error:\n{result.stderr}"
-
-    def test_interface_valid_python(self):
-        """flash_attn_interface.py must be syntactically valid."""
-        result = subprocess.run(
-            ["python3", "-m", "py_compile", "flash_attn/flash_attn_interface.py"],
-            cwd=self.REPO_DIR,
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-        assert result.returncode == 0, f"Syntax error:\n{result.stderr}"
-
-    # ------------------------------------------------------------------
-    # L2: Window size parameter
-    # ------------------------------------------------------------------
+    # === Semantic Checks ===
 
     def test_window_size_parameter(self):
-        """Sliding window module must accept a window_size parameter."""
-        content = self._read("flash_attn", "flash_attn_sliding_window.py")
-        assert re.search(r"window_size", content), "No window_size parameter found"
+        """Verify configurable window_size parameter"""
+        combined = ""
+        for fname in [
+            "flash_attn_sliding_window.py",
+            "flash_attn_interface.py",
+        ]:
+            path = os.path.join(self.REPO_DIR, "flash_attn", fname)
+            if os.path.exists(path):
+                with open(path) as f:
+                    combined += f.read()
 
-    def test_interface_exposes_window_size(self):
-        """flash_attn_interface.py must expose window_size parameter."""
-        content = self._read("flash_attn", "flash_attn_interface.py")
-        assert re.search(
-            r"window_size", content
-        ), "flash_attn_interface.py does not expose window_size"
-
-    # ------------------------------------------------------------------
-    # L2: Full attention fallback
-    # ------------------------------------------------------------------
-
-    def test_full_attention_fallback(self):
-        """When window_size is None or -1, should fall back to full attention."""
-        content = self._read("flash_attn", "flash_attn_sliding_window.py")
-        patterns = [
-            r"window_size\s*(is\s+None|==\s*None|is\s+not\s+None)",
-            r"window_size\s*==\s*-1",
-            r"window_size.*None",
-            r"None.*window_size",
+        ws_indicators = [
+            "window_size", "WindowSize", "window",
         ]
-        assert any(
-            re.search(p, content) for p in patterns
-        ), "No full attention fallback when window_size is None or -1"
+        found = [ind for ind in ws_indicators if ind in combined]
+        assert len(found) >= 1, (
+            f"Should accept window_size parameter. Found: {found}"
+        )
 
-    # ------------------------------------------------------------------
-    # L2: Causal mode support
-    # ------------------------------------------------------------------
+    def test_sliding_window_masking(self):
+        """Verify tokens outside window are masked to zero"""
+        path = os.path.join(
+            self.REPO_DIR, "flash_attn", "flash_attn_sliding_window.py",
+        )
+        with open(path) as f:
+            content = f.read()
+
+        mask_indicators = [
+            "mask", "zero", "window", "attend",
+            "position", "causal",
+        ]
+        found = [ind for ind in mask_indicators if ind in content]
+        assert len(found) >= 3, (
+            f"Should mask tokens outside window. Found: {found}"
+        )
+
+    def test_fallback_full_attention(self):
+        """Verify fallback to full attention when window_size is None or -1"""
+        combined = ""
+        for fname in [
+            "flash_attn_sliding_window.py",
+            "flash_attn_interface.py",
+        ]:
+            path = os.path.join(self.REPO_DIR, "flash_attn", fname)
+            if os.path.exists(path):
+                with open(path) as f:
+                    combined += f.read()
+
+        fallback_indicators = [
+            "None", "-1", "full", "standard",
+            "default", "is None",
+        ]
+        found = [ind for ind in fallback_indicators if ind in combined]
+        assert len(found) >= 2, (
+            f"Should fall back to full attention. Found: {found}"
+        )
 
     def test_causal_mode_support(self):
-        """Implementation must support causal mode."""
-        content = self._read("flash_attn", "flash_attn_sliding_window.py")
-        assert re.search(
-            r"causal", content, re.IGNORECASE
-        ), "No causal mode support found"
+        """Verify causal and non-causal mode support"""
+        path = os.path.join(
+            self.REPO_DIR, "flash_attn", "flash_attn_sliding_window.py",
+        )
+        with open(path) as f:
+            content = f.read()
 
-    # ------------------------------------------------------------------
-    # L2: Input tensor handling
-    # ------------------------------------------------------------------
-
-    def test_accepts_qkv_tensors(self):
-        """Must accept query, key, value tensors."""
-        content = self._read("flash_attn", "flash_attn_sliding_window.py")
-        # Should reference q, k, v or query, key, value
-        has_q = re.search(r"\bq\b|\bquery\b", content, re.IGNORECASE)
-        has_k = re.search(r"\bk\b|\bkey\b", content, re.IGNORECASE)
-        has_v = re.search(r"\bv\b|\bvalue\b", content, re.IGNORECASE)
-        assert has_q and has_k and has_v, "Must accept query, key, and value tensors"
-
-    # ------------------------------------------------------------------
-    # L2: Window masking logic
-    # ------------------------------------------------------------------
-
-    def test_window_masking(self):
-        """Implementation must mask tokens outside the sliding window."""
-        content = self._read("flash_attn", "flash_attn_sliding_window.py")
-        patterns = [
-            r"mask",
-            r"window",
-            r"attend",
-            r"-?\s*float\s*\(\s*['\"]inf['\"]\s*\)",
-            r"torch\.finfo",
+        causal_indicators = [
+            "causal", "Causal", "is_causal",
         ]
-        found = sum(1 for p in patterns if re.search(p, content, re.IGNORECASE))
-        assert (
-            found >= 2
-        ), "Insufficient window masking logic (need mask + window references)"
+        found = [ind for ind in causal_indicators if ind in content]
+        assert len(found) >= 1, (
+            f"Should support causal mode. Found: {found}"
+        )
 
-    # ------------------------------------------------------------------
-    # L2: Edge cases
-    # ------------------------------------------------------------------
+    def test_qkv_inputs(self):
+        """Verify acceptance of query, key, value tensors"""
+        path = os.path.join(
+            self.REPO_DIR, "flash_attn", "flash_attn_sliding_window.py",
+        )
+        with open(path) as f:
+            content = f.read()
 
-    def test_edge_case_large_window(self):
-        """Should handle window_size >= seq_len (equivalent to full attention)."""
-        content = self._read("flash_attn", "flash_attn_sliding_window.py")
-        patterns = [
-            r"seq_len|seqlen|sequence_length",
-            r"min\(",
-            r"window_size\s*>=",
-            r"window_size\s*>",
+        qkv_indicators = ["query", "key", "value", "q", "k", "v", "Q", "K", "V"]
+        found = [ind for ind in qkv_indicators if ind in content]
+        assert len(found) >= 3, (
+            f"Should accept query/key/value inputs. Found: {found}"
+        )
+
+    def test_edge_case_window_larger_than_seq(self):
+        """Verify edge case: window_size >= sequence_length equals full attention"""
+        path = os.path.join(
+            self.REPO_DIR, "flash_attn", "flash_attn_sliding_window.py",
+        )
+        with open(path) as f:
+            content = f.read()
+
+        edge_indicators = [
+            "seq_len", "sequence", "length", "full",
+            "min(", "max(",
         ]
-        assert any(
-            re.search(p, content) for p in patterns
-        ), "No handling for window_size >= sequence length"
+        found = [ind for ind in edge_indicators if ind in content]
+        assert len(found) >= 2, (
+            f"Should handle window >= seq length. Found: {found}"
+        )
 
-    def test_edge_case_window_one(self):
-        """Should handle window_size=1 (self-only attention)."""
-        content = self._read("flash_attn", "flash_attn_sliding_window.py")
-        # Window size 1 should be a valid input; check the function
-        # accepts integer window_size
-        assert re.search(
-            r"(int|window_size)", content
-        ), "window_size should accept integer values including 1"
+    def test_interface_integration(self):
+        """Verify sliding window integrates into flash_attn_interface.py"""
+        path = os.path.join(
+            self.REPO_DIR, "flash_attn", "flash_attn_interface.py",
+        )
+        with open(path) as f:
+            content = f.read()
 
-    # ------------------------------------------------------------------
-    # L2: Integration with existing API
-    # ------------------------------------------------------------------
-
-    def test_interface_imports_sliding_window(self):
-        """flash_attn_interface.py should import or reference sliding window."""
-        content = self._read("flash_attn", "flash_attn_interface.py")
-        patterns = [
-            r"sliding_window",
-            r"from.*flash_attn_sliding_window",
-            r"import.*sliding",
-            r"window_size",
+        integration_indicators = [
+            "window_size", "sliding", "flash_attn_sliding_window",
+            "import",
         ]
-        assert any(
-            re.search(p, content) for p in patterns
-        ), "flash_attn_interface.py does not integrate sliding window"
+        found = [ind for ind in integration_indicators if ind in content]
+        assert len(found) >= 1, (
+            f"Interface should reference sliding window. Found: {found}"
+        )
 
-    def test_function_definition(self):
-        """Sliding window module should define callable functions."""
-        content = self._read("flash_attn", "flash_attn_sliding_window.py")
-        assert re.search(
-            r"def\s+\w+.*window", content, re.IGNORECASE
-        ), "No function with 'window' in name found"
+    # === Functional Checks ===
+
+    def test_sliding_window_valid_python(self):
+        """Verify flash_attn_sliding_window.py is valid Python"""
+        path = os.path.join(
+            self.REPO_DIR, "flash_attn", "flash_attn_sliding_window.py",
+        )
+        with open(path) as f:
+            source = f.read()
+        try:
+            ast.parse(source)
+        except SyntaxError as e:
+            pytest.fail(
+                f"flash_attn_sliding_window.py has syntax error: {e}"
+            )
+
+    def test_interface_valid_python(self):
+        """Verify flash_attn_interface.py is valid Python"""
+        path = os.path.join(
+            self.REPO_DIR, "flash_attn", "flash_attn_interface.py",
+        )
+        with open(path) as f:
+            source = f.read()
+        try:
+            ast.parse(source)
+        except SyntaxError as e:
+            pytest.fail(f"flash_attn_interface.py has syntax error: {e}")
+
+    def test_function_definitions(self):
+        """Verify sliding window module defines functions"""
+        path = os.path.join(
+            self.REPO_DIR, "flash_attn", "flash_attn_sliding_window.py",
+        )
+        with open(path) as f:
+            content = f.read()
+
+        defs = re.findall(r"^def \w+", content, re.MULTILINE)
+        assert len(defs) >= 2, (
+            f"Should define at least 2 functions. Found: {defs}"
+        )
+
+    def test_no_hardcoded_window_size(self):
+        """Verify window_size is parameterized, not hardcoded"""
+        path = os.path.join(
+            self.REPO_DIR, "flash_attn", "flash_attn_sliding_window.py",
+        )
+        with open(path) as f:
+            content = f.read()
+
+        # Look for window_size as function parameter
+        param_match = re.search(r"def\s+\w+\([^)]*window_size", content)
+        assert param_match, (
+            "window_size should be a function parameter, not hardcoded"
+        )

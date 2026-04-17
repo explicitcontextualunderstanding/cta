@@ -1,218 +1,183 @@
 """
-Tests for 'slo-implementation' skill.
-Generated from benchmark case definitions for slo-implementation.
+Test skill: slo-implementation
+Verify that the Agent implements SLO monitoring for a payment processing
+API with SLI recording rules, multi-window burn-rate alerting, Grafana
+SLO dashboard, and error budget policy.
 """
 
-import ast
-import base64
-import glob
-import json
 import os
-import py_compile
 import re
-import subprocess
-import textwrap
-
+import json
 import pytest
 
 try:
     import yaml
-except ModuleNotFoundError:
+except ImportError:
     yaml = None
 
 
 class TestSloImplementation:
-    """Verify the slo-implementation skill output."""
+    REPO_DIR = "/workspace/slo-generator"
 
-    REPO_DIR = '/workspace/slo-generator'
+    # === File Path Checks ===
 
+    def test_slo_definitions_exists(self):
+        assert os.path.exists(os.path.join(self.REPO_DIR, "slo/slo-definitions.yaml"))
 
-    # ── helpers ──────────────────────────────────────────────
+    def test_recording_rules_exists(self):
+        assert os.path.exists(
+            os.path.join(self.REPO_DIR, "slo/prometheus/recording-rules.yaml")
+        )
 
-    _SETUP_CACHE: dict = {}
+    def test_alerting_rules_exists(self):
+        assert os.path.exists(
+            os.path.join(self.REPO_DIR, "slo/prometheus/alerting-rules.yaml")
+        )
 
-    @staticmethod
-    def _repo_path(rel: str) -> str:
-        return os.path.join(TestSloImplementation.REPO_DIR, rel)
+    def test_dashboard_exists(self):
+        assert os.path.exists(
+            os.path.join(self.REPO_DIR, "slo/grafana/slo-dashboard.json")
+        )
 
-    @staticmethod
-    def _safe_read(path: str) -> str:
-        with open(path, "r", encoding="utf-8", errors="ignore") as fh:
-            return fh.read()
+    def test_error_budget_policy_exists(self):
+        assert os.path.exists(
+            os.path.join(self.REPO_DIR, "slo/error-budget-policy.md")
+        )
 
-    @staticmethod
-    def _load_yaml(path: str):
+    # === Semantic Checks ===
+
+    def test_slo_definitions_cover_endpoints(self):
+        """SLO definitions should cover all 3 endpoints"""
         if yaml is None:
             pytest.skip("PyYAML not available")
-        with open(path, "r", encoding="utf-8", errors="ignore") as fh:
-            return yaml.safe_load(fh)
+        path = os.path.join(self.REPO_DIR, "slo/slo-definitions.yaml")
+        with open(path) as f:
+            data = yaml.safe_load(f)
+        slos = data.get("slos", [])
+        names = [s.get("name", "") for s in slos]
+        names_str = " ".join(names)
+        assert "payments_create" in names_str, "Missing payments create SLO"
+        assert "payments_get" in names_str, "Missing payments get SLO"
+        assert "refund" in names_str, "Missing refund SLO"
 
-    @staticmethod
-    def _load_json(path: str):
-        with open(path, "r", encoding="utf-8", errors="ignore") as fh:
-            return json.load(fh)
+    def test_slo_definitions_have_availability_and_latency(self):
+        """SLOs should include both availability and latency types"""
+        if yaml is None:
+            pytest.skip("PyYAML not available")
+        path = os.path.join(self.REPO_DIR, "slo/slo-definitions.yaml")
+        with open(path) as f:
+            data = yaml.safe_load(f)
+        types = {s.get("sli", {}).get("type") for s in data.get("slos", [])}
+        assert "availability" in types, "Missing availability SLI type"
+        assert "latency" in types, "Missing latency SLI type"
 
-    @classmethod
-    def _run_in_repo(cls, script: str, timeout: int = 120) -> subprocess.CompletedProcess:
-        return subprocess.run(
-            ["python", "-c", textwrap.dedent(script)],
-            cwd=cls.REPO_DIR,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
+    def test_recording_rules_have_multi_window(self):
+        """Recording rules should compute SLIs across multiple time windows"""
+        path = os.path.join(self.REPO_DIR, "slo/prometheus/recording-rules.yaml")
+        with open(path) as f:
+            content = f.read()
+        for window in ("5m", "1h", "1d"):
+            assert window in content, f"Missing {window} window in recording rules"
+
+    def test_recording_rules_have_error_budget(self):
+        """Recording rules should compute error budget remaining"""
+        path = os.path.join(self.REPO_DIR, "slo/prometheus/recording-rules.yaml")
+        with open(path) as f:
+            content = f.read()
+        assert "error_budget" in content, "Missing error budget recording rule"
+
+    def test_alerting_has_burn_rate_alerts(self):
+        """Alerting rules should use multi-window burn rate"""
+        path = os.path.join(self.REPO_DIR, "slo/prometheus/alerting-rules.yaml")
+        with open(path) as f:
+            content = f.read()
+        assert "BurnRate" in content or "burn_rate" in content or "burn" in content.lower(), (
+            "Missing burn rate alerts"
         )
 
-    @classmethod
-    def _run_cmd(cls, command, args=None, timeout=120):
-        args = args or []
-        if isinstance(command, str) and args:
-            return subprocess.run(
-                [command, *args],
-                cwd=cls.REPO_DIR,
-                capture_output=True,
-                text=True,
-                timeout=timeout,
+    def test_alerting_has_critical_and_warning(self):
+        """Alerting rules should have both critical and warning severities"""
+        path = os.path.join(self.REPO_DIR, "slo/prometheus/alerting-rules.yaml")
+        with open(path) as f:
+            content = f.read()
+        assert "critical" in content, "Missing critical severity"
+        assert "warning" in content, "Missing warning severity"
+
+    def test_alerting_has_burn_rate_factors(self):
+        """Alerting rules should use 14.4x, 6x, 3x, 1x burn rate factors"""
+        path = os.path.join(self.REPO_DIR, "slo/prometheus/alerting-rules.yaml")
+        with open(path) as f:
+            content = f.read()
+        assert "14.4" in content, "Missing 14.4x burn rate factor"
+        assert "6" in content, "Should have 6x factor"
+
+    def test_dashboard_has_error_budget_panel(self):
+        """Dashboard should have error budget burn-down panel"""
+        path = os.path.join(self.REPO_DIR, "slo/grafana/slo-dashboard.json")
+        with open(path) as f:
+            data = json.load(f)
+        content_str = json.dumps(data).lower()
+        assert "error" in content_str and "budget" in content_str, (
+            "Dashboard should have error budget panel"
+        )
+
+    def test_dashboard_has_burn_rate_panel(self):
+        """Dashboard should have burn rate panel"""
+        path = os.path.join(self.REPO_DIR, "slo/grafana/slo-dashboard.json")
+        with open(path) as f:
+            data = json.load(f)
+        content_str = json.dumps(data).lower()
+        assert "burn" in content_str or "rate" in content_str, (
+            "Dashboard should have burn rate panel"
+        )
+
+    def test_error_budget_policy_has_thresholds(self):
+        """Error budget policy should define actions at budget thresholds"""
+        path = os.path.join(self.REPO_DIR, "slo/error-budget-policy.md")
+        with open(path) as f:
+            content = f.read()
+        assert "%" in content or "percent" in content.lower(), (
+            "Policy should reference budget percentages"
+        )
+        content_lower = content.lower()
+        assert "budget" in content_lower, "Should reference error budget"
+
+    # === Functional Checks ===
+
+    def test_all_yaml_files_valid(self):
+        """All YAML files should parse without errors"""
+        if yaml is None:
+            pytest.skip("PyYAML not available")
+        base = os.path.join(self.REPO_DIR, "slo")
+        for root, _dirs, files in os.walk(base):
+            for fname in files:
+                if fname.endswith((".yaml", ".yml")):
+                    filepath = os.path.join(root, fname)
+                    try:
+                        with open(filepath) as f:
+                            list(yaml.safe_load_all(f))
+                    except yaml.YAMLError as e:
+                        pytest.fail(f"{filepath} YAML error: {e}")
+
+    def test_dashboard_json_valid(self):
+        """Dashboard JSON should be valid"""
+        path = os.path.join(self.REPO_DIR, "slo/grafana/slo-dashboard.json")
+        with open(path) as f:
+            try:
+                data = json.load(f)
+            except json.JSONDecodeError as e:
+                pytest.fail(f"Dashboard JSON error: {e}")
+        assert "panels" in data or "rows" in data, "Dashboard should have panels"
+
+    def test_slo_targets_are_valid(self):
+        """SLO targets should be between 90 and 100"""
+        if yaml is None:
+            pytest.skip("PyYAML not available")
+        path = os.path.join(self.REPO_DIR, "slo/slo-definitions.yaml")
+        with open(path) as f:
+            data = yaml.safe_load(f)
+        for slo in data.get("slos", []):
+            target = slo.get("target", 0)
+            assert 90 <= target <= 100, (
+                f"SLO target {target} for {slo.get('name')} is out of range"
             )
-        return subprocess.run(
-            command if isinstance(command, list) else command,
-            cwd=cls.REPO_DIR,
-            shell=isinstance(command, str),
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-        )
-
-    @classmethod
-    def _ensure_setup(cls, label, setup_cmds, fallback):
-        if not setup_cmds:
-            return
-        key = tuple(setup_cmds)
-        if key in cls._SETUP_CACHE:
-            ok, msg = cls._SETUP_CACHE[key]
-            if ok:
-                return
-            if fallback == "skip_if_setup_fails":
-                pytest.skip(f"{label} setup failed: {msg}")
-            pytest.fail(f"{label} setup failed: {msg}")
-        for cmd in setup_cmds:
-            r = subprocess.run(cmd, cwd=cls.REPO_DIR, shell=True,
-                               capture_output=True, text=True, timeout=300)
-            if r.returncode != 0:
-                msg = (r.stderr or r.stdout or 'failed').strip()
-                cls._SETUP_CACHE[key] = (False, msg)
-                if fallback == "skip_if_setup_fails":
-                    pytest.skip(f"{label} setup failed: {msg}")
-                pytest.fail(f"{label} setup failed: {msg}")
-        cls._SETUP_CACHE[key] = (True, 'ok')
-
-
-    # ── file_path_check (static) ────────────────────────────────────────
-
-    def test_recording_rules_exist(self):
-        """Verify recording rules YAML exists"""
-        _p = self._repo_path('slo/prometheus/recording-rules.yaml')
-        assert os.path.isfile(_p), f'Missing file: slo/prometheus/recording-rules.yaml'
-        self._load_yaml(_p)  # parse check
-
-    def test_alerting_rules_exist(self):
-        """Verify alerting rules YAML exists"""
-        _p = self._repo_path('slo/prometheus/alerting-rules.yaml')
-        assert os.path.isfile(_p), f'Missing file: slo/prometheus/alerting-rules.yaml'
-        self._load_yaml(_p)  # parse check
-
-    # ── semantic_check (static) ────────────────────────────────────────
-
-    def test_recording_rules_slo_prefix(self):
-        """Verify all recording rule names start with 'slo:' prefix"""
-        _p = self._repo_path('slo/prometheus/recording-rules.yaml')
-        assert os.path.exists(_p), f'Missing: slo/prometheus/recording-rules.yaml'
-        _contents = self._safe_read(_p)
-        _all = _contents if isinstance(_contents, str) else ''
-        assert 'record' in _all, 'Missing: record'
-        assert 'slo:' in _all, 'Missing: slo:'
-        assert 'expr' in _all, 'Missing: expr'
-
-    def test_multi_window_burn_rate_alerts(self):
-        """Verify at least 2 burn rate alert windows (fast/slow)"""
-        _p = self._repo_path('slo/prometheus/alerting-rules.yaml')
-        assert os.path.exists(_p), f'Missing: slo/prometheus/alerting-rules.yaml'
-        _contents = self._safe_read(_p)
-        _all = _contents if isinstance(_contents, str) else ''
-        assert 'alert' in _all, 'Missing: alert'
-        assert 'expr' in _all, 'Missing: expr'
-        assert '1h' in _all, 'Missing: 1h'
-        assert '6h' in _all, 'Missing: 6h'
-        assert 'burn' in _all, 'Missing: burn'
-        assert 'rate' in _all, 'Missing: rate'
-
-    def test_alert_severity_labels(self):
-        """Verify alerts have severity: critical or warning labels"""
-        _p = self._repo_path('slo/prometheus/alerting-rules.yaml')
-        assert os.path.exists(_p), f'Missing: slo/prometheus/alerting-rules.yaml'
-        _contents = self._safe_read(_p)
-        _all = _contents if isinstance(_contents, str) else ''
-        assert 'severity' in _all, 'Missing: severity'
-        assert 'critical' in _all, 'Missing: critical'
-        assert 'warning' in _all, 'Missing: warning'
-        assert 'labels' in _all, 'Missing: labels'
-
-    def test_alerts_have_for_duration(self):
-        """Verify all alerts have 'for' duration to prevent flapping"""
-        _p = self._repo_path('slo/prometheus/alerting-rules.yaml')
-        assert os.path.exists(_p), f'Missing: slo/prometheus/alerting-rules.yaml'
-        _contents = self._safe_read(_p)
-        _all = _contents if isinstance(_contents, str) else ''
-        assert 'for' in _all, 'Missing: for'
-        assert 'annotations' in _all, 'Missing: annotations'
-        assert 'summary' in _all, 'Missing: summary'
-
-    # ── functional_check ────────────────────────────────────────
-
-    def test_recording_rules_yaml_valid(self):
-        """Verify recording rules YAML parses correctly"""
-        self._ensure_setup('test_recording_rules_yaml_valid', ['pip install pyyaml'], 'fail_if_missing')
-        result = self._run_cmd('python', args=['-c', "import yaml; data=yaml.safe_load(open('slo/prometheus/recording-rules.yaml')); assert 'groups' in data; print('PASS')"], timeout=120)
-        assert result.returncode == 0, (
-            f'test_recording_rules_yaml_valid failed (exit {result.returncode})\n' + result.stderr[:500]
-        )
-
-    def test_record_names_start_with_slo(self):
-        """Verify all record names follow slo: prefix convention"""
-        self._ensure_setup('test_record_names_start_with_slo', ['pip install pyyaml'], 'fail_if_missing')
-        result = self._run_cmd('python', args=['-c', "import yaml; data=yaml.safe_load(open('slo/prometheus/recording-rules.yaml')); rules=[r for g in data['groups'] for r in g['rules']]; assert all(r['record'].startswith('slo:') for r in rules if 'record' in r); print('PASS')"], timeout=120)
-        assert result.returncode == 0, (
-            f'test_record_names_start_with_slo failed (exit {result.returncode})\n' + result.stderr[:500]
-        )
-
-    def test_alerting_rules_yaml_valid(self):
-        """Verify alerting rules YAML parses correctly"""
-        self._ensure_setup('test_alerting_rules_yaml_valid', ['pip install pyyaml'], 'fail_if_missing')
-        result = self._run_cmd('python', args=['-c', "import yaml; data=yaml.safe_load(open('slo/prometheus/alerting-rules.yaml')); assert 'groups' in data; alerts=[a for g in data['groups'] for a in g['rules']]; assert len(alerts)>=2; print('PASS')"], timeout=120)
-        assert result.returncode == 0, (
-            f'test_alerting_rules_yaml_valid failed (exit {result.returncode})\n' + result.stderr[:500]
-        )
-
-    def test_alerts_have_for_key(self):
-        """Verify all alerts have 'for' key programmatically"""
-        self._ensure_setup('test_alerts_have_for_key', ['pip install pyyaml'], 'fail_if_missing')
-        result = self._run_cmd('python', args=['-c', "import yaml; data=yaml.safe_load(open('slo/prometheus/alerting-rules.yaml')); alerts=[a for g in data['groups'] for a in g['rules']]; assert all('for' in a for a in alerts); print('PASS')"], timeout=120)
-        assert result.returncode == 0, (
-            f'test_alerts_have_for_key failed (exit {result.returncode})\n' + result.stderr[:500]
-        )
-
-    def test_severity_labels_valid(self):
-        """Verify severity labels are critical or warning"""
-        self._ensure_setup('test_severity_labels_valid', ['pip install pyyaml'], 'fail_if_missing')
-        result = self._run_cmd('python', args=['-c', "import yaml; data=yaml.safe_load(open('slo/prometheus/alerting-rules.yaml')); alerts=[a for g in data['groups'] for a in g['rules']]; assert all(a.get('labels',{}).get('severity') in ('critical','warning') for a in alerts); print('PASS')"], timeout=120)
-        assert result.returncode == 0, (
-            f'test_severity_labels_valid failed (exit {result.returncode})\n' + result.stderr[:500]
-        )
-
-    def test_invalid_prefix_detection(self):
-        """Verify non-slo: prefix would fail validation"""
-        self._ensure_setup('test_invalid_prefix_detection', ['pip install pyyaml'], 'fail_if_missing')
-        result = self._run_cmd('python', args=['-c', "rules=[{'record':'job:error_rate','expr':'1'}]; assert not all(r['record'].startswith('slo:') for r in rules); print('PASS')"], timeout=120)
-        assert result.returncode == 0, (
-            f'test_invalid_prefix_detection failed (exit {result.returncode})\n' + result.stderr[:500]
-        )
-

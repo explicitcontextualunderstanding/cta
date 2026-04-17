@@ -1,12 +1,13 @@
 """
-Test for 'slo-implementation' skill — SLO Generator
-Validates 99.9% target, multi-window burn rates, ErrorBudget calculation,
-SLI/SLO configuration, and alerting integration.
+Test skill: slo-implementation
+Verify that the Agent configures SLOs with error budget tracking for
+slo-generator including YAML configs, report generator, and burn-rate alerting.
 """
 
 import os
 import re
-
+import ast
+import json
 import pytest
 
 try:
@@ -16,168 +17,141 @@ except ImportError:
 
 
 class TestSloImplementation:
-    """Verify SLO implementation in slo-generator."""
-
     REPO_DIR = "/workspace/slo-generator"
 
-    # ── file_path_check ─────────────────────────────────────────────────────
+    SLO_CONFIG = "samples/payments-api/slo_config.yaml"
+    BUDGET_POLICY = "samples/payments-api/error_budget_policy.yaml"
+    EXPORTERS = "samples/payments-api/exporters.yaml"
+    REPORT_GEN = "samples/payments-api/slo_report_generator.py"
+    TESTS = "tests/test_slo_payments_api.py"
 
-    def test_slo_source_exists(self):
-        """Verify slo-generator source directory exists."""
-        assert os.path.isdir(self.REPO_DIR), "slo-generator repo not found"
+    def _read_file(self, rel_path):
+        filepath = os.path.join(self.REPO_DIR, rel_path)
+        with open(filepath) as f:
+            return f.read()
 
-    def test_slo_config_files_exist(self):
-        """Verify SLO configuration files exist."""
-        found = False
-        for dirpath, _, fnames in os.walk(self.REPO_DIR):
-            if ".git" in dirpath:
-                continue
-            for f in fnames:
-                if f.endswith((".yaml", ".yml", ".py", ".json")) and "slo" in f.lower():
-                    found = True
-                    break
-            if found:
-                break
-        assert found, "No SLO config files found"
+    # === File Path Checks ===
 
-    # ── semantic_check ──────────────────────────────────────────────────────
+    def test_slo_config_exists(self):
+        filepath = os.path.join(self.REPO_DIR, self.SLO_CONFIG)
+        assert os.path.exists(filepath), f"slo_config.yaml not found"
 
-    def test_slo_target_999(self):
-        """Verify 99.9% SLO target."""
-        source_files = self._find_source_files()
-        for fpath in source_files:
-            content = self._read(fpath)
-            if re.search(r"(99\.9|0\.999|target.*99|goal.*99)", content, re.IGNORECASE):
-                return
-        pytest.fail("No 99.9% SLO target found")
+    def test_error_budget_policy_exists(self):
+        filepath = os.path.join(self.REPO_DIR, self.BUDGET_POLICY)
+        assert os.path.exists(filepath), f"error_budget_policy.yaml not found"
 
-    def test_multi_window_burn_rate(self):
-        """Verify multi-window burn rate alerting."""
-        source_files = self._find_source_files()
-        for fpath in source_files:
-            content = self._read(fpath)
-            if re.search(
-                r"(burn.?rate|multi.?window|lookback|window)", content, re.IGNORECASE
-            ):
-                return
-        pytest.fail("No multi-window burn rate found")
+    def test_exporters_exists(self):
+        filepath = os.path.join(self.REPO_DIR, self.EXPORTERS)
+        assert os.path.exists(filepath), f"exporters.yaml not found"
 
-    def test_error_budget(self):
-        """Verify ErrorBudget calculation."""
-        source_files = self._find_source_files()
-        for fpath in source_files:
-            content = self._read(fpath)
-            if re.search(
-                r"(error.?budget|ErrorBudget|budget_remaining|budget_consumed)",
-                content,
-                re.IGNORECASE,
-            ):
-                return
-        pytest.fail("No ErrorBudget calculation found")
+    def test_report_generator_exists(self):
+        filepath = os.path.join(self.REPO_DIR, self.REPORT_GEN)
+        assert os.path.exists(filepath), f"slo_report_generator.py not found"
 
-    def test_sli_definition(self):
-        """Verify SLI (Service Level Indicator) definition."""
-        source_files = self._find_source_files()
-        for fpath in source_files:
-            content = self._read(fpath)
-            if re.search(
-                r"(SLI|service.?level.?indicator|good_events|total_events|sli_config)",
-                content,
-                re.IGNORECASE,
-            ):
-                return
-        pytest.fail("No SLI definition found")
+    def test_tests_file_exists(self):
+        filepath = os.path.join(self.REPO_DIR, self.TESTS)
+        assert os.path.exists(filepath), f"test_slo_payments_api.py not found"
 
-    def test_alerting_integration(self):
-        """Verify alerting integration (PagerDuty, Slack, etc.)."""
-        source_files = self._find_source_files()
-        for fpath in source_files:
-            content = self._read(fpath)
-            if re.search(
-                r"(alert|notification|PagerDuty|Slack|webhook|alertmanager)",
-                content,
-                re.IGNORECASE,
-            ):
-                return
-        pytest.fail("No alerting integration found")
+    # === Semantic Checks ===
 
-    # ── functional_check ────────────────────────────────────────────────────
+    @pytest.mark.skipif(yaml is None, reason="PyYAML not installed")
+    def test_slo_config_availability_target(self):
+        """Verify availability SLO with 99.9% target"""
+        content = self._read_file(self.SLO_CONFIG)
+        doc = yaml.safe_load(content)
+        content_str = str(doc)
+        assert "99.9" in content or "0.999" in content, \
+            "SLO config missing 99.9% availability target"
 
-    def test_source_files_parse(self):
-        """Verify Python source files are syntactically valid."""
-        import ast
+    @pytest.mark.skipif(yaml is None, reason="PyYAML not installed")
+    def test_slo_config_latency_target(self):
+        """Verify latency SLO with 95% target and 500ms threshold"""
+        content = self._read_file(self.SLO_CONFIG)
+        assert "95" in content or "0.95" in content, \
+            "SLO config missing 95% latency target"
+        assert "500" in content, "SLO config missing 500ms latency threshold"
 
-        py_files = [f for f in self._find_source_files() if f.endswith(".py")]
-        for fpath in py_files[:15]:
-            content = self._read(fpath)
+    def test_slo_config_service_name(self):
+        """Verify service_name is payments-api"""
+        content = self._read_file(self.SLO_CONFIG)
+        assert "payments-api" in content, "SLO config missing payments-api"
+
+    def test_slo_config_prometheus_backend(self):
+        """Verify prometheus backend type"""
+        content = self._read_file(self.SLO_CONFIG)
+        assert "prometheus" in content.lower(), "SLO config missing prometheus backend"
+
+    def test_slo_config_30d_window(self):
+        """Verify 30-day rolling window"""
+        content = self._read_file(self.SLO_CONFIG)
+        has_30d = "30" in content or "2592000" in content  # 30d in seconds
+        assert has_30d, "SLO config missing 30-day window"
+
+    @pytest.mark.skipif(yaml is None, reason="PyYAML not installed")
+    def test_error_budget_burn_rate_windows(self):
+        """Verify 4 burn-rate windows per SLO"""
+        content = self._read_file(self.BUDGET_POLICY)
+        assert "14.4" in content, "Budget policy missing 14.4x fast burn rate"
+        assert "6" in content, "Budget policy missing 6x burn rate"
+        assert "3" in content, "Budget policy missing 3x slow burn rate"
+
+    def test_error_budget_alert_severities(self):
+        """Verify critical, warning, info alert severities"""
+        content = self._read_file(self.BUDGET_POLICY)
+        assert "critical" in content.lower(), "Budget policy missing critical severity"
+        assert "warning" in content.lower(), "Budget policy missing warning severity"
+        assert "info" in content.lower(), "Budget policy missing info severity"
+
+    def test_report_generator_computes_sli(self):
+        """Verify report generator computes SLI value"""
+        content = self._read_file(self.REPORT_GEN)
+        assert "sli" in content.lower(), "Report generator missing SLI computation"
+
+    def test_report_generator_computes_budget(self):
+        """Verify report generator computes error budget remaining"""
+        content = self._read_file(self.REPORT_GEN)
+        has_budget = bool(re.search(r'(budget|remaining|burn_rate)', content, re.I))
+        assert has_budget, "Report generator missing error budget computation"
+
+    def test_report_generator_outputs_markdown(self):
+        """Verify report generator outputs Markdown table"""
+        content = self._read_file(self.REPORT_GEN)
+        has_md = bool(re.search(r'(\|.*\|.*\||markdown|\.md)', content, re.I))
+        assert has_md, "Report generator missing Markdown output"
+
+    def test_report_generator_health_status(self):
+        """Verify report includes healthy/warning/breached status"""
+        content = self._read_file(self.REPORT_GEN)
+        assert "healthy" in content.lower(), "Report missing healthy status"
+        assert "breached" in content.lower(), "Report missing breached status"
+
+    # === Functional Checks ===
+
+    @pytest.mark.skipif(yaml is None, reason="PyYAML not installed")
+    def test_all_yaml_files_valid(self):
+        """Verify all YAML files parse without errors"""
+        for path in [self.SLO_CONFIG, self.BUDGET_POLICY, self.EXPORTERS]:
+            content = self._read_file(path)
             try:
-                ast.parse(content, filename=fpath)
-            except SyntaxError as e:
-                pytest.fail(f"SyntaxError in {os.path.basename(fpath)}: {e}")
+                yaml.safe_load(content)
+            except yaml.YAMLError as e:
+                pytest.fail(f"{path} YAML error: {e}")
 
-    def test_yaml_configs_valid(self):
-        """Verify YAML config files parse correctly."""
-        if yaml is None:
-            pytest.skip("PyYAML not available")
-        yaml_files = [
-            f for f in self._find_source_files() if f.endswith((".yaml", ".yml"))
+    def test_report_generator_valid_python(self):
+        """Verify report generator has valid Python syntax"""
+        content = self._read_file(self.REPORT_GEN)
+        try:
+            ast.parse(content)
+        except SyntaxError as e:
+            pytest.fail(f"Report generator syntax error: {e}")
+
+    def test_tests_valid_python(self):
+        """Verify test file has valid syntax and tests"""
+        content = self._read_file(self.TESTS)
+        tree = ast.parse(content)
+        test_funcs = [
+            n.name for n in ast.walk(tree)
+            if isinstance(n, ast.FunctionDef) and n.name.startswith("test_")
         ]
-        for fpath in yaml_files[:10]:
-            with open(fpath, "r") as fh:
-                try:
-                    yaml.safe_load(fh)
-                except yaml.YAMLError as e:
-                    pytest.fail(f"YAML error in {os.path.basename(fpath)}: {e}")
-
-    def test_backend_integration(self):
-        """Verify backend integration (Prometheus, Stackdriver, etc.)."""
-        source_files = self._find_source_files()
-        for fpath in source_files:
-            content = self._read(fpath)
-            if re.search(
-                r"(Prometheus|Stackdriver|CloudMonitoring|Datadog|backend_class)",
-                content,
-                re.IGNORECASE,
-            ):
-                return
-        pytest.fail("No backend integration found")
-
-    def test_slo_report_generation(self):
-        """Verify SLO report/export generation."""
-        source_files = self._find_source_files()
-        for fpath in source_files:
-            content = self._read(fpath)
-            if re.search(
-                r"(report|export|BigQuery|Sheet|output|publish)", content, re.IGNORECASE
-            ):
-                return
-        pytest.fail("No SLO report generation found")
-
-    def test_time_window_config(self):
-        """Verify time window configuration (calendar, rolling)."""
-        source_files = self._find_source_files()
-        for fpath in source_files:
-            content = self._read(fpath)
-            if re.search(
-                r"(calendar|rolling|window_seconds|time_window|lookback_duration)",
-                content,
-                re.IGNORECASE,
-            ):
-                return
-        pytest.fail("No time window config found")
-
-    # ── helpers ──────────────────────────────────────────────────────────────
-
-    def _find_source_files(self):
-        results = []
-        for dirpath, _, fnames in os.walk(self.REPO_DIR):
-            if ".git" in dirpath:
-                continue
-            for f in fnames:
-                if f.endswith((".py", ".yaml", ".yml", ".json")):
-                    results.append(os.path.join(dirpath, f))
-        return results
-
-    def _read(self, path):
-        with open(path, "r", errors="ignore") as fh:
-            return fh.read()
+        assert len(test_funcs) >= 3, \
+            f"Expected >=3 tests, found {len(test_funcs)}"

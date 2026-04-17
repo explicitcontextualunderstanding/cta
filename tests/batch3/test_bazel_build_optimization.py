@@ -1,153 +1,289 @@
 """
 Tests for the bazel-build-optimization skill.
-Verifies that the Bazel build configuration for the Python Bazel example
-correctly defines WORKSPACE with rules_python/pip, BUILD with py_binary/library/test
-targets, a .bazelrc with required optimization flags, and a custom codegen.bzl rule.
+
+Validates that a multi-language Bazel build configuration was created
+with WORKSPACE, BUILD files, .bazelrc, and a custom Starlark rule.
+
+Repo: bazel (https://github.com/bazelbuild/bazel)
 """
 
 import os
 import re
 
-import pytest
-
 REPO_DIR = "/workspace/bazel"
+EXAMPLE_DIR = os.path.join(REPO_DIR, "examples", "python-bazel")
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
+class TestFilePathCheck:
+    """Verify all required files were created."""
+
+    def test_workspace_exists(self):
+        path = os.path.join(EXAMPLE_DIR, "WORKSPACE")
+        assert os.path.isfile(path), f"Expected WORKSPACE at {path}"
+
+    def test_root_build_exists(self):
+        path = os.path.join(EXAMPLE_DIR, "BUILD")
+        assert os.path.isfile(path), f"Expected root BUILD at {path}"
+
+    def test_bazelrc_exists(self):
+        path = os.path.join(EXAMPLE_DIR, ".bazelrc")
+        assert os.path.isfile(path), f"Expected .bazelrc at {path}"
+
+    def test_src_build_exists(self):
+        path = os.path.join(EXAMPLE_DIR, "src", "BUILD")
+        assert os.path.isfile(path), f"Expected src/BUILD at {path}"
+
+    def test_src_app_py_exists(self):
+        path = os.path.join(EXAMPLE_DIR, "src", "app.py")
+        assert os.path.isfile(path), f"Expected src/app.py at {path}"
+
+    def test_utils_build_exists(self):
+        path = os.path.join(EXAMPLE_DIR, "src", "utils", "BUILD")
+        assert os.path.isfile(path), f"Expected src/utils/BUILD at {path}"
+
+    def test_utils_helpers_exists(self):
+        path = os.path.join(EXAMPLE_DIR, "src", "utils", "helpers.py")
+        assert os.path.isfile(path), f"Expected src/utils/helpers.py at {path}"
+
+    def test_tests_build_exists(self):
+        path = os.path.join(EXAMPLE_DIR, "tests", "BUILD")
+        assert os.path.isfile(path), f"Expected tests/BUILD at {path}"
+
+    def test_tests_test_app_exists(self):
+        path = os.path.join(EXAMPLE_DIR, "tests", "test_app.py")
+        assert os.path.isfile(path), f"Expected tests/test_app.py at {path}"
+
+    def test_codegen_rule_exists(self):
+        path = os.path.join(EXAMPLE_DIR, "rules", "codegen.bzl")
+        assert os.path.isfile(path), f"Expected rules/codegen.bzl at {path}"
 
 
-def _path(rel: str) -> str:
-    return os.path.join(REPO_DIR, rel)
+class TestSemanticWorkspace:
+    """Verify WORKSPACE sets up Python toolchain and dependencies."""
 
+    def _read_workspace(self):
+        path = os.path.join(EXAMPLE_DIR, "WORKSPACE")
+        with open(path, "r") as f:
+            return f.read()
 
-def _read(rel: str) -> str:
-    full = _path(rel)
-    if not os.path.isfile(full):
-        pytest.skip(f"File not found: {full}")
-    with open(full, encoding="utf-8", errors="replace") as fh:
-        return fh.read()
-
-
-# ---------------------------------------------------------------------------
-# File path checks
-# ---------------------------------------------------------------------------
-
-
-class TestBazelBuildOptimization:
-    """Test suite for the Bazel build optimization skill."""
-
-    def test_workspace_file_exists(self):
-        """Verify WORKSPACE file exists and is non-empty."""
-        target = _path("examples/python-bazel/WORKSPACE")
-        assert os.path.isfile(target), f"WORKSPACE not found: {target}"
-        assert os.path.getsize(target) > 0, "WORKSPACE must be non-empty"
-
-    def test_bazelrc_and_bzl_files_exist(self):
-        """Verify .bazelrc and codegen.bzl files exist."""
-        for rel in (
-            "examples/python-bazel/.bazelrc",
-            "examples/python-bazel/rules/codegen.bzl",
-        ):
-            assert os.path.isfile(_path(rel)), f"Missing file: {rel}"
-
-    def test_build_file_exists(self):
-        """Verify BUILD file exists in the python-bazel example."""
-        target = _path("examples/python-bazel/BUILD")
-        assert os.path.isfile(target), f"BUILD not found: {target}"
-
-    # -----------------------------------------------------------------------
-    # Semantic checks
-    # -----------------------------------------------------------------------
-
-    def test_workspace_has_required_stanzas(self):
-        """Verify WORKSPACE contains rules_python, python_register_toolchains, and pip_parse."""
-        content = _read("examples/python-bazel/WORKSPACE")
-        assert "rules_python" in content, "WORKSPACE must reference rules_python"
-        assert (
-            "python_register_toolchains" in content
-        ), "WORKSPACE must call python_register_toolchains"
-        assert "pip_parse" in content, "WORKSPACE must call pip_parse"
-
-    def test_build_file_defines_py_binary_app(self):
-        """Verify BUILD file defines py_binary named 'app', py_library, and py_test targets."""
-        content = _read("examples/python-bazel/BUILD")
-        assert "py_binary" in content, "BUILD must define a py_binary target"
-        assert "app" in content, "BUILD py_binary must be named 'app'"
-        assert "py_library" in content, "BUILD must define a py_library target"
-        assert "py_test" in content, "BUILD must define a py_test target"
-
-    def test_bazelrc_has_required_flags(self):
-        """Verify .bazelrc has remote_cache, sandbox, and build:ci config."""
-        content = _read("examples/python-bazel/.bazelrc")
-        assert "--remote_cache" in content, ".bazelrc must define --remote_cache flag"
-        has_sandbox = (
-            "--sandbox" in content or "sandbox_default_allow_network" in content
+    def test_rules_python(self):
+        content = self._read_workspace()
+        assert "rules_python" in content, (
+            "Expected rules_python in WORKSPACE"
         )
-        assert has_sandbox, ".bazelrc must define sandbox-related flag"
-        assert "build:ci" in content, ".bazelrc must define a 'build:ci' configuration"
 
-    def test_codegen_bzl_uses_ctx_actions_run(self):
-        """Verify codegen.bzl uses ctx.actions.run for code generation actions."""
-        content = _read("examples/python-bazel/rules/codegen.bzl")
-        assert "ctx.actions.run" in content, "codegen.bzl must use ctx.actions.run"
-
-    # -----------------------------------------------------------------------
-    # Functional checks (static)
-    # -----------------------------------------------------------------------
-
-    def test_workspace_has_no_plain_http_downloads(self):
-        """Verify WORKSPACE does not use plain http:// for dependency downloads."""
-        content = _read("examples/python-bazel/WORKSPACE")
-        # Find all URL strings; filter out comments
-        urls = re.findall(r"https?://\S+", content)
-        for url in urls:
-            assert not url.startswith(
-                "http://"
-            ), f"WORKSPACE must use https:// for downloads, found http://: {url}"
-
-    def test_build_file_deps_reference_pip(self):
-        """Verify BUILD deps reference pip-parsed packages."""
-        content = _read("examples/python-bazel/BUILD")
-        has_pip_dep = (
-            "@pip" in content or "@pip_deps" in content or "requirement(" in content
+    def test_python_3_11_toolchain(self):
+        content = self._read_workspace()
+        assert re.search(r"python_register_toolchains|3\.11", content), (
+            "Expected Python 3.11 toolchain registration"
         )
-        assert has_pip_dep, "BUILD must reference pip-sourced dependencies"
 
-    def test_workspace_has_sha256_for_external_deps(self):
-        """Verify WORKSPACE external dependency downloads include sha256 hash."""
-        content = _read("examples/python-bazel/WORKSPACE")
-        assert (
-            "sha256" in content
-        ), "WORKSPACE must specify sha256 hash for at least one external dep"
+    def test_pip_dependencies(self):
+        content = self._read_workspace()
+        assert re.search(r"pip_parse|pip_install", content), (
+            "Expected pip_parse or pip_install for external dependencies"
+        )
 
-    def test_codegen_bzl_declares_output_files(self):
-        """Verify codegen.bzl declares output files in the rule definition."""
-        content = _read("examples/python-bazel/rules/codegen.bzl")
-        has_declare = "declare_file" in content or "outputs" in content
-        assert has_declare, "codegen.bzl must declare output files"
+    def test_requirements_lock(self):
+        content = self._read_workspace()
+        assert re.search(r"requirements.*lock|requirements_lock", content), (
+            "Expected requirements_lock.txt reference"
+        )
 
-    def test_build_file_no_fstrings_or_walrus(self):
-        """Verify BUILD file avoids Starlark-incompatible Python syntax (f-strings, walrus)."""
-        content = _read("examples/python-bazel/BUILD")
-        assert (
-            ":=" not in content
-        ), "BUILD file must not use walrus operator := (Starlark incompatible)"
-        # f-strings: check for f" or f' patterns
-        assert not re.search(
-            r"\bf['\"]", content
-        ), "BUILD file must not use f-strings (Starlark incompatible)"
 
-    def test_workspace_has_valid_starlark_syntax(self):
-        """Verify WORKSPACE file has no obvious syntax issues (balanced parens/brackets)."""
-        content = _read("examples/python-bazel/WORKSPACE")
-        depth = 0
-        for ch in content:
-            if ch == "(":
-                depth += 1
-            elif ch == ")":
-                depth -= 1
-            if depth < 0:
-                pytest.fail("WORKSPACE has unmatched closing parenthesis")
-        assert depth == 0, f"WORKSPACE has {depth} unclosed parentheses"
+class TestSemanticBuildFiles:
+    """Verify BUILD files define correct targets with dependencies."""
+
+    def test_root_py_binary(self):
+        path = os.path.join(EXAMPLE_DIR, "BUILD")
+        with open(path, "r") as f:
+            content = f.read()
+        assert re.search(r"py_binary", content), (
+            "Expected py_binary target in root BUILD"
+        )
+        assert re.search(r"//src:lib|//src", content), (
+            "Expected dependency on //src:lib"
+        )
+
+    def test_src_py_library(self):
+        path = os.path.join(EXAMPLE_DIR, "src", "BUILD")
+        with open(path, "r") as f:
+            content = f.read()
+        assert re.search(r"py_library", content), (
+            "Expected py_library target in src/BUILD"
+        )
+
+    def test_src_depends_on_utils(self):
+        path = os.path.join(EXAMPLE_DIR, "src", "BUILD")
+        with open(path, "r") as f:
+            content = f.read()
+        assert re.search(r"//src/utils:helpers|//src/utils", content), (
+            "Expected dependency on //src/utils:helpers"
+        )
+
+    def test_src_depends_on_requests(self):
+        path = os.path.join(EXAMPLE_DIR, "src", "BUILD")
+        with open(path, "r") as f:
+            content = f.read()
+        assert re.search(r"requests", content), (
+            "Expected dependency on external requests package"
+        )
+
+    def test_src_depends_on_pydantic(self):
+        path = os.path.join(EXAMPLE_DIR, "src", "BUILD")
+        with open(path, "r") as f:
+            content = f.read()
+        assert re.search(r"pydantic", content), (
+            "Expected dependency on external pydantic package"
+        )
+
+    def test_utils_py_library(self):
+        path = os.path.join(EXAMPLE_DIR, "src", "utils", "BUILD")
+        with open(path, "r") as f:
+            content = f.read()
+        assert re.search(r"py_library", content), (
+            "Expected py_library target in src/utils/BUILD"
+        )
+
+    def test_tests_py_test(self):
+        path = os.path.join(EXAMPLE_DIR, "tests", "BUILD")
+        with open(path, "r") as f:
+            content = f.read()
+        assert re.search(r"py_test", content), (
+            "Expected py_test target in tests/BUILD"
+        )
+
+    def test_visibility_settings(self):
+        all_builds = ""
+        for sub in ["BUILD", "src/BUILD", "src/utils/BUILD", "tests/BUILD"]:
+            path = os.path.join(EXAMPLE_DIR, sub)
+            if os.path.isfile(path):
+                with open(path, "r") as f:
+                    all_builds += f.read()
+        assert re.search(r"visibility", all_builds), (
+            "Expected visibility settings on targets"
+        )
+
+
+class TestSemanticBazelrc:
+    """Verify .bazelrc performance and caching configuration."""
+
+    def _read_bazelrc(self):
+        path = os.path.join(EXAMPLE_DIR, ".bazelrc")
+        with open(path, "r") as f:
+            return f.read()
+
+    def test_remote_cache(self):
+        content = self._read_bazelrc()
+        assert re.search(r"remote_cache", content), (
+            "Expected remote_cache configuration"
+        )
+
+    def test_remote_download_minimal(self):
+        content = self._read_bazelrc()
+        assert re.search(r"remote_download_outputs.*minimal|remote_download_minimal", content), (
+            "Expected remote_download_outputs=minimal (build without the bytes)"
+        )
+
+    def test_sandbox_no_network(self):
+        content = self._read_bazelrc()
+        assert re.search(r"sandbox.*network.*false|sandbox_default_allow_network.*false", content), (
+            "Expected sandbox_default_allow_network=false"
+        )
+
+    def test_jobs_auto(self):
+        content = self._read_bazelrc()
+        assert re.search(r"jobs.*auto|--jobs=auto", content), (
+            "Expected --jobs=auto"
+        )
+
+    def test_ci_config(self):
+        content = self._read_bazelrc()
+        assert re.search(r"build:ci", content), (
+            "Expected CI-specific configuration (build:ci)"
+        )
+
+    def test_test_output_errors(self):
+        content = self._read_bazelrc()
+        assert re.search(r"test_output.*errors|--test_output=errors", content), (
+            "Expected test --test_output=errors"
+        )
+
+    def test_jvm_memory_startup(self):
+        content = self._read_bazelrc()
+        assert re.search(r"host_jvm_args.*Xmx|Xmx4g", content), (
+            "Expected startup --host_jvm_args=-Xmx4g"
+        )
+
+
+class TestSemanticCodegenRule:
+    """Verify custom Starlark codegen rule."""
+
+    def _read_codegen(self):
+        path = os.path.join(EXAMPLE_DIR, "rules", "codegen.bzl")
+        with open(path, "r") as f:
+            return f.read()
+
+    def test_rule_implementation(self):
+        content = self._read_codegen()
+        assert re.search(r"rule\(|codegen_rule", content), (
+            "Expected Starlark rule() definition"
+        )
+
+    def test_template_attr(self):
+        content = self._read_codegen()
+        assert re.search(r"template|\.py\.tmpl", content), (
+            "Expected template file attribute"
+        )
+
+    def test_config_attr(self):
+        content = self._read_codegen()
+        assert re.search(r"config|json", content, re.IGNORECASE), (
+            "Expected config (JSON) attribute"
+        )
+
+    def test_ctx_actions(self):
+        content = self._read_codegen()
+        assert re.search(r"ctx\.actions\.run|ctx\.actions", content), (
+            "Expected ctx.actions.run for generating output"
+        )
+
+    def test_variable_substitution(self):
+        content = self._read_codegen()
+        assert re.search(r"\{\{|replace|substitut", content, re.IGNORECASE), (
+            "Expected {{variable}} placeholder substitution logic"
+        )
+
+
+class TestFunctionalAppCode:
+    """Verify application code is valid Python."""
+
+    def test_app_py_syntax(self):
+        path = os.path.join(EXAMPLE_DIR, "src", "app.py")
+        with open(path, "r") as f:
+            content = f.read()
+        compile(content, path, "exec")
+
+    def test_helpers_py_syntax(self):
+        path = os.path.join(EXAMPLE_DIR, "src", "utils", "helpers.py")
+        with open(path, "r") as f:
+            content = f.read()
+        compile(content, path, "exec")
+
+    def test_test_app_syntax(self):
+        path = os.path.join(EXAMPLE_DIR, "tests", "test_app.py")
+        with open(path, "r") as f:
+            content = f.read()
+        compile(content, path, "exec")
+
+    def test_app_uses_requests(self):
+        path = os.path.join(EXAMPLE_DIR, "src", "app.py")
+        with open(path, "r") as f:
+            content = f.read()
+        assert "requests" in content, "Expected requests import in app.py"
+
+    def test_app_uses_pydantic(self):
+        path = os.path.join(EXAMPLE_DIR, "src", "app.py")
+        with open(path, "r") as f:
+            content = f.read()
+        assert "pydantic" in content, "Expected pydantic import in app.py"

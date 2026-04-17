@@ -1,136 +1,153 @@
 """
-Test for 'bazel-build-optimization' skill — Bazel Build Optimization
-Validates WORKSPACE/MODULE.bazel, .bazelrc, .bazelversion, BUILD files,
-remote cache config, and Starlark syntax via static analysis.
+Test skill: bazel-build-optimization
+Verify that the Agent creates BUILD files, WORKSPACE.bazel, .bazelrc,
+and custom macros for Bazel build optimization.
 """
 
-import glob
 import os
 import re
 import subprocess
-
 import pytest
 
 
 class TestBazelBuildOptimization:
-    """Verify Bazel build optimization: workspace, config, build files."""
-
     REPO_DIR = "/workspace/bazel"
 
-    # ── helpers ──────────────────────────────────────────────────────────
+    # === File Path Checks ===
 
-    @staticmethod
-    def _read_file(path: str) -> str:
-        try:
-            with open(path, "r", errors="ignore") as fh:
-                return fh.read()
-        except OSError:
-            return ""
+    def test_workspace_bazel_exists(self):
+        """Verify WORKSPACE or WORKSPACE.bazel exists"""
+        ws = os.path.isfile(os.path.join(self.REPO_DIR, "WORKSPACE.bazel")) or \
+             os.path.isfile(os.path.join(self.REPO_DIR, "WORKSPACE"))
+        assert ws, "WORKSPACE.bazel or WORKSPACE not found"
 
-    def _root(self, *parts) -> str:
-        return os.path.join(self.REPO_DIR, *parts)
+    def test_bazelrc_exists(self):
+        """Verify .bazelrc exists"""
+        assert os.path.isfile(os.path.join(self.REPO_DIR, ".bazelrc")), ".bazelrc not found"
 
-    # ── file_path_check ──────────────────────────────────────────────────
-
-    def test_workspace_or_module_bazel_exists(self):
-        """WORKSPACE or MODULE.bazel must exist at repo root."""
-        ws = self._root("WORKSPACE")
-        mod = self._root("MODULE.bazel")
-        assert os.path.isfile(ws) or os.path.isfile(mod), "Neither WORKSPACE nor MODULE.bazel found"
-
-    def test_bazelrc_and_bazelversion_exist(self):
-        """.bazelrc and .bazelversion must exist."""
-        assert os.path.isfile(self._root(".bazelrc")), ".bazelrc not found"
-        assert os.path.isfile(self._root(".bazelversion")), ".bazelversion not found"
+    # === Semantic Checks ===
 
     def test_build_files_exist(self):
-        """At least one BUILD or BUILD.bazel file must exist."""
-        builds = glob.glob(self._root("**", "BUILD"), recursive=True)
-        builds += glob.glob(self._root("**", "BUILD.bazel"), recursive=True)
-        assert len(builds) >= 1, "No BUILD files found"
+        """Verify BUILD or BUILD.bazel files exist"""
+        found = 0
+        for root, dirs, files in os.walk(self.REPO_DIR):
+            if ".git" in root:
+                continue
+            for f in files:
+                if f in ("BUILD", "BUILD.bazel"):
+                    found += 1
+        assert found >= 1, "No BUILD files found"
 
-    # ── semantic_check ───────────────────────────────────────────────────
+    def test_bazelrc_has_optimization_flags(self):
+        """Verify .bazelrc contains optimization flags"""
+        bazelrc_path = os.path.join(self.REPO_DIR, ".bazelrc")
+        with open(bazelrc_path) as fh:
+            content = fh.read()
+        content_lower = content.lower()
+        has_opt = (
+            "--remote_cache" in content
+            or "--disk_cache" in content
+            or "--jobs" in content
+            or "--compilation_mode" in content
+            or "build:" in content
+            or "--config" in content
+        )
+        assert has_opt, ".bazelrc missing optimization flags"
 
-    def test_module_bazel_declares_dependencies(self):
-        """MODULE.bazel or WORKSPACE must declare external deps."""
-        mod = self._read_file(self._root("MODULE.bazel"))
-        ws = self._read_file(self._root("WORKSPACE"))
-        content = mod or ws
-        if not content:
-            pytest.skip("No workspace file found")
-        has_dep = "bazel_dep(" in content or "http_archive(" in content or "local_repository(" in content
-        assert has_dep, "No dependency declaration found"
+    def test_build_rules_defined(self):
+        """Verify BUILD files define rules"""
+        build_content = self._collect_build_content()
+        has_rules = (
+            "cc_library" in build_content
+            or "cc_binary" in build_content
+            or "java_library" in build_content
+            or "java_binary" in build_content
+            or "py_library" in build_content
+            or "py_binary" in build_content
+            or "genrule" in build_content
+            or "filegroup" in build_content
+        )
+        assert has_rules, "BUILD files missing build rules"
 
-    def test_bazelrc_has_remote_cache(self):
-        """.bazelrc must contain remote_cache configuration."""
-        content = self._read_file(self._root(".bazelrc"))
-        if not content:
-            pytest.skip(".bazelrc not found")
-        assert "remote_cache" in content, "No remote_cache config found"
+    def test_custom_macros_or_rules_defined(self):
+        """Verify custom Bazel macros or rules are defined"""
+        found = False
+        for root, dirs, files in os.walk(self.REPO_DIR):
+            if ".git" in root:
+                continue
+            for f in files:
+                if f.endswith(".bzl"):
+                    found = True
+                    break
+            if found:
+                break
+        assert found, "No .bzl custom macro/rule files found"
 
-    def test_go_library_importpath(self):
-        """go_library targets must have importpath declarations."""
-        builds = glob.glob(self._root("**", "BUILD*"), recursive=True)
-        for bf in builds:
-            content = self._read_file(bf)
-            if "go_library(" in content:
-                assert "importpath" in content, f"go_library without importpath in {bf}"
-                return
-        # No go_library found — skip (not all repos use Go)
-        pytest.skip("No go_library targets found")
+    def test_bzl_files_use_rule_or_macro(self):
+        """Verify .bzl files define rules or macros"""
+        bzl_content = ""
+        for root, dirs, files in os.walk(self.REPO_DIR):
+            if ".git" in root:
+                continue
+            for f in files:
+                if f.endswith(".bzl"):
+                    fpath = os.path.join(root, f)
+                    try:
+                        with open(fpath) as fh:
+                            bzl_content += fh.read() + "\n"
+                    except (UnicodeDecodeError, PermissionError):
+                        continue
+        assert "def " in bzl_content or "rule(" in bzl_content, ".bzl files missing macro/rule definitions"
 
-    def test_py_library_no_wildcard_test_include(self):
-        """py_library glob must not accidentally include test files."""
-        builds = glob.glob(self._root("**", "BUILD*"), recursive=True)
-        for bf in builds:
-            content = self._read_file(bf)
-            if "py_library" in content and "glob(" in content:
-                if "**/*.py" in content or "*.py" in content:
-                    assert "exclude" in content, f"py_library glob without exclude in {bf}"
+    # === Functional Checks ===
 
-    # ── functional_check ─────────────────────────────────────────────────
+    def test_build_files_valid_starlark(self):
+        """Verify BUILD files use valid Starlark syntax"""
+        build_content = self._collect_build_content()
+        assert len(build_content) > 0, "Empty BUILD files"
+        parens = build_content.count('(') - build_content.count(')')
+        assert parens == 0, f"Unbalanced parentheses in BUILD files: diff={parens}"
 
-    def test_bazelversion_valid_pinned(self):
-        """.bazelversion must contain valid version >= 6.0."""
-        content = self._read_file(self._root(".bazelversion")).strip()
-        if not content:
-            pytest.skip(".bazelversion not found")
-        m = re.match(r"^(\d+)\.\d+\.\d+", content)
-        assert m, f"Invalid version format: {content}"
-        assert int(m.group(1)) >= 6, f"Bazel version {content} < 6.0"
+    def test_workspace_has_external_deps(self):
+        """Verify WORKSPACE defines external dependencies"""
+        ws_path = os.path.join(self.REPO_DIR, "WORKSPACE.bazel")
+        if not os.path.isfile(ws_path):
+            ws_path = os.path.join(self.REPO_DIR, "WORKSPACE")
+        with open(ws_path) as fh:
+            content = fh.read()
+        has_deps = (
+            "http_archive" in content
+            or "git_repository" in content
+            or "maven_jar" in content
+            or "load(" in content
+        )
+        assert has_deps, "WORKSPACE missing external dependency declarations"
 
-    def test_build_files_balanced_parens(self):
-        """BUILD files must have balanced parentheses (valid Starlark)."""
-        builds = glob.glob(self._root("**", "BUILD*"), recursive=True)
-        if not builds:
-            pytest.skip("No BUILD files found")
-        for bf in builds[:10]:  # Check first 10
-            content = self._read_file(bf)
-            assert content.count("(") == content.count(")"), f"Unbalanced parens in {bf}"
+    def test_bazelrc_remote_or_local_cache(self):
+        """Verify .bazelrc configures caching (remote or disk)"""
+        bazelrc_path = os.path.join(self.REPO_DIR, ".bazelrc")
+        with open(bazelrc_path) as fh:
+            content = fh.read()
+        has_cache = "cache" in content.lower()
+        assert has_cache, ".bazelrc missing cache configuration"
 
-    def test_bazel_query_succeeds(self):
-        """bazel query //... must succeed if Bazel is available."""
-        try:
-            r = subprocess.run(
-                ["bazel", "query", "//..."],
-                cwd=self.REPO_DIR,
-                capture_output=True, text=True, timeout=120,
-            )
-        except FileNotFoundError:
-            pytest.skip("Bazel not installed")
-        except subprocess.TimeoutExpired:
-            pytest.skip("Bazel query timed out")
-        assert r.returncode == 0, f"bazel query failed: {r.stderr}"
-        assert len(r.stdout.strip()) > 0, "No targets listed"
+    def test_visibility_specified(self):
+        """Verify BUILD files specify visibility"""
+        build_content = self._collect_build_content()
+        has_vis = "visibility" in build_content
+        assert has_vis, "BUILD files missing visibility declarations"
 
-    def test_no_circular_deps(self):
-        """bazel query deps(//...) must not report circular dependencies."""
-        try:
-            r = subprocess.run(
-                ["bazel", "query", "deps(//...)"],
-                cwd=self.REPO_DIR,
-                capture_output=True, text=True, timeout=120,
-            )
-        except (FileNotFoundError, subprocess.TimeoutExpired):
-            pytest.skip("Bazel not available")
-        assert "cycle" not in r.stderr.lower(), "Circular dependency detected"
+    def _collect_build_content(self):
+        all_content = ""
+        for root, dirs, files in os.walk(self.REPO_DIR):
+            if ".git" in root:
+                continue
+            for f in files:
+                if f in ("BUILD", "BUILD.bazel"):
+                    fpath = os.path.join(root, f)
+                    try:
+                        with open(fpath) as fh:
+                            all_content += fh.read() + "\n"
+                    except (UnicodeDecodeError, PermissionError):
+                        continue
+        return all_content

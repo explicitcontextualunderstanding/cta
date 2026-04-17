@@ -1,122 +1,156 @@
 """
-Test for 'python-performance-optimization' skill — Rust/PyO3 Extension
-Validates Cargo.toml, src/lib.rs, pyproject.toml maturin config,
-crate-type cdylib, #[pymodule], and extension build/output.
+Test skill: python-performance-optimization
+Verify that the Agent creates flame graph renderer and performance
+optimization tools (Rust / py-spy).
 """
 
 import os
+import re
 import subprocess
-
 import pytest
 
 
 class TestPythonPerformanceOptimization:
-    """Verify Python Rust extension: Cargo config, PyO3, maturin build."""
-
     REPO_DIR = "/workspace/py-spy"
 
-    # ── helpers ──────────────────────────────────────────────────────────
+    # === File Path Checks ===
 
-    @staticmethod
-    def _read_file(path: str) -> str:
-        try:
-            with open(path, "r", errors="ignore") as fh:
-                return fh.read()
-        except OSError:
-            return ""
+    def test_flame_graph_files_exist(self):
+        """Verify flame graph renderer files exist"""
+        found = False
+        for root, dirs, files in os.walk(self.REPO_DIR):
+            if ".git" in root or "target" in root:
+                continue
+            for f in files:
+                if f.endswith(".rs") and ("flame" in f.lower() or "render" in f.lower() or "graph" in f.lower() or "profile" in f.lower()):
+                    found = True
+                    break
+            if found:
+                break
+        assert found, "Flame graph renderer files not found"
 
-    def _root(self, *parts) -> str:
-        return os.path.join(self.REPO_DIR, *parts)
+    # === Semantic Checks ===
 
-    # ── file_path_check ──────────────────────────────────────────────────
+    def test_flame_graph_renderer_defined(self):
+        """Verify flame graph renderer is implemented"""
+        content = self._collect_content()
+        content_lower = content.lower()
+        has_flame = "flame" in content_lower or "flamegraph" in content_lower
+        assert has_flame, "Flame graph renderer not found"
 
-    def test_cargo_toml_exists(self):
-        """Cargo.toml must exist."""
-        assert os.path.isfile(self._root("Cargo.toml"))
-
-    def test_src_lib_rs_exists(self):
-        """src/lib.rs must exist and be non-empty."""
-        p = self._root("src", "lib.rs")
-        assert os.path.isfile(p)
-        assert os.path.getsize(p) > 0
-
-    def test_cargo_lock_and_pyproject_exist(self):
-        """Cargo.lock and pyproject.toml must exist."""
-        assert os.path.isfile(self._root("Cargo.lock")), "Cargo.lock not found"
-        assert os.path.isfile(self._root("pyproject.toml")), "pyproject.toml not found"
-
-    # ── semantic_check ───────────────────────────────────────────────────
-
-    def test_crate_type_cdylib(self):
-        """Cargo.toml [lib] must have crate-type = ['cdylib']."""
-        content = self._read_file(self._root("Cargo.toml"))
-        if not content:
-            pytest.skip("Cargo.toml not found")
-        assert "cdylib" in content
-
-    def test_pyo3_dependency_with_extension_module(self):
-        """Cargo.toml must list pyo3 with extension-module feature."""
-        content = self._read_file(self._root("Cargo.toml"))
-        if not content:
-            pytest.skip("Cargo.toml not found")
-        assert "pyo3" in content
-        assert "extension-module" in content
-
-    def test_pymodule_macro_in_lib_rs(self):
-        """src/lib.rs must contain #[pymodule] macro."""
-        content = self._read_file(self._root("src", "lib.rs"))
-        if not content:
-            pytest.skip("src/lib.rs not found")
-        assert "#[pymodule]" in content
-
-    def test_pyfunction_exposed(self):
-        """src/lib.rs must expose at least one #[pyfunction]."""
-        content = self._read_file(self._root("src", "lib.rs"))
-        if not content:
-            pytest.skip("src/lib.rs not found")
-        assert "#[pyfunction]" in content
-
-    def test_pyproject_uses_maturin_backend(self):
-        """pyproject.toml must use maturin as build-backend."""
-        content = self._read_file(self._root("pyproject.toml"))
-        if not content:
-            pytest.skip("pyproject.toml not found")
-        assert "maturin" in content
-
-    def test_benchmark_imports_extension(self):
-        """benchmarks/bench_extension.py must import extension module."""
-        content = self._read_file(self._root("benchmarks", "bench_extension.py"))
-        if not content:
-            pytest.skip("bench_extension.py not found")
-        assert "import" in content
-        assert "baseline" in content.lower() or "python" in content.lower()
-
-    # ── functional_check ─────────────────────────────────────────────────
-
-    def test_maturin_develop_exit_code(self):
-        """maturin develop must exit with code 0."""
-        try:
-            subprocess.run(["maturin", "--version"], capture_output=True, timeout=5)
-        except (FileNotFoundError, subprocess.TimeoutExpired):
-            pytest.skip("maturin not available")
-        r = subprocess.run(
-            ["maturin", "develop"],
-            capture_output=True, text=True, cwd=self.REPO_DIR, timeout=300,
+    def test_stack_frame_parsing(self):
+        """Verify stack frame parsing is implemented"""
+        content = self._collect_content()
+        content_lower = content.lower()
+        has_stack = (
+            "stack" in content_lower
+            or "frame" in content_lower
+            or "backtrace" in content_lower
+            or "callstack" in content_lower
         )
-        assert r.returncode == 0, f"maturin develop failed: {r.stderr}"
+        assert has_stack, "Stack frame parsing not found"
 
-    def test_extension_import_succeeds(self):
-        """Extension module must be importable after build."""
-        try:
-            import myextension  # noqa: F401
-        except ImportError:
-            pytest.skip("myextension not built or not importable")
+    def test_svg_or_html_output(self):
+        """Verify SVG or HTML output format"""
+        content = self._collect_content()
+        content_lower = content.lower()
+        has_output = (
+            "svg" in content_lower
+            or "html" in content_lower
+            or "<rect" in content_lower
+            or "write" in content_lower
+        )
+        assert has_output, "SVG/HTML output not found"
 
-    def test_extension_wrong_type_raises_typeerror(self):
-        """Extension function must raise TypeError for wrong arg type."""
-        try:
-            from myextension import fast_function
-        except ImportError:
-            pytest.skip("myextension not importable")
-        with pytest.raises(TypeError):
-            fast_function(None)
+    def test_profiling_data_collection(self):
+        """Verify profiling data collection"""
+        content = self._collect_content()
+        content_lower = content.lower()
+        has_profiling = (
+            "sample" in content_lower
+            or "profile" in content_lower
+            or "perf" in content_lower
+            or "cpu" in content_lower
+        )
+        assert has_profiling, "Profiling data collection not found"
+
+    # === Functional Checks ===
+
+    def test_rust_files_have_mod_or_use(self):
+        """Verify Rust files have proper module structure"""
+        rs_files = self._find_rs_files()
+        assert len(rs_files) > 0, "No relevant Rust files found"
+        for rf in rs_files:
+            with open(rf) as fh:
+                content = fh.read()
+            has_mod = "mod " in content or "use " in content or "fn " in content or "pub " in content
+            assert has_mod, f"{rf} missing Rust module structure"
+
+    def test_rust_files_balanced_braces(self):
+        """Verify Rust files have balanced braces"""
+        rs_files = self._find_rs_files()
+        for rf in rs_files:
+            with open(rf) as fh:
+                content = fh.read()
+            cleaned = re.sub(r'"[^"]*"', '', content)
+            cleaned = re.sub(r'//[^\n]*', '', cleaned)
+            cleaned = re.sub(r'/\*.*?\*/', '', cleaned, flags=re.DOTALL)
+            opens = cleaned.count('{')
+            closes = cleaned.count('}')
+            assert opens == closes, f"Unbalanced braces in {rf}: {opens} vs {closes}"
+
+    def test_cargo_build(self):
+        """Verify the Rust project builds"""
+        result = subprocess.run(
+            ["cargo", "build"],
+            cwd=self.REPO_DIR,
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+        if result.returncode != 0:
+            related = [
+                line for line in result.stderr.splitlines()
+                if any(kw in line.lower() for kw in ["flame", "render", "graph", "error"])
+            ]
+            assert len(related) == 0, f"Build errors: {related[:5]}"
+
+    def test_color_palette_defined(self):
+        """Verify color palette for flame graph visualization"""
+        content = self._collect_content()
+        content_lower = content.lower()
+        has_color = (
+            "color" in content_lower
+            or "palette" in content_lower
+            or "rgb" in content_lower
+            or "hsl" in content_lower
+            or "#" in content
+        )
+        assert has_color, "Color palette not defined for flame graph"
+
+    def _collect_content(self):
+        all_content = ""
+        for root, dirs, files in os.walk(self.REPO_DIR):
+            if ".git" in root or "target" in root:
+                continue
+            for f in files:
+                if f.endswith(".rs"):
+                    fpath = os.path.join(root, f)
+                    try:
+                        with open(fpath) as fh:
+                            c = fh.read()
+                        if any(kw in c.lower() for kw in ["flame", "render", "graph", "stack", "frame", "svg"]):
+                            all_content += c + "\n"
+                    except (UnicodeDecodeError, PermissionError):
+                        continue
+        return all_content
+
+    def _find_rs_files(self):
+        rs_files = []
+        for root, dirs, files in os.walk(self.REPO_DIR):
+            if ".git" in root or "target" in root:
+                continue
+            for f in files:
+                if f.endswith(".rs") and ("flame" in f.lower() or "render" in f.lower() or "graph" in f.lower() or "profile" in f.lower()):
+                    rs_files.append(os.path.join(root, f))
+        return rs_files

@@ -1,133 +1,142 @@
 """
-Test for 'prompt-engineering-patterns' skill — Prompt Engineering Module
-Validates that the Agent created a Python package for semantic few-shot
-selection, chain-of-thought building, and prompt optimization.
+Tests for the prompt-engineering-patterns skill.
+Validates a prompt optimization toolkit for LangChain with few-shot selection,
+chain-of-thought formatting, and A/B testing of prompt variants.
 """
 
 import os
 import re
-import sys
+import ast
 
-import pytest
+REPO_DIR = "/workspace/langchain"
+PROMPTS_DIR = os.path.join(REPO_DIR, "libs", "langchain", "langchain", "prompts")
 
 
 class TestPromptEngineeringPatterns:
-    """Verify prompt engineering module implementation."""
+    """Tests for the LangChain prompt optimization toolkit."""
 
-    REPO_DIR = "/workspace/langchain"
+    # ── file_path_check ──────────────────────────────────────────────
 
-    @staticmethod
-    def _read(path: str) -> str:
-        try:
-            with open(path, "r", errors="ignore") as fh:
-                return fh.read()
-        except OSError:
+    def test_optimizer_file_exists(self):
+        """PromptOptimizer module must exist."""
+        path = os.path.join(PROMPTS_DIR, "optimizer.py")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    def test_few_shot_selector_file_exists(self):
+        """SemanticFewShotSelector module must exist."""
+        path = os.path.join(PROMPTS_DIR, "few_shot_selector.py")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    def test_cot_formatter_file_exists(self):
+        """ChainOfThoughtFormatter module must exist."""
+        path = os.path.join(PROMPTS_DIR, "cot_formatter.py")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    def test_ab_test_file_exists(self):
+        """PromptABTest module must exist."""
+        path = os.path.join(PROMPTS_DIR, "ab_test.py")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    # ── semantic_check ───────────────────────────────────────────────
+
+    def _read(self, filename):
+        path = os.path.join(PROMPTS_DIR, filename)
+        if not os.path.isfile(path):
             return ""
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read()
 
-    # ── file_path_check ─────────────────────────────────────────────
+    def test_semantic_few_shot_selector_class(self):
+        """SemanticFewShotSelector class must be defined with select and select_diverse."""
+        content = self._read("few_shot_selector.py")
+        assert re.search(r"class\s+SemanticFewShotSelector", content), (
+            "SemanticFewShotSelector class not defined"
+        )
+        assert re.search(r"def\s+select\b", content), "select method not defined"
+        assert re.search(r"def\s+select_diverse\b", content), "select_diverse method not defined"
 
-    def test_prompt_engineering_package_exists(self):
-        """Verify __init__.py and selector.py exist under src/prompt_engineering/."""
-        for rel in ("src/prompt_engineering/__init__.py", "src/prompt_engineering/selector.py"):
-            path = os.path.join(self.REPO_DIR, rel)
-            assert os.path.isfile(path), f"Missing: {rel}"
+    def test_cosine_similarity_used(self):
+        """Few-shot selector must use cosine similarity for ranking."""
+        content = self._read("few_shot_selector.py")
+        assert re.search(r"cosine|dot.*norm|similarity", content, re.IGNORECASE), (
+            "Cosine similarity not found in few_shot_selector.py"
+        )
 
-    def test_optimizer_cot_models_exist(self):
-        """Verify optimizer.py, cot_builder.py, and models.py exist."""
-        for rel in ("src/prompt_engineering/optimizer.py",
-                     "src/prompt_engineering/cot_builder.py",
-                     "src/prompt_engineering/models.py"):
-            path = os.path.join(self.REPO_DIR, rel)
-            assert os.path.isfile(path), f"Missing: {rel}"
+    def test_mmr_implementation(self):
+        """select_diverse must implement Maximal Marginal Relevance."""
+        content = self._read("few_shot_selector.py")
+        assert re.search(r"lambda_param|marginal.*relevance|mmr|diversity", content, re.IGNORECASE), (
+            "MMR/diversity mechanism not found in select_diverse"
+        )
 
-    def test_all_classes_importable(self):
-        """SemanticFewShotSelector, PromptOptimizer, ChainOfThoughtBuilder importable."""
-        if not os.path.isdir(self.REPO_DIR):
-            pytest.skip("Repo dir does not exist")
-        sys.path.insert(0, os.path.join(self.REPO_DIR, "src"))
-        try:
-            from prompt_engineering.selector import SemanticFewShotSelector  # noqa: F401
-            from prompt_engineering.optimizer import PromptOptimizer  # noqa: F401
-            from prompt_engineering.cot_builder import ChainOfThoughtBuilder  # noqa: F401
-        except ImportError:
-            pytest.skip("prompt_engineering not importable")
-        finally:
-            sys.path.pop(0)
+    def test_cot_formatter_styles(self):
+        """ChainOfThoughtFormatter must support step_by_step, zero_shot, structured styles."""
+        content = self._read("cot_formatter.py")
+        assert re.search(r"class\s+ChainOfThoughtFormatter", content), (
+            "ChainOfThoughtFormatter class not defined"
+        )
+        for style in ["step_by_step", "zero_shot", "structured"]:
+            assert style in content, f"Style '{style}' not found in cot_formatter.py"
 
-    # ── semantic_check ──────────────────────────────────────────────
+    def test_prompt_optimizer_build_prompt(self):
+        """PromptOptimizer must define build_prompt method."""
+        content = self._read("optimizer.py")
+        assert re.search(r"class\s+PromptOptimizer", content), (
+            "PromptOptimizer class not defined"
+        )
+        assert re.search(r"def\s+build_prompt\b", content), "build_prompt method not defined"
 
-    def test_selector_uses_cosine_or_tfidf(self):
-        """Verify selector.py implements cosine similarity or TF-IDF scoring."""
-        content = self._read(os.path.join(self.REPO_DIR, "src/prompt_engineering/selector.py"))
-        assert content, "selector.py is empty or unreadable"
-        found = any(kw in content for kw in (
-            "cosine", "TfidfVectorizer", "TF-IDF", "dot(", "normalize"))
-        assert found, "No similarity scoring mechanism found in selector.py"
+    def test_ab_test_class(self):
+        """PromptABTest must define run and best_variant methods."""
+        content = self._read("ab_test.py")
+        assert re.search(r"class\s+PromptABTest", content), "PromptABTest class not defined"
+        assert re.search(r"def\s+run\b", content), "run method not defined"
+        assert re.search(r"def\s+best_variant\b", content), "best_variant method not defined"
 
-    def test_cot_builder_format_defined(self):
-        """Verify cot_builder.py outputs 'Think step by step' prefix."""
-        content = self._read(os.path.join(self.REPO_DIR, "src/prompt_engineering/cot_builder.py"))
-        assert content, "cot_builder.py is empty or unreadable"
-        assert "Think step by step" in content
+    # ── functional_check ─────────────────────────────────────────────
 
-    def test_selector_handles_k_overflow(self):
-        """Verify selector.py handles k > len(examples) gracefully."""
-        content = self._read(os.path.join(self.REPO_DIR, "src/prompt_engineering/selector.py"))
-        assert content, "selector.py is empty or unreadable"
-        found = any(kw in content for kw in ("min(k", "min(len", "[:k]"))
-        assert found, "No k-overflow handling found"
+    def test_all_files_valid_python(self):
+        """All toolkit Python files must have valid syntax."""
+        errors = []
+        for fname in ["optimizer.py", "few_shot_selector.py", "cot_formatter.py", "ab_test.py"]:
+            content = self._read(fname)
+            if not content:
+                continue
+            try:
+                ast.parse(content)
+            except SyntaxError as e:
+                errors.append(f"{fname}: {e}")
+        assert not errors, "Syntax errors:\n" + "\n".join(errors)
 
-    # ── functional_check (import) ───────────────────────────────────
+    def test_zero_vector_handling(self):
+        """Cosine similarity must handle zero vectors without division by zero."""
+        content = self._read("few_shot_selector.py")
+        assert re.search(r"norm.*==.*0|norm.*<|zero|0\.0|epsilon|1e-", content, re.IGNORECASE), (
+            "Zero vector handling not found in cosine similarity"
+        )
 
-    def _import(self, dotpath: str):
-        if not os.path.isdir(self.REPO_DIR):
-            pytest.skip("Repo dir does not exist")
-        sys.path.insert(0, os.path.join(self.REPO_DIR, "src"))
-        try:
-            return __import__(dotpath, fromlist=[""])
-        except ImportError:
-            pytest.skip(f"{dotpath} not importable")
-        finally:
-            sys.path.pop(0)
+    def test_cot_step_by_step_suffix(self):
+        """step_by_step style must append the correct suffix."""
+        content = self._read("cot_formatter.py")
+        assert re.search(r"step by step|Step 1", content), (
+            "step_by_step suffix text not found"
+        )
 
-    def test_select_returns_k_examples(self):
-        """select() with k=2 returns exactly 2 examples from a pool of 3."""
-        mod = self._import("prompt_engineering.selector")
-        models = self._import("prompt_engineering.models")
-        examples = [models.Example("apple pie"), models.Example("car engine"),
-                    models.Example("apple cider")]
-        result = mod.SemanticFewShotSelector().select("apple fruit", examples, k=2)
-        assert len(result) == 2
+    def test_ab_test_runtime_error_if_not_run(self):
+        """best_variant must raise RuntimeError if run() not called."""
+        content = self._read("ab_test.py")
+        assert re.search(r"RuntimeError|has not been called|no results", content, re.IGNORECASE), (
+            "RuntimeError for calling best_variant before run() not found"
+        )
 
-    def test_apple_examples_ranked_higher_than_car(self):
-        """For query 'apple fruit', apple-related examples rank higher than 'car engine'."""
-        mod = self._import("prompt_engineering.selector")
-        models = self._import("prompt_engineering.models")
-        examples = [models.Example("apple pie"), models.Example("car engine"),
-                    models.Example("apple cider")]
-        results = mod.SemanticFewShotSelector().select("apple fruit", examples, k=2)
-        texts = [r.text for r in results]
-        assert "car engine" not in texts
+    def test_test_file_exists(self):
+        """Test suite file must exist."""
+        path = os.path.join(REPO_DIR, "tests", "test_prompt_engineering_patterns.py")
+        assert os.path.isfile(path), f"Missing {path}"
 
-    def test_select_empty_examples_returns_empty(self):
-        """select() with empty examples list returns empty list."""
-        mod = self._import("prompt_engineering.selector")
-        result = mod.SemanticFewShotSelector().select("apple fruit", [], k=3)
-        assert result == []
-
-    def test_cot_builder_output_format(self):
-        """ChainOfThoughtBuilder.build() starts with 'Think step by step:' and has numbered steps."""
-        mod = self._import("prompt_engineering.cot_builder")
-        output = mod.ChainOfThoughtBuilder().build(
-            "What is 2+2?", ["Add the numbers", "The answer is 4"])
-        assert output.startswith("Think step by step:")
-        assert "1." in output
-        assert "2." in output
-
-    def test_optimizer_includes_task_description(self):
-        """PromptOptimizer.optimize() output includes task_description in first 200 chars."""
-        mod = self._import("prompt_engineering.optimizer")
-        models = self._import("prompt_engineering.models")
-        prompt = mod.PromptOptimizer().optimize(
-            "{examples}\n{task}", [models.Example("sample text")], "Classify sentiment")
-        assert "Classify sentiment" in prompt[:200]
+    def test_max_examples_capping(self):
+        """Selector must cap results when max_examples exceeds pool size."""
+        content = self._read("few_shot_selector.py")
+        assert re.search(r"max_examples|max_ex|len\(.*examples\)", content), (
+            "max_examples capping logic not found"
+        )

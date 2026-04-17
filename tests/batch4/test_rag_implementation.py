@@ -1,268 +1,294 @@
 """
-Test for 'rag-implementation' skill — RAG Implementation
-Validates HybridRetriever with BM25 + embedding-based retrieval, alpha blending, and document management.
+Tests for skill: rag-implementation
+Repo: langchain-ai/langchain
+Image: zhangyiiiiii/swe-skills-bench-python
+Task: Build a RAG pipeline with hybrid search (dense + sparse + RRF),
+      reranking, and evaluation metrics for LangChain.
 """
 
+import ast
 import os
 import re
-import sys
-import glob
+import subprocess
+
 import pytest
 
+REPO_DIR = "/workspace/langchain"
+RAG_DIR = os.path.join(REPO_DIR, "libs", "langchain", "langchain", "rag")
+TEST_DIR = os.path.join(REPO_DIR, "libs", "langchain", "tests", "unit_tests", "rag")
 
-class TestRagImplementation:
-    """Tests for RAG implementation with HybridRetriever in langchain repo."""
+DOC_PROCESSOR_FILE = os.path.join(RAG_DIR, "document_processor.py")
+RETRIEVER_FILE = os.path.join(RAG_DIR, "hybrid_retriever.py")
+RERANKER_FILE = os.path.join(RAG_DIR, "reranker.py")
+PIPELINE_FILE = os.path.join(RAG_DIR, "pipeline.py")
+TEST_FILE = os.path.join(TEST_DIR, "test_rag_pipeline.py")
 
-    REPO_DIR = "/workspace/langchain"
 
-    def _read(self, relpath):
-        full = os.path.join(self.REPO_DIR, relpath)
-        with open(full, "r", errors="ignore") as f:
-            return f.read()
+# ---------------------------------------------------------------------------
+# Layer 1 — file_path_check
+# ---------------------------------------------------------------------------
 
-    # --- File Path Checks ---
+class TestFilePathCheck:
+    """Verify all required RAG files were created."""
 
-    def test_hybrid_retriever_py_exists(self):
-        """Verifies that the HybridRetriever implementation file exists."""
-        pattern = os.path.join(self.REPO_DIR, "**", "hybrid_retriever.py")
-        matches = glob.glob(pattern, recursive=True)
-        assert len(matches) > 0, "hybrid_retriever.py not found anywhere in the repo"
+    def test_document_processor_exists(self):
+        assert os.path.isfile(DOC_PROCESSOR_FILE), f"Expected {DOC_PROCESSOR_FILE}"
 
-    def test_hybrid_retriever_init_exists(self):
-        """Verifies that the __init__.py exists alongside the retriever module."""
-        pattern = os.path.join(self.REPO_DIR, "**", "hybrid_retriever.py")
-        matches = glob.glob(pattern, recursive=True)
-        assert len(matches) > 0, "hybrid_retriever.py not found"
-        parent = os.path.dirname(matches[0])
-        init_file = os.path.join(parent, "__init__.py")
-        assert os.path.exists(init_file), f"__init__.py not found in {parent}"
+    def test_hybrid_retriever_exists(self):
+        assert os.path.isfile(RETRIEVER_FILE), f"Expected {RETRIEVER_FILE}"
 
-    # --- Semantic Checks ---
+    def test_reranker_exists(self):
+        assert os.path.isfile(RERANKER_FILE), f"Expected {RERANKER_FILE}"
 
-    def test_sem_class_hybrid_retriever_defined(self):
-        """HybridRetriever class is defined in the source."""
-        pattern = os.path.join(self.REPO_DIR, "**", "hybrid_retriever.py")
-        matches = glob.glob(pattern, recursive=True)
-        assert len(matches) > 0, "hybrid_retriever.py not found"
-        content = self._read(os.path.relpath(matches[0], self.REPO_DIR))
-        assert re.search(
-            r"class\s+HybridRetriever", content
-        ), "class HybridRetriever not found"
+    def test_pipeline_exists(self):
+        assert os.path.isfile(PIPELINE_FILE), f"Expected {PIPELINE_FILE}"
 
-    def test_sem_constructor_has_embedding_function_documents_alpha(self):
-        """HybridRetriever constructor has embedding_function, documents, and alpha=0.5 parameters."""
-        pattern = os.path.join(self.REPO_DIR, "**", "hybrid_retriever.py")
-        matches = glob.glob(pattern, recursive=True)
-        assert len(matches) > 0
-        content = self._read(os.path.relpath(matches[0], self.REPO_DIR))
-        assert "embedding_function" in content, "embedding_function parameter not found"
-        assert "documents" in content, "documents parameter not found"
-        assert re.search(r"alpha\s*=\s*0\.5", content), "alpha=0.5 default not found"
+    def test_test_file_exists(self):
+        assert os.path.isfile(TEST_FILE), f"Expected {TEST_FILE}"
 
-    def test_sem_methods_exist(self):
-        """HybridRetriever has add_documents, retrieve, retrieve_with_scores, get_document_count methods."""
-        pattern = os.path.join(self.REPO_DIR, "**", "hybrid_retriever.py")
-        matches = glob.glob(pattern, recursive=True)
-        assert len(matches) > 0
-        content = self._read(os.path.relpath(matches[0], self.REPO_DIR))
-        for method in [
-            "add_documents",
-            "retrieve",
-            "retrieve_with_scores",
-            "get_document_count",
-        ]:
-            assert re.search(
-                rf"def\s+{method}\s*\(", content
-            ), f"Method {method} not found"
 
-    # --- Functional Checks (import) ---
+# ---------------------------------------------------------------------------
+# Layer 2 — semantic_check
+# ---------------------------------------------------------------------------
 
-    def _find_and_add_module(self):
-        """Helper to find hybrid_retriever.py and add its parent to sys.path."""
-        pattern = os.path.join(self.REPO_DIR, "**", "hybrid_retriever.py")
-        matches = glob.glob(pattern, recursive=True)
-        assert len(matches) > 0, "hybrid_retriever.py not found"
-        module_dir = os.path.dirname(matches[0])
-        parent_dir = os.path.dirname(module_dir)
-        pkg_name = os.path.basename(module_dir)
-        return parent_dir, pkg_name
+class TestSemanticDocumentProcessor:
+    """Verify DocumentProcessor class."""
 
-    def test_func_import_hybrid_retriever(self):
-        """from <package>.hybrid_retriever import HybridRetriever — importable."""
-        parent_dir, pkg_name = self._find_and_add_module()
-        old_path = sys.path[:]
-        sys.path.insert(0, parent_dir)
+    @pytest.fixture(autouse=True)
+    def _load_source(self):
+        with open(DOC_PROCESSOR_FILE, "r", encoding="utf-8") as f:
+            self.src = f.read()
+        self.tree = ast.parse(self.src)
+
+    def test_class_defined(self):
+        classes = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.ClassDef)]
+        assert "DocumentProcessor" in classes, (
+            f"Expected DocumentProcessor class; found: {classes}"
+        )
+
+    def test_chunk_method(self):
+        funcs = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.FunctionDef)]
+        assert "chunk" in funcs, "Expected chunk() method"
+
+    def test_embed_method(self):
+        funcs = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.FunctionDef)]
+        assert "embed" in funcs, "Expected embed() method"
+
+    def test_chunk_size_and_overlap_params(self):
+        assert "chunk_size" in self.src, "Expected chunk_size parameter"
+        assert "chunk_overlap" in self.src, "Expected chunk_overlap parameter"
+
+    def test_overlap_validation(self):
+        """chunk_overlap must be less than chunk_size."""
+        has_validation = (
+            "ValueError" in self.src
+            and "overlap" in self.src
+        )
+        assert has_validation, (
+            "Expected ValueError when chunk_overlap >= chunk_size"
+        )
+
+    def test_sentence_boundary_handling(self):
+        """Chunking should respect sentence boundaries."""
+        has_sentence = (
+            "sentence" in self.src.lower()
+            or ". " in self.src
+            or "split" in self.src
+            or "nltk" in self.src.lower()
+        )
+        assert has_sentence, (
+            "Expected sentence boundary handling in chunk method"
+        )
+
+
+class TestSemanticHybridRetriever:
+    """Verify HybridRetriever with RRF fusion."""
+
+    @pytest.fixture(autouse=True)
+    def _load_source(self):
+        with open(RETRIEVER_FILE, "r", encoding="utf-8") as f:
+            self.src = f.read()
+        self.tree = ast.parse(self.src)
+
+    def test_class_defined(self):
+        classes = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.ClassDef)]
+        assert "HybridRetriever" in classes, (
+            f"Expected HybridRetriever class; found: {classes}"
+        )
+
+    def test_search_method(self):
+        funcs = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.FunctionDef)]
+        assert "search" in funcs, "Expected search() method"
+
+    def test_dense_scoring(self):
+        """Must use cosine similarity for dense scoring."""
+        assert "cosine" in self.src.lower() or "dot" in self.src.lower(), (
+            "Expected cosine similarity for dense scoring"
+        )
+
+    def test_sparse_scoring_bm25(self):
+        """Must use BM25 for sparse scoring."""
+        assert "bm25" in self.src.lower() or "BM25" in self.src, (
+            "Expected BM25 for sparse scoring"
+        )
+
+    def test_reciprocal_rank_fusion(self):
+        """Must implement Reciprocal Rank Fusion."""
+        has_rrf = (
+            "rrf" in self.src.lower()
+            or "reciprocal" in self.src.lower()
+            or "1 / (k + rank" in self.src
+            or "1/(k+" in self.src.replace(" ", "")
+        )
+        assert has_rrf, "Expected Reciprocal Rank Fusion implementation"
+
+    def test_weight_validation(self):
+        """dense_weight + sparse_weight must equal 1.0."""
+        has_check = (
+            "ValueError" in self.src
+            and ("weight" in self.src)
+        )
+        assert has_check, (
+            "Expected weight validation (sum to 1.0) with ValueError"
+        )
+
+    def test_rrf_k_constant(self):
+        """RRF uses k=60 constant."""
+        assert "60" in self.src, "Expected k=60 constant in RRF formula"
+
+
+class TestSemanticReranker:
+    """Verify Reranker class."""
+
+    @pytest.fixture(autouse=True)
+    def _load_source(self):
+        with open(RERANKER_FILE, "r", encoding="utf-8") as f:
+            self.src = f.read()
+        self.tree = ast.parse(self.src)
+
+    def test_class_defined(self):
+        classes = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.ClassDef)]
+        assert "Reranker" in classes, (
+            f"Expected Reranker class; found: {classes}"
+        )
+
+    def test_rerank_method(self):
+        funcs = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.FunctionDef)]
+        assert "rerank" in funcs, "Expected rerank() method"
+
+    def test_min_score_filtering(self):
+        assert "min_score" in self.src, "Expected min_score threshold parameter"
+
+    def test_rerank_score_in_output(self):
+        assert "rerank_score" in self.src, (
+            "Expected rerank_score field in output documents"
+        )
+
+
+class TestSemanticPipeline:
+    """Verify RAGPipeline class."""
+
+    @pytest.fixture(autouse=True)
+    def _load_source(self):
+        with open(PIPELINE_FILE, "r", encoding="utf-8") as f:
+            self.src = f.read()
+        self.tree = ast.parse(self.src)
+
+    def test_class_defined(self):
+        classes = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.ClassDef)]
+        assert "RAGPipeline" in classes, (
+            f"Expected RAGPipeline class; found: {classes}"
+        )
+
+    def test_ingest_method(self):
+        funcs = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.FunctionDef)]
+        assert "ingest" in funcs, "Expected ingest() method"
+
+    def test_query_method(self):
+        funcs = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.FunctionDef)]
+        assert "query" in funcs, "Expected query() method"
+
+    def test_evaluation_helpers(self):
+        """Must have recall_at_k, mrr, ndcg_at_k evaluation functions."""
+        # These may be in pipeline.py or a separate evaluation module
+        all_src = self.src
+        for candidate in [DOC_PROCESSOR_FILE, RETRIEVER_FILE]:
+            if os.path.isfile(candidate):
+                with open(candidate, "r", encoding="utf-8") as f:
+                    all_src += f.read()
+        # Also check for an evaluation module
+        eval_path = os.path.join(RAG_DIR, "evaluation.py")
+        if os.path.isfile(eval_path):
+            with open(eval_path, "r", encoding="utf-8") as f:
+                all_src += f.read()
+
+        helpers = ["recall_at_k", "mrr", "ndcg"]
+        found = [h for h in helpers if h in all_src]
+        assert len(found) >= 2, (
+            f"Expected at least 2 evaluation helpers (recall_at_k, mrr, ndcg_at_k); found: {found}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Layer 3 — functional_check
+# ---------------------------------------------------------------------------
+
+class TestFunctionalRAG:
+    """Functional checks — syntax and import validation."""
+
+    def _parse(self, filepath):
+        with open(filepath, "r", encoding="utf-8") as f:
+            src = f.read()
         try:
-            mod = __import__(
-                f"{pkg_name}.hybrid_retriever", fromlist=["HybridRetriever"]
-            )
-            HybridRetriever = getattr(mod, "HybridRetriever")
-            assert HybridRetriever is not None
-        finally:
-            sys.path[:] = old_path
+            ast.parse(src)
+            return True, None
+        except SyntaxError as e:
+            return False, str(e)
 
-    def test_func_retrieve_returns_relevant_doc_first(self):
-        """retrieve('python') returns 'python programming guide' as the first result."""
-        parent_dir, pkg_name = self._find_and_add_module()
-        old_path = sys.path[:]
-        sys.path.insert(0, parent_dir)
-        try:
-            mod = __import__(
-                f"{pkg_name}.hybrid_retriever", fromlist=["HybridRetriever"]
-            )
-            HybridRetriever = getattr(mod, "HybridRetriever")
-            docs = ["python programming guide", "java basics", "cooking recipes"]
-            retriever = HybridRetriever(
-                embedding_function=lambda texts: [[1.0] * 32 for _ in texts],
-                documents=docs,
-                alpha=0.5,
-            )
-            results = retriever.retrieve("python")
-            assert len(results) > 0, "retrieve returned empty"
-            assert (
-                "python" in results[0].lower()
-            ), f"First result should be python-related, got: {results[0]}"
-        finally:
-            sys.path[:] = old_path
+    def test_doc_processor_valid_python(self):
+        ok, err = self._parse(DOC_PROCESSOR_FILE)
+        assert ok, f"document_processor.py syntax error: {err}"
 
-    def test_func_retrieve_k_limits_results(self):
-        """retrieve with k=1 returns only 1 result."""
-        parent_dir, pkg_name = self._find_and_add_module()
-        old_path = sys.path[:]
-        sys.path.insert(0, parent_dir)
-        try:
-            mod = __import__(
-                f"{pkg_name}.hybrid_retriever", fromlist=["HybridRetriever"]
-            )
-            HybridRetriever = getattr(mod, "HybridRetriever")
-            docs = ["python programming guide", "java basics", "cooking recipes"]
-            retriever = HybridRetriever(
-                embedding_function=lambda texts: [[1.0] * 32 for _ in texts],
-                documents=docs,
-                alpha=0.5,
-            )
-            results = retriever.retrieve("python", k=1)
-            assert len(results) == 1, f"Expected 1 result but got {len(results)}"
-        finally:
-            sys.path[:] = old_path
+    def test_retriever_valid_python(self):
+        ok, err = self._parse(RETRIEVER_FILE)
+        assert ok, f"hybrid_retriever.py syntax error: {err}"
 
-    def test_func_retrieve_k_greater_than_num_docs_returns_all(self):
-        """retrieve with k>num_docs returns all documents."""
-        parent_dir, pkg_name = self._find_and_add_module()
-        old_path = sys.path[:]
-        sys.path.insert(0, parent_dir)
-        try:
-            mod = __import__(
-                f"{pkg_name}.hybrid_retriever", fromlist=["HybridRetriever"]
-            )
-            HybridRetriever = getattr(mod, "HybridRetriever")
-            docs = ["python programming guide", "java basics", "cooking recipes"]
-            retriever = HybridRetriever(
-                embedding_function=lambda texts: [[1.0] * 32 for _ in texts],
-                documents=docs,
-                alpha=0.5,
-            )
-            results = retriever.retrieve("python", k=100)
-            assert len(results) == 3, f"Expected all 3 docs, got {len(results)}"
-        finally:
-            sys.path[:] = old_path
+    def test_reranker_valid_python(self):
+        ok, err = self._parse(RERANKER_FILE)
+        assert ok, f"reranker.py syntax error: {err}"
 
-    def test_func_get_document_count(self):
-        """get_document_count returns 3 after initializing with 3 documents."""
-        parent_dir, pkg_name = self._find_and_add_module()
-        old_path = sys.path[:]
-        sys.path.insert(0, parent_dir)
-        try:
-            mod = __import__(
-                f"{pkg_name}.hybrid_retriever", fromlist=["HybridRetriever"]
-            )
-            HybridRetriever = getattr(mod, "HybridRetriever")
-            docs = ["python programming guide", "java basics", "cooking recipes"]
-            retriever = HybridRetriever(
-                embedding_function=lambda texts: [[1.0] * 32 for _ in texts],
-                documents=docs,
-                alpha=0.5,
-            )
-            assert retriever.get_document_count() == 3
-        finally:
-            sys.path[:] = old_path
+    def test_pipeline_valid_python(self):
+        ok, err = self._parse(PIPELINE_FILE)
+        assert ok, f"pipeline.py syntax error: {err}"
 
-    def test_func_add_documents_increments_count(self):
-        """add_documents increases document count."""
-        parent_dir, pkg_name = self._find_and_add_module()
-        old_path = sys.path[:]
-        sys.path.insert(0, parent_dir)
-        try:
-            mod = __import__(
-                f"{pkg_name}.hybrid_retriever", fromlist=["HybridRetriever"]
-            )
-            HybridRetriever = getattr(mod, "HybridRetriever")
-            docs = ["python programming guide", "java basics", "cooking recipes"]
-            retriever = HybridRetriever(
-                embedding_function=lambda texts: [[1.0] * 32 for _ in texts],
-                documents=docs,
-                alpha=0.5,
-            )
-            initial_count = retriever.get_document_count()
-            retriever.add_documents(["new document"])
-            assert retriever.get_document_count() == initial_count + 1
-        finally:
-            sys.path[:] = old_path
+    def test_test_file_valid_python(self):
+        ok, err = self._parse(TEST_FILE)
+        assert ok, f"test_rag_pipeline.py syntax error: {err}"
 
-    def test_func_empty_retriever_returns_empty(self):
-        """Empty retriever returns [] on retrieve."""
-        parent_dir, pkg_name = self._find_and_add_module()
-        old_path = sys.path[:]
-        sys.path.insert(0, parent_dir)
-        try:
-            mod = __import__(
-                f"{pkg_name}.hybrid_retriever", fromlist=["HybridRetriever"]
+    def test_doc_processor_importable(self):
+        """DocumentProcessor must be importable."""
+        result = subprocess.run(
+            f"python -c \"import sys; sys.path.insert(0, '{os.path.dirname(RAG_DIR)}'); "
+            f"from rag.document_processor import DocumentProcessor; print('OK')\"",
+            shell=True, capture_output=True, text=True, timeout=30,
+            cwd=REPO_DIR,
+        )
+        if result.returncode != 0:
+            result2 = subprocess.run(
+                f"python -c \"import sys; sys.path.insert(0, '{RAG_DIR}'); "
+                f"from document_processor import DocumentProcessor; print('OK')\"",
+                shell=True, capture_output=True, text=True, timeout=30,
+                cwd=REPO_DIR,
             )
-            HybridRetriever = getattr(mod, "HybridRetriever")
-            retriever = HybridRetriever(
-                embedding_function=lambda texts: [[1.0] * 32 for _ in texts],
-                documents=[],
-                alpha=0.5,
+            assert "OK" in result.stdout or "OK" in result2.stdout, (
+                f"Could not import DocumentProcessor:\n{result.stderr[:300]}\n{result2.stderr[:300]}"
             )
-            results = retriever.retrieve("python")
-            assert results == [], f"Expected empty list, got: {results}"
-        finally:
-            sys.path[:] = old_path
 
-    def test_func_alpha_too_high_raises_value_error(self):
-        """alpha=1.5 raises ValueError."""
-        parent_dir, pkg_name = self._find_and_add_module()
-        old_path = sys.path[:]
-        sys.path.insert(0, parent_dir)
-        try:
-            mod = __import__(
-                f"{pkg_name}.hybrid_retriever", fromlist=["HybridRetriever"]
+    def test_pipeline_returns_answer_and_sources(self):
+        """RAGPipeline.query return must include answer and sources keys."""
+        with open(PIPELINE_FILE, "r", encoding="utf-8") as f:
+            src = f.read()
+        for key in ["answer", "sources"]:
+            assert key in src, (
+                f"Expected '{key}' key in RAGPipeline.query return dict"
             )
-            HybridRetriever = getattr(mod, "HybridRetriever")
-            with pytest.raises(ValueError):
-                HybridRetriever(
-                    embedding_function=lambda texts: [[1.0] * 32 for _ in texts],
-                    documents=["doc"],
-                    alpha=1.5,
-                )
-        finally:
-            sys.path[:] = old_path
-
-    def test_func_alpha_negative_raises_value_error(self):
-        """alpha=-0.1 raises ValueError."""
-        parent_dir, pkg_name = self._find_and_add_module()
-        old_path = sys.path[:]
-        sys.path.insert(0, parent_dir)
-        try:
-            mod = __import__(
-                f"{pkg_name}.hybrid_retriever", fromlist=["HybridRetriever"]
-            )
-            HybridRetriever = getattr(mod, "HybridRetriever")
-            with pytest.raises(ValueError):
-                HybridRetriever(
-                    embedding_function=lambda texts: [[1.0] * 32 for _ in texts],
-                    documents=["doc"],
-                    alpha=-0.1,
-                )
-        finally:
-            sys.path[:] = old_path

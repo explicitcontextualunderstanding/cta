@@ -1,145 +1,218 @@
 """
-Test for 'turborepo' skill — Turborepo shared UI package
-Validates that the Agent created a shared UI package in a Turborepo
-monorepo with correct package.json exports, turbo.json pipeline,
-and TypeScript component structure.
+Test skill: turborepo
+Verify that the Agent correctly adds a shared UI package and cache-demo pipeline
+to the Turbo monorepo.
 """
 
 import os
-import re
 import json
-
+import subprocess
+import re
 import pytest
 
 
 class TestTurborepo:
-    """Verify Turborepo shared UI package implementation."""
-
     REPO_DIR = "/workspace/turbo"
-    UI_PKG_DIR = os.path.join(REPO_DIR, "packages/ui")
+    CACHE_DEMO = "/workspace/turbo/examples/cache-demo"
+
+    # === File Path Checks ===
 
     def test_ui_package_json_exists(self):
-        """packages/ui/package.json must exist with scoped name and exports."""
-        pkg_json = os.path.join(self.UI_PKG_DIR, "package.json")
-        assert os.path.isfile(pkg_json), "packages/ui/package.json not found"
-        with open(pkg_json, "r", errors="ignore") as fh:
-            content = fh.read()
-        assert re.search(r'"name"\s*:\s*"@', content), "Scoped package name not found"
-        assert re.search(r'"exports"', content), "exports field not found in package.json"
+        """Verify packages/ui/package.json was created"""
+        path = os.path.join(self.CACHE_DEMO, "packages/ui/package.json")
+        assert os.path.exists(path), f"UI package.json not found at {path}"
 
-    def test_ui_src_index_ts_exists(self):
-        """packages/ui/src/index.ts must exist and export components."""
-        index_ts = os.path.join(self.UI_PKG_DIR, "src/index.ts")
-        alt_index_tsx = os.path.join(self.UI_PKG_DIR, "src/index.tsx")
-        exists = os.path.isfile(index_ts) or os.path.isfile(index_tsx)
-        assert exists, "packages/ui/src/index.ts(x) not found"
-        target = index_ts if os.path.isfile(index_ts) else alt_index_tsx
-        with open(target, "r", errors="ignore") as fh:
-            content = fh.read()
-        assert re.search(r"export", content), "No export statements in index file"
+    def test_ui_index_ts_exists(self):
+        """Verify packages/ui/src/index.ts barrel export was created"""
+        path = os.path.join(self.CACHE_DEMO, "packages/ui/src/index.ts")
+        assert os.path.exists(path), f"index.ts not found at {path}"
 
-    def test_turbo_json_has_build_pipeline(self):
-        """turbo.json must define a build pipeline."""
-        turbo_json = os.path.join(self.REPO_DIR, "turbo.json")
-        assert os.path.isfile(turbo_json), "turbo.json not found"
-        with open(turbo_json, "r", errors="ignore") as fh:
-            content = fh.read()
-        assert re.search(r'"build"', content), "build pipeline not found in turbo.json"
-        assert re.search(r"dependsOn|\^build", content), "dependsOn not found in pipeline"
+    def test_button_component_exists(self):
+        """Verify packages/ui/src/Button.tsx was created"""
+        path = os.path.join(self.CACHE_DEMO, "packages/ui/src/Button.tsx")
+        assert os.path.exists(path), f"Button.tsx not found at {path}"
 
-    def test_package_json_exports_main_types(self):
-        """package.json must export both main/module and types fields."""
-        pkg_json = os.path.join(self.UI_PKG_DIR, "package.json")
-        assert os.path.isfile(pkg_json)
-        with open(pkg_json, "r", errors="ignore") as fh:
-            content = fh.read()
-        has_main = re.search(r'"main"|"module"', content)
-        has_types = re.search(r'"types"|"typings"', content)
-        assert has_main or re.search(r'"exports"', content), "main/module/exports field not found"
-        assert has_types or re.search(r'"exports"', content), "types/typings field not found"
+    def test_card_component_exists(self):
+        """Verify packages/ui/src/Card.tsx was created"""
+        path = os.path.join(self.CACHE_DEMO, "packages/ui/src/Card.tsx")
+        assert os.path.exists(path), f"Card.tsx not found at {path}"
 
-    def test_tsconfig_extends_base(self):
-        """packages/ui/tsconfig.json must extend the shared base config."""
-        tsconfig = os.path.join(self.UI_PKG_DIR, "tsconfig.json")
-        assert os.path.isfile(tsconfig), "packages/ui/tsconfig.json not found"
-        with open(tsconfig, "r", errors="ignore") as fh:
-            content = fh.read()
-        assert re.search(r'"extends"', content), "extends field not found in tsconfig.json"
+    def test_ui_tsconfig_exists(self):
+        """Verify packages/ui/tsconfig.json was created"""
+        path = os.path.join(self.CACHE_DEMO, "packages/ui/tsconfig.json")
+        assert os.path.exists(path), f"tsconfig.json not found at {path}"
 
-    def test_component_has_react_import_or_tsx(self):
-        """At least one .tsx component file must exist in packages/ui/src/."""
-        src_dir = os.path.join(self.UI_PKG_DIR, "src")
-        found_tsx = False
-        if os.path.isdir(src_dir):
-            for root, dirs, files in os.walk(src_dir):
-                for f in files:
-                    if f.endswith(".tsx"):
-                        found_tsx = True
-                        break
-                if found_tsx:
-                    break
-        assert found_tsx, "No .tsx component files found in packages/ui/src/"
+    # === Semantic Checks ===
 
-    def test_package_json_parses_as_valid_json(self):
-        """packages/ui/package.json must be valid JSON."""
-        pkg_json = os.path.join(self.UI_PKG_DIR, "package.json")
-        assert os.path.isfile(pkg_json)
-        with open(pkg_json, "r", errors="ignore") as fh:
-            content = fh.read()
-        try:
-            json.loads(content)
-        except json.JSONDecodeError:
-            pytest.fail("packages/ui/package.json is not valid JSON")
+    def test_ui_package_name_correct(self):
+        """Verify UI package name is @cache-demo/ui"""
+        path = os.path.join(self.CACHE_DEMO, "packages/ui/package.json")
+        with open(path) as f:
+            pkg = json.load(f)
+        assert pkg.get("name") == "@cache-demo/ui", (
+            f"Package name should be '@cache-demo/ui', got '{pkg.get('name')}'"
+        )
 
-    def test_turbo_json_parses_as_valid_json(self):
-        """turbo.json must be valid JSON."""
-        turbo_json = os.path.join(self.REPO_DIR, "turbo.json")
-        assert os.path.isfile(turbo_json)
-        with open(turbo_json, "r", errors="ignore") as fh:
-            content = fh.read()
-        try:
-            json.loads(content)
-        except json.JSONDecodeError:
-            pytest.fail("turbo.json is not valid JSON")
+    def test_ui_package_has_required_scripts(self):
+        """Verify UI package has build, lint, and test scripts"""
+        path = os.path.join(self.CACHE_DEMO, "packages/ui/package.json")
+        with open(path) as f:
+            pkg = json.load(f)
+        scripts = pkg.get("scripts", {})
+        for script in ["build", "lint", "test"]:
+            assert script in scripts, f"UI package missing '{script}' script"
 
-    def test_typescript_compilation_src_files(self):
-        """TypeScript source files must exist in packages/ui/src/."""
-        src_dir = os.path.join(self.UI_PKG_DIR, "src")
-        found_ts = False
-        if os.path.isdir(src_dir):
-            for root, dirs, files in os.walk(src_dir):
-                for f in files:
-                    if f.endswith((".ts", ".tsx")):
-                        found_ts = True
-                        break
-                if found_ts:
-                    break
-        assert found_ts, "No TypeScript files found in packages/ui/src/"
+    def test_ui_package_main_points_to_dist(self):
+        """Verify UI package main field points to dist/index.js"""
+        path = os.path.join(self.CACHE_DEMO, "packages/ui/package.json")
+        with open(path) as f:
+            pkg = json.load(f)
+        main = pkg.get("main", "")
+        assert "dist" in main and "index" in main, (
+            f"main field should point to dist/index.js, got '{main}'"
+        )
 
-    def test_package_missing_exports_causes_resolution_failure(self):
-        """Non-exported paths must not be importable (exports map restricts access)."""
-        pkg_json = os.path.join(self.UI_PKG_DIR, "package.json")
-        assert os.path.isfile(pkg_json)
-        with open(pkg_json, "r", errors="ignore") as fh:
-            content = fh.read()
-        assert re.search(
-            r'"exports"\s*:\s*\{', content
-        ), "exports map not found — all paths would be importable"
+    def test_ui_package_has_react_peer_deps(self):
+        """Verify UI package declares react peer dependencies"""
+        path = os.path.join(self.CACHE_DEMO, "packages/ui/package.json")
+        with open(path) as f:
+            pkg = json.load(f)
+        peer_deps = pkg.get("peerDependencies", {})
+        assert "react" in peer_deps, "UI package missing react peer dependency"
 
-    def test_index_exports_all_components(self):
-        """All .tsx components in src/ must be re-exported from index.ts."""
-        src_dir = os.path.join(self.UI_PKG_DIR, "src")
-        index_ts = os.path.join(src_dir, "index.ts")
-        index_tsx = os.path.join(src_dir, "index.tsx")
-        target = index_ts if os.path.isfile(index_ts) else index_tsx
-        if not os.path.isfile(target):
-            pytest.skip("index.ts(x) not found")
-        with open(target, "r", errors="ignore") as fh:
-            index_content = fh.read()
-        tsx_files = []
-        if os.path.isdir(src_dir):
-            for f in os.listdir(src_dir):
-                if f.endswith(".tsx") and f not in ("index.tsx",):
-                    tsx_files.append(f.replace(".tsx", ""))
-        for comp in tsx_files:
-            assert comp in index_content, f"Component {comp} not re-exported from index"
+    def test_turbo_json_has_build_task(self):
+        """Verify turbo.json defines build task with ^build dependency and dist outputs"""
+        path = os.path.join(self.CACHE_DEMO, "turbo.json")
+        assert os.path.exists(path), f"turbo.json not found at {path}"
+        with open(path) as f:
+            content = f.read()
+        # Handle jsonc
+        clean = re.sub(r'//.*', '', content)
+        clean = re.sub(r'/\*.*?\*/', '', clean, flags=re.DOTALL)
+        # Remove trailing commas
+        clean = re.sub(r',\s*([\]}])', r'\1', clean)
+        config = json.loads(clean)
+
+        # turbo.json v2 uses "tasks", v1 uses "pipeline"
+        tasks = config.get("tasks", config.get("pipeline", {}))
+        assert "build" in tasks, "turbo.json missing 'build' task"
+        build_task = tasks["build"]
+        depends_on = build_task.get("dependsOn", [])
+        assert "^build" in depends_on, (
+            f"build task dependsOn should include '^build', got {depends_on}"
+        )
+        outputs = build_task.get("outputs", [])
+        assert any("dist" in o for o in outputs), (
+            f"build task outputs should include 'dist/**', got {outputs}"
+        )
+
+    def test_turbo_json_has_lint_task(self):
+        """Verify turbo.json defines lint task"""
+        path = os.path.join(self.CACHE_DEMO, "turbo.json")
+        with open(path) as f:
+            content = f.read()
+        clean = re.sub(r'//.*', '', content)
+        clean = re.sub(r'/\*.*?\*/', '', clean, flags=re.DOTALL)
+        clean = re.sub(r',\s*([\]}])', r'\1', clean)
+        config = json.loads(clean)
+        tasks = config.get("tasks", config.get("pipeline", {}))
+        assert "lint" in tasks, "turbo.json missing 'lint' task"
+
+    def test_turbo_json_has_test_task_depends_on_build(self):
+        """Verify turbo.json defines test task with build dependency"""
+        path = os.path.join(self.CACHE_DEMO, "turbo.json")
+        with open(path) as f:
+            content = f.read()
+        clean = re.sub(r'//.*', '', content)
+        clean = re.sub(r'/\*.*?\*/', '', clean, flags=re.DOTALL)
+        clean = re.sub(r',\s*([\]}])', r'\1', clean)
+        config = json.loads(clean)
+        tasks = config.get("tasks", config.get("pipeline", {}))
+        assert "test" in tasks, "turbo.json missing 'test' task"
+        test_task = tasks["test"]
+        depends_on = test_task.get("dependsOn", [])
+        assert "build" in depends_on, (
+            f"test task should depend on 'build', got {depends_on}"
+        )
+
+    def test_turbo_json_build_has_node_env(self):
+        """Verify build task declares NODE_ENV in env (not globalEnv)"""
+        path = os.path.join(self.CACHE_DEMO, "turbo.json")
+        with open(path) as f:
+            content = f.read()
+        clean = re.sub(r'//.*', '', content)
+        clean = re.sub(r'/\*.*?\*/', '', clean, flags=re.DOTALL)
+        clean = re.sub(r',\s*([\]}])', r'\1', clean)
+        config = json.loads(clean)
+        tasks = config.get("tasks", config.get("pipeline", {}))
+        build_task = tasks.get("build", {})
+        env = build_task.get("env", [])
+        assert "NODE_ENV" in env, (
+            f"build task env should include 'NODE_ENV', got {env}"
+        )
+
+    def test_root_package_json_uses_turbo_run(self):
+        """Verify root scripts use 'turbo run <task>' not direct tool invocations"""
+        path = os.path.join(self.CACHE_DEMO, "package.json")
+        with open(path) as f:
+            pkg = json.load(f)
+        scripts = pkg.get("scripts", {})
+        for task in ["build", "lint", "test"]:
+            if task in scripts:
+                assert "turbo run" in scripts[task] or "turbo" in scripts[task], (
+                    f"Root script '{task}' should use 'turbo run', got: {scripts[task]}"
+                )
+                assert "tsc" not in scripts[task] and "eslint" not in scripts[task], (
+                    f"Root script '{task}' should not invoke tools directly: {scripts[task]}"
+                )
+
+    def test_web_app_depends_on_ui(self):
+        """Verify apps/web/package.json lists @cache-demo/ui as dependency"""
+        path = os.path.join(self.CACHE_DEMO, "apps/web/package.json")
+        if not os.path.exists(path):
+            pytest.skip("apps/web/package.json not found")
+        with open(path) as f:
+            pkg = json.load(f)
+        deps = pkg.get("dependencies", {})
+        dev_deps = pkg.get("devDependencies", {})
+        all_deps = {**deps, **dev_deps}
+        assert "@cache-demo/ui" in all_deps, (
+            "apps/web should depend on @cache-demo/ui"
+        )
+
+    # === Functional Checks ===
+
+    def test_npm_install_and_build_succeeds(self):
+        """Verify npm install && npm run build succeeds in cache-demo"""
+        result = subprocess.run(
+            ["npm", "install"],
+            cwd=self.CACHE_DEMO,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        if result.returncode != 0:
+            pytest.skip(f"npm install failed: {result.stderr[:500]}")
+
+        result = subprocess.run(
+            ["npm", "run", "build"],
+            cwd=self.CACHE_DEMO,
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+        assert result.returncode == 0, (
+            f"npm run build failed: {result.stderr[-1000:]}\n{result.stdout[-1000:]}"
+        )
+
+    def test_ui_dist_exists_after_build(self):
+        """Verify packages/ui/dist/ is created with compiled output after build"""
+        # Run build  
+        subprocess.run(["npm", "install"], cwd=self.CACHE_DEMO, capture_output=True, timeout=120)
+        subprocess.run(["npm", "run", "build"], cwd=self.CACHE_DEMO, capture_output=True, timeout=300)
+
+        dist_dir = os.path.join(self.CACHE_DEMO, "packages/ui/dist")
+        assert os.path.isdir(dist_dir), f"packages/ui/dist/ not found after build"
+        files = os.listdir(dist_dir)
+        assert any(f.endswith('.js') for f in files), "dist/ should contain .js files"
+        assert any(f.endswith('.d.ts') for f in files), "dist/ should contain .d.ts files"

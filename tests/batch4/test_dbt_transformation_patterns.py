@@ -1,181 +1,380 @@
 """
-Test for 'dbt-transformation-patterns' skill — dbt Transformation Patterns
-Validates dbt_project.yml, staging/mart models, schema YML files,
-source/ref usage, and materialization configuration in the dbt-core repo.
+Tests for skill: dbt-transformation-patterns
+Repo: dbt-labs/dbt-core
+Image: zhangyiiiiii/swe-skills-bench-python
+Task: Build a dbt project with staging, intermediate, and marts layers for an
+      e-commerce data warehouse with incremental materialization.
 """
 
 import os
 import re
-import glob
-import pytest
 
+import pytest
 import yaml
 
+REPO_DIR = "/workspace/dbt-core"
+PROJECT_DIR = os.path.join(REPO_DIR, "examples", "ecommerce_analytics")
 
-class TestDbtTransformationPatterns:
-    """Tests for dbt transformation patterns in the dbt-core repo."""
+PROJECT_YML = os.path.join(PROJECT_DIR, "dbt_project.yml")
+STRIPE_SOURCES = os.path.join(PROJECT_DIR, "models", "staging", "stripe", "_stripe__sources.yml")
+SHOPIFY_SOURCES = os.path.join(PROJECT_DIR, "models", "staging", "shopify", "_shopify__sources.yml")
+STG_CUSTOMERS = os.path.join(PROJECT_DIR, "models", "staging", "stripe", "stg_stripe__customers.sql")
+STG_PAYMENTS = os.path.join(PROJECT_DIR, "models", "staging", "stripe", "stg_stripe__payments.sql")
+STG_ORDERS = os.path.join(PROJECT_DIR, "models", "staging", "shopify", "stg_shopify__orders.sql")
+INT_PAYMENTS = os.path.join(PROJECT_DIR, "models", "intermediate", "int_payments_pivoted.sql")
+DIM_CUSTOMERS = os.path.join(PROJECT_DIR, "models", "marts", "core", "dim_customers.sql")
+FCT_ORDERS = os.path.join(PROJECT_DIR, "models", "marts", "core", "fct_orders.sql")
+CORE_MODELS = os.path.join(PROJECT_DIR, "models", "marts", "core", "_core__models.yml")
+MACRO_CENTS = os.path.join(PROJECT_DIR, "macros", "cents_to_dollars.sql")
 
-    REPO_DIR = "/workspace/dbt-core"
 
-    def _read(self, relpath):
-        path = os.path.join(self.REPO_DIR, relpath)
-        with open(path, "r", errors="ignore") as f:
-            return f.read()
+def _read(path):
+    with open(path, "r", encoding="utf-8") as f:
+        return f.read()
 
-    def _find_staging_sql(self):
-        return glob.glob(
-            os.path.join(self.REPO_DIR, "models", "staging", "**", "*.sql"),
-            recursive=True,
+
+def _load_yaml(path):
+    with open(path, "r", encoding="utf-8") as f:
+        return yaml.safe_load(f)
+
+
+# ---------------------------------------------------------------------------
+# Layer 1 — file_path_check
+# ---------------------------------------------------------------------------
+
+class TestFilePathCheck:
+    """Verify all required dbt project files exist."""
+
+    def test_project_yml(self):
+        assert os.path.isfile(PROJECT_YML), f"Missing {PROJECT_YML}"
+
+    def test_stripe_sources(self):
+        assert os.path.isfile(STRIPE_SOURCES), f"Missing {STRIPE_SOURCES}"
+
+    def test_shopify_sources(self):
+        assert os.path.isfile(SHOPIFY_SOURCES), f"Missing {SHOPIFY_SOURCES}"
+
+    def test_stg_customers(self):
+        assert os.path.isfile(STG_CUSTOMERS), f"Missing {STG_CUSTOMERS}"
+
+    def test_stg_payments(self):
+        assert os.path.isfile(STG_PAYMENTS), f"Missing {STG_PAYMENTS}"
+
+    def test_stg_orders(self):
+        assert os.path.isfile(STG_ORDERS), f"Missing {STG_ORDERS}"
+
+    def test_int_payments(self):
+        assert os.path.isfile(INT_PAYMENTS), f"Missing {INT_PAYMENTS}"
+
+    def test_dim_customers(self):
+        assert os.path.isfile(DIM_CUSTOMERS), f"Missing {DIM_CUSTOMERS}"
+
+    def test_fct_orders(self):
+        assert os.path.isfile(FCT_ORDERS), f"Missing {FCT_ORDERS}"
+
+    def test_core_models(self):
+        assert os.path.isfile(CORE_MODELS), f"Missing {CORE_MODELS}"
+
+    def test_macro_cents(self):
+        assert os.path.isfile(MACRO_CENTS), f"Missing {MACRO_CENTS}"
+
+
+# ---------------------------------------------------------------------------
+# Layer 2 — semantic_check
+# ---------------------------------------------------------------------------
+
+class TestSemanticProjectYml:
+    """Verify dbt_project.yml structure."""
+
+    @pytest.fixture(autouse=True)
+    def _load(self):
+        self.cfg = _load_yaml(PROJECT_YML)
+
+    def test_project_name(self):
+        assert self.cfg.get("name") == "ecommerce_analytics", (
+            f"Expected name 'ecommerce_analytics'; got {self.cfg.get('name')}"
         )
 
-    def _find_mart_sql(self):
-        return glob.glob(
-            os.path.join(self.REPO_DIR, "models", "marts", "**", "*.sql"),
-            recursive=True,
+    def test_version(self):
+        assert self.cfg.get("version") == "1.0.0", (
+            f"Expected version '1.0.0'; got {self.cfg.get('version')}"
         )
 
-    def _find_schema_ymls(self):
-        return glob.glob(
-            os.path.join(self.REPO_DIR, "models", "**", "*.yml"), recursive=True
+    def test_model_paths(self):
+        paths = self.cfg.get("model-paths", self.cfg.get("source-paths", []))
+        assert "models" in paths, f"Expected model-paths ['models']; got {paths}"
+
+    def test_staging_materialization(self):
+        models = self.cfg.get("models", {})
+        raw = yaml.dump(models)
+        assert "view" in raw, "Staging materialization should be 'view'"
+
+    def test_intermediate_materialization(self):
+        models = self.cfg.get("models", {})
+        raw = yaml.dump(models)
+        assert "ephemeral" in raw, "Intermediate materialization should be 'ephemeral'"
+
+    def test_marts_materialization(self):
+        models = self.cfg.get("models", {})
+        raw = yaml.dump(models)
+        assert "table" in raw, "Marts materialization should be 'table'"
+
+    def test_vars_payment_methods(self):
+        vars_section = self.cfg.get("vars", {})
+        methods = vars_section.get("payment_methods", [])
+        assert "credit_card" in methods, f"Expected credit_card in vars; got {methods}"
+        assert "bank_transfer" in methods, f"Expected bank_transfer in vars; got {methods}"
+        assert "gift_card" in methods, f"Expected gift_card in vars; got {methods}"
+
+
+class TestSemanticStripeSources:
+    """Verify Stripe source definitions."""
+
+    @pytest.fixture(autouse=True)
+    def _load(self):
+        self.cfg = _load_yaml(STRIPE_SOURCES)
+        self.raw = yaml.dump(self.cfg)
+
+    def test_source_name(self):
+        sources = self.cfg.get("sources", [])
+        names = [s.get("name") for s in sources]
+        assert "stripe" in names, f"Expected source 'stripe'; found {names}"
+
+    def test_freshness_config(self):
+        assert "freshness" in self.raw, "Stripe source should have freshness config"
+
+    def test_loaded_at_field(self):
+        assert "_fivetran_synced" in self.raw, (
+            "Should use _fivetran_synced as loaded_at_field"
         )
 
-    # --- File Path Checks ---
+    def test_customers_table(self):
+        assert "customers" in self.raw, "Should define customers table"
 
-    def test_dbt_project_yml_exists(self):
-        """Verifies dbt_project.yml exists."""
-        path = os.path.join(self.REPO_DIR, "dbt_project.yml")
-        assert os.path.exists(path), f"Expected file not found: {path}"
+    def test_payments_table(self):
+        assert "payments" in self.raw, "Should define payments table"
 
-    def test_models_staging_dir_exists(self):
-        """Verifies models/staging/ directory exists."""
-        path = os.path.join(self.REPO_DIR, "models", "staging")
-        assert os.path.isdir(path), f"Expected directory not found: {path}"
+    def test_unique_test(self):
+        assert "unique" in self.raw, "Should have unique test on id columns"
 
-    def test_models_marts_dir_exists(self):
-        """Verifies models/marts/ directory exists."""
-        path = os.path.join(self.REPO_DIR, "models", "marts")
-        assert os.path.isdir(path), f"Expected directory not found: {path}"
+    def test_not_null_test(self):
+        assert "not_null" in self.raw, "Should have not_null test on id columns"
 
-    def test_schema_yml_exists(self):
-        """Verifies at least one schema YML file exists under models."""
-        matches = self._find_schema_ymls()
-        assert len(matches) >= 1, "No schema .yml file found under models/"
+    def test_relationships_test(self):
+        assert "relationships" in self.raw, (
+            "payments.customer_id should have relationships test"
+        )
 
-    # --- Semantic Checks ---
 
-    def test_sem_dbt_project_parsable(self):
-        """dbt_project.yml is valid YAML with 'models' key."""
-        content = self._read("dbt_project.yml")
-        proj = yaml.safe_load(content)
-        assert "models" in proj, "dbt_project.yml missing 'models' key"
+class TestSemanticStagingSQL:
+    """Verify staging SQL patterns."""
 
-    def test_sem_staging_sql_exist(self):
-        """At least one staging SQL file exists."""
-        files = self._find_staging_sql()
-        assert len(files) >= 1, "No staging SQL files found"
+    def test_customers_source_ref(self):
+        src = _read(STG_CUSTOMERS)
+        assert "source('stripe', 'customers')" in src or "source('stripe','customers')" in src, (
+            "stg_stripe__customers should reference source('stripe', 'customers')"
+        )
 
-    def test_sem_mart_sql_exist(self):
-        """At least one mart SQL file exists."""
-        files = self._find_mart_sql()
-        assert len(files) >= 1, "No mart SQL files found"
+    def test_customers_rename_id(self):
+        src = _read(STG_CUSTOMERS)
+        assert "customer_id" in src, "Should rename id → customer_id"
 
-    def test_sem_schema_yml_parsable(self):
-        """All schema YML files are parsable."""
-        for yf in self._find_schema_ymls():
-            with open(yf, "r", errors="ignore") as f:
-                data = yaml.safe_load(f.read())
-            assert data is not None, f"Empty or invalid schema yml: {yf}"
+    def test_customers_deduplicate(self):
+        src = _read(STG_CUSTOMERS).lower()
+        assert "row_number" in src or "qualify" in src or "dedup" in src, (
+            "Should deduplicate customers by customer_id"
+        )
 
-    # --- Functional Checks ---
+    def test_payments_cents_to_dollars(self):
+        src = _read(STG_PAYMENTS)
+        assert "cents_to_dollars" in src, (
+            "stg_stripe__payments should use the cents_to_dollars macro"
+        )
 
-    def test_func_staging_uses_source(self):
-        """All staging SQL files use source()."""
-        for sf in self._find_staging_sql():
-            with open(sf, "r", errors="ignore") as f:
-                content = f.read()
-            assert re.search(
-                r"\bsource\s*\(", content
-            ), f"Staging file {sf} does not use source()"
+    def test_payments_status_mapping(self):
+        src = _read(STG_PAYMENTS)
+        assert "completed" in src and "failed" in src, (
+            "Should map status values: success→completed, fail→failed"
+        )
 
-    def test_func_mart_uses_ref(self):
-        """All mart SQL files use ref()."""
-        for mf in self._find_mart_sql():
-            with open(mf, "r", errors="ignore") as f:
-                content = f.read()
-            assert re.search(
-                r"\bref\s*\(", content
-            ), f"Mart file {mf} does not use ref()"
+    def test_orders_filter_deleted(self):
+        src = _read(STG_ORDERS)
+        assert "deleted" in src, "stg_shopify__orders should filter out deleted orders"
 
-    def test_func_mart_no_direct_table_refs(self):
-        """Mart SQL files do not directly reference tables (no FROM table without ref)."""
-        for mf in self._find_mart_sql():
-            with open(mf, "r", errors="ignore") as f:
-                content = f.read()
-            # Remove comments
-            cleaned = re.sub(r"--.*$", "", content, flags=re.MULTILINE)
-            cleaned = re.sub(r"/\*.*?\*/", "", cleaned, flags=re.DOTALL)
-            # Find FROM/JOIN clauses that don't use ref()/source()
-            raw_refs = re.findall(
-                r"(?:from|join)\s+(?!.*(?:ref|source)\s*\()([a-zA-Z_]\w*\.\w+)",
-                cleaned,
-                re.IGNORECASE,
+
+class TestSemanticIntermediatePayments:
+    """Verify intermediate payment pivot model."""
+
+    @pytest.fixture(autouse=True)
+    def _load(self):
+        self.src = _read(INT_PAYMENTS)
+
+    def test_jinja_for_loop(self):
+        assert "{% for" in self.src or "{%- for" in self.src, (
+            "Should use Jinja for-loop for pivot columns"
+        )
+
+    def test_payment_methods_var(self):
+        assert "var('payment_methods')" in self.src, (
+            "Should reference var('payment_methods')"
+        )
+
+    def test_group_by_order_id(self):
+        assert "order_id" in self.src.lower() and "group by" in self.src.lower(), (
+            "Should group by order_id"
+        )
+
+
+class TestSemanticMartsModels:
+    """Verify marts dimension and fact models."""
+
+    def test_dim_customers_join(self):
+        src = _read(DIM_CUSTOMERS)
+        assert "stg_stripe__customers" in src, (
+            "dim_customers should reference stg_stripe__customers"
+        )
+
+    def test_dim_customers_metrics(self):
+        src = _read(DIM_CUSTOMERS).lower()
+        assert "total_orders" in src or "count" in src, (
+            "dim_customers should compute total_orders"
+        )
+        assert "total_amount" in src or "sum" in src, (
+            "dim_customers should compute total_amount_spent"
+        )
+
+    def test_fct_orders_incremental(self):
+        src = _read(FCT_ORDERS)
+        assert "incremental" in src, "fct_orders should use incremental materialization"
+
+    def test_fct_orders_unique_key(self):
+        src = _read(FCT_ORDERS)
+        assert "unique_key" in src and "order_id" in src, (
+            "fct_orders should set unique_key='order_id'"
+        )
+
+    def test_fct_orders_is_incremental(self):
+        src = _read(FCT_ORDERS)
+        assert "is_incremental()" in src, (
+            "fct_orders should use is_incremental() filter"
+        )
+
+    def test_fct_orders_payment_join(self):
+        src = _read(FCT_ORDERS)
+        assert "int_payments_pivoted" in src, (
+            "fct_orders should join with int_payments_pivoted"
+        )
+
+
+class TestSemanticCoreModelsYml:
+    """Verify model documentation and tests."""
+
+    @pytest.fixture(autouse=True)
+    def _load(self):
+        self.cfg = _load_yaml(CORE_MODELS)
+        self.raw = yaml.dump(self.cfg)
+
+    def test_dim_customers_documented(self):
+        assert "dim_customers" in self.raw, "Should document dim_customers"
+
+    def test_fct_orders_documented(self):
+        assert "fct_orders" in self.raw, "Should document fct_orders"
+
+    def test_unique_tests(self):
+        assert "unique" in self.raw, "Should have unique tests"
+
+    def test_not_null_tests(self):
+        assert "not_null" in self.raw, "Should have not_null tests"
+
+
+# ---------------------------------------------------------------------------
+# Layer 3 — functional_check
+# ---------------------------------------------------------------------------
+
+class TestFunctionalMacro:
+    """Verify cents_to_dollars macro."""
+
+    @pytest.fixture(autouse=True)
+    def _load(self):
+        self.src = _read(MACRO_CENTS)
+
+    def test_macro_definition(self):
+        assert "{% macro cents_to_dollars" in self.src or "{%- macro cents_to_dollars" in self.src, (
+            "Should define cents_to_dollars macro"
+        )
+
+    def test_division_by_100(self):
+        assert "100" in self.src, "Macro should divide by 100"
+
+    def test_round_function(self):
+        assert "round" in self.src.lower(), "Macro should round to 2 decimals"
+
+
+class TestFunctionalSQLSyntax:
+    """Verify SQL files have basic syntax correctness."""
+
+    SQL_FILES = [
+        STG_CUSTOMERS, STG_PAYMENTS, STG_ORDERS,
+        INT_PAYMENTS, DIM_CUSTOMERS, FCT_ORDERS,
+    ]
+
+    def test_all_have_select(self):
+        for path in self.SQL_FILES:
+            src = _read(path).lower()
+            assert "select" in src, f"{path} should contain a SELECT statement"
+
+    def test_all_have_from(self):
+        for path in self.SQL_FILES:
+            src = _read(path).lower()
+            assert "from" in src, f"{path} should contain a FROM clause"
+
+    def test_no_select_star_in_staging(self):
+        for path in [STG_CUSTOMERS, STG_PAYMENTS, STG_ORDERS]:
+            src = _read(path)
+            # Allow select * in CTEs but final select should be explicit
+            assert "select\n    *\nfrom" not in src.lower().replace(" ", ""), (
+                f"{path} final select should not be SELECT * (best practice)"
             )
-            assert len(raw_refs) == 0, f"Mart {mf} has direct table refs: {raw_refs}"
 
-    def test_func_mart_models_have_docs(self):
-        """Schema YMLs include column definitions for mart models."""
-        ymls = self._find_schema_ymls()
-        mart_ymls = [y for y in ymls if "marts" in y.replace("\\", "/").lower()]
-        assert len(mart_ymls) >= 1, "No schema YML in marts dir"
-        for y in mart_ymls:
-            with open(y, "r", errors="ignore") as f:
-                data = yaml.safe_load(f.read())
-            if data and "models" in data:
-                for m in data["models"]:
-                    assert "columns" in m, f"Model {m.get('name')} missing 'columns'"
 
-    def test_func_mart_columns_have_tests(self):
-        """Mart model columns have not_null or unique tests."""
-        ymls = self._find_schema_ymls()
-        mart_ymls = [y for y in ymls if "marts" in y.replace("\\", "/").lower()]
-        found_test = False
-        for y in mart_ymls:
-            with open(y, "r", errors="ignore") as f:
-                data = yaml.safe_load(f.read())
-            if data and "models" in data:
-                for m in data["models"]:
-                    for col in m.get("columns", []):
-                        tests = col.get("tests", [])
-                        if any(
-                            t in tests or t in str(tests)
-                            for t in ("not_null", "unique")
-                        ):
-                            found_test = True
-        assert found_test, "No not_null/unique tests found on mart columns"
+class TestFunctionalYAMLValidity:
+    """Verify all YAML files parse correctly."""
 
-    def test_func_materialization_configs(self):
-        """dbt_project.yml models reference view and table materializations."""
-        content = self._read("dbt_project.yml")
-        proj = yaml.safe_load(content)
-        models_str = str(proj.get("models", ""))
-        assert "view" in models_str.lower(), "No 'view' materialization found"
-        assert "table" in models_str.lower(), "No 'table' materialization found"
+    YAML_FILES = [
+        PROJECT_YML, STRIPE_SOURCES, SHOPIFY_SOURCES, CORE_MODELS,
+    ]
 
-    def test_func_staging_without_source_fails(self):
-        """A staging SQL without source() would be caught (negative test)."""
-        bad_sql = "SELECT * FROM raw_table"
-        assert not re.search(
-            r"\bsource\s*\(", bad_sql
-        ), "Bad SQL should not contain source()"
+    def test_all_yaml_valid(self):
+        for path in self.YAML_FILES:
+            with open(path, "r", encoding="utf-8") as f:
+                doc = yaml.safe_load(f)
+            assert doc is not None, f"Failed to parse {path}"
 
-    def test_func_project_has_name(self):
-        """dbt_project.yml has a 'name' key."""
-        content = self._read("dbt_project.yml")
-        proj = yaml.safe_load(content)
-        assert "name" in proj, "dbt_project.yml missing 'name'"
+    def test_all_yaml_have_content(self):
+        for path in self.YAML_FILES:
+            with open(path, "r", encoding="utf-8") as f:
+                doc = yaml.safe_load(f)
+            assert isinstance(doc, dict), f"{path} should be a YAML mapping"
 
-    def test_func_project_has_version(self):
-        """dbt_project.yml has a 'version' key."""
-        content = self._read("dbt_project.yml")
-        proj = yaml.safe_load(content)
-        assert "version" in proj, "dbt_project.yml missing 'version'"
+
+class TestFunctionalIncrementalPattern:
+    """Verify incremental materialization pattern in fct_orders."""
+
+    @pytest.fixture(autouse=True)
+    def _load(self):
+        self.src = _read(FCT_ORDERS)
+
+    def test_config_block(self):
+        assert "config(" in self.src or "config (" in self.src, (
+            "fct_orders should have a config block"
+        )
+
+    def test_this_reference(self):
+        assert "{{ this }}" in self.src, (
+            "Incremental filter should reference {{ this }}"
+        )
+
+    def test_max_ordered_at(self):
+        assert "max(ordered_at)" in self.src.lower() or "max(ordered_at)" in self.src, (
+            "Incremental filter should select max(ordered_at) from {{ this }}"
+        )

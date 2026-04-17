@@ -1,215 +1,220 @@
 """
-Tests for 'nx-workspace-patterns' skill.
-Generated from benchmark case definitions for nx-workspace-patterns.
+Test skill: nx-workspace-patterns
+Verify that the Agent configures an Nx monorepo with React/Express apps,
+shared libraries, module boundary enforcement, cacheable targets,
+TypeScript path aliases, and CI workflow with nx affected.
 """
 
-import ast
-import base64
-import glob
-import json
 import os
-import py_compile
 import re
-import subprocess
-import textwrap
-
+import json
 import pytest
 
 try:
     import yaml
-except ModuleNotFoundError:
+except ImportError:
     yaml = None
 
 
+def load_json(path):
+    with open(path) as f:
+        return json.load(f)
+
+
 class TestNxWorkspacePatterns:
-    """Verify the nx-workspace-patterns skill output."""
+    REPO_DIR = "/workspace/nx"
 
-    REPO_DIR = '/workspace/nx'
-
-
-    # ── helpers ──────────────────────────────────────────────
-
-    _SETUP_CACHE: dict = {}
-
-    @staticmethod
-    def _repo_path(rel: str) -> str:
-        return os.path.join(TestNxWorkspacePatterns.REPO_DIR, rel)
-
-    @staticmethod
-    def _safe_read(path: str) -> str:
-        with open(path, "r", encoding="utf-8", errors="ignore") as fh:
-            return fh.read()
-
-    @staticmethod
-    def _load_yaml(path: str):
-        if yaml is None:
-            pytest.skip("PyYAML not available")
-        with open(path, "r", encoding="utf-8", errors="ignore") as fh:
-            return yaml.safe_load(fh)
-
-    @staticmethod
-    def _load_json(path: str):
-        with open(path, "r", encoding="utf-8", errors="ignore") as fh:
-            return json.load(fh)
-
-    @classmethod
-    def _run_in_repo(cls, script: str, timeout: int = 120) -> subprocess.CompletedProcess:
-        return subprocess.run(
-            ["python", "-c", textwrap.dedent(script)],
-            cwd=cls.REPO_DIR,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-        )
-
-    @classmethod
-    def _run_cmd(cls, command, args=None, timeout=120):
-        args = args or []
-        if isinstance(command, str) and args:
-            return subprocess.run(
-                [command, *args],
-                cwd=cls.REPO_DIR,
-                capture_output=True,
-                text=True,
-                timeout=timeout,
-            )
-        return subprocess.run(
-            command if isinstance(command, list) else command,
-            cwd=cls.REPO_DIR,
-            shell=isinstance(command, str),
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-        )
-
-    @classmethod
-    def _ensure_setup(cls, label, setup_cmds, fallback):
-        if not setup_cmds:
-            return
-        key = tuple(setup_cmds)
-        if key in cls._SETUP_CACHE:
-            ok, msg = cls._SETUP_CACHE[key]
-            if ok:
-                return
-            if fallback == "skip_if_setup_fails":
-                pytest.skip(f"{label} setup failed: {msg}")
-            pytest.fail(f"{label} setup failed: {msg}")
-        for cmd in setup_cmds:
-            r = subprocess.run(cmd, cwd=cls.REPO_DIR, shell=True,
-                               capture_output=True, text=True, timeout=300)
-            if r.returncode != 0:
-                msg = (r.stderr or r.stdout or 'failed').strip()
-                cls._SETUP_CACHE[key] = (False, msg)
-                if fallback == "skip_if_setup_fails":
-                    pytest.skip(f"{label} setup failed: {msg}")
-                pytest.fail(f"{label} setup failed: {msg}")
-        cls._SETUP_CACHE[key] = (True, 'ok')
-
-
-    # ── file_path_check (static) ────────────────────────────────────────
+    # === File Path Checks ===
 
     def test_nx_json_exists(self):
-        """Verify nx.json exists at workspace root"""
-        _p = self._repo_path('nx.json')
-        assert os.path.isfile(_p), f'Missing file: nx.json'
-        self._load_json(_p)  # parse check
+        assert os.path.exists(os.path.join(self.REPO_DIR, "nx.json"))
 
-    def test_project_json_files_exist(self):
-        """Verify at least 3 project.json files exist"""
-        _p = self._repo_path('apps/')
-        assert os.path.isdir(_p), f'Missing directory: apps/'
-        _files = glob.glob(os.path.join(_p, '*.yaml')) + glob.glob(os.path.join(_p, '*.yml')) + glob.glob(os.path.join(_p, '*.json')) + glob.glob(os.path.join(_p, '*.py')) + glob.glob(os.path.join(_p, '*.java')) + glob.glob(os.path.join(_p, '*.js')) + glob.glob(os.path.join(_p, '*.go'))
-        assert len(_files) >= 3, f'Expected >= 3 files, found {len(_files)}'
-        _p = self._repo_path('libs/')
-        assert os.path.isdir(_p), f'Missing directory: libs/'
-        _files = glob.glob(os.path.join(_p, '*.yaml')) + glob.glob(os.path.join(_p, '*.yml')) + glob.glob(os.path.join(_p, '*.json')) + glob.glob(os.path.join(_p, '*.py')) + glob.glob(os.path.join(_p, '*.java')) + glob.glob(os.path.join(_p, '*.js')) + glob.glob(os.path.join(_p, '*.go'))
-        assert len(_files) >= 3, f'Expected >= 3 files, found {len(_files)}'
-
-    # ── semantic_check (static) ────────────────────────────────────────
-
-    def test_nx_json_has_target_defaults(self):
-        """Verify nx.json has targetDefaults key"""
-        _p = self._repo_path('nx.json')
-        assert os.path.exists(_p), f'Missing: nx.json'
-        _contents = self._safe_read(_p)
-        _all = _contents if isinstance(_contents, str) else ''
-        assert 'targetDefaults' in _all, 'Missing: targetDefaults'
-
-    def test_named_inputs_production(self):
-        """Verify namedInputs.production excludes test files"""
-        _p = self._repo_path('nx.json')
-        assert os.path.exists(_p), f'Missing: nx.json'
-        _contents = self._safe_read(_p)
-        _all = _contents if isinstance(_contents, str) else ''
-        assert 'namedInputs' in _all, 'Missing: namedInputs'
-        assert 'production' in _all, 'Missing: production'
-        assert '!' in _all, 'Missing: !'
-
-    def test_project_has_targets_and_tags(self):
-        """Verify project.json files have targets and tags"""
-        _p = self._repo_path('**/project.json')
-        assert os.path.exists(_p), f'Missing: **/project.json'
-        _contents = self._safe_read(_p)
-        _all = _contents if isinstance(_contents, str) else ''
-        assert 'targets' in _all, 'Missing: targets'
-        assert 'tags' in _all, 'Missing: tags'
-
-    def test_build_cache_enabled(self):
-        """Verify targetDefaults.build has cache: true"""
-        _p = self._repo_path('nx.json')
-        assert os.path.exists(_p), f'Missing: nx.json'
-        _contents = self._safe_read(_p)
-        _all = _contents if isinstance(_contents, str) else ''
-        assert 'cache' in _all, 'Missing: cache'
-        assert 'true' in _all, 'Missing: true'
-
-    # ── functional_check ────────────────────────────────────────
-
-    def test_nx_json_valid_json(self):
-        """Verify nx.json is valid JSON with required keys"""
-        result = self._run_cmd('python', args=['-c', "import json; nx=json.loads(open('nx.json').read()); assert 'targetDefaults' in nx; assert 'namedInputs' in nx; print('PASS')"], timeout=120)
-        assert result.returncode == 0, (
-            f'test_nx_json_valid_json failed (exit {result.returncode})\n' + result.stderr[:500]
+    def test_storefront_project_json_exists(self):
+        assert os.path.exists(
+            os.path.join(self.REPO_DIR, "apps/storefront/project.json")
         )
-        assert 'PASS' in (result.stdout + result.stderr), 'Expected PASS in output'
 
-    def test_production_excludes_spec_files(self):
-        """Verify production namedInput excludes spec/test files"""
-        result = self._run_cmd('python', args=['-c', "import json; nx=json.loads(open('nx.json').read()); prod=nx['namedInputs']['production']; negations=[i for i in prod if isinstance(i,str) and '!' in i]; assert len(negations)>0, f'No negation patterns in production: {prod}'; print('PASS')"], timeout=120)
-        assert result.returncode == 0, (
-            f'test_production_excludes_spec_files failed (exit {result.returncode})\n' + result.stderr[:500]
+    def test_api_project_json_exists(self):
+        assert os.path.exists(
+            os.path.join(self.REPO_DIR, "apps/api/project.json")
         )
-        assert 'PASS' in (result.stdout + result.stderr), 'Expected PASS in output'
 
-    def test_project_count_minimum(self):
-        """Verify at least 3 project.json files exist"""
-        result = self._run_cmd('python', args=['-c', "import glob; files=glob.glob('**/project.json',recursive=True); files=[f for f in files if 'node_modules' not in f]; assert len(files)>=3, f'Only {len(files)} projects'; print('PASS')"], timeout=120)
-        assert result.returncode == 0, (
-            f'test_project_count_minimum failed (exit {result.returncode})\n' + result.stderr[:500]
+    def test_library_project_jsons_exist(self):
+        for lib in (
+            "feature-product",
+            "feature-cart",
+            "ui-components",
+            "data-access-api",
+            "util-formatting",
+        ):
+            path = os.path.join(self.REPO_DIR, f"libs/{lib}/project.json")
+            assert os.path.exists(path), f"Missing libs/{lib}/project.json"
+
+    def test_eslintrc_exists(self):
+        assert os.path.exists(os.path.join(self.REPO_DIR, ".eslintrc.json"))
+
+    def test_ci_workflow_exists(self):
+        assert os.path.exists(
+            os.path.join(self.REPO_DIR, ".github/workflows/ci.yml")
         )
-        assert 'PASS' in (result.stdout + result.stderr), 'Expected PASS in output'
 
-    def test_project_targets_build_test(self):
-        """Verify each project has build and test targets"""
-        result = self._run_cmd('python', args=['-c', "import json,glob; files=[f for f in glob.glob('**/project.json',recursive=True) if 'node_modules' not in f]\nfor f in files:\n    p=json.loads(open(f).read())\n    targets=p.get('targets',{})\n    assert 'build' in targets or 'test' in targets, f'{f}: missing build/test targets'\nprint('PASS')"], timeout=120)
-        assert result.returncode == 0, (
-            f'test_project_targets_build_test failed (exit {result.returncode})\n' + result.stderr[:500]
+    def test_tsconfig_base_exists(self):
+        assert os.path.exists(os.path.join(self.REPO_DIR, "tsconfig.base.json"))
+
+    # === Semantic Checks ===
+
+    def test_nx_json_has_cacheable_operations(self):
+        """nx.json should define cacheable operations for build/lint/test"""
+        data = load_json(os.path.join(self.REPO_DIR, "nx.json"))
+        content_str = json.dumps(data)
+        # Check either in tasksRunnerOptions or targetDefaults
+        assert "cache" in content_str or "cacheableOperations" in content_str, (
+            "nx.json should configure caching"
         )
-        assert 'PASS' in (result.stdout + result.stderr), 'Expected PASS in output'
 
-    def test_tags_nonempty(self):
-        """Verify each project has non-empty tags array"""
-        result = self._run_cmd('python', args=['-c', "import json,glob; files=[f for f in glob.glob('**/project.json',recursive=True) if 'node_modules' not in f]\nfor f in files:\n    p=json.loads(open(f).read())\n    tags=p.get('tags',[])\n    assert len(tags)>0, f'{f}: empty tags'\nprint('PASS')"], timeout=120)
-        assert result.returncode == 0, (
-            f'test_tags_nonempty failed (exit {result.returncode})\n' + result.stderr[:500]
+    def test_nx_json_has_named_inputs(self):
+        """nx.json should define named inputs (default, production, sharedGlobals)"""
+        data = load_json(os.path.join(self.REPO_DIR, "nx.json"))
+        named = data.get("namedInputs", {})
+        assert "default" in named, "Missing 'default' named input"
+        assert "production" in named, "Missing 'production' named input"
+
+    def test_nx_json_build_depends_on_caret_build(self):
+        """Build target should depend on ^build for topological ordering"""
+        path = os.path.join(self.REPO_DIR, "nx.json")
+        with open(path) as f:
+            content = f.read()
+        assert "^build" in content, "Build should depend on ^build"
+
+    def test_storefront_tags(self):
+        """Storefront should have type:app and scope:storefront tags"""
+        data = load_json(
+            os.path.join(self.REPO_DIR, "apps/storefront/project.json")
         )
-        assert 'PASS' in (result.stdout + result.stderr), 'Expected PASS in output'
+        tags = data.get("tags", [])
+        assert "type:app" in tags, "Missing type:app tag"
+        assert "scope:storefront" in tags, "Missing scope:storefront tag"
 
-    def test_build_cache_true(self):
-        """Verify targetDefaults.build.cache is true"""
-        result = self._run_cmd('python', args=['-c', "import json; nx=json.loads(open('nx.json').read()); cache=nx.get('targetDefaults',{}).get('build',{}).get('cache'); assert cache==True, f'Build cache is {cache}'; print('PASS')"], timeout=120)
-        assert result.returncode == 0, (
-            f'test_build_cache_true failed (exit {result.returncode})\n' + result.stderr[:500]
+    def test_storefront_is_application(self):
+        """Storefront should be projectType: application"""
+        data = load_json(
+            os.path.join(self.REPO_DIR, "apps/storefront/project.json")
         )
-        assert 'PASS' in (result.stdout + result.stderr), 'Expected PASS in output'
+        assert data.get("projectType") == "application"
 
+    def test_api_tags(self):
+        """API should have type:app and scope:api tags"""
+        data = load_json(
+            os.path.join(self.REPO_DIR, "apps/api/project.json")
+        )
+        tags = data.get("tags", [])
+        assert "type:app" in tags, "Missing type:app tag"
+        assert "scope:api" in tags, "Missing scope:api tag"
+
+    def test_library_tags_follow_convention(self):
+        """Libraries should have proper type and scope tags"""
+        expected = {
+            "feature-product": ("type:feature", "scope:product"),
+            "feature-cart": ("type:feature", "scope:cart"),
+            "ui-components": ("type:ui", "scope:shared"),
+            "data-access-api": ("type:data-access", "scope:shared"),
+            "util-formatting": ("type:util", "scope:shared"),
+        }
+        for lib, (type_tag, scope_tag) in expected.items():
+            data = load_json(
+                os.path.join(self.REPO_DIR, f"libs/{lib}/project.json")
+            )
+            tags = data.get("tags", [])
+            assert type_tag in tags, f"{lib} missing {type_tag}"
+            assert scope_tag in tags, f"{lib} missing {scope_tag}"
+
+    def test_module_boundary_rules(self):
+        """ESLint config should have enforce-module-boundaries rule"""
+        path = os.path.join(self.REPO_DIR, ".eslintrc.json")
+        with open(path) as f:
+            content = f.read()
+        assert "enforce-module-boundaries" in content or "@nx/enforce-module-boundaries" in content, (
+            "Missing module boundary enforcement rule"
+        )
+
+    def test_module_boundary_constraints(self):
+        """Module boundaries should define dependency constraints by type"""
+        data = load_json(os.path.join(self.REPO_DIR, ".eslintrc.json"))
+        content_str = json.dumps(data)
+        for tag in ("type:app", "type:feature", "type:ui", "type:data-access", "type:util"):
+            assert tag in content_str, f"Missing constraint for {tag}"
+
+    def test_tsconfig_path_aliases(self):
+        """tsconfig.base.json should define @eshop/* path aliases"""
+        data = load_json(os.path.join(self.REPO_DIR, "tsconfig.base.json"))
+        paths = data.get("compilerOptions", {}).get("paths", {})
+        for lib in (
+            "feature-product",
+            "feature-cart",
+            "ui-components",
+            "data-access-api",
+            "util-formatting",
+        ):
+            key = f"@eshop/{lib}"
+            assert key in paths, f"Missing path alias for {key}"
+
+    def test_ci_workflow_uses_nx_affected(self):
+        """CI workflow should use nx affected for optimized builds"""
+        path = os.path.join(self.REPO_DIR, ".github/workflows/ci.yml")
+        with open(path) as f:
+            content = f.read()
+        assert "nx affected" in content or "nx:affected" in content, (
+            "CI should use nx affected"
+        )
+
+    def test_ci_workflow_derives_shas(self):
+        """CI workflow should derive SHAs for affected calculation"""
+        path = os.path.join(self.REPO_DIR, ".github/workflows/ci.yml")
+        with open(path) as f:
+            content = f.read()
+        assert "nrwl/nx-set-shas" in content or "nx-set-shas" in content, (
+            "CI should derive SHAs with nx-set-shas"
+        )
+
+    # === Functional Checks ===
+
+    def test_all_json_files_valid(self):
+        """All project.json and config JSON files should be valid"""
+        json_files = [
+            "nx.json",
+            ".eslintrc.json",
+            "tsconfig.base.json",
+            "apps/storefront/project.json",
+            "apps/api/project.json",
+        ]
+        for lib in ("feature-product", "feature-cart", "ui-components", "data-access-api", "util-formatting"):
+            json_files.append(f"libs/{lib}/project.json")
+        for jf in json_files:
+            path = os.path.join(self.REPO_DIR, jf)
+            try:
+                with open(path) as f:
+                    json.load(f)
+            except (json.JSONDecodeError, FileNotFoundError) as e:
+                pytest.fail(f"{jf} is invalid: {e}")
+
+    def test_ci_workflow_valid_yaml(self):
+        """CI workflow should be valid YAML"""
+        if yaml is None:
+            pytest.skip("PyYAML not available")
+        path = os.path.join(self.REPO_DIR, ".github/workflows/ci.yml")
+        with open(path) as f:
+            try:
+                data = yaml.safe_load(f)
+            except yaml.YAMLError as e:
+                pytest.fail(f"ci.yml YAML error: {e}")
+        assert "jobs" in data, "Workflow must have jobs"
+
+    def test_libraries_are_project_type_library(self):
+        """All libs should have projectType: library"""
+        for lib in ("feature-product", "feature-cart", "ui-components", "data-access-api", "util-formatting"):
+            data = load_json(
+                os.path.join(self.REPO_DIR, f"libs/{lib}/project.json")
+            )
+            assert data.get("projectType") == "library", (
+                f"{lib} should be projectType: library"
+            )

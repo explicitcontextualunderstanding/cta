@@ -1,186 +1,214 @@
 """
-Test for 'gitlab-ci-patterns' skill — GitLab CI Security Templates
-Validates that the Agent created SAST, DAST, and Dependency-Scanning
-templates under lib/gitlab/ci/templates/Security/ with valid YAML,
-correct GitLab CI job structure (rules, stages, artifacts, variables).
+Test skill: gitlab-ci-patterns
+Verify that the Agent fixes GitLab security CI templates (SAST, DAST,
+Dependency-Scanning) with complete job configurations, execution rules,
+artifact collection, and valid YAML.
 """
 
 import os
 import re
 import subprocess
-
 import pytest
-import yaml
 
 
 class TestGitlabCiPatterns:
-    """Verify GitLab CI Security pipeline templates."""
-
     REPO_DIR = "/workspace/gitlabhq"
-    TEMPLATES_DIR = "lib/gitlab/ci/templates/Security"
 
-    def _read(self, *parts):
-        fpath = os.path.join(self.REPO_DIR, *parts)
-        assert os.path.isfile(fpath), f"Required file not found: {fpath}"
-        with open(fpath, "r", errors="ignore") as fh:
-            return fh.read()
+    TEMPLATE_DIR = "lib/gitlab/ci/templates/Security"
 
-    def _load_yaml(self, *parts):
-        content = self._read(*parts)
-        return yaml.safe_load(content)
-
-    # ------------------------------------------------------------------
-    # L1: Template files exist
-    # ------------------------------------------------------------------
+    # === File Path Checks ===
 
     def test_sast_template_exists(self):
-        """SAST.gitlab-ci.yml must exist."""
-        assert os.path.isfile(
-            os.path.join(self.REPO_DIR, self.TEMPLATES_DIR, "SAST.gitlab-ci.yml")
+        """Verify SAST.gitlab-ci.yml exists"""
+        path = os.path.join(
+            self.REPO_DIR, self.TEMPLATE_DIR, "SAST.gitlab-ci.yml"
         )
+        assert os.path.exists(path), f"SAST template not found at {path}"
 
     def test_dast_template_exists(self):
-        """DAST.gitlab-ci.yml must exist."""
-        assert os.path.isfile(
-            os.path.join(self.REPO_DIR, self.TEMPLATES_DIR, "DAST.gitlab-ci.yml")
+        """Verify DAST.gitlab-ci.yml exists"""
+        path = os.path.join(
+            self.REPO_DIR, self.TEMPLATE_DIR, "DAST.gitlab-ci.yml"
         )
+        assert os.path.exists(path), f"DAST template not found at {path}"
 
     def test_dependency_scanning_template_exists(self):
-        """Dependency-Scanning.gitlab-ci.yml must exist."""
-        assert os.path.isfile(
-            os.path.join(
-                self.REPO_DIR, self.TEMPLATES_DIR, "Dependency-Scanning.gitlab-ci.yml"
-            )
+        """Verify Dependency-Scanning.gitlab-ci.yml exists"""
+        path = os.path.join(
+            self.REPO_DIR, self.TEMPLATE_DIR,
+            "Dependency-Scanning.gitlab-ci.yml",
+        )
+        assert os.path.exists(path), (
+            f"Dependency-Scanning template not found"
         )
 
-    # ------------------------------------------------------------------
-    # L1: Valid YAML
-    # ------------------------------------------------------------------
+    # === Semantic Checks ===
 
-    def test_sast_valid_yaml(self):
-        """SAST template must be valid YAML."""
-        data = self._load_yaml(self.TEMPLATES_DIR, "SAST.gitlab-ci.yml")
-        assert isinstance(data, dict), "SAST template is not a YAML mapping"
+    def test_sast_has_scanner_image(self):
+        """Verify SAST template references a scanner image"""
+        path = os.path.join(
+            self.REPO_DIR, self.TEMPLATE_DIR, "SAST.gitlab-ci.yml"
+        )
+        with open(path) as f:
+            content = f.read()
 
-    def test_dast_valid_yaml(self):
-        """DAST template must be valid YAML."""
-        data = self._load_yaml(self.TEMPLATES_DIR, "DAST.gitlab-ci.yml")
-        assert isinstance(data, dict), "DAST template is not a YAML mapping"
-
-    def test_dependency_scanning_valid_yaml(self):
-        """Dependency-Scanning template must be valid YAML."""
-        data = self._load_yaml(self.TEMPLATES_DIR, "Dependency-Scanning.gitlab-ci.yml")
-        assert isinstance(
-            data, dict
-        ), "Dependency-Scanning template is not a YAML mapping"
-
-    # ------------------------------------------------------------------
-    # L2: Job structure — stages
-    # ------------------------------------------------------------------
-
-    def test_sast_has_stage(self):
-        """Each SAST job must declare a stage."""
-        data = self._load_yaml(self.TEMPLATES_DIR, "SAST.gitlab-ci.yml")
-        jobs = {
-            k: v
-            for k, v in data.items()
-            if isinstance(v, dict) and not k.startswith(".")
-        }
-        for name, job in jobs.items():
-            if "stage" in job:
-                break
-        else:
-            # Accept top-level 'stages' key too
-            assert "stages" in data, "SAST template has no stage declaration"
-
-    def test_dast_has_stage(self):
-        """DAST jobs must declare a stage."""
-        data = self._load_yaml(self.TEMPLATES_DIR, "DAST.gitlab-ci.yml")
-        content = self._read(self.TEMPLATES_DIR, "DAST.gitlab-ci.yml")
-        assert re.search(r"stage:", content), "DAST template has no stage declaration"
-
-    # ------------------------------------------------------------------
-    # L2: Job structure — rules
-    # ------------------------------------------------------------------
-
-    def test_sast_has_rules_or_only(self):
-        """SAST jobs must have rules or only/except to control execution."""
-        content = self._read(self.TEMPLATES_DIR, "SAST.gitlab-ci.yml")
-        assert re.search(
-            r"(rules:|only:|except:)", content
-        ), "SAST template missing rules/only/except"
-
-    def test_dast_has_rules_or_only(self):
-        """DAST jobs must have rules or only/except."""
-        content = self._read(self.TEMPLATES_DIR, "DAST.gitlab-ci.yml")
-        assert re.search(
-            r"(rules:|only:|except:)", content
-        ), "DAST template missing rules/only/except"
-
-    # ------------------------------------------------------------------
-    # L2: Job structure — artifacts
-    # ------------------------------------------------------------------
-
-    def test_sast_defines_artifacts(self):
-        """SAST template should declare artifacts (reports)."""
-        content = self._read(self.TEMPLATES_DIR, "SAST.gitlab-ci.yml")
-        assert re.search(
-            r"artifacts:", content
-        ), "SAST template missing artifacts section"
-
-    def test_dependency_scanning_defines_artifacts(self):
-        """Dependency-Scanning template should declare artifacts."""
-        content = self._read(self.TEMPLATES_DIR, "Dependency-Scanning.gitlab-ci.yml")
-        assert re.search(
-            r"artifacts:", content
-        ), "Dependency-Scanning template missing artifacts section"
-
-    # ------------------------------------------------------------------
-    # L2: Job structure — variables
-    # ------------------------------------------------------------------
+        image_indicators = ["image:", "IMAGE", "scanner", "sast"]
+        found = [ind for ind in image_indicators if ind in content]
+        assert len(found) >= 2, (
+            f"SAST should reference scanner image. Found: {found}"
+        )
 
     def test_sast_has_variables(self):
-        """SAST template should define variables."""
-        content = self._read(self.TEMPLATES_DIR, "SAST.gitlab-ci.yml")
-        assert re.search(
-            r"variables:", content
-        ), "SAST template missing variables section"
+        """Verify SAST template defines configurable variables"""
+        path = os.path.join(
+            self.REPO_DIR, self.TEMPLATE_DIR, "SAST.gitlab-ci.yml"
+        )
+        with open(path) as f:
+            content = f.read()
+
+        assert "variables" in content.lower(), (
+            "SAST template should define variables"
+        )
+
+    def test_dast_has_stage(self):
+        """Verify DAST template defines stage assignments"""
+        path = os.path.join(
+            self.REPO_DIR, self.TEMPLATE_DIR, "DAST.gitlab-ci.yml"
+        )
+        with open(path) as f:
+            content = f.read()
+
+        assert "stage" in content.lower(), (
+            "DAST template should define stage assignments"
+        )
 
     def test_dast_has_variables(self):
-        """DAST template should define variables."""
-        content = self._read(self.TEMPLATES_DIR, "DAST.gitlab-ci.yml")
-        assert re.search(
-            r"variables:", content
-        ), "DAST template missing variables section"
+        """Verify DAST template includes runtime variables"""
+        path = os.path.join(
+            self.REPO_DIR, self.TEMPLATE_DIR, "DAST.gitlab-ci.yml"
+        )
+        with open(path) as f:
+            content = f.read()
 
-    # ------------------------------------------------------------------
-    # L2: Security report type
-    # ------------------------------------------------------------------
+        assert "variables" in content.lower(), (
+            "DAST template should define variables"
+        )
 
-    def test_sast_report_type(self):
-        """SAST artifacts should reference sast report type."""
-        content = self._read(self.TEMPLATES_DIR, "SAST.gitlab-ci.yml")
-        assert re.search(
-            r"sast", content, re.IGNORECASE
-        ), "SAST template does not reference sast report"
+    def test_dependency_scanning_has_artifacts(self):
+        """Verify Dependency Scanning configures artifact collection"""
+        path = os.path.join(
+            self.REPO_DIR, self.TEMPLATE_DIR,
+            "Dependency-Scanning.gitlab-ci.yml",
+        )
+        with open(path) as f:
+            content = f.read()
 
-    def test_dependency_scanning_report_type(self):
-        """Dependency-Scanning artifacts should reference scanning report."""
-        content = self._read(self.TEMPLATES_DIR, "Dependency-Scanning.gitlab-ci.yml")
-        assert re.search(
-            r"dependency.?scanning", content, re.IGNORECASE
-        ), "Dependency-Scanning template missing report type reference"
+        artifact_indicators = ["artifacts", "reports", "paths"]
+        found = [ind for ind in artifact_indicators if ind in content.lower()]
+        assert len(found) >= 1, (
+            f"Should configure artifact collection. Found: {found}"
+        )
 
-    # ------------------------------------------------------------------
-    # L2: Script sections exist
-    # ------------------------------------------------------------------
-
-    def test_templates_have_script(self):
-        """Each template should define at least one script section."""
-        for tpl in (
+    def test_templates_have_execution_rules(self):
+        """Verify templates have execution control (rules/only/when)"""
+        for template in [
             "SAST.gitlab-ci.yml",
             "DAST.gitlab-ci.yml",
             "Dependency-Scanning.gitlab-ci.yml",
-        ):
-            content = self._read(self.TEMPLATES_DIR, tpl)
-            assert re.search(r"script:", content), f"{tpl} missing script section"
+        ]:
+            path = os.path.join(
+                self.REPO_DIR, self.TEMPLATE_DIR, template
+            )
+            with open(path) as f:
+                content = f.read()
+
+            rule_indicators = [
+                "rules:", "only:", "when:", "allow_failure",
+                "except:", "if:",
+            ]
+            found = [ind for ind in rule_indicators if ind in content]
+            assert len(found) >= 1, (
+                f"{template} should have execution rules. Found: {found}"
+            )
+
+    def test_templates_have_script_or_extends(self):
+        """Verify templates define runnable behavior"""
+        for template in [
+            "SAST.gitlab-ci.yml",
+            "DAST.gitlab-ci.yml",
+            "Dependency-Scanning.gitlab-ci.yml",
+        ]:
+            path = os.path.join(
+                self.REPO_DIR, self.TEMPLATE_DIR, template
+            )
+            with open(path) as f:
+                content = f.read()
+
+            action_indicators = [
+                "script:", "extends:", "include:",
+            ]
+            found = [ind for ind in action_indicators if ind in content]
+            assert len(found) >= 1, (
+                f"{template} should have script/extends/include. Found: {found}"
+            )
+
+    # === Functional Checks ===
+
+    def test_sast_valid_yaml(self):
+        """Verify SAST template is valid YAML"""
+        import yaml
+        path = os.path.join(
+            self.REPO_DIR, self.TEMPLATE_DIR, "SAST.gitlab-ci.yml"
+        )
+        with open(path) as f:
+            try:
+                yaml.safe_load(f.read())
+            except yaml.YAMLError as e:
+                pytest.fail(f"SAST template invalid YAML: {e}")
+
+    def test_dast_valid_yaml(self):
+        """Verify DAST template is valid YAML"""
+        import yaml
+        path = os.path.join(
+            self.REPO_DIR, self.TEMPLATE_DIR, "DAST.gitlab-ci.yml"
+        )
+        with open(path) as f:
+            try:
+                yaml.safe_load(f.read())
+            except yaml.YAMLError as e:
+                pytest.fail(f"DAST template invalid YAML: {e}")
+
+    def test_dependency_scanning_valid_yaml(self):
+        """Verify Dependency-Scanning template is valid YAML"""
+        import yaml
+        path = os.path.join(
+            self.REPO_DIR, self.TEMPLATE_DIR,
+            "Dependency-Scanning.gitlab-ci.yml",
+        )
+        with open(path) as f:
+            try:
+                yaml.safe_load(f.read())
+            except yaml.YAMLError as e:
+                pytest.fail(
+                    f"Dependency-Scanning template invalid YAML: {e}"
+                )
+
+    def test_templates_separate_concerns(self):
+        """Verify templates separate three scanning concerns"""
+        templates = {}
+        for template in [
+            "SAST.gitlab-ci.yml",
+            "DAST.gitlab-ci.yml",
+            "Dependency-Scanning.gitlab-ci.yml",
+        ]:
+            path = os.path.join(
+                self.REPO_DIR, self.TEMPLATE_DIR, template
+            )
+            with open(path) as f:
+                templates[template] = f.read()
+
+        # Each should focus on its own concern
+        assert "sast" in templates["SAST.gitlab-ci.yml"].lower()
+        assert "dast" in templates["DAST.gitlab-ci.yml"].lower()
+        dep_content = templates["Dependency-Scanning.gitlab-ci.yml"].lower()
+        assert "dependency" in dep_content or "scanning" in dep_content

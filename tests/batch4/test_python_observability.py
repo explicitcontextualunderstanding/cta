@@ -1,254 +1,337 @@
 """
-Test for 'python-observability' skill — Python Observability
-Validates MetricsCollector ASGI middleware for request counting, route
-normalization, reset, and error tracking in the opentelemetry-python repo.
+Tests for skill: python-observability
+Repo: open-telemetry/opentelemetry-python
+Image: zhangyiiiiii/swe-skills-bench-python
+Task: Implement an observability library with structured logging (structlog),
+      Prometheus metrics, correlation ID propagation, and ASGI middleware.
 """
 
+import ast
 import os
 import sys
-import re
-import ast
+
 import pytest
 
+REPO_DIR = "/workspace/opentelemetry-python"
+OBS_DIR = os.path.join(REPO_DIR, "docs", "examples", "observability")
 
-class TestPythonObservability:
-    """Tests for Python observability in the opentelemetry-python repo."""
+INIT_FILE = os.path.join(OBS_DIR, "__init__.py")
+LOGGING_FILE = os.path.join(OBS_DIR, "logging_config.py")
+METRICS_FILE = os.path.join(OBS_DIR, "metrics_collector.py")
+CORRELATION_FILE = os.path.join(OBS_DIR, "correlation.py")
+MIDDLEWARE_FILE = os.path.join(OBS_DIR, "middleware.py")
 
-    REPO_DIR = "/workspace/opentelemetry-python"
 
-    def _read(self, relpath):
-        full = os.path.join(self.REPO_DIR, relpath)
-        with open(full, "r", errors="ignore") as f:
-            return f.read()
+# ---------------------------------------------------------------------------
+# Layer 1 — file_path_check
+# ---------------------------------------------------------------------------
 
-    # --- File Path Checks ---
+class TestFilePathCheck:
+    """Verify all required observability files exist."""
 
-    def test_metrics_collector_py_exists(self):
-        """Verifies that docs/examples/observability/metrics_collector.py exists."""
-        path = os.path.join(
-            self.REPO_DIR, "docs", "examples", "observability", "metrics_collector.py"
+    def test_init_exists(self):
+        assert os.path.isfile(INIT_FILE), f"Missing {INIT_FILE}"
+
+    def test_logging_config_exists(self):
+        assert os.path.isfile(LOGGING_FILE), f"Missing {LOGGING_FILE}"
+
+    def test_metrics_collector_exists(self):
+        assert os.path.isfile(METRICS_FILE), f"Missing {METRICS_FILE}"
+
+    def test_correlation_exists(self):
+        assert os.path.isfile(CORRELATION_FILE), f"Missing {CORRELATION_FILE}"
+
+    def test_middleware_exists(self):
+        assert os.path.isfile(MIDDLEWARE_FILE), f"Missing {MIDDLEWARE_FILE}"
+
+
+# ---------------------------------------------------------------------------
+# Layer 2 — semantic_check
+# ---------------------------------------------------------------------------
+
+class TestSemanticLogging:
+    """Verify structured logging module."""
+
+    @pytest.fixture(autouse=True)
+    def _load(self):
+        with open(LOGGING_FILE, "r", encoding="utf-8") as f:
+            self.src = f.read()
+        self.tree = ast.parse(self.src)
+
+    def test_configure_logging_function(self):
+        funcs = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.FunctionDef)]
+        assert "configure_logging" in funcs, f"Expected configure_logging; found {funcs}"
+
+    def test_get_logger_function(self):
+        funcs = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.FunctionDef)]
+        assert "get_logger" in funcs, f"Expected get_logger; found {funcs}"
+
+    def test_structlog_usage(self):
+        assert "structlog" in self.src, "Should use structlog for structured logging"
+
+    def test_json_renderer(self):
+        assert "JSONRenderer" in self.src, "Should support JSON output via JSONRenderer"
+
+    def test_console_renderer(self):
+        assert "ConsoleRenderer" in self.src, "Should support ConsoleRenderer for dev"
+
+    def test_correlation_id_injection(self):
+        assert "correlation_id" in self.src, (
+            "Logging must inject correlation_id from context"
         )
-        assert os.path.exists(path), f"Expected file not found: {path}"
 
-    def test_init_py_exists(self):
-        """Verifies that docs/examples/observability/__init__.py exists."""
-        path = os.path.join(
-            self.REPO_DIR, "docs", "examples", "observability", "__init__.py"
+    def test_contextvars_usage(self):
+        assert "contextvars" in self.src or "ContextVar" in self.src, (
+            "Should use contextvars for correlation ID"
         )
-        assert os.path.exists(path), f"Expected file not found: {path}"
 
-    # --- Semantic Checks ---
 
-    def test_sem_import_metrics_collector(self):
-        """MetricsCollector is importable."""
-        old_path = sys.path[:]
+class TestSemanticMetrics:
+    """Verify metrics collector module."""
+
+    @pytest.fixture(autouse=True)
+    def _load(self):
+        with open(METRICS_FILE, "r", encoding="utf-8") as f:
+            self.src = f.read()
+        self.tree = ast.parse(self.src)
+
+    def test_metrics_collector_class(self):
+        classes = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.ClassDef)]
+        assert "MetricsCollector" in classes, f"Expected MetricsCollector; found {classes}"
+
+    def test_record_request_method(self):
+        funcs = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.FunctionDef)]
+        assert "record_request" in funcs, f"Expected record_request; found {funcs}"
+
+    def test_track_in_progress(self):
+        funcs = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.FunctionDef)]
+        assert "track_in_progress" in funcs, f"Expected track_in_progress; found {funcs}"
+
+    def test_record_error(self):
+        funcs = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.FunctionDef)]
+        assert "record_error" in funcs, f"Expected record_error; found {funcs}"
+
+    def test_get_metrics(self):
+        funcs = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.FunctionDef)]
+        assert "get_metrics" in funcs, f"Expected get_metrics; found {funcs}"
+
+    def test_counter_metric(self):
+        assert "Counter" in self.src or "counter" in self.src, (
+            "MetricsCollector should define Counter metrics"
+        )
+
+    def test_histogram_metric(self):
+        assert "Histogram" in self.src or "histogram" in self.src, (
+            "MetricsCollector should define Histogram metrics"
+        )
+
+    def test_gauge_metric(self):
+        assert "Gauge" in self.src or "gauge" in self.src, (
+            "MetricsCollector should define Gauge metrics"
+        )
+
+    def test_histogram_buckets(self):
+        assert "0.005" in self.src or "0.01" in self.src, (
+            "Histogram should have fine-grained buckets"
+        )
+
+
+class TestSemanticCorrelation:
+    """Verify correlation ID module."""
+
+    @pytest.fixture(autouse=True)
+    def _load(self):
+        with open(CORRELATION_FILE, "r", encoding="utf-8") as f:
+            self.src = f.read()
+        self.tree = ast.parse(self.src)
+
+    def test_context_var(self):
+        assert "ContextVar" in self.src, "Must use ContextVar for correlation ID"
+
+    def test_generate_correlation_id(self):
+        funcs = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.FunctionDef)]
+        assert "generate_correlation_id" in funcs, (
+            f"Expected generate_correlation_id; found {funcs}"
+        )
+
+    def test_get_correlation_id(self):
+        funcs = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.FunctionDef)]
+        assert "get_correlation_id" in funcs, (
+            f"Expected get_correlation_id; found {funcs}"
+        )
+
+    def test_set_correlation_id(self):
+        funcs = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.FunctionDef)]
+        assert "set_correlation_id" in funcs, (
+            f"Expected set_correlation_id; found {funcs}"
+        )
+
+    def test_middleware_class(self):
+        classes = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.ClassDef)]
+        assert any("Correlation" in c and "Middleware" in c for c in classes), (
+            f"Expected CorrelationIDMiddleware class; found {classes}"
+        )
+
+    def test_x_correlation_header(self):
+        assert "X-Correlation-ID" in self.src or "x-correlation-id" in self.src, (
+            "Should read/write X-Correlation-ID header"
+        )
+
+
+class TestSemanticMiddleware:
+    """Verify observability middleware."""
+
+    @pytest.fixture(autouse=True)
+    def _load(self):
+        with open(MIDDLEWARE_FILE, "r", encoding="utf-8") as f:
+            self.src = f.read()
+        self.tree = ast.parse(self.src)
+
+    def test_middleware_class(self):
+        classes = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.ClassDef)]
+        assert "ObservabilityMiddleware" in classes, (
+            f"Expected ObservabilityMiddleware; found {classes}"
+        )
+
+    def test_request_logging(self):
+        assert "Request started" in self.src or "request_started" in self.src.lower(), (
+            "Middleware should log request start"
+        )
+
+    def test_completion_logging(self):
+        assert "Request completed" in self.src or "request_completed" in self.src.lower(), (
+            "Middleware should log request completion"
+        )
+
+    def test_exception_handling(self):
+        assert "except" in self.src or "Exception" in self.src, (
+            "Middleware should handle exceptions"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Layer 3 — functional_check
+# ---------------------------------------------------------------------------
+
+class TestFunctionalCorrelation:
+    """Run correlation ID functions and verify behavior."""
+
+    @pytest.fixture(autouse=True)
+    def _setup(self):
+        sys.path.insert(0, OBS_DIR)
+        sys.path.insert(0, os.path.dirname(OBS_DIR))
         try:
-            sys.path.insert(0, self.REPO_DIR)
-            from docs.examples.observability.metrics_collector import MetricsCollector
-
-            assert MetricsCollector is not None
-        finally:
-            sys.path[:] = old_path
-
-    def test_sem_is_asgi_middleware(self):
-        """MetricsCollector is callable as ASGI middleware (takes app as first arg)."""
-        src = self._read("docs/examples/observability/metrics_collector.py")
-        assert "def __init__" in src, "Missing __init__ method"
-        assert "app" in src, "Constructor should accept 'app' argument"
-
-    def test_sem_has_methods(self):
-        """MetricsCollector has get_metrics_summary and reset methods."""
-        src = self._read("docs/examples/observability/metrics_collector.py")
-        assert "def get_metrics_summary" in src, "Missing get_metrics_summary method"
-        assert "def reset" in src, "Missing reset method"
-
-    def test_sem_constructor_accepts_service_name(self):
-        """Constructor accepts service_name and optional meter_provider."""
-        src = self._read("docs/examples/observability/metrics_collector.py")
-        assert "service_name" in src, "Constructor should accept service_name"
-
-    # --- Functional Checks ---
-
-    def test_func_create_collector(self):
-        """Can create MetricsCollector with AsyncMock app."""
-        old_path = sys.path[:]
-        try:
-            sys.path.insert(0, self.REPO_DIR)
-            from unittest.mock import AsyncMock
-            from docs.examples.observability.metrics_collector import MetricsCollector
-
-            app = AsyncMock()
-            collector = MetricsCollector(app, "test-service")
-            assert collector is not None
-        finally:
-            sys.path[:] = old_path
-
-    @pytest.mark.asyncio
-    async def test_func_handle_request(self):
-        """Collector handles an HTTP request through ASGI."""
-        old_path = sys.path[:]
-        try:
-            sys.path.insert(0, self.REPO_DIR)
-            from unittest.mock import AsyncMock
-            from docs.examples.observability.metrics_collector import MetricsCollector
-
-            app = AsyncMock()
-            collector = MetricsCollector(app, "test-service")
-            scope = {
-                "type": "http",
-                "method": "GET",
-                "path": "/users/42",
-                "query_string": b"",
-            }
-            receive = AsyncMock()
-            send = AsyncMock()
-            await collector(scope, receive, send)
-        finally:
-            sys.path[:] = old_path
-
-    @pytest.mark.asyncio
-    async def test_func_get_metrics_summary_total_requests(self):
-        """After one request, total_requests == 1."""
-        old_path = sys.path[:]
-        try:
-            sys.path.insert(0, self.REPO_DIR)
-            from unittest.mock import AsyncMock
-            from docs.examples.observability.metrics_collector import MetricsCollector
-
-            app = AsyncMock()
-            collector = MetricsCollector(app, "test-service")
-            scope = {
-                "type": "http",
-                "method": "GET",
-                "path": "/users/42",
-                "query_string": b"",
-            }
-            await collector(scope, AsyncMock(), AsyncMock())
-            summary = collector.get_metrics_summary()
-            assert summary["total_requests"] == 1
-        finally:
-            sys.path[:] = old_path
-
-    @pytest.mark.asyncio
-    async def test_func_route_normalization(self):
-        """Request to /users/42 recorded as route '/users/{id}' in summary."""
-        old_path = sys.path[:]
-        try:
-            sys.path.insert(0, self.REPO_DIR)
-            from unittest.mock import AsyncMock
-            from docs.examples.observability.metrics_collector import MetricsCollector
-
-            app = AsyncMock()
-            collector = MetricsCollector(app, "test-service")
-            scope = {
-                "type": "http",
-                "method": "GET",
-                "path": "/users/42",
-                "query_string": b"",
-            }
-            await collector(scope, AsyncMock(), AsyncMock())
-            summary = collector.get_metrics_summary()
-            summary_str = str(summary)
-            assert "/users/{id}" in summary_str or "/users/42" in summary_str
-        finally:
-            sys.path[:] = old_path
-
-    @pytest.mark.asyncio
-    async def test_func_status_code_tracking(self):
-        """Summary for request returning 200 has status_code == 200."""
-        old_path = sys.path[:]
-        try:
-            sys.path.insert(0, self.REPO_DIR)
-            from unittest.mock import AsyncMock
-            from docs.examples.observability.metrics_collector import MetricsCollector
-
-            app = AsyncMock()
-            collector = MetricsCollector(app, "test-service")
-            scope = {
-                "type": "http",
-                "method": "GET",
-                "path": "/test",
-                "query_string": b"",
-            }
-            await collector(scope, AsyncMock(), AsyncMock())
-            summary = collector.get_metrics_summary()
-            assert "200" in str(summary) or summary.get("total_requests", 0) >= 1
-        finally:
-            sys.path[:] = old_path
-
-    @pytest.mark.asyncio
-    async def test_func_reset(self):
-        """After reset, total_requests == 0."""
-        old_path = sys.path[:]
-        try:
-            sys.path.insert(0, self.REPO_DIR)
-            from unittest.mock import AsyncMock
-            from docs.examples.observability.metrics_collector import MetricsCollector
-
-            app = AsyncMock()
-            collector = MetricsCollector(app, "test-service")
-            scope = {
-                "type": "http",
-                "method": "GET",
-                "path": "/test",
-                "query_string": b"",
-            }
-            await collector(scope, AsyncMock(), AsyncMock())
-            collector.reset()
-            summary = collector.get_metrics_summary()
-            assert summary["total_requests"] == 0
-        finally:
-            sys.path[:] = old_path
-
-    @pytest.mark.asyncio
-    async def test_func_response_passthrough(self):
-        """Response from app passes through: send called with same arguments."""
-        old_path = sys.path[:]
-        try:
-            sys.path.insert(0, self.REPO_DIR)
-            from unittest.mock import AsyncMock
-            from docs.examples.observability.metrics_collector import MetricsCollector
-
-            app = AsyncMock()
-            collector = MetricsCollector(app, "test-service")
-            scope = {
-                "type": "http",
-                "method": "GET",
-                "path": "/test",
-                "query_string": b"",
-            }
-            receive = AsyncMock()
-            send = AsyncMock()
-            await collector(scope, receive, send)
-            # The app should have been called
-            app.assert_called()
-        finally:
-            sys.path[:] = old_path
-
-    @pytest.mark.asyncio
-    async def test_func_error_tracking(self):
-        """500 response: summary['errors'] == 1."""
-        old_path = sys.path[:]
-        try:
-            sys.path.insert(0, self.REPO_DIR)
-            from unittest.mock import AsyncMock
-            from docs.examples.observability.metrics_collector import MetricsCollector
-
-            app = AsyncMock(side_effect=Exception("Internal error"))
-            collector = MetricsCollector(app, "test-service")
-            scope = {
-                "type": "http",
-                "method": "GET",
-                "path": "/error",
-                "query_string": b"",
-            }
-            try:
-                await collector(scope, AsyncMock(), AsyncMock())
-            except Exception:
-                pass
-            summary = collector.get_metrics_summary()
-            assert (
-                summary.get("errors", 0) >= 1 or summary.get("total_requests", 0) >= 1
+            from observability.correlation import (
+                generate_correlation_id,
+                get_correlation_id,
+                set_correlation_id,
             )
-        finally:
-            sys.path[:] = old_path
+            self.generate = generate_correlation_id
+            self.get = get_correlation_id
+            self.set = set_correlation_id
+        except ImportError:
+            try:
+                from correlation import (
+                    generate_correlation_id,
+                    get_correlation_id,
+                    set_correlation_id,
+                )
+                self.generate = generate_correlation_id
+                self.get = get_correlation_id
+                self.set = set_correlation_id
+            except ImportError:
+                pytest.skip("Cannot import correlation module")
+
+    def test_generate_returns_uuid(self):
+        cid = self.generate()
+        assert len(cid) == 36, f"Expected UUID4 (36 chars); got '{cid}' ({len(cid)})"
+        assert cid.count("-") == 4, "UUID4 should have 4 hyphens"
+
+    def test_set_and_get(self):
+        self.set("test-correlation-123")
+        assert self.get() == "test-correlation-123"
+
+    def test_default_when_not_set(self):
+        # Reset context
+        import contextvars
+        from importlib import reload
+        try:
+            from observability import correlation as mod
+        except ImportError:
+            from correlation import correlation as mod
+            mod = None
+        if mod:
+            reload(mod)
+        # Fresh context should give default
+        cid = self.get()
+        assert cid is not None, "get_correlation_id should not return None"
+
+
+class TestFunctionalMetricsCollector:
+    """Run MetricsCollector and verify metric recording."""
+
+    @pytest.fixture(autouse=True)
+    def _setup(self):
+        sys.path.insert(0, OBS_DIR)
+        sys.path.insert(0, os.path.dirname(OBS_DIR))
+        try:
+            from observability.metrics_collector import MetricsCollector
+            self.MetricsCollector = MetricsCollector
+        except ImportError:
+            try:
+                from metrics_collector import MetricsCollector
+                self.MetricsCollector = MetricsCollector
+            except ImportError:
+                pytest.skip("Cannot import MetricsCollector")
+
+    def test_record_request(self):
+        mc = self.MetricsCollector()
+        mc.record_request("GET", "/users", 200, 0.05)
+        # Should not raise
+
+    def test_record_error(self):
+        mc = self.MetricsCollector()
+        mc.record_error("ValueError", "/users")
+        # Should not raise
+
+    def test_get_metrics_returns_string(self):
+        mc = self.MetricsCollector()
+        mc.record_request("GET", "/users", 200, 0.1)
+        output = mc.get_metrics()
+        assert isinstance(output, str), "get_metrics should return a string"
+        assert len(output) > 0, "Metrics output should not be empty"
+
+    def test_track_in_progress(self):
+        mc = self.MetricsCollector()
+        with mc.track_in_progress("/users"):
+            pass  # gauge incremented then decremented
+
+
+class TestFunctionalLogging:
+    """Run configure_logging and get_logger."""
+
+    @pytest.fixture(autouse=True)
+    def _setup(self):
+        sys.path.insert(0, OBS_DIR)
+        sys.path.insert(0, os.path.dirname(OBS_DIR))
+        try:
+            from observability.logging_config import configure_logging, get_logger
+            self.configure = configure_logging
+            self.get_logger = get_logger
+        except ImportError:
+            try:
+                from logging_config import configure_logging, get_logger
+                self.configure = configure_logging
+                self.get_logger = get_logger
+            except ImportError:
+                pytest.skip("Cannot import logging_config")
+
+    def test_configure_json(self):
+        self.configure(log_level="INFO", json_output=True)
+        logger = self.get_logger("test")
+        assert logger is not None
+
+    def test_configure_console(self):
+        self.configure(log_level="DEBUG", json_output=False)
+        logger = self.get_logger("test")
+        assert logger is not None

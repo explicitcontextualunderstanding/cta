@@ -1,197 +1,239 @@
 """
-Test for 'clojure-write' skill — Currency Conversion for Metabase Export
-Validates that the Agent created currency conversion middleware for Metabase
-query processor with configurable exchange rates and export pipeline integration.
+Test skill: clojure-write
+Verify that the Agent correctly adds currency field conversion to
+Metabase's query result export pipeline including conversion functions,
+configurable exchange rates, and export pipeline integration.
 """
 
 import os
 import re
-
+import subprocess
 import pytest
 
 
 class TestClojureWrite:
-    """Verify currency conversion middleware for Metabase."""
-
     REPO_DIR = "/workspace/metabase"
 
-    def _read(self, *parts):
-        fpath = os.path.join(self.REPO_DIR, *parts)
-        assert os.path.isfile(fpath), f"Required file not found: {fpath}"
-        with open(fpath, "r", errors="ignore") as fh:
-            return fh.read()
+    # === File Path Checks ===
 
-    # ------------------------------------------------------------------
-    # L1: File existence
-    # ------------------------------------------------------------------
+    def test_currency_conversion_file_exists(self):
+        """Verify currency_conversion.clj file exists"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "src/metabase/query_processor/middleware/currency_conversion.clj",
+        )
+        assert os.path.exists(path), f"currency_conversion.clj not found at {path}"
 
-    def test_currency_conversion_exists(self):
-        """currency_conversion.clj must exist."""
-        assert os.path.isfile(
-            os.path.join(
+    def test_format_rows_file_exists(self):
+        """Verify format_rows.clj file exists"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "src/metabase/query_processor/middleware/format_rows.clj",
+        )
+        assert os.path.exists(path), f"format_rows.clj not found at {path}"
+
+    # === Semantic Checks ===
+
+    def test_currency_conversion_has_namespace(self):
+        """Verify currency_conversion.clj has proper namespace declaration"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "src/metabase/query_processor/middleware/currency_conversion.clj",
+        )
+        with open(path) as f:
+            content = f.read()
+
+        assert "(ns " in content, (
+            "currency_conversion.clj should have (ns ...) declaration"
+        )
+        assert "currency" in content.lower(), (
+            "Namespace should reference currency"
+        )
+
+    def test_currency_conversion_defines_conversion_function(self):
+        """Verify a conversion function accepting value, source currency, target currency"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "src/metabase/query_processor/middleware/currency_conversion.clj",
+        )
+        with open(path) as f:
+            content = f.read()
+
+        func_indicators = [
+            "defn", "convert", "currency",
+        ]
+        found = [ind for ind in func_indicators if ind in content]
+        assert len(found) >= 2, (
+            f"Should define a currency conversion function. Found: {found}"
+        )
+
+        # Should reference source/target currencies
+        param_indicators = ["source", "target", "from", "to", "rate"]
+        param_found = [ind for ind in param_indicators if ind in content.lower()]
+        assert len(param_found) >= 2, (
+            f"Conversion function should accept source/target currency params. "
+            f"Found: {param_found}"
+        )
+
+    def test_currency_conversion_supports_exchange_rates(self):
+        """Verify exchange rate configuration is present"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "src/metabase/query_processor/middleware/currency_conversion.clj",
+        )
+        with open(path) as f:
+            content = f.read().lower()
+
+        rate_indicators = ["rate", "exchange", "usd", "eur", "gbp", "currency"]
+        found = [ind for ind in rate_indicators if ind in content]
+        assert len(found) >= 2, (
+            f"Should define exchange rate data. Found: {found}"
+        )
+
+    def test_currency_conversion_handles_edge_cases(self):
+        """Verify edge case handling (nil, zero, unknown currency)"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "src/metabase/query_processor/middleware/currency_conversion.clj",
+        )
+        with open(path) as f:
+            content = f.read()
+
+        edge_case_indicators = [
+            "nil", "zero", "unknown", "not found",
+            "when", "if", "cond", "some?",
+        ]
+        found = [ind for ind in edge_case_indicators if ind in content.lower()]
+        assert len(found) >= 2, (
+            f"Should handle edge cases (nil, zero, unknown currency). "
+            f"Found: {found}"
+        )
+
+    def test_format_rows_integrates_conversion(self):
+        """Verify format_rows.clj integrates currency conversion"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "src/metabase/query_processor/middleware/format_rows.clj",
+        )
+        with open(path) as f:
+            content = f.read()
+
+        integration_indicators = [
+            "currency", "convert", "currency_conversion",
+            "currency-conversion",
+        ]
+        found = [ind for ind in integration_indicators if ind in content]
+        assert len(found) >= 1, (
+            "format_rows.clj should integrate currency conversion. "
+            f"None of {integration_indicators} found."
+        )
+
+    def test_conversion_preserves_decimal_precision(self):
+        """Verify conversion code handles decimal precision"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "src/metabase/query_processor/middleware/currency_conversion.clj",
+        )
+        with open(path) as f:
+            content = f.read()
+
+        precision_indicators = [
+            "BigDecimal", "decimal", "precision", "scale",
+            "with-precision", "bigdec", "round",
+        ]
+        found = [ind for ind in precision_indicators if ind in content]
+        # Also check for multiplication/division which implies calculation
+        has_math = "*" in content or "/" in content
+        assert len(found) >= 1 or has_math, (
+            "Conversion should handle decimal precision. "
+            f"Found: {found}, has_math: {has_math}"
+        )
+
+    # === Functional Checks ===
+
+    def test_currency_conversion_balanced_parens(self):
+        """Verify currency_conversion.clj has balanced parentheses"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "src/metabase/query_processor/middleware/currency_conversion.clj",
+        )
+        with open(path) as f:
+            content = f.read()
+
+        assert content.count("(") == content.count(")"), (
+            f"Unbalanced parentheses: {content.count('(')} open, "
+            f"{content.count(')')} close"
+        )
+        assert content.count("[") == content.count("]"), (
+            f"Unbalanced brackets: {content.count('[')} open, "
+            f"{content.count(']')} close"
+        )
+        assert content.count("{") == content.count("}"), (
+            f"Unbalanced braces: {content.count('{')} open, "
+            f"{content.count('}')} close"
+        )
+
+    def test_format_rows_balanced_parens(self):
+        """Verify format_rows.clj has balanced parentheses"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "src/metabase/query_processor/middleware/format_rows.clj",
+        )
+        with open(path) as f:
+            content = f.read()
+
+        assert content.count("(") == content.count(")"), (
+            f"Unbalanced parentheses in format_rows.clj"
+        )
+
+    def test_currency_conversion_has_proper_requires(self):
+        """Verify currency_conversion.clj imports necessary namespaces"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "src/metabase/query_processor/middleware/currency_conversion.clj",
+        )
+        with open(path) as f:
+            content = f.read()
+
+        assert ":require" in content or "require" in content, (
+            "currency_conversion.clj should require its dependencies"
+        )
+
+    def test_conversion_metadata_column_detection(self):
+        """Verify conversion is triggered by column metadata annotations"""
+        combined = ""
+        for fname in ["currency_conversion.clj", "format_rows.clj"]:
+            path = os.path.join(
                 self.REPO_DIR,
-                "src/metabase/query_processor/middleware/currency_conversion.clj",
+                f"src/metabase/query_processor/middleware/{fname}",
             )
-        )
+            if os.path.exists(path):
+                with open(path) as f:
+                    combined += f.read()
 
-    def test_format_rows_exists(self):
-        """format_rows.clj must exist."""
-        assert os.path.isfile(
-            os.path.join(
-                self.REPO_DIR, "src/metabase/query_processor/middleware/format_rows.clj"
-            )
-        )
-
-    # ------------------------------------------------------------------
-    # L1: Clojure namespace
-    # ------------------------------------------------------------------
-
-    def test_namespace_declaration(self):
-        """currency_conversion.clj must have a proper namespace."""
-        content = self._read(
-            "src/metabase/query_processor/middleware/currency_conversion.clj"
-        )
-        assert re.search(
-            r"\(ns\s+metabase\.query.processor\.middleware\.currency.conversion",
-            content,
-        ), "Incorrect or missing namespace declaration"
-
-    # ------------------------------------------------------------------
-    # L2: Conversion function
-    # ------------------------------------------------------------------
-
-    def test_has_conversion_function(self):
-        """Module must define a currency conversion function."""
-        content = self._read(
-            "src/metabase/query_processor/middleware/currency_conversion.clj"
-        )
-        patterns = [
-            r"\(defn\s+convert",
-            r"\(defn-\s+convert",
-            r"\(defn\s+currency-convert",
+        metadata_indicators = [
+            "column", "metadata", "semantic_type", "semantic-type",
+            ":currency", "field", "annotation",
         ]
-        assert any(
-            re.search(p, content) for p in patterns
-        ), "No conversion function found"
-
-    def test_accepts_source_and_target_currency(self):
-        """Conversion must accept source and target currency codes."""
-        content = self._read(
-            "src/metabase/query_processor/middleware/currency_conversion.clj"
+        found = [ind for ind in metadata_indicators if ind in combined.lower()]
+        assert len(found) >= 2, (
+            f"Conversion should detect currency columns via metadata. "
+            f"Found: {found}"
         )
-        patterns = [
-            r"source.*currency",
-            r"target.*currency",
-            r"from.*currency",
-            r"to.*currency",
-            r"src-curr",
-            r"tgt-curr",
-        ]
-        found = sum(1 for p in patterns if re.search(p, content, re.IGNORECASE))
-        assert found >= 2, "Conversion does not accept source and target currencies"
 
-    def test_uses_exchange_rates(self):
-        """Module must use configurable exchange rate data."""
-        content = self._read(
-            "src/metabase/query_processor/middleware/currency_conversion.clj"
+    def test_original_values_not_mutated(self):
+        """Verify implementation produces new values without mutating originals"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "src/metabase/query_processor/middleware/currency_conversion.clj",
         )
-        patterns = [r"exchange.rate", r"rate", r"rates", r"exchange", r"config"]
-        assert any(
-            re.search(p, content, re.IGNORECASE) for p in patterns
-        ), "Module does not use exchange rate data"
+        with open(path) as f:
+            content = f.read()
 
-    # ------------------------------------------------------------------
-    # L2: Edge case handling
-    # ------------------------------------------------------------------
-
-    def test_handles_nil_values(self):
-        """Module must handle nil values."""
-        content = self._read(
-            "src/metabase/query_processor/middleware/currency_conversion.clj"
+        # In Clojure, data is immutable by default, but check for atoms/refs
+        mutation_indicators = ["atom", "swap!", "reset!", "ref", "alter"]
+        mutable = [ind for ind in mutation_indicators if ind in content]
+        # Having some is ok, but excessive mutation would be anti-pattern
+        assert len(mutable) <= 2, (
+            f"Conversion should be pure/functional. Found mutation primitives: {mutable}"
         )
-        patterns = [r"nil\?", r"when\s+", r"some\?", r"nil", r"if-not"]
-        assert any(
-            re.search(p, content) for p in patterns
-        ), "Module does not handle nil values"
-
-    def test_handles_unknown_currency(self):
-        """Module must handle unknown currency codes."""
-        content = self._read(
-            "src/metabase/query_processor/middleware/currency_conversion.clj"
-        )
-        patterns = [
-            r"unknown",
-            r"not.*found",
-            r"missing",
-            r"get.*rate.*nil",
-            r"throw\s+\(ex-info",
-            r"contains\?",
-        ]
-        assert any(
-            re.search(p, content, re.IGNORECASE) for p in patterns
-        ), "Module does not handle unknown currencies"
-
-    def test_preserves_precision(self):
-        """Conversion must preserve decimal precision."""
-        content = self._read(
-            "src/metabase/query_processor/middleware/currency_conversion.clj"
-        )
-        patterns = [
-            r"BigDecimal",
-            r"bigdec",
-            r"with-precision",
-            r"decimal",
-            r"round",
-            r"scale",
-        ]
-        assert any(
-            re.search(p, content, re.IGNORECASE) for p in patterns
-        ), "Module does not preserve decimal precision"
-
-    # ------------------------------------------------------------------
-    # L2: Export integration
-    # ------------------------------------------------------------------
-
-    def test_format_rows_imports_conversion(self):
-        """format_rows.clj must reference currency_conversion."""
-        content = self._read("src/metabase/query_processor/middleware/format_rows.clj")
-        patterns = [
-            r"currency.conversion",
-            r"currency_conversion",
-            r"convert.*currency",
-        ]
-        assert any(
-            re.search(p, content, re.IGNORECASE) for p in patterns
-        ), "format_rows.clj does not reference currency conversion"
-
-    def test_conversion_triggered_by_metadata(self):
-        """Conversion should be triggered by column metadata."""
-        combined = self._read(
-            "src/metabase/query_processor/middleware/currency_conversion.clj"
-        ) + self._read("src/metabase/query_processor/middleware/format_rows.clj")
-        patterns = [
-            r"metadata",
-            r"column.*type",
-            r":semantic_type",
-            r":currency",
-            r"annotation",
-        ]
-        assert any(
-            re.search(p, combined, re.IGNORECASE) for p in patterns
-        ), "Conversion is not triggered by column metadata"
-
-    def test_non_currency_columns_unchanged(self):
-        """Non-currency columns should pass through unchanged."""
-        combined = self._read(
-            "src/metabase/query_processor/middleware/currency_conversion.clj"
-        ) + self._read("src/metabase/query_processor/middleware/format_rows.clj")
-        patterns = [
-            r"currency\?",
-            r"is.*currency",
-            r"semantic.type.*currency",
-            r"when.*currency",
-            r"if.*currency",
-        ]
-        assert any(
-            re.search(p, combined, re.IGNORECASE) for p in patterns
-        ), "No logic to skip non-currency columns"

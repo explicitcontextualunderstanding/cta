@@ -1,239 +1,216 @@
 """
-Test for 'django-patterns' skill — Django Low-Stock Alerts
-Validates that the Agent created a low-stock alert feature for saleor
-with Django models, REST views, serializers, URL routes, and alerting logic.
+Test skill: django-patterns
+Verify that the Agent correctly implements a low-stock alert feature
+in Saleor including Django models, DRF serializers, REST views,
+URL routing, duplicate-alert prevention, and acknowledging alerts.
 """
 
 import os
 import re
 import subprocess
-
 import pytest
-
-from _dependency_utils import ensure_python_dependencies
-
-
-@pytest.fixture(scope="module", autouse=True)
-def _ensure_repo_dependencies():
-    ensure_python_dependencies(TestDjangoPatterns.REPO_DIR)
 
 
 class TestDjangoPatterns:
-    """Verify Django low-stock alert feature for saleor."""
-
     REPO_DIR = "/workspace/saleor"
 
-    def _read(self, *parts):
-        fpath = os.path.join(self.REPO_DIR, *parts)
-        assert os.path.isfile(fpath), f"Required file not found: {fpath}"
-        with open(fpath, "r", errors="ignore") as fh:
-            return fh.read()
+    # === File Path Checks ===
 
-    def _find_alert_files(self):
-        """Find the stock alert module files."""
-        results = {}
-        for root, _dirs, files in os.walk(self.REPO_DIR):
-            for f in files:
-                path = os.path.join(root, f)
-                if f == "models.py" and "stock_alert" in root.replace("\\", "/"):
-                    results["models"] = path
-                elif f == "views.py" and "stock_alert" in root.replace("\\", "/"):
-                    results["views"] = path
-                elif f == "serializers.py" and "stock_alert" in root.replace("\\", "/"):
-                    results["serializers"] = path
-                elif f == "urls.py" and "stock_alert" in root.replace("\\", "/"):
-                    results["urls"] = path
-        # Fallback: look for stock_alert in warehouse or other module
-        if not results:
-            for root, _dirs, files in os.walk(self.REPO_DIR):
-                for f in files:
-                    if f.endswith(".py"):
-                        path = os.path.join(root, f)
-                        try:
-                            with open(path, "r", errors="ignore") as fh:
-                                text = fh.read()
-                            if "StockAlert" in text:
-                                if f == "models.py":
-                                    results.setdefault("models", path)
-                                elif f == "views.py":
-                                    results.setdefault("views", path)
-                                elif f == "serializers.py":
-                                    results.setdefault("serializers", path)
-                                elif f == "urls.py":
-                                    results.setdefault("urls", path)
-                        except Exception:
-                            pass
-        return results
-
-    # ------------------------------------------------------------------
-    # L1: Model file existence and structure
-    # ------------------------------------------------------------------
-
-    def test_stock_alert_model_exists(self):
-        """A models.py containing StockAlert must exist."""
-        files = self._find_alert_files()
-        assert "models" in files, "No models.py with StockAlert found"
-
-    def test_model_compiles(self):
-        """The models.py file must be syntactically valid."""
-        files = self._find_alert_files()
-        assert "models" in files
-        result = subprocess.run(
-            ["python", "-m", "py_compile", files["models"]],
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-        assert result.returncode == 0, f"Syntax error:\n{result.stderr}"
-
-    def test_stock_alert_model_fields(self):
-        """StockAlert model must have required fields."""
-        files = self._find_alert_files()
-        assert "models" in files
-        with open(files["models"], "r", errors="ignore") as fh:
-            content = fh.read()
-        assert re.search(r"class\s+StockAlert", content), "StockAlert class not defined"
-        required_fields = ["product", "warehouse", "threshold"]
-        found = [
-            f for f in required_fields if re.search(rf"{f}", content, re.IGNORECASE)
-        ]
-        assert len(found) >= 2, f"StockAlert only has {len(found)} of {required_fields}"
-
-    def test_stock_alert_config_model(self):
-        """StockAlertConfig model should exist for alert configuration."""
-        files = self._find_alert_files()
-        assert "models" in files
-        with open(files["models"], "r", errors="ignore") as fh:
-            content = fh.read()
-        patterns = [
-            r"class\s+StockAlertConfig",
-            r"class\s+AlertConfig",
-            r"threshold",
-            r"enabled",
-        ]
-        found = sum(1 for p in patterns if re.search(p, content))
-        assert (
-            found >= 2
-        ), "StockAlertConfig or threshold configuration not defined in models"
-
-    # ------------------------------------------------------------------
-    # L1: Views and serializers
-    # ------------------------------------------------------------------
+    def test_models_file_exists(self):
+        """Verify saleor/warehouse/models.py exists"""
+        path = os.path.join(self.REPO_DIR, "saleor/warehouse/models.py")
+        assert os.path.exists(path), f"models.py not found at {path}"
 
     def test_views_file_exists(self):
-        """A views.py for stock alerts must exist."""
-        files = self._find_alert_files()
-        assert "views" in files, "No views.py with StockAlert found"
+        """Verify saleor/warehouse/views.py was created"""
+        path = os.path.join(self.REPO_DIR, "saleor/warehouse/views.py")
+        assert os.path.exists(path), f"views.py not found at {path}"
 
-    def test_views_compile(self):
-        """views.py must be syntactically valid."""
-        files = self._find_alert_files()
-        assert "views" in files
-        result = subprocess.run(
-            ["python", "-m", "py_compile", files["views"]],
-            capture_output=True,
-            text=True,
-            timeout=30,
+    def test_serializers_file_exists(self):
+        """Verify saleor/warehouse/serializers.py was created"""
+        path = os.path.join(self.REPO_DIR, "saleor/warehouse/serializers.py")
+        assert os.path.exists(path), f"serializers.py not found at {path}"
+
+    def test_urls_file_exists(self):
+        """Verify saleor/warehouse/urls.py was created"""
+        path = os.path.join(self.REPO_DIR, "saleor/warehouse/urls.py")
+        assert os.path.exists(path), f"urls.py not found at {path}"
+
+    # === Semantic Checks ===
+
+    def test_stock_alert_model_defined(self):
+        """Verify StockAlert model is defined with required fields"""
+        path = os.path.join(self.REPO_DIR, "saleor/warehouse/models.py")
+        with open(path) as f:
+            content = f.read()
+
+        assert re.search(r"class\s+StockAlert", content), (
+            "StockAlert model class not found"
         )
-        assert result.returncode == 0, f"Syntax error:\n{result.stderr}"
+        required_concepts = ["threshold", "stock", "timestamp", "resolved"]
+        found = [c for c in required_concepts if c in content.lower()]
+        assert len(found) >= 3, (
+            f"StockAlert should have threshold/stock/timestamp/resolved fields. "
+            f"Found references: {found}"
+        )
 
-    def test_serializers_exist(self):
-        """A serializers.py for stock alerts must exist."""
-        files = self._find_alert_files()
-        assert "serializers" in files, "No serializers.py with StockAlert found"
+    def test_stock_alert_config_model_defined(self):
+        """Verify StockAlertConfig model links variant to threshold"""
+        path = os.path.join(self.REPO_DIR, "saleor/warehouse/models.py")
+        with open(path) as f:
+            content = f.read()
 
-    def test_urls_exist(self):
-        """A urls.py for stock alert endpoints must exist."""
-        files = self._find_alert_files()
-        assert "urls" in files, "No urls.py with StockAlert routes found"
+        assert re.search(r"class\s+StockAlertConfig", content), (
+            "StockAlertConfig model class not found"
+        )
+        assert "threshold" in content.lower(), (
+            "StockAlertConfig should include a threshold field"
+        )
+        assert "variant" in content.lower() or "product" in content.lower(), (
+            "StockAlertConfig should reference a product/variant"
+        )
 
-    # ------------------------------------------------------------------
-    # L2: REST endpoint patterns
-    # ------------------------------------------------------------------
+    def test_serializers_use_drf(self):
+        """Verify serializers.py uses Django REST Framework serializers"""
+        path = os.path.join(self.REPO_DIR, "saleor/warehouse/serializers.py")
+        with open(path) as f:
+            content = f.read()
 
-    def test_views_define_crud_endpoints(self):
-        """Views must define list/create/detail endpoints."""
-        files = self._find_alert_files()
-        assert "views" in files
-        with open(files["views"], "r", errors="ignore") as fh:
-            content = fh.read()
-        crud_patterns = [
-            r"list|List",
-            r"create|Create",
-            r"retrieve|detail|Detail",
-            r"update|Update",
-            r"delete|Delete|destroy",
+        assert "rest_framework" in content, (
+            "Serializers should import from rest_framework"
+        )
+        assert re.search(r"class\s+\w+Serializer", content), (
+            "At least one serializer class should be defined"
+        )
+
+    def test_views_define_api_endpoints(self):
+        """Verify views.py defines API views for alert operations"""
+        path = os.path.join(self.REPO_DIR, "saleor/warehouse/views.py")
+        with open(path) as f:
+            content = f.read()
+
+        # Should have list, create, and possibly update operations
+        view_indicators = [
+            "ViewSet", "APIView", "api_view", "ListAPIView",
+            "CreateAPIView", "GenericAPIView", "ModelViewSet",
         ]
-        found = sum(1 for p in crud_patterns if re.search(p, content, re.IGNORECASE))
-        assert found >= 2, f"Only {found} CRUD operation(s) in views — need at least 2"
+        found = [ind for ind in view_indicators if ind in content]
+        assert len(found) >= 1, (
+            f"views.py should use DRF view classes. Found: {found}"
+        )
 
-    def test_serializer_fields(self):
-        """Serializers must declare model fields."""
-        files = self._find_alert_files()
-        assert "serializers" in files
-        with open(files["serializers"], "r", errors="ignore") as fh:
-            content = fh.read()
-        assert re.search(
-            r"class\s+\w*StockAlert\w*Serializer", content
-        ), "No StockAlert serializer class found"
-        assert re.search(r"fields", content), "Serializer does not declare fields"
+    def test_urls_define_routes(self):
+        """Verify urls.py defines URL patterns for alert endpoints"""
+        path = os.path.join(self.REPO_DIR, "saleor/warehouse/urls.py")
+        with open(path) as f:
+            content = f.read()
 
-    def test_urls_register_routes(self):
-        """URL configuration must register stock alert routes."""
-        files = self._find_alert_files()
-        assert "urls" in files
-        with open(files["urls"], "r", errors="ignore") as fh:
-            content = fh.read()
-        patterns = [r"urlpatterns", r"path\(", r"router", r"register", r"url\("]
-        assert any(
-            re.search(p, content) for p in patterns
-        ), "urls.py does not register any routes"
-
-    # ------------------------------------------------------------------
-    # L2: Alert threshold logic
-    # ------------------------------------------------------------------
-
-    def test_threshold_trigger_logic(self):
-        """Alert logic must check stock against threshold."""
-        files = self._find_alert_files()
-        found_logic = False
-        for key in ("models", "views"):
-            if key not in files:
-                continue
-            with open(files[key], "r", errors="ignore") as fh:
-                content = fh.read()
-            patterns = [
-                r"quantity.*threshold",
-                r"stock.*<=",
-                r"below.*threshold",
-                r"alert.*trigger",
-                r"check.*stock",
-                r"low.*stock",
-            ]
-            if any(re.search(p, content, re.IGNORECASE) for p in patterns):
-                found_logic = True
-                break
-        assert found_logic, "No threshold trigger logic found in models or views"
+        assert "urlpatterns" in content, "urls.py should define urlpatterns"
+        path_indicators = ["path(", "re_path(", "router", "url("]
+        found = [ind for ind in path_indicators if ind in content]
+        assert len(found) >= 1, (
+            f"urls.py should use path() or router for URL routing. Found: {found}"
+        )
 
     def test_duplicate_alert_prevention(self):
-        """System must prevent duplicate alerts."""
-        files = self._find_alert_files()
-        found = False
-        for key in ("models", "views"):
-            if key not in files:
-                continue
-            with open(files[key], "r", errors="ignore") as fh:
-                content = fh.read()
-            patterns = [
-                r"get_or_create",
-                r"unique_together",
-                r"exists\(\)",
-                r"filter.*exists",
-                r"UniqueConstraint",
-                r"duplicate",
-                r"already.*exist",
-            ]
-            if any(re.search(p, content, re.IGNORECASE) for p in patterns):
-                found = True
-                break
-        assert found, "No duplicate alert prevention mechanism found"
+        """Verify code prevents duplicate unresolved alerts"""
+        combined = ""
+        for fname in ["models.py", "views.py", "serializers.py"]:
+            path = os.path.join(self.REPO_DIR, f"saleor/warehouse/{fname}")
+            if os.path.exists(path):
+                with open(path) as f:
+                    combined += f.read()
+
+        duplicate_indicators = [
+            "exists()", "filter(", "get_or_create", "unique_together",
+            "UniqueConstraint", "duplicate", "already",
+        ]
+        found = [ind for ind in duplicate_indicators if ind in combined]
+        assert len(found) >= 1, (
+            "Code should prevent duplicate unresolved alerts. "
+            f"None of {duplicate_indicators} found."
+        )
+
+    def test_alert_acknowledge_resolve(self):
+        """Verify alerts can be acknowledged or resolved"""
+        combined = ""
+        for fname in ["models.py", "views.py"]:
+            path = os.path.join(self.REPO_DIR, f"saleor/warehouse/{fname}")
+            if os.path.exists(path):
+                with open(path) as f:
+                    combined += f.read()
+
+        resolve_indicators = [
+            "acknowledge", "resolve", "resolved", "is_resolved",
+            "status", "RESOLVED", "ACKNOWLEDGED",
+        ]
+        found = [ind for ind in resolve_indicators if ind in combined]
+        assert len(found) >= 1, (
+            "Should support resolving/acknowledging alerts. "
+            f"None of {resolve_indicators} found."
+        )
+
+    def test_filtering_support(self):
+        """Verify alert filtering by warehouse or product category"""
+        combined = ""
+        for fname in ["views.py", "serializers.py"]:
+            path = os.path.join(self.REPO_DIR, f"saleor/warehouse/{fname}")
+            if os.path.exists(path):
+                with open(path) as f:
+                    combined += f.read()
+
+        filter_indicators = [
+            "filter", "warehouse", "category", "filter_backends",
+            "filterset", "DjangoFilterBackend", "query_params",
+        ]
+        found = [ind for ind in filter_indicators if ind in combined]
+        assert len(found) >= 2, (
+            f"Views should support filtering by warehouse/category. "
+            f"Found: {found}"
+        )
+
+    # === Functional Checks ===
+
+    def test_models_valid_python(self):
+        """Verify models.py is valid Python"""
+        path = os.path.join(self.REPO_DIR, "saleor/warehouse/models.py")
+        result = subprocess.run(
+            ["python", "-c", f"import ast; ast.parse(open('{path}').read())"],
+            capture_output=True, text=True,
+        )
+        assert result.returncode == 0, (
+            f"models.py has syntax errors: {result.stderr}"
+        )
+
+    def test_views_valid_python(self):
+        """Verify views.py is valid Python"""
+        path = os.path.join(self.REPO_DIR, "saleor/warehouse/views.py")
+        result = subprocess.run(
+            ["python", "-c", f"import ast; ast.parse(open('{path}').read())"],
+            capture_output=True, text=True,
+        )
+        assert result.returncode == 0, (
+            f"views.py has syntax errors: {result.stderr}"
+        )
+
+    def test_serializers_valid_python(self):
+        """Verify serializers.py is valid Python"""
+        path = os.path.join(self.REPO_DIR, "saleor/warehouse/serializers.py")
+        result = subprocess.run(
+            ["python", "-c", f"import ast; ast.parse(open('{path}').read())"],
+            capture_output=True, text=True,
+        )
+        assert result.returncode == 0, (
+            f"serializers.py has syntax errors: {result.stderr}"
+        )
+
+    def test_urls_valid_python(self):
+        """Verify urls.py is valid Python"""
+        path = os.path.join(self.REPO_DIR, "saleor/warehouse/urls.py")
+        result = subprocess.run(
+            ["python", "-c", f"import ast; ast.parse(open('{path}').read())"],
+            capture_output=True, text=True,
+        )
+        assert result.returncode == 0, (
+            f"urls.py has syntax errors: {result.stderr}"
+        )

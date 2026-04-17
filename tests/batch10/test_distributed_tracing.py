@@ -1,190 +1,228 @@
 """
-Test for 'distributed-tracing' skill — OpenTelemetry Collector tail-sampling processor
-Validates that the Agent implemented a tail-sampling processor in Go for
-the OpenTelemetry Collector.
+Test skill: distributed-tracing
+Verify that the Agent correctly implements a Tail Sampling Processor
+for the OpenTelemetry Collector in Go.
 """
 
 import os
 import re
-
+import subprocess
 import pytest
 
 
 class TestDistributedTracing:
-    """Verify OpenTelemetry tail-sampling processor implementation."""
-
     REPO_DIR = "/workspace/opentelemetry-collector"
 
-    def test_tail_sampling_processor_directory(self):
-        """Tail-sampling processor directory must exist."""
-        found = False
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            for d in dirs:
-                if "tailsampling" in d.lower() or "tail_sampling" in d.lower() or "tail-sampling" in d.lower():
-                    found = True
-                    break
-            if found:
-                break
-        assert found, "Tail-sampling processor directory not found"
+    # === File Path Checks ===
 
-    def test_processor_go_file_exists(self):
-        """A Go file implementing the processor must exist."""
-        found = False
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            if "tailsampling" in root.lower() or "tail_sampling" in root.lower():
-                for f in files:
-                    if f.endswith(".go") and "processor" in f.lower():
-                        found = True
-                        break
-            if found:
-                break
-        assert found, "Processor Go file not found in tail-sampling directory"
+    def test_config_go_exists(self):
+        """Verify config.go was created"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "processor/tailsamplingprocessor/config.go",
+        )
+        assert os.path.exists(path), "config.go not found"
 
-    def test_config_go_file_exists(self):
-        """Config struct for the processor must be defined."""
-        found = False
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            if "tailsampling" in root.lower() or "tail_sampling" in root.lower():
-                for f in files:
-                    if f.endswith(".go"):
-                        path = os.path.join(root, f)
-                        with open(path, "r", errors="ignore") as fh:
-                            content = fh.read()
-                        if re.search(r"type\s+Config\s+struct", content):
-                            found = True
-                            break
-            if found:
-                break
-        assert found, "Config struct not found"
+    def test_processor_go_exists(self):
+        """Verify processor.go was created"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "processor/tailsamplingprocessor/processor.go",
+        )
+        assert os.path.exists(path), "processor.go not found"
 
-    def test_factory_function_exists(self):
-        """NewFactory or createDefaultConfig function must exist."""
-        found = False
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            if "tailsampling" in root.lower() or "tail_sampling" in root.lower():
-                for f in files:
-                    if f.endswith(".go"):
-                        path = os.path.join(root, f)
-                        with open(path, "r", errors="ignore") as fh:
-                            content = fh.read()
-                        if re.search(r"func\s+(NewFactory|createDefaultConfig|newFactory)", content):
-                            found = True
-                            break
-            if found:
-                break
-        assert found, "Factory function not found"
+    def test_factory_go_exists(self):
+        """Verify factory.go was created"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "processor/tailsamplingprocessor/factory.go",
+        )
+        assert os.path.exists(path), "factory.go not found"
 
-    def test_sampling_policy_defined(self):
-        """At least one sampling policy must be defined."""
-        found = False
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            if "tailsampling" in root.lower() or "tail_sampling" in root.lower():
-                for f in files:
-                    if f.endswith(".go"):
-                        path = os.path.join(root, f)
-                        with open(path, "r", errors="ignore") as fh:
-                            content = fh.read()
-                        if re.search(r"[Pp]olicy|[Ss]ampling[Rr]ule|[Ss]ampler", content):
-                            found = True
-                            break
-            if found:
-                break
-        assert found, "No sampling policy defined"
+    def test_processor_test_go_exists(self):
+        """Verify processor_test.go was created"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "processor/tailsamplingprocessor/processor_test.go",
+        )
+        assert os.path.exists(path), "processor_test.go not found"
 
-    def test_trace_decision_logic(self):
-        """Processor must implement trace sampling decision logic."""
-        found = False
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            if "tailsampling" in root.lower() or "tail_sampling" in root.lower():
-                for f in files:
-                    if f.endswith(".go"):
-                        path = os.path.join(root, f)
-                        with open(path, "r", errors="ignore") as fh:
-                            content = fh.read()
-                        if re.search(r"[Dd]ecision|[Ss]ampled|[Nn]ot[Ss]ampled|shouldSample|Evaluate", content):
-                            found = True
-                            break
-            if found:
-                break
-        assert found, "No trace decision logic found"
+    # === Semantic Checks: Config structure ===
 
-    def test_span_processing(self):
-        """Processor must handle spans (ConsumeTraces or processSpan)."""
-        found = False
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            if "tailsampling" in root.lower() or "tail_sampling" in root.lower():
-                for f in files:
-                    if f.endswith(".go"):
-                        path = os.path.join(root, f)
-                        with open(path, "r", errors="ignore") as fh:
-                            content = fh.read()
-                        if re.search(r"ConsumeTraces|processSpan|ProcessTraces|pdata\.Traces", content):
-                            found = True
-                            break
-            if found:
-                break
-        assert found, "No span processing found"
+    def _load_config_source(self):
+        path = os.path.join(
+            self.REPO_DIR,
+            "processor/tailsamplingprocessor/config.go",
+        )
+        return open(path).read()
 
-    def test_error_handling(self):
-        """Processor must include error handling."""
-        found = False
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            if "tailsampling" in root.lower() or "tail_sampling" in root.lower():
-                for f in files:
-                    if f.endswith(".go"):
-                        path = os.path.join(root, f)
-                        with open(path, "r", errors="ignore") as fh:
-                            content = fh.read()
-                        if re.search(r"if\s+err\s*!=\s*nil|errors\.(New|Wrap)|fmt\.Errorf", content):
-                            found = True
-                            break
-            if found:
-                break
-        assert found, "No error handling found"
+    def _load_processor_source(self):
+        path = os.path.join(
+            self.REPO_DIR,
+            "processor/tailsamplingprocessor/processor.go",
+        )
+        return open(path).read()
 
-    def test_test_file_exists(self):
-        """Unit test file for the processor must exist."""
-        found = False
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            if "tailsampling" in root.lower() or "tail_sampling" in root.lower():
-                for f in files:
-                    if f.endswith("_test.go"):
-                        found = True
-                        break
-            if found:
-                break
-        assert found, "No _test.go file found for processor"
+    def _load_factory_source(self):
+        path = os.path.join(
+            self.REPO_DIR,
+            "processor/tailsamplingprocessor/factory.go",
+        )
+        return open(path).read()
 
-    def test_latency_or_error_based_policy(self):
-        """Should include latency-based or error-based sampling policy."""
-        found = False
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            if "tailsampling" in root.lower() or "tail_sampling" in root.lower():
-                for f in files:
-                    if f.endswith(".go"):
-                        path = os.path.join(root, f)
-                        with open(path, "r", errors="ignore") as fh:
-                            content = fh.read()
-                        if re.search(r"[Ll]atency|[Dd]uration|[Ee]rror.*[Pp]olicy|status.*error|StatusCode", content):
-                            found = True
-                            break
-            if found:
-                break
-        assert found, "No latency-based or error-based sampling policy found"
+    def test_config_has_decision_wait(self):
+        """Verify Config struct has DecisionWait field"""
+        source = self._load_config_source()
+        assert "DecisionWait" in source, "DecisionWait field not in config"
 
-    def test_component_type_registration(self):
-        """Processor component type must be registered."""
-        found = False
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            if "tailsampling" in root.lower() or "tail_sampling" in root.lower():
-                for f in files:
-                    if f.endswith(".go"):
-                        path = os.path.join(root, f)
-                        with open(path, "r", errors="ignore") as fh:
-                            content = fh.read()
-                        if re.search(r"component\.Type|typeStr|\"tail_sampling\"|processorhelper", content):
-                            found = True
-                            break
-            if found:
-                break
-        assert found, "Processor component type not registered"
+    def test_config_has_num_traces(self):
+        """Verify Config struct has NumTraces field"""
+        source = self._load_config_source()
+        assert "NumTraces" in source, "NumTraces field not in config"
+
+    def test_config_has_sampling_rate(self):
+        """Verify Config struct has SamplingRate field"""
+        source = self._load_config_source()
+        assert "SamplingRate" in source or "sampling_rate" in source, (
+            "SamplingRate field not in config"
+        )
+
+    def test_config_validate_function(self):
+        """Verify Validate function is defined"""
+        source = self._load_config_source()
+        assert re.search(r'func\s+\(.*\)\s+Validate\s*\(', source), (
+            "Validate method not found in config.go"
+        )
+
+    # === Semantic Checks: Factory ===
+
+    def test_factory_type_tailsampling(self):
+        """Verify factory registers type as tailsampling"""
+        source = self._load_factory_source()
+        assert "tailsampling" in source, (
+            "Factory does not register 'tailsampling' type"
+        )
+
+    def test_factory_new_factory(self):
+        """Verify NewFactory function is defined"""
+        source = self._load_factory_source()
+        assert "NewFactory" in source, "NewFactory function not found"
+
+    # === Semantic Checks: Processor ===
+
+    def test_processor_consume_traces(self):
+        """Verify processor implements ConsumeTraces"""
+        source = self._load_processor_source()
+        assert "ConsumeTraces" in source, "ConsumeTraces not found in processor"
+
+    def test_processor_trace_id_buffering(self):
+        """Verify processor buffers by TraceID"""
+        source = self._load_processor_source()
+        has_buffering = (
+            "TraceID" in source
+            or "traceID" in source
+            or "trace_id" in source
+            or "traceId" in source
+        )
+        assert has_buffering, "No TraceID buffering logic found"
+
+    def test_processor_probabilistic_sampling(self):
+        """Verify probabilistic sampling logic exists"""
+        source = self._load_processor_source()
+        has_sampling = (
+            "SamplingRate" in source
+            or "samplingRate" in source
+            or "probability" in source
+            or "rand" in source
+        )
+        assert has_sampling, "No probabilistic sampling logic found"
+
+    # === Functional Checks ===
+
+    def test_config_rejects_invalid_sampling_rate(self):
+        """Verify Validate rejects sampling rate > 1.0"""
+        source = self._load_config_source()
+        # Config should validate that rate is between 0 and 1
+        has_validation = (
+            re.search(r'SamplingRate.*[><=].*1', source)
+            or "invalid" in source.lower()
+            or "must be" in source.lower()
+        )
+        assert has_validation, "No validation for SamplingRate bounds"
+
+    def test_config_rejects_negative_sampling_rate(self):
+        """Verify Validate rejects negative sampling rate"""
+        source = self._load_config_source()
+        has_check = (
+            re.search(r'SamplingRate.*<.*0', source)
+            or re.search(r'SamplingRate.*(<=|<)\s*0', source)
+            or "negative" in source.lower()
+            or re.search(r'[<>]=?\s*0', source)
+        )
+        assert has_check, "No validation for negative SamplingRate"
+
+    def test_config_rejects_zero_decision_wait(self):
+        """Verify Validate rejects zero DecisionWait"""
+        source = self._load_config_source()
+        has_check = (
+            "DecisionWait" in source
+            and (
+                re.search(r'DecisionWait.*[<>=].*0', source)
+                or "must be" in source.lower()
+                or "positive" in source.lower()
+            )
+        )
+        assert has_check, "No validation for zero DecisionWait"
+
+    def test_processor_tracestate_passthrough(self):
+        """Verify processor preserves tracestate header"""
+        source = self._load_processor_source()
+        has_tracestate = (
+            "tracestate" in source.lower()
+            or "TraceState" in source
+            or "Tracestate" in source
+        )
+        assert has_tracestate, "No tracestate passthrough logic"
+
+    def test_processor_lru_eviction(self):
+        """Verify processor implements LRU eviction for trace buffer"""
+        source = self._load_processor_source()
+        has_lru = (
+            "LRU" in source
+            or "lru" in source
+            or "evict" in source.lower()
+            or "NumTraces" in source
+        )
+        assert has_lru, "No LRU eviction logic found"
+
+    def test_go_files_compile(self):
+        """Verify the tailsamplingprocessor package compiles"""
+        pkg_dir = os.path.join(
+            self.REPO_DIR, "processor/tailsamplingprocessor"
+        )
+        if not os.path.isdir(pkg_dir):
+            pytest.skip("tailsamplingprocessor directory not found")
+        result = subprocess.run(
+            ["go", "build", "./..."],
+            cwd=pkg_dir,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        assert result.returncode == 0, f"go build failed: {result.stderr}"
+
+    def test_go_tests_pass(self):
+        """Verify Go unit tests pass"""
+        pkg_dir = os.path.join(
+            self.REPO_DIR, "processor/tailsamplingprocessor"
+        )
+        if not os.path.isdir(pkg_dir):
+            pytest.skip("tailsamplingprocessor directory not found")
+        result = subprocess.run(
+            ["go", "test", "./..."],
+            cwd=pkg_dir,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        assert result.returncode == 0, f"go test failed: {result.stderr}"

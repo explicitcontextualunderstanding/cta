@@ -1,207 +1,198 @@
 """
-Tests for 'bash-defensive-patterns' skill.
-Generated from benchmark case definitions for bash-defensive-patterns.
+Test skill: bash-defensive-patterns
+Verify that the Agent writes defensive Bash deployment scripts with
+strict mode, lock files, atomic symlink updates, health checks with
+retries, rollback, and log rotation.
 """
 
-import ast
-import base64
-import glob
-import json
 import os
-import py_compile
 import re
 import subprocess
-import textwrap
-
 import pytest
-
-try:
-    import yaml
-except ModuleNotFoundError:
-    yaml = None
 
 
 class TestBashDefensivePatterns:
-    """Verify the bash-defensive-patterns skill output."""
+    REPO_DIR = "/workspace/shellcheck"
 
-    REPO_DIR = '/workspace/shellcheck'
+    # === File Path Checks ===
 
+    def test_deploy_script_exists(self):
+        assert os.path.exists(os.path.join(self.REPO_DIR, "scripts/deploy.sh"))
 
-    # ── helpers ──────────────────────────────────────────────
+    def test_health_check_script_exists(self):
+        assert os.path.exists(os.path.join(self.REPO_DIR, "scripts/health-check.sh"))
 
-    _SETUP_CACHE: dict = {}
+    def test_rollback_script_exists(self):
+        assert os.path.exists(os.path.join(self.REPO_DIR, "scripts/rollback.sh"))
 
-    @staticmethod
-    def _repo_path(rel: str) -> str:
-        return os.path.join(TestBashDefensivePatterns.REPO_DIR, rel)
+    def test_log_rotate_script_exists(self):
+        assert os.path.exists(os.path.join(self.REPO_DIR, "scripts/log-rotate.sh"))
 
-    @staticmethod
-    def _safe_read(path: str) -> str:
-        with open(path, "r", encoding="utf-8", errors="ignore") as fh:
-            return fh.read()
+    def test_common_lib_exists(self):
+        assert os.path.exists(os.path.join(self.REPO_DIR, "scripts/lib/common.sh"))
 
-    @staticmethod
-    def _load_yaml(path: str):
-        if yaml is None:
-            pytest.skip("PyYAML not available")
-        with open(path, "r", encoding="utf-8", errors="ignore") as fh:
-            return yaml.safe_load(fh)
+    # === Semantic Checks ===
 
-    @staticmethod
-    def _load_json(path: str):
-        with open(path, "r", encoding="utf-8", errors="ignore") as fh:
-            return json.load(fh)
+    def test_all_scripts_have_strict_mode(self):
+        """All scripts should start with set -Eeuo pipefail"""
+        for script in ("deploy.sh", "health-check.sh", "rollback.sh", "log-rotate.sh", "lib/common.sh"):
+            path = os.path.join(self.REPO_DIR, f"scripts/{script}")
+            with open(path) as f:
+                content = f.read()
+            assert "set -" in content, f"{script} missing strict mode"
+            assert "pipefail" in content, f"{script} missing pipefail"
 
-    @classmethod
-    def _run_in_repo(cls, script: str, timeout: int = 120) -> subprocess.CompletedProcess:
-        return subprocess.run(
-            ["python", "-c", textwrap.dedent(script)],
-            cwd=cls.REPO_DIR,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
+    def test_common_has_logging_functions(self):
+        """common.sh should define log_info, log_warn, log_error, log_debug"""
+        path = os.path.join(self.REPO_DIR, "scripts/lib/common.sh")
+        with open(path) as f:
+            content = f.read()
+        for func in ("log_info", "log_warn", "log_error", "log_debug"):
+            assert func in content, f"Missing {func} function"
+
+    def test_common_has_require_var(self):
+        """common.sh should define require_var function"""
+        path = os.path.join(self.REPO_DIR, "scripts/lib/common.sh")
+        with open(path) as f:
+            content = f.read()
+        assert "require_var" in content, "Missing require_var function"
+
+    def test_common_has_require_command(self):
+        """common.sh should define require_command function"""
+        path = os.path.join(self.REPO_DIR, "scripts/lib/common.sh")
+        with open(path) as f:
+            content = f.read()
+        assert "require_command" in content, "Missing require_command"
+
+    def test_common_has_lock_functions(self):
+        """common.sh should define acquire_lock and release_lock"""
+        path = os.path.join(self.REPO_DIR, "scripts/lib/common.sh")
+        with open(path) as f:
+            content = f.read()
+        assert "acquire_lock" in content, "Missing acquire_lock"
+        assert "release_lock" in content, "Missing release_lock"
+
+    def test_deploy_has_atomic_symlink(self):
+        """deploy.sh should use atomic symlink update (ln + mv)"""
+        path = os.path.join(self.REPO_DIR, "scripts/deploy.sh")
+        with open(path) as f:
+            content = f.read()
+        assert "ln -sfn" in content or "ln -s" in content, "Missing symlink creation"
+        assert "mv" in content, "Missing atomic mv for symlink swap"
+
+    def test_deploy_has_checksum_verification(self):
+        """deploy.sh should verify artifacts with SHA256 checksum"""
+        path = os.path.join(self.REPO_DIR, "scripts/deploy.sh")
+        with open(path) as f:
+            content = f.read()
+        assert "sha256" in content.lower() or "checksum" in content.lower(), (
+            "Deploy should verify artifact checksum"
         )
 
-    @classmethod
-    def _run_cmd(cls, command, args=None, timeout=120):
-        args = args or []
-        if isinstance(command, str) and args:
-            return subprocess.run(
-                [command, *args],
-                cwd=cls.REPO_DIR,
-                capture_output=True,
-                text=True,
-                timeout=timeout,
+    def test_deploy_has_dry_run(self):
+        """deploy.sh should support --dry-run mode"""
+        path = os.path.join(self.REPO_DIR, "scripts/deploy.sh")
+        with open(path) as f:
+            content = f.read()
+        assert "dry" in content.lower() or "DRY" in content, (
+            "Deploy should support dry-run mode"
+        )
+
+    def test_deploy_sources_common(self):
+        """deploy.sh should source the common library"""
+        path = os.path.join(self.REPO_DIR, "scripts/deploy.sh")
+        with open(path) as f:
+            content = f.read()
+        assert "source" in content or "." in content.split("\n")[0:20].__repr__(), (
+            "Deploy should source common.sh"
+        )
+
+    def test_health_check_has_retry_loop(self):
+        """health-check.sh should implement a retry loop"""
+        path = os.path.join(self.REPO_DIR, "scripts/health-check.sh")
+        with open(path) as f:
+            content = f.read()
+        assert "retry" in content.lower() or "attempt" in content.lower() or "while" in content or "for" in content, (
+            "Health check should have retry loop"
+        )
+
+    def test_health_check_uses_curl(self):
+        """health-check.sh should use curl for HTTP health checks"""
+        path = os.path.join(self.REPO_DIR, "scripts/health-check.sh")
+        with open(path) as f:
+            content = f.read()
+        assert "curl" in content, "Health check should use curl"
+        assert "max-time" in content or "timeout" in content.lower(), (
+            "Should set request timeout"
+        )
+
+    def test_rollback_determines_previous_version(self):
+        """rollback.sh should determine previous version from releases directory"""
+        path = os.path.join(self.REPO_DIR, "scripts/rollback.sh")
+        with open(path) as f:
+            content = f.read()
+        assert "releases" in content or "previous" in content.lower(), (
+            "Rollback should find previous version"
+        )
+
+    def test_rollback_exits_with_code_2_on_critical(self):
+        """rollback.sh should exit 2 when rollback itself fails"""
+        path = os.path.join(self.REPO_DIR, "scripts/rollback.sh")
+        with open(path) as f:
+            content = f.read()
+        assert "exit 2" in content, "Rollback failure should exit with code 2"
+        assert "CRITICAL" in content, "Should log CRITICAL on rollback failure"
+
+    def test_log_rotate_has_compression(self):
+        """log-rotate.sh should support gzip compression"""
+        path = os.path.join(self.REPO_DIR, "scripts/log-rotate.sh")
+        with open(path) as f:
+            content = f.read()
+        assert "gzip" in content or "compress" in content.lower(), (
+            "Log rotation should support compression"
+        )
+
+    def test_log_rotate_has_retention(self):
+        """log-rotate.sh should enforce max-age retention"""
+        path = os.path.join(self.REPO_DIR, "scripts/log-rotate.sh")
+        with open(path) as f:
+            content = f.read()
+        assert "max-age" in content or "max_age" in content or "find" in content, (
+            "Should enforce retention by age"
+        )
+
+    # === Functional Checks ===
+
+    def test_scripts_have_shebang(self):
+        """All scripts should start with #!/usr/bin/env bash or #!/bin/bash"""
+        for script in ("deploy.sh", "health-check.sh", "rollback.sh", "log-rotate.sh"):
+            path = os.path.join(self.REPO_DIR, f"scripts/{script}")
+            with open(path) as f:
+                first_line = f.readline().strip()
+            assert first_line.startswith("#!"), f"{script} missing shebang"
+            assert "bash" in first_line, f"{script} shebang should reference bash"
+
+    def test_scripts_pass_shellcheck(self):
+        """All scripts should pass shellcheck (if available)"""
+        try:
+            subprocess.run(["shellcheck", "--version"], capture_output=True, timeout=10)
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            pytest.skip("shellcheck not available")
+        for script in ("deploy.sh", "health-check.sh", "rollback.sh", "log-rotate.sh", "lib/common.sh"):
+            path = os.path.join(self.REPO_DIR, f"scripts/{script}")
+            result = subprocess.run(
+                ["shellcheck", "-S", "warning", path],
+                capture_output=True, text=True, timeout=30
             )
-        return subprocess.run(
-            command if isinstance(command, list) else command,
-            cwd=cls.REPO_DIR,
-            shell=isinstance(command, str),
-            capture_output=True,
-            text=True,
-            timeout=timeout,
+            assert result.returncode == 0, (
+                f"shellcheck warnings in {script}:\n{result.stdout}"
+            )
+
+    def test_common_sh_sources_cleanly(self):
+        """common.sh should source without errors"""
+        path = os.path.join(self.REPO_DIR, "scripts/lib/common.sh")
+        result = subprocess.run(
+            ["bash", "-n", path],
+            capture_output=True, text=True, timeout=10
         )
-
-    @classmethod
-    def _ensure_setup(cls, label, setup_cmds, fallback):
-        if not setup_cmds:
-            return
-        key = tuple(setup_cmds)
-        if key in cls._SETUP_CACHE:
-            ok, msg = cls._SETUP_CACHE[key]
-            if ok:
-                return
-            if fallback == "skip_if_setup_fails":
-                pytest.skip(f"{label} setup failed: {msg}")
-            pytest.fail(f"{label} setup failed: {msg}")
-        for cmd in setup_cmds:
-            r = subprocess.run(cmd, cwd=cls.REPO_DIR, shell=True,
-                               capture_output=True, text=True, timeout=300)
-            if r.returncode != 0:
-                msg = (r.stderr or r.stdout or 'failed').strip()
-                cls._SETUP_CACHE[key] = (False, msg)
-                if fallback == "skip_if_setup_fails":
-                    pytest.skip(f"{label} setup failed: {msg}")
-                pytest.fail(f"{label} setup failed: {msg}")
-        cls._SETUP_CACHE[key] = (True, 'ok')
-
-
-    # ── file_path_check (static) ────────────────────────────────────────
-
-    def test_deploy_sh_exists(self):
-        """Verify deploy.sh script exists"""
-        _p = self._repo_path('scripts/deploy.sh')
-        assert os.path.isfile(_p), f'Missing file: scripts/deploy.sh'
-
-    def test_health_check_sh_exists(self):
-        """Verify health-check.sh script exists"""
-        _p = self._repo_path('scripts/health-check.sh')
-        assert os.path.isfile(_p), f'Missing file: scripts/health-check.sh'
-
-    def test_common_sh_exists(self):
-        """Verify shared utility library exists"""
-        _p = self._repo_path('lib/common.sh')
-        assert os.path.isfile(_p), f'Missing file: lib/common.sh'
-
-    # ── semantic_check (static) ────────────────────────────────────────
-
-    def test_set_euo_pipefail_in_deploy(self):
-        """Verify deploy.sh starts with set -euo pipefail"""
-        _p = self._repo_path('scripts/deploy.sh')
-        assert os.path.exists(_p), f'Missing: scripts/deploy.sh'
-        _contents = self._safe_read(_p)
-        _all = _contents if isinstance(_contents, str) else ''
-        assert 'set -euo pipefail' in _all, 'Missing: set -euo pipefail'
-
-    def test_trap_err_in_deploy(self):
-        """Verify deploy.sh has trap ERR handler for failure cleanup"""
-        _p = self._repo_path('scripts/deploy.sh')
-        assert os.path.exists(_p), f'Missing: scripts/deploy.sh'
-        _contents = self._safe_read(_p)
-        _all = _contents if isinstance(_contents, str) else ''
-        assert 'trap' in _all, 'Missing: trap'
-        assert 'ERR' in _all, 'Missing: ERR'
-
-    def test_dry_run_flag_parsing(self):
-        """Verify deploy.sh has --dry-run argument parsing"""
-        _p = self._repo_path('scripts/deploy.sh')
-        assert os.path.exists(_p), f'Missing: scripts/deploy.sh'
-        _contents = self._safe_read(_p)
-        _all = _contents if isinstance(_contents, str) else ''
-        assert 'dry-run' in _all, 'Missing: dry-run'
-        assert 'getopts' in _all, 'Missing: getopts'
-        assert 'case' in _all, 'Missing: case'
-        assert '--dry-run' in _all, 'Missing: --dry-run'
-
-    def test_common_sh_log_function(self):
-        """Verify common.sh defines log() and error() functions"""
-        _p = self._repo_path('lib/common.sh')
-        assert os.path.exists(_p), f'Missing: lib/common.sh'
-        _contents = self._safe_read(_p)
-        _all = _contents if isinstance(_contents, str) else ''
-        assert re.search('log()', _all, re.MULTILINE), 'Pattern not found: log()'
-        assert re.search('error()', _all, re.MULTILINE), 'Pattern not found: error()'
-        assert 'require_env' in _all, 'Missing: require_env'
-
-    # ── functional_check ────────────────────────────────────────
-
-    def test_deploy_syntax_check(self):
-        """Verify deploy.sh passes bash syntax check"""
-        result = self._run_cmd('bash', args=['-n', 'scripts/deploy.sh'], timeout=120)
-        assert result.returncode == 0, (
-            f'test_deploy_syntax_check failed (exit {result.returncode})\n' + result.stderr[:500]
-        )
-
-    def test_health_check_syntax_check(self):
-        """Verify health-check.sh passes bash syntax check"""
-        result = self._run_cmd('bash', args=['-n', 'scripts/health-check.sh'], timeout=120)
-        assert result.returncode == 0, (
-            f'test_health_check_syntax_check failed (exit {result.returncode})\n' + result.stderr[:500]
-        )
-
-    def test_rollback_syntax_check(self):
-        """Verify rollback.sh passes bash syntax check"""
-        result = self._run_cmd('bash', args=['-n', 'scripts/rollback.sh'], timeout=120)
-        assert result.returncode == 0, (
-            f'test_rollback_syntax_check failed (exit {result.returncode})\n' + result.stderr[:500]
-        )
-
-    def test_deploy_dry_run_exit_zero(self):
-        """Verify deploy.sh --dry-run exits 0 without making real changes"""
-        result = self._run_cmd('bash', args=['scripts/deploy.sh', '--dry-run'], timeout=120)
-        assert result.returncode == 0, (
-            f'test_deploy_dry_run_exit_zero failed (exit {result.returncode})\n' + result.stderr[:500]
-        )
-
-    def test_health_check_retry_loop_present(self):
-        """Verify health-check.sh has parameterized retry loop with --max-retries"""
-        _p = self._repo_path('scripts/health-check.sh')
-        assert os.path.exists(_p), f'Missing: scripts/health-check.sh'
-        _contents = self._safe_read(_p)
-        _all = _contents if isinstance(_contents, str) else ''
-        assert 'max-retries' in _all, 'Missing: max-retries'
-        assert 'interval' in _all, 'Missing: interval'
-        assert 'while' in _all, 'Missing: while'
-        assert 'sleep' in _all, 'Missing: sleep'
-        assert 'curl' in _all, 'Missing: curl'
-
+        assert result.returncode == 0, f"common.sh syntax error: {result.stderr}"

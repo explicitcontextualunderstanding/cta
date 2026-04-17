@@ -1,169 +1,158 @@
 """
-Test for 'vector-index-tuning' skill — FAISS Vector Index Tuning
-Validates IndexFactory, IndexTrainer, RecallBenchmark, IndexSerializer,
-Flat/IVF index creation, recall measurement, and serialization round-trip.
+Test skill: vector-index-tuning
+Verify that the Agent creates HNSW benchmark, adaptive tuner,
+quantization comparison, and Pareto frontier analysis for FAISS.
 """
 
 import os
 import subprocess
-import sys
-
+import ast
+import re
 import pytest
 
 
 class TestVectorIndexTuning:
-    """Verify FAISS vector index tuning: factory, trainer, benchmark, serializer."""
-
     REPO_DIR = "/workspace/faiss"
 
-    # ── helpers ──────────────────────────────────────────────────────────
+    # === File Path Checks ===
 
-    @staticmethod
-    def _read_file(path: str) -> str:
-        try:
-            with open(path, "r", errors="ignore") as fh:
-                return fh.read()
-        except OSError:
-            return ""
+    def test_benchmark_file_exists(self):
+        """Verify HNSW benchmark file exists"""
+        found = False
+        for root, dirs, files in os.walk(self.REPO_DIR):
+            if ".git" in root:
+                continue
+            for f in files:
+                if f.endswith(".py") and ("benchmark" in f.lower() or "hnsw" in f.lower()):
+                    found = True
+                    break
+            if found:
+                break
+        assert found, "HNSW benchmark file not found"
 
-    def _vi(self, *parts) -> str:
-        return os.path.join(self.REPO_DIR, "examples", "vector_index", *parts)
+    # === Semantic Checks ===
 
-    def _install_deps(self):
-        try:
-            import faiss  # noqa: F401
-        except ImportError:
-            subprocess.run(
-                [sys.executable, "-m", "pip", "install", "faiss-cpu", "numpy"],
-                capture_output=True, timeout=120,
-            )
+    def test_hnsw_benchmark_defined(self):
+        """Verify HNSW benchmark logic is implemented"""
+        content = self._find_content(["benchmark", "hnsw"])
+        content_lower = content.lower()
+        has_hnsw = "hnsw" in content_lower or "IndexHNSW" in content
+        assert has_hnsw, "HNSW benchmark not found"
 
-    # ── file_path_check ──────────────────────────────────────────────────
+    def test_adaptive_tuner_defined(self):
+        """Verify adaptive tuner is implemented"""
+        content = self._find_content(["tuner", "adaptive", "benchmark"])
+        content_lower = content.lower()
+        has_tuner = (
+            "tuner" in content_lower
+            or "adaptive" in content_lower
+            or "auto_tune" in content_lower
+            or "optimize" in content_lower
+        )
+        assert has_tuner, "Adaptive tuner not found"
 
-    def test_factory_trainer_init_exist(self):
-        """__init__.py, factory.py, trainer.py must exist."""
-        for name in ("__init__.py", "factory.py", "trainer.py"):
-            path = self._vi(name)
-            assert os.path.isfile(path), f"{path} does not exist"
+    def test_quantization_comparison_defined(self):
+        """Verify quantization comparison is implemented"""
+        content = self._find_content(["quantization", "comparison", "benchmark"])
+        content_lower = content.lower()
+        has_quant = (
+            "quantiz" in content_lower
+            or "pq" in content_lower
+            or "opq" in content_lower
+            or "scalar_quantizer" in content_lower
+        )
+        assert has_quant, "Quantization comparison not found"
 
-    def test_benchmark_and_serializer_exist(self):
-        """benchmark.py and serializer.py must exist."""
-        for name in ("benchmark.py", "serializer.py"):
-            path = self._vi(name)
-            assert os.path.isfile(path), f"{path} does not exist"
+    def test_pareto_frontier_defined(self):
+        """Verify Pareto frontier analysis is implemented"""
+        content = self._find_content(["pareto", "frontier", "benchmark", "tuner"])
+        content_lower = content.lower()
+        has_pareto = "pareto" in content_lower or "frontier" in content_lower or "tradeoff" in content_lower
+        assert has_pareto, "Pareto frontier analysis not found"
 
-    def test_test_file_exists(self):
-        """tests/test_vector_index.py must exist."""
-        path = os.path.join(self.REPO_DIR, "tests", "test_vector_index.py")
-        assert os.path.isfile(path), f"{path} not found"
+    def test_benchmark_measures_recall_and_latency(self):
+        """Verify benchmark measures both recall and latency"""
+        content = self._find_content(["benchmark", "hnsw"])
+        content_lower = content.lower()
+        has_recall = "recall" in content_lower
+        has_latency = "latency" in content_lower or "time" in content_lower or "qps" in content_lower
+        assert has_recall and has_latency, (
+            f"Benchmark should measure recall and latency. recall={has_recall}, latency={has_latency}"
+        )
 
-    # ── semantic_check ───────────────────────────────────────────────────
+    # === Functional Checks ===
 
-    def test_factory_create_method(self):
-        """factory.py must define IndexFactory.create(spec, dim)."""
-        path = self._vi("factory.py")
-        if not os.path.isfile(path):
-            pytest.skip("factory.py not found")
-        content = self._read_file(path)
-        assert "IndexFactory" in content, "IndexFactory not defined"
-        assert "create" in content, "create method not found"
-        assert "faiss" in content, "faiss not referenced"
+    def test_benchmark_files_parse(self):
+        """Verify all benchmark Python files have valid syntax"""
+        for root, dirs, files in os.walk(self.REPO_DIR):
+            if ".git" in root:
+                continue
+            for f in files:
+                if f.endswith(".py") and ("benchmark" in f.lower() or "tuner" in f.lower() or "pareto" in f.lower()):
+                    fpath = os.path.join(root, f)
+                    with open(fpath) as fh:
+                        source = fh.read()
+                    try:
+                        ast.parse(source)
+                    except SyntaxError as e:
+                        pytest.fail(f"Syntax error in {fpath}: {e}")
 
-    def test_trainer_calls_index_train(self):
-        """trainer.py must call index.train()."""
-        path = self._vi("trainer.py")
-        if not os.path.isfile(path):
-            pytest.skip("trainer.py not found")
-        content = self._read_file(path)
-        assert "train" in content, "train method not found"
+    def test_uses_faiss_library(self):
+        """Verify benchmark imports faiss library"""
+        content = self._find_content(["benchmark", "hnsw", "tuner"])
+        assert "faiss" in content or "import faiss" in content, (
+            "Benchmark files do not import faiss"
+        )
 
-    def test_benchmark_returns_recall(self):
-        """benchmark.py must define RecallBenchmark.measure."""
-        path = self._vi("benchmark.py")
-        if not os.path.isfile(path):
-            pytest.skip("benchmark.py not found")
-        content = self._read_file(path)
-        assert "RecallBenchmark" in content, "RecallBenchmark not defined"
-        assert "measure" in content, "measure method not found"
+    def test_benchmark_module_importable(self):
+        """Verify benchmark module syntax is valid"""
+        bench_file = None
+        for root, dirs, files in os.walk(self.REPO_DIR):
+            if ".git" in root:
+                continue
+            for f in files:
+                if f.endswith(".py") and "benchmark" in f.lower():
+                    bench_file = os.path.join(root, f)
+                    break
+            if bench_file:
+                break
+        if bench_file is None:
+            pytest.skip("Benchmark file not found")
+        result = subprocess.run(
+            ["python", "-c", f"import ast; ast.parse(open('{bench_file}').read()); print('OK')"],
+            cwd=self.REPO_DIR,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        assert result.returncode == 0, f"Benchmark parse failed: {result.stderr}"
 
-    def test_serializer_uses_faiss_io(self):
-        """serializer.py must use faiss.write_index/read_index, not pickle."""
-        path = self._vi("serializer.py")
-        if not os.path.isfile(path):
-            pytest.skip("serializer.py not found")
-        content = self._read_file(path)
-        assert "write_index" in content, "faiss.write_index not found"
-        assert "read_index" in content, "faiss.read_index not found"
-        assert "pickle" not in content, "pickle should not be used for FAISS indices"
+    def test_tuner_has_parameter_search(self):
+        """Verify tuner implements parameter search (grid/random/bayesian)"""
+        content = self._find_content(["tuner", "adaptive"])
+        content_lower = content.lower()
+        has_search = (
+            "search" in content_lower
+            or "grid" in content_lower
+            or "parameter" in content_lower
+            or "config" in content_lower
+        )
+        assert has_search, "Tuner missing parameter search logic"
 
-    # ── functional_check ─────────────────────────────────────────────────
-
-    def test_flat_index_creation(self):
-        """IndexFactory.create('Flat', 64) must return IndexFlatL2."""
-        self._install_deps()
-        try:
-            import faiss
-            sys.path.insert(0, self.REPO_DIR)
-            from examples.vector_index.factory import IndexFactory
-        except ImportError:
-            pytest.skip("Cannot import IndexFactory or faiss")
-        idx = IndexFactory.create("Flat", 64)
-        assert isinstance(idx, faiss.IndexFlatL2)
-
-    def test_ivf_add_before_train_raises(self):
-        """IVF index add() before train() must raise RuntimeError."""
-        self._install_deps()
-        try:
-            import faiss
-            import numpy as np
-            sys.path.insert(0, self.REPO_DIR)
-            from examples.vector_index.factory import IndexFactory
-        except ImportError:
-            pytest.skip("Cannot import required modules")
-        idx = IndexFactory.create("IVF8,Flat", 64)
-        with pytest.raises(RuntimeError):
-            idx.add(np.random.rand(100, 64).astype("float32"))
-
-    def test_flat_recall_at_1(self):
-        """Flat index recall@1 for queries equal to indexed vectors must be 1.0."""
-        self._install_deps()
-        try:
-            import numpy as np
-            sys.path.insert(0, self.REPO_DIR)
-            from examples.vector_index.factory import IndexFactory
-            from examples.vector_index.benchmark import RecallBenchmark
-        except ImportError:
-            pytest.skip("Cannot import required modules")
-        vecs = np.random.rand(100, 64).astype("float32")
-        idx = IndexFactory.create("Flat", 64)
-        idx.add(vecs)
-        recall = RecallBenchmark().measure(idx, vecs, list(range(100)), k=1)
-        assert abs(recall - 1.0) < 0.01, f"Flat recall@1 should be 1.0, got {recall}"
-
-    def test_serialization_roundtrip(self, tmp_path):
-        """Serialized and reloaded index must have same ntotal."""
-        self._install_deps()
-        try:
-            import numpy as np
-            sys.path.insert(0, self.REPO_DIR)
-            from examples.vector_index.factory import IndexFactory
-            from examples.vector_index.serializer import IndexSerializer
-        except ImportError:
-            pytest.skip("Cannot import required modules")
-        idx = IndexFactory.create("Flat", 64)
-        idx.add(np.random.rand(100, 64).astype("float32"))
-        path = str(tmp_path / "test.faiss")
-        IndexSerializer().save(idx, path)
-        reloaded = IndexSerializer().load(path)
-        assert reloaded.ntotal == 100
-
-    def test_load_nonexistent_raises(self):
-        """Loading non-existent file must raise FileNotFoundError or RuntimeError."""
-        self._install_deps()
-        try:
-            sys.path.insert(0, self.REPO_DIR)
-            from examples.vector_index.serializer import IndexSerializer
-        except ImportError:
-            pytest.skip("Cannot import IndexSerializer")
-        with pytest.raises((FileNotFoundError, RuntimeError)):
-            IndexSerializer().load("/nonexistent/path/index.faiss")
+    def _find_content(self, keywords):
+        """Helper to find content in files matching keywords"""
+        all_content = ""
+        for root, dirs, files in os.walk(self.REPO_DIR):
+            if ".git" in root:
+                continue
+            for f in files:
+                if f.endswith(".py"):
+                    fname_lower = f.lower()
+                    if any(kw in fname_lower for kw in keywords):
+                        fpath = os.path.join(root, f)
+                        try:
+                            with open(fpath) as fh:
+                                all_content += fh.read() + "\n"
+                        except (UnicodeDecodeError, PermissionError):
+                            continue
+        return all_content

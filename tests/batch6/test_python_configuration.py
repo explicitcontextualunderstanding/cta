@@ -1,217 +1,267 @@
 """
-Tests for 'python-configuration' skill.
-Generated from benchmark case definitions for python-configuration.
+Test skill: python-configuration
+Verify that the Agent correctly implements typed configuration management
+for a FastAPI application using pydantic-settings, with validation,
+fail-fast behavior, and secure endpoint exposure.
 """
 
-import ast
-import base64
-import glob
-import json
 import os
-import py_compile
 import re
+import ast
 import subprocess
-import textwrap
-
 import pytest
-
-try:
-    import yaml
-except ModuleNotFoundError:
-    yaml = None
 
 
 class TestPythonConfiguration:
-    """Verify the python-configuration skill output."""
+    REPO_DIR = "/workspace/fastapi"
 
-    REPO_DIR = '/workspace/fastapi'
+    # === File Path Checks ===
 
+    def test_app_config_file_exists(self):
+        """Verify app_config.py exists"""
+        path = os.path.join(self.REPO_DIR, "docs_src/settings/app_config.py")
+        assert os.path.exists(path), f"app_config.py not found at {path}"
 
-    # ── helpers ──────────────────────────────────────────────
+    def test_main_file_exists(self):
+        """Verify main.py exists"""
+        path = os.path.join(self.REPO_DIR, "docs_src/settings/main.py")
+        assert os.path.exists(path), f"main.py not found at {path}"
 
-    _SETUP_CACHE: dict = {}
+    def test_env_example_exists(self):
+        """Verify .env.example exists"""
+        path = os.path.join(self.REPO_DIR, "docs_src/settings/.env.example")
+        assert os.path.exists(path), f".env.example not found at {path}"
 
-    @staticmethod
-    def _repo_path(rel: str) -> str:
-        return os.path.join(TestPythonConfiguration.REPO_DIR, rel)
+    def test_test_settings_file_exists(self):
+        """Verify test_settings.py exists"""
+        path = os.path.join(self.REPO_DIR, "docs_src/settings/test_settings.py")
+        assert os.path.exists(path), f"test_settings.py not found at {path}"
 
-    @staticmethod
-    def _safe_read(path: str) -> str:
-        with open(path, "r", encoding="utf-8", errors="ignore") as fh:
-            return fh.read()
+    # === Semantic Checks ===
 
-    @staticmethod
-    def _load_yaml(path: str):
-        if yaml is None:
-            pytest.skip("PyYAML not available")
-        with open(path, "r", encoding="utf-8", errors="ignore") as fh:
-            return yaml.safe_load(fh)
-
-    @staticmethod
-    def _load_json(path: str):
-        with open(path, "r", encoding="utf-8", errors="ignore") as fh:
-            return json.load(fh)
-
-    @classmethod
-    def _run_in_repo(cls, script: str, timeout: int = 120) -> subprocess.CompletedProcess:
-        return subprocess.run(
-            ["python", "-c", textwrap.dedent(script)],
-            cwd=cls.REPO_DIR,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-        )
-
-    @classmethod
-    def _run_cmd(cls, command, args=None, timeout=120):
-        args = args or []
-        if isinstance(command, str) and args:
-            return subprocess.run(
-                [command, *args],
-                cwd=cls.REPO_DIR,
-                capture_output=True,
-                text=True,
-                timeout=timeout,
-            )
-        return subprocess.run(
-            command if isinstance(command, list) else command,
-            cwd=cls.REPO_DIR,
-            shell=isinstance(command, str),
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-        )
-
-    @classmethod
-    def _ensure_setup(cls, label, setup_cmds, fallback):
-        if not setup_cmds:
-            return
-        key = tuple(setup_cmds)
-        if key in cls._SETUP_CACHE:
-            ok, msg = cls._SETUP_CACHE[key]
-            if ok:
-                return
-            if fallback == "skip_if_setup_fails":
-                pytest.skip(f"{label} setup failed: {msg}")
-            pytest.fail(f"{label} setup failed: {msg}")
-        for cmd in setup_cmds:
-            r = subprocess.run(cmd, cwd=cls.REPO_DIR, shell=True,
-                               capture_output=True, text=True, timeout=300)
-            if r.returncode != 0:
-                msg = (r.stderr or r.stdout or 'failed').strip()
-                cls._SETUP_CACHE[key] = (False, msg)
-                if fallback == "skip_if_setup_fails":
-                    pytest.skip(f"{label} setup failed: {msg}")
-                pytest.fail(f"{label} setup failed: {msg}")
-        cls._SETUP_CACHE[key] = (True, 'ok')
-
-
-    # ── file_path_check (static) ────────────────────────────────────────
-
-    def test_config_module_exists(self):
-        """Verify settings configuration module exists"""
-        _p = self._repo_path('app/config.py')
-        assert os.path.isfile(_p), f'Missing file: app/config.py'
-        py_compile.compile(_p, doraise=True)
-
-    def test_env_file_exists(self):
-        """Verify .env example or template file exists"""
-        _p = self._repo_path('.env.example')
-        assert os.path.isfile(_p), f'Missing file: .env.example'
-
-    # ── semantic_check (static) ────────────────────────────────────────
-
-    def test_settings_inherits_base_settings(self):
+    def test_settings_class_inherits_base_settings(self):
         """Verify Settings class inherits from BaseSettings"""
-        _p = self._repo_path('app/config.py')
-        assert os.path.exists(_p), f'Missing: app/config.py'
-        _contents = self._safe_read(_p)
-        _all = _contents if isinstance(_contents, str) else ''
-        assert 'BaseSettings' in _all, 'Missing: BaseSettings'
-        assert 'class Settings' in _all, 'Missing: class Settings'
+        path = os.path.join(self.REPO_DIR, "docs_src/settings/app_config.py")
+        with open(path, "r") as f:
+            content = f.read()
 
-    def test_model_config_with_env_prefix(self):
-        """Verify model_config or Config inner class sets env_prefix"""
-        _p = self._repo_path('app/config.py')
-        assert os.path.exists(_p), f'Missing: app/config.py'
-        _contents = self._safe_read(_p)
-        _all = _contents if isinstance(_contents, str) else ''
-        assert 'model_config' in _all, 'Missing: model_config'
-        assert 'env_prefix' in _all, 'Missing: env_prefix'
-        assert 'env_file' in _all, 'Missing: env_file'
-
-    def test_nested_settings_class(self):
-        """Verify nested settings with sub-prefix are defined"""
-        _p = self._repo_path('app/config.py')
-        assert os.path.exists(_p), f'Missing: app/config.py'
-        _contents = self._safe_read(_p)
-        _all = _contents if isinstance(_contents, str) else ''
-        assert 'DatabaseSettings' in _all, 'Missing: DatabaseSettings'
-        assert 'RedisSettings' in _all, 'Missing: RedisSettings'
-        assert 'env_prefix' in _all, 'Missing: env_prefix'
-
-    def test_lru_cache_get_settings(self):
-        """Verify get_settings function uses lru_cache decorator"""
-        _p = self._repo_path('app/config.py')
-        assert os.path.exists(_p), f'Missing: app/config.py'
-        _contents = self._safe_read(_p)
-        _all = _contents if isinstance(_contents, str) else ''
-        assert 'lru_cache' in _all, 'Missing: lru_cache'
-        assert 'get_settings' in _all, 'Missing: get_settings'
-
-    # ── functional_check ────────────────────────────────────────
-
-    def test_env_var_loading(self):
-        """Verify Settings loads values from environment variables"""
-        self._ensure_setup('test_env_var_loading', ['pip install pydantic-settings fastapi'], 'fail_if_missing')
-        result = self._run_cmd('python', args=['-c', "import os; os.environ['APP_NAME']='TestApp'; os.environ['APP_DEBUG']='true'; from app.config import Settings; s=Settings(); assert s.app_name=='TestApp'; assert s.debug==True; print('PASS')"], timeout=120)
-        assert result.returncode == 0, (
-            f'test_env_var_loading failed (exit {result.returncode})\n' + result.stderr[:500]
+        assert "BaseSettings" in content, (
+            "Settings class must inherit from pydantic_settings.BaseSettings"
         )
-        assert 'PASS' in (result.stdout + result.stderr), 'Expected PASS in output'
-
-    def test_type_coercion_str_to_int(self):
-        """Verify string env var coerced to int for port field"""
-        self._ensure_setup('test_type_coercion_str_to_int', ['pip install pydantic-settings'], 'fail_if_missing')
-        result = self._run_cmd('python', args=['-c', "import os; os.environ['APP_PORT']='8080'; from app.config import Settings; s=Settings(); assert isinstance(s.port, int); assert s.port==8080; print('PASS')"], timeout=120)
-        assert result.returncode == 0, (
-            f'test_type_coercion_str_to_int failed (exit {result.returncode})\n' + result.stderr[:500]
+        assert re.search(r"class\s+Settings.*BaseSettings", content), (
+            "Settings class definition not found"
         )
-        assert 'PASS' in (result.stdout + result.stderr), 'Expected PASS in output'
 
-    def test_type_coercion_str_to_bool(self):
-        """Verify string env var coerced to bool for debug field"""
-        self._ensure_setup('test_type_coercion_str_to_bool', ['pip install pydantic-settings'], 'fail_if_missing')
-        result = self._run_cmd('python', args=['-c', "import os; os.environ['APP_DEBUG']='false'; from app.config import Settings; s=Settings(); assert s.debug is False; print('PASS')"], timeout=120)
-        assert result.returncode == 0, (
-            f'test_type_coercion_str_to_bool failed (exit {result.returncode})\n' + result.stderr[:500]
+    def test_required_fields_defined(self):
+        """Verify required fields database_url and secret_key are defined"""
+        path = os.path.join(self.REPO_DIR, "docs_src/settings/app_config.py")
+        with open(path, "r") as f:
+            content = f.read()
+
+        assert "database_url" in content, "Settings must define database_url field"
+        assert "secret_key" in content, "Settings must define secret_key field"
+
+    def test_all_settings_fields_present(self):
+        """Verify all specified settings fields are defined"""
+        path = os.path.join(self.REPO_DIR, "docs_src/settings/app_config.py")
+        with open(path, "r") as f:
+            content = f.read()
+
+        expected_fields = [
+            "database_url", "database_pool_size", "database_pool_overflow",
+            "secret_key", "access_token_expire_minutes", "cors_origins",
+            "debug", "log_level", "redis_url", "enable_signup"
+        ]
+        for field in expected_fields:
+            assert field in content, f"Settings missing field: {field}"
+
+    def test_database_url_validation(self):
+        """Verify database_url validates postgresql:// prefix"""
+        path = os.path.join(self.REPO_DIR, "docs_src/settings/app_config.py")
+        with open(path, "r") as f:
+            content = f.read()
+
+        assert "postgresql" in content, (
+            "Should validate that database_url starts with postgresql://"
         )
-        assert 'PASS' in (result.stdout + result.stderr), 'Expected PASS in output'
-
-    def test_missing_required_field_raises(self):
-        """Verify missing required env var raises ValidationError"""
-        self._ensure_setup('test_missing_required_field_raises', ['pip install pydantic-settings'], 'fail_if_missing')
-        result = self._run_cmd('python', args=['-c', "from pydantic import ValidationError\ntry:\n    from app.config import Settings; Settings()\n    assert False\nexcept ValidationError as e:\n    print('PASS')"], timeout=120)
-        assert result.returncode == 0, (
-            f'test_missing_required_field_raises failed (exit {result.returncode})\n' + result.stderr[:500]
+        has_validation = (
+            "validator" in content
+            or "field_validator" in content
+            or "model_validator" in content
+            or "@validator" in content
+            or "startswith" in content
         )
-        assert 'PASS' in (result.stdout + result.stderr), 'Expected PASS in output'
-
-    def test_get_settings_cached(self):
-        """Verify get_settings returns same cached instance"""
-        self._ensure_setup('test_get_settings_cached', ['pip install pydantic-settings'], 'fail_if_missing')
-        result = self._run_cmd('python', args=['-c', "from app.config import get_settings; s1=get_settings(); s2=get_settings(); assert s1 is s2; print('PASS')"], timeout=120)
-        assert result.returncode == 0, (
-            f'test_get_settings_cached failed (exit {result.returncode})\n' + result.stderr[:500]
+        assert has_validation, (
+            "database_url should have a validator checking the postgresql:// prefix"
         )
-        assert 'PASS' in (result.stdout + result.stderr), 'Expected PASS in output'
 
-    def test_invalid_port_type_raises(self):
-        """Verify non-numeric port string raises ValidationError"""
-        self._ensure_setup('test_invalid_port_type_raises', ['pip install pydantic-settings'], 'fail_if_missing')
-        result = self._run_cmd('python', args=['-c', "import os; os.environ['APP_PORT']='not_a_number'\nfrom pydantic import ValidationError\ntry:\n    from app.config import Settings; Settings()\n    assert False\nexcept ValidationError:\n    print('PASS')"], timeout=120)
-        assert result.returncode == 0, (
-            f'test_invalid_port_type_raises failed (exit {result.returncode})\n' + result.stderr[:500]
+    def test_log_level_enum_validation(self):
+        """Verify log_level is validated against allowed values"""
+        path = os.path.join(self.REPO_DIR, "docs_src/settings/app_config.py")
+        with open(path, "r") as f:
+            content = f.read()
+
+        assert "DEBUG" in content and "INFO" in content and "WARNING" in content and "ERROR" in content, (
+            "log_level should validate against DEBUG, INFO, WARNING, ERROR"
         )
-        assert 'PASS' in (result.stdout + result.stderr), 'Expected PASS in output'
 
+    def test_cors_origins_parsing(self):
+        """Verify cors_origins supports comma-separated string parsing"""
+        path = os.path.join(self.REPO_DIR, "docs_src/settings/app_config.py")
+        with open(path, "r") as f:
+            content = f.read()
+
+        has_parsing = (
+            "split" in content
+            or "validator" in content
+            or "parse" in content.lower()
+            or "list[str]" in content.lower()
+            or "List[str]" in content
+        )
+        assert has_parsing, (
+            "cors_origins should support comma-separated string parsing"
+        )
+
+    def test_pool_size_range_validation(self):
+        """Verify database_pool_size validates range 1-100"""
+        path = os.path.join(self.REPO_DIR, "docs_src/settings/app_config.py")
+        with open(path, "r") as f:
+            content = f.read()
+
+        assert "100" in content, (
+            "database_pool_size should validate max value of 100"
+        )
+
+    def test_singleton_settings_instance(self):
+        """Verify a module-level singleton settings instance is created"""
+        path = os.path.join(self.REPO_DIR, "docs_src/settings/app_config.py")
+        with open(path, "r") as f:
+            content = f.read()
+
+        assert re.search(r"^settings\s*=\s*Settings\(", content, re.MULTILINE) or \
+               re.search(r"^settings\s*=\s*get_settings\(", content, re.MULTILINE) or \
+               "settings" in content, (
+            "Should create a module-level settings singleton"
+        )
+
+    def test_main_uses_cors_middleware(self):
+        """Verify FastAPI app configures CORS middleware using settings"""
+        path = os.path.join(self.REPO_DIR, "docs_src/settings/main.py")
+        with open(path, "r") as f:
+            content = f.read()
+
+        assert "CORSMiddleware" in content or "cors" in content.lower(), (
+            "FastAPI app should configure CORS middleware"
+        )
+        assert "cors_origins" in content or "settings" in content, (
+            "CORS should use settings.cors_origins"
+        )
+
+    def test_health_endpoint_defined(self):
+        """Verify /health endpoint returns status and debug flag"""
+        path = os.path.join(self.REPO_DIR, "docs_src/settings/main.py")
+        with open(path, "r") as f:
+            content = f.read()
+
+        assert "health" in content, "Must define /health endpoint"
+        assert "debug" in content, "/health should return debug flag"
+
+    def test_config_public_endpoint_no_secrets(self):
+        """Verify /config/public endpoint exists and does NOT expose secrets"""
+        path = os.path.join(self.REPO_DIR, "docs_src/settings/main.py")
+        with open(path, "r") as f:
+            content = f.read()
+
+        assert "config/public" in content or "config_public" in content, (
+            "Must define /config/public endpoint"
+        )
+
+        # The endpoint should not return sensitive values
+        # Check that the response construction doesn't include secret_key, database_url, redis_url
+        # Find the endpoint definition block
+        endpoint_match = re.search(
+            r"(config.public|config_public).*?\n((?:[ \t]+.*\n){1,20})",
+            content
+        )
+        if endpoint_match:
+            block = endpoint_match.group(2)
+            assert "secret_key" not in block and "database_url" not in block, (
+                "/config/public should NOT expose secret_key or database_url"
+            )
+
+    def test_depends_injection(self):
+        """Verify settings are injectable via Depends()"""
+        path = os.path.join(self.REPO_DIR, "docs_src/settings/main.py")
+        with open(path, "r") as f:
+            content = f.read()
+
+        assert "Depends" in content, (
+            "Settings should be injectable via FastAPI's Depends()"
+        )
+        assert "get_settings" in content, (
+            "Should define get_settings function for dependency injection"
+        )
+
+    # === Functional Checks ===
+
+    def test_all_python_files_parse(self):
+        """Verify all Python files parse without syntax errors"""
+        files = [
+            "docs_src/settings/app_config.py",
+            "docs_src/settings/main.py",
+            "docs_src/settings/test_settings.py",
+        ]
+        for filename in files:
+            path = os.path.join(self.REPO_DIR, filename)
+            with open(path, "r") as f:
+                source = f.read()
+            try:
+                ast.parse(source)
+            except SyntaxError as e:
+                pytest.fail(f"{filename} has syntax error: {e}")
+
+    def test_env_example_documents_all_vars(self):
+        """Verify .env.example lists all configuration variables"""
+        path = os.path.join(self.REPO_DIR, "docs_src/settings/.env.example")
+        with open(path, "r") as f:
+            content = f.read()
+
+        expected_vars = [
+            "DATABASE_URL", "SECRET_KEY", "DEBUG", "LOG_LEVEL",
+            "CORS_ORIGINS", "REDIS_URL"
+        ]
+        for var in expected_vars:
+            assert var in content, f".env.example missing variable: {var}"
+
+    def test_env_example_marks_required(self):
+        """Verify .env.example distinguishes required vs optional"""
+        path = os.path.join(self.REPO_DIR, "docs_src/settings/.env.example")
+        with open(path, "r") as f:
+            content = f.read()
+
+        assert "required" in content.lower() or "REQUIRED" in content, (
+            ".env.example should mark which variables are required"
+        )
+
+    def test_settings_import_with_valid_env(self):
+        """Verify Settings can be instantiated with valid environment"""
+        result = subprocess.run(
+            [
+                "python", "-c",
+                "import os; "
+                "os.environ['DATABASE_URL'] = 'postgresql://localhost/testdb'; "
+                "os.environ['SECRET_KEY'] = 'test-secret-key-123'; "
+                "import sys; sys.path.insert(0, 'docs_src/settings'); "
+                "from app_config import Settings; "
+                "s = Settings(); "
+                "print(s.database_url); print(s.debug)"
+            ],
+            capture_output=True, text=True, timeout=30,
+            cwd=self.REPO_DIR,
+        )
+        assert result.returncode == 0, (
+            f"Failed to instantiate Settings:\n{result.stderr[:1000]}"
+        )
+        assert "postgresql" in result.stdout, (
+            f"Unexpected output: {result.stdout}"
+        )

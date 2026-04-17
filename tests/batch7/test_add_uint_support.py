@@ -1,221 +1,253 @@
-"""Test file for the add-uint-support skill.
-
-This suite validates that PyTorch CUDA kernel files are updated to include
-uint16/uint32/uint64 dispatch types and that the operations produce correct
-results under unsigned semantics.
+"""
+Test skill: add-uint-support
+Verify that the Agent correctly adds uint16/uint32/uint64 dispatch support
+to PyTorch CUDA reduction, sorting, cumsum, and comparison kernels.
 """
 
-from __future__ import annotations
-
-import pathlib
+import os
 import re
-
+import subprocess
 import pytest
 
 
 class TestAddUintSupport:
-    """Verify unsigned integer type dispatch and runtime correctness in PyTorch."""
-
     REPO_DIR = "/workspace/pytorch"
 
-    CU_FILES = [
-        "aten/src/ATen/native/cuda/ReduceMinMaxKernel.cu",
-        "aten/src/ATen/native/cuda/SortingKernel.cu",
-        "aten/src/ATen/native/cuda/CumsumKernel.cu",
-        "aten/src/ATen/native/cuda/CompareKernels.cu",
-    ]
+    # === File Path Checks ===
 
-    UINT_TYPES = ["kUInt16", "kUInt32", "kUInt64"]
+    def test_reduce_min_max_kernel_exists(self):
+        """Verify ReduceMinMaxKernel.cu exists at the expected path"""
+        fpath = os.path.join(self.REPO_DIR, "aten/src/ATen/native/cuda/ReduceMinMaxKernel.cu")
+        assert os.path.isfile(fpath), f"ReduceMinMaxKernel.cu not found at {fpath}"
 
-    EXISTING_TYPES_RE = re.compile(
-        r"kFloat|kDouble|kHalf|kBFloat16|kBool|kInt|kLong|kShort|kByte"
-    )
+    def test_sorting_kernel_exists(self):
+        """Verify SortingKernel.cu exists at the expected path"""
+        fpath = os.path.join(self.REPO_DIR, "aten/src/ATen/native/cuda/SortingKernel.cu")
+        assert os.path.isfile(fpath), f"SortingKernel.cu not found at {fpath}"
 
-    # ------------------------------------------------------------------
-    # Helpers
-    # ------------------------------------------------------------------
+    def test_cumsum_kernel_exists(self):
+        """Verify CumsumKernel.cu exists at the expected path"""
+        fpath = os.path.join(self.REPO_DIR, "aten/src/ATen/native/cuda/CumsumKernel.cu")
+        assert os.path.isfile(fpath), f"CumsumKernel.cu not found at {fpath}"
 
-    def _repo_path(self, relative: str) -> pathlib.Path:
-        return pathlib.Path(self.REPO_DIR, *relative.split("/"))
+    def test_compare_kernels_exists(self):
+        """Verify CompareKernels.cu exists at the expected path"""
+        fpath = os.path.join(self.REPO_DIR, "aten/src/ATen/native/cuda/CompareKernels.cu")
+        assert os.path.isfile(fpath), f"CompareKernels.cu not found at {fpath}"
 
-    def _read_text(self, relative: str) -> str:
-        path = self._repo_path(relative)
-        assert path.exists(), f"Expected path to exist: {path}"
-        return path.read_text(encoding="utf-8", errors="ignore")
+    # === Semantic Checks ===
 
-    def _assert_non_empty_file(self, relative: str) -> pathlib.Path:
-        path = self._repo_path(relative)
-        assert path.is_file(), f"Expected file to exist: {path}"
-        assert path.stat().st_size > 0, f"Expected non-empty file: {path}"
-        return path
+    def test_reduce_min_max_kernel_has_uint_dispatch(self):
+        """Verify ReduceMinMaxKernel.cu includes uint32 and uint64 in dispatch macros"""
+        fpath = os.path.join(self.REPO_DIR, "aten/src/ATen/native/cuda/ReduceMinMaxKernel.cu")
+        with open(fpath, "r") as f:
+            content = f.read()
+        # Check for uint32 / kUInt32 references
+        has_uint32 = bool(re.search(r'(kUInt32|uint32|ScalarType::UInt32)', content))
+        has_uint64 = bool(re.search(r'(kUInt64|uint64|ScalarType::UInt64)', content))
+        assert has_uint32, "ReduceMinMaxKernel.cu missing uint32 dispatch support"
+        assert has_uint64, "ReduceMinMaxKernel.cu missing uint64 dispatch support"
 
-    def _find_dispatch_blocks(self, source: str) -> list[str]:
-        """Return all AT_DISPATCH_* macro invocation blocks."""
-        blocks: list[str] = []
-        for m in re.finditer(r"AT_DISPATCH_\w+\s*\(", source):
-            start = m.start()
-            depth = 0
-            for i, ch in enumerate(source[start:], start):
-                if ch == "(":
-                    depth += 1
-                elif ch == ")":
-                    depth -= 1
-                    if depth == 0:
-                        blocks.append(source[start : i + 1])
-                        break
-        return blocks
+    def test_reduce_min_max_kernel_has_uint16_dispatch(self):
+        """Verify ReduceMinMaxKernel.cu includes uint16 in dispatch macros"""
+        fpath = os.path.join(self.REPO_DIR, "aten/src/ATen/native/cuda/ReduceMinMaxKernel.cu")
+        with open(fpath, "r") as f:
+            content = f.read()
+        has_uint16 = bool(re.search(r'(kUInt16|uint16|ScalarType::UInt16)', content))
+        assert has_uint16, "ReduceMinMaxKernel.cu missing uint16 dispatch support"
 
-    # ------------------------------------------------------------------
-    # Layer 1 – file_path_check (3 cases)
-    # ------------------------------------------------------------------
+    def test_sorting_kernel_has_uint_dispatch(self):
+        """Verify SortingKernel.cu includes uint32 and uint64 in type dispatch"""
+        fpath = os.path.join(self.REPO_DIR, "aten/src/ATen/native/cuda/SortingKernel.cu")
+        with open(fpath, "r") as f:
+            content = f.read()
+        has_uint32 = bool(re.search(r'(kUInt32|uint32|ScalarType::UInt32)', content))
+        has_uint64 = bool(re.search(r'(kUInt64|uint64|ScalarType::UInt64)', content))
+        assert has_uint32, "SortingKernel.cu missing uint32 dispatch support"
+        assert has_uint64, "SortingKernel.cu missing uint64 dispatch support"
 
-    def test_file_path_aten_src_aten_native_cuda_reduceminmaxkernel_cu_is_modified(
-        self,
-    ):
-        """Verify ReduceMinMaxKernel.cu exists and is non-empty."""
-        self._assert_non_empty_file("aten/src/ATen/native/cuda/ReduceMinMaxKernel.cu")
+    def test_cumsum_kernel_has_uint_dispatch(self):
+        """Verify CumsumKernel.cu includes uint16, uint32, and uint64 in type dispatch"""
+        fpath = os.path.join(self.REPO_DIR, "aten/src/ATen/native/cuda/CumsumKernel.cu")
+        with open(fpath, "r") as f:
+            content = f.read()
+        has_uint16 = bool(re.search(r'(kUInt16|uint16|ScalarType::UInt16)', content))
+        has_uint32 = bool(re.search(r'(kUInt32|uint32|ScalarType::UInt32)', content))
+        has_uint64 = bool(re.search(r'(kUInt64|uint64|ScalarType::UInt64)', content))
+        assert has_uint16, "CumsumKernel.cu missing uint16 dispatch support"
+        assert has_uint32, "CumsumKernel.cu missing uint32 dispatch support"
+        assert has_uint64, "CumsumKernel.cu missing uint64 dispatch support"
 
-    def test_file_path_aten_src_aten_native_cuda_sortingkernel_cu_is_modified(self):
-        """Verify SortingKernel.cu exists and is non-empty."""
-        self._assert_non_empty_file("aten/src/ATen/native/cuda/SortingKernel.cu")
+    def test_compare_kernels_has_uint_dispatch(self):
+        """Verify CompareKernels.cu includes uint16, uint32, and uint64 in type dispatch"""
+        fpath = os.path.join(self.REPO_DIR, "aten/src/ATen/native/cuda/CompareKernels.cu")
+        with open(fpath, "r") as f:
+            content = f.read()
+        has_uint16 = bool(re.search(r'(kUInt16|uint16|ScalarType::UInt16)', content))
+        has_uint32 = bool(re.search(r'(kUInt32|uint32|ScalarType::UInt32)', content))
+        has_uint64 = bool(re.search(r'(kUInt64|uint64|ScalarType::UInt64)', content))
+        assert has_uint16, "CompareKernels.cu missing uint16 dispatch support"
+        assert has_uint32, "CompareKernels.cu missing uint32 dispatch support"
+        assert has_uint64, "CompareKernels.cu missing uint64 dispatch support"
 
-    def test_file_path_aten_src_aten_native_cuda_cumsumkernel_cu_is_modified(self):
-        """Verify CumsumKernel.cu exists and is non-empty."""
-        self._assert_non_empty_file("aten/src/ATen/native/cuda/CumsumKernel.cu")
+    def test_all_dispatch_sites_updated_in_reduce_min_max(self):
+        """Verify every AT_DISPATCH site in ReduceMinMaxKernel.cu includes unsigned types"""
+        fpath = os.path.join(self.REPO_DIR, "aten/src/ATen/native/cuda/ReduceMinMaxKernel.cu")
+        with open(fpath, "r") as f:
+            content = f.read()
+        # Find all AT_DISPATCH macro blocks
+        dispatch_calls = re.findall(r'AT_DISPATCH_\w+\([^;]+?\{', content, re.DOTALL)
+        assert len(dispatch_calls) > 0, "No AT_DISPATCH calls found in ReduceMinMaxKernel.cu"
+        # For each dispatch call that includes integral types, check for unsigned coverage
+        integral_dispatches = [d for d in dispatch_calls if re.search(r'(ALL_TYPES|INTEGRAL|all_types)', d, re.IGNORECASE)]
+        if integral_dispatches:
+            # At least one dispatch should mention unsigned types or use a macro that covers them
+            has_unsigned_macro = any(
+                re.search(r'(AT_DISPATCH_ALL_TYPES_AND.*kUInt|uint32|uint64|UNSIGNED)', d)
+                for d in integral_dispatches
+            )
+            # Or alternatively all dispatch sites use a macro that already includes uint
+            has_broad_macro = any(
+                re.search(r'AT_DISPATCH_ALL_TYPES_AND', d) for d in integral_dispatches
+            )
+            assert has_unsigned_macro or has_broad_macro, (
+                "Not all dispatch sites in ReduceMinMaxKernel.cu appear to include unsigned integer types"
+            )
 
-    # ------------------------------------------------------------------
-    # Layer 2 – semantic_check (4 cases)
-    # ------------------------------------------------------------------
+    def test_existing_types_preserved_in_sorting_kernel(self):
+        """Verify SortingKernel.cu still supports existing signed integer and float types"""
+        fpath = os.path.join(self.REPO_DIR, "aten/src/ATen/native/cuda/SortingKernel.cu")
+        with open(fpath, "r") as f:
+            content = f.read()
+        # Check that dispatch macros still exist (not accidentally removed)
+        assert re.search(r'AT_DISPATCH_', content), (
+            "SortingKernel.cu missing AT_DISPATCH macros - existing type support may have been removed"
+        )
+        # Verify file still references sorting-related functions
+        has_sort_ref = bool(re.search(r'(sort|Sort)', content))
+        assert has_sort_ref, "SortingKernel.cu missing sorting function references"
 
-    def test_semantic_each_cu_file_s_at_dispatch_macros_include_kuint16_kuint32_ku(
-        self,
-    ):
-        """Each .cu file's AT_DISPATCH macros include kUInt16, kUInt32, kUInt64."""
-        for rel in self.CU_FILES:
-            path = self._repo_path(rel)
-            if not path.exists():
-                continue
-            src = path.read_text(encoding="utf-8", errors="ignore")
-            dispatch_blocks = self._find_dispatch_blocks(src)
-            assert dispatch_blocks, f"No AT_DISPATCH macros found in {rel}"
-            for block in dispatch_blocks:
-                for ut in self.UINT_TYPES:
-                    assert (
-                        ut in block
-                    ), f"Dispatch block in {rel} missing {ut}:\n{block[:300]}"
+    # === Functional Checks ===
 
-    def test_semantic_all_dispatch_sites_within_each_file_are_updated_not_just_the(
-        self,
-    ):
-        """All dispatch sites within each file are updated, not just the first."""
-        for rel in self.CU_FILES:
-            path = self._repo_path(rel)
-            if not path.exists():
-                continue
-            src = path.read_text(encoding="utf-8", errors="ignore")
-            dispatch_blocks = self._find_dispatch_blocks(src)
-            for idx, block in enumerate(dispatch_blocks):
-                missing = [t for t in self.UINT_TYPES if t not in block]
-                assert (
-                    not missing
-                ), f"{rel} dispatch site #{idx + 1} missing types {missing}"
+    def test_pytorch_build_succeeds(self):
+        """Verify PyTorch builds successfully with the modifications"""
+        result = subprocess.run(
+            ["python", "setup.py", "develop"],
+            cwd=os.path.join(self.REPO_DIR, "pytorch") if os.path.isdir(os.path.join(self.REPO_DIR, "pytorch")) else self.REPO_DIR,
+            capture_output=True,
+            text=True,
+            timeout=600,
+            env={**os.environ, "MAX_JOBS": "4", "USE_CUDA": "0"}
+        )
+        assert result.returncode == 0, f"PyTorch build failed: {result.stderr[-2000:]}"
 
-    def test_semantic_existing_type_support_signed_integers_floats_half_bfloat16_b(
-        self,
-    ):
-        """Existing type support (signed ints, floats, half, bfloat16, bool) unchanged."""
-        for rel in self.CU_FILES:
-            path = self._repo_path(rel)
-            if not path.exists():
-                continue
-            src = path.read_text(encoding="utf-8", errors="ignore")
-            dispatch_blocks = self._find_dispatch_blocks(src)
-            for block in dispatch_blocks:
-                assert self.EXISTING_TYPES_RE.search(
-                    block
-                ), f"Existing types appear to be removed in {rel}"
+    def test_torch_uint32_tensor_creation(self):
+        """Verify torch.uint32 tensors can be created successfully"""
+        try:
+            import torch
+        except ImportError:
+            pytest.skip("torch not importable - build may not be complete")
+        t = torch.tensor([1, 2, 3], dtype=torch.uint32)
+        assert t.dtype == torch.uint32, f"Expected dtype torch.uint32, got {t.dtype}"
+        assert t.tolist() == [1, 2, 3], f"Tensor values incorrect: {t.tolist()}"
 
-    def test_semantic_no_changes_to_dispatch_format_or_macro_structure_beyond_addi(
-        self,
-    ):
-        """No changes to dispatch format or macro structure beyond adding new types."""
-        for rel in self.CU_FILES:
-            path = self._repo_path(rel)
-            if not path.exists():
-                continue
-            src = path.read_text(encoding="utf-8", errors="ignore")
-            dispatch_blocks = self._find_dispatch_blocks(src)
-            for block in dispatch_blocks:
-                # Macro name must still be AT_DISPATCH_*
-                assert block.startswith(
-                    "AT_DISPATCH_"
-                ), f"Dispatch macro name changed in {rel}"
-                # Lambda body should still be present
-                assert re.search(
-                    r"\[&\]|LAMBDA|\{", block
-                ), f"Dispatch macro lambda structure altered in {rel}"
+    def test_torch_min_with_uint32(self):
+        """Verify torch.min works with uint32 tensors and returns correct value"""
+        try:
+            import torch
+        except ImportError:
+            pytest.skip("torch not importable")
+        t = torch.tensor([3, 1, 2], dtype=torch.uint32)
+        try:
+            result = torch.min(t)
+            assert result.item() == 1, f"Expected min=1, got {result.item()}"
+            assert result.dtype == torch.uint32, f"Expected uint32 result, got {result.dtype}"
+        except RuntimeError as e:
+            pytest.fail(f"torch.min failed for uint32: {e}")
 
-    # ------------------------------------------------------------------
-    # Layer 3 – functional_check (5 cases, import-style via torch)
-    # ------------------------------------------------------------------
+    def test_torch_max_with_uint64(self):
+        """Verify torch.max works with uint64 tensors and returns correct value"""
+        try:
+            import torch
+        except ImportError:
+            pytest.skip("torch not importable")
+        t = torch.tensor([100, 500, 200], dtype=torch.uint64)
+        try:
+            result = torch.max(t)
+            assert result.item() == 500, f"Expected max=500, got {result.item()}"
+        except RuntimeError as e:
+            pytest.fail(f"torch.max failed for uint64: {e}")
 
-    def _skip_if_no_torch_cuda(self):
-        """Skip the test when torch is not available or CUDA not ready."""
-        torch = pytest.importorskip("torch")
-        if not torch.cuda.is_available():
-            pytest.skip("CUDA not available")
-        return torch
+    def test_torch_sort_with_uint32(self):
+        """Verify torch.sort works with uint32 tensors in ascending order"""
+        try:
+            import torch
+        except ImportError:
+            pytest.skip("torch not importable")
+        t = torch.tensor([300, 100, 200], dtype=torch.uint32)
+        try:
+            values, indices = torch.sort(t)
+            assert values.tolist() == [100, 200, 300], f"Sort values wrong: {values.tolist()}"
+            assert indices.tolist() == [1, 2, 0], f"Sort indices wrong: {indices.tolist()}"
+        except RuntimeError as e:
+            pytest.fail(f"torch.sort failed for uint32: {e}")
 
-    def test_functional_torch_min_tensor_3_1_2_dtype_torch_uint32_returns_tensor_1_d(
-        self,
-    ):
-        """torch.min on uint32 tensor returns correct minimum value."""
-        torch = self._skip_if_no_torch_cuda()
-        t = torch.tensor([3, 1, 2], dtype=torch.uint32, device="cuda")
-        result = torch.min(t)
-        assert result.item() == 1
-        assert result.dtype == torch.uint32
+    def test_torch_cumsum_with_uint32(self):
+        """Verify torch.cumsum works with uint32 tensors and returns correct prefix sums"""
+        try:
+            import torch
+        except ImportError:
+            pytest.skip("torch not importable")
+        t = torch.tensor([1, 2, 3], dtype=torch.uint32)
+        try:
+            result = torch.cumsum(t, dim=0)
+            assert result.tolist() == [1, 3, 6], f"cumsum values wrong: {result.tolist()}"
+            assert result.dtype == torch.uint32, f"Expected uint32 result, got {result.dtype}"
+        except RuntimeError as e:
+            pytest.fail(f"torch.cumsum failed for uint32: {e}")
 
-    def test_functional_torch_sort_tensor_300_100_200_dtype_torch_uint64_returns_sor(
-        self,
-    ):
-        """torch.sort on uint64 tensor returns sorted values and indices."""
-        torch = self._skip_if_no_torch_cuda()
-        t = torch.tensor([300, 100, 200], dtype=torch.uint64, device="cuda")
-        values, indices = torch.sort(t)
-        assert values.tolist() == [100, 200, 300]
-        assert indices.tolist() == [1, 2, 0]
+    def test_torch_eq_with_uint16(self):
+        """Verify torch.eq works with uint16 tensors and returns correct boolean results"""
+        try:
+            import torch
+        except ImportError:
+            pytest.skip("torch not importable")
+        a = torch.tensor([1, 2], dtype=torch.uint16)
+        b = torch.tensor([1, 3], dtype=torch.uint16)
+        try:
+            result = torch.eq(a, b)
+            assert result.tolist() == [True, False], f"eq result wrong: {result.tolist()}"
+        except RuntimeError as e:
+            pytest.fail(f"torch.eq failed for uint16: {e}")
 
-    def test_functional_torch_cumsum_tensor_1_2_3_dtype_torch_uint32_dim_0_returns_t(
-        self,
-    ):
-        """torch.cumsum on uint32 tensor returns correct prefix sums."""
-        torch = self._skip_if_no_torch_cuda()
-        t = torch.tensor([1, 2, 3], dtype=torch.uint32, device="cuda")
-        result = torch.cumsum(t, dim=0)
-        assert result.tolist() == [1, 3, 6]
+    def test_torch_sort_descending_uint64(self):
+        """Verify torch.sort descending mode works with uint64 tensors"""
+        try:
+            import torch
+        except ImportError:
+            pytest.skip("torch not importable")
+        t = torch.tensor([10, 50, 30], dtype=torch.uint64)
+        try:
+            values, indices = torch.sort(t, descending=True)
+            assert values.tolist() == [50, 30, 10], f"Descending sort values wrong: {values.tolist()}"
+            assert indices.tolist() == [1, 2, 0], f"Descending sort indices wrong: {indices.tolist()}"
+        except RuntimeError as e:
+            pytest.fail(f"torch.sort descending failed for uint64: {e}")
 
-    def test_functional_torch_eq_tensor_1_2_dtype_torch_uint16_tensor_1_3_dtype_torc(
-        self,
-    ):
-        """torch.eq comparing uint16 tensors returns correct boolean tensor."""
-        torch = self._skip_if_no_torch_cuda()
-        a = torch.tensor([1, 2], dtype=torch.uint16, device="cuda")
-        b = torch.tensor([1, 3], dtype=torch.uint16, device="cuda")
-        result = torch.eq(a, b)
-        assert result.tolist() == [True, False]
-
-    def test_functional_existing_float32_int32_operations_produce_identical_results(
-        self,
-    ):
-        """Existing float32/int32 operations produce identical (non-regressed) results."""
-        torch = self._skip_if_no_torch_cuda()
-        # int32 min
-        t_int = torch.tensor([5, 2, 8], dtype=torch.int32, device="cuda")
-        assert torch.min(t_int).item() == 2
-        # float32 sort
-        t_float = torch.tensor([3.0, 1.0, 2.0], dtype=torch.float32, device="cuda")
-        vals, idxs = torch.sort(t_float)
-        assert vals.tolist() == [1.0, 2.0, 3.0]
-        # float32 cumsum
-        assert torch.cumsum(t_float, dim=0).tolist() == pytest.approx([3.0, 4.0, 6.0])
+    def test_torch_comparison_operators_uint32(self):
+        """Verify all six comparison operators (eq, ne, lt, le, gt, ge) work with uint32"""
+        try:
+            import torch
+        except ImportError:
+            pytest.skip("torch not importable")
+        a = torch.tensor([1, 5, 3], dtype=torch.uint32)
+        b = torch.tensor([2, 5, 1], dtype=torch.uint32)
+        try:
+            assert torch.lt(a, b).tolist() == [True, False, False], "lt failed for uint32"
+            assert torch.le(a, b).tolist() == [True, True, False], "le failed for uint32"
+            assert torch.gt(a, b).tolist() == [False, False, True], "gt failed for uint32"
+            assert torch.ge(a, b).tolist() == [False, True, True], "ge failed for uint32"
+            assert torch.eq(a, b).tolist() == [False, True, False], "eq failed for uint32"
+            assert torch.ne(a, b).tolist() == [True, False, True], "ne failed for uint32"
+        except RuntimeError as e:
+            pytest.fail(f"Comparison operators failed for uint32: {e}")

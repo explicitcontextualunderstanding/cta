@@ -1,116 +1,171 @@
 """
-Test for 'django-patterns' skill — Saleor Wishlist REST API
-Validates that the Agent implemented a Django REST Framework wishlist
-module with models, views, serializers, URLs, auth, and ownership isolation.
+Tests for the django-patterns skill.
+Validates implementation of a Wishlist feature with REST API in Saleor,
+including models, serializers, views, URL routing, and authorization.
 """
 
 import os
 import re
 import subprocess
 
-import pytest
+REPO_DIR = "/workspace/saleor"
 
 
 class TestDjangoPatterns:
-    """Verify Saleor wishlist REST API implementation."""
+    """Tests for the Saleor Wishlist feature implementation."""
 
-    REPO_DIR = "/workspace/saleor"
+    # ── file_path_check ──────────────────────────────────────────────
 
-    @staticmethod
-    def _read(path: str) -> str:
-        try:
-            with open(path, "r", errors="ignore") as fh:
-                return fh.read()
-        except OSError:
+    def test_wishlist_models_exists(self):
+        """Wishlist models.py must exist."""
+        path = os.path.join(REPO_DIR, "saleor", "wishlist", "models.py")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    def test_wishlist_views_exists(self):
+        """Wishlist views.py must exist."""
+        path = os.path.join(REPO_DIR, "saleor", "wishlist", "views.py")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    def test_wishlist_serializers_exists(self):
+        """Wishlist serializers.py must exist."""
+        path = os.path.join(REPO_DIR, "saleor", "wishlist", "serializers.py")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    def test_wishlist_urls_exists(self):
+        """Wishlist urls.py must exist."""
+        path = os.path.join(REPO_DIR, "saleor", "wishlist", "urls.py")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    def test_wishlist_init_exists(self):
+        """Wishlist __init__.py must exist (package)."""
+        path = os.path.join(REPO_DIR, "saleor", "wishlist", "__init__.py")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    # ── semantic_check ───────────────────────────────────────────────
+
+    def _read_file(self, rel_path):
+        """Read a file relative to REPO_DIR."""
+        path = os.path.join(REPO_DIR, rel_path)
+        if not os.path.isfile(path):
             return ""
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read()
 
-    # ── file_path_check ─────────────────────────────────────────────
-
-    def test_wishlist_module_files_exist(self):
-        """Verify wishlist __init__.py, models.py, views.py, and serializers.py exist."""
-        for rel in ("saleor/wishlist/__init__.py", "saleor/wishlist/models.py",
-                     "saleor/wishlist/views.py", "saleor/wishlist/serializers.py"):
-            path = os.path.join(self.REPO_DIR, rel)
-            assert os.path.isfile(path), f"Missing: {rel}"
-
-    def test_wishlist_urls_and_tests_exist(self):
-        """Verify urls.py exists."""
-        path = os.path.join(self.REPO_DIR, "saleor/wishlist/urls.py")
-        assert os.path.isfile(path), "saleor/wishlist/urls.py missing"
-
-    def test_wishlist_test_file_exists(self):
-        """Verify at least one test file exists for wishlist."""
-        found = (
-            os.path.isfile(os.path.join(self.REPO_DIR, "saleor/wishlist/tests.py"))
-            or os.path.isdir(os.path.join(self.REPO_DIR, "saleor/wishlist/tests"))
+    def test_wishlist_model_defined(self):
+        """Wishlist model class must be defined with user field."""
+        content = self._read_file("saleor/wishlist/models.py")
+        assert re.search(r"class\s+Wishlist\b", content), "Wishlist model not defined"
+        assert re.search(r"OneToOneField|ForeignKey", content), (
+            "Wishlist must have a user relationship"
         )
-        assert found, "Neither tests.py nor tests/ directory found"
 
-    # ── semantic_check ──────────────────────────────────────────────
+    def test_wishlist_item_model_defined(self):
+        """WishlistItem model must be defined with product_variant and wishlist FK."""
+        content = self._read_file("saleor/wishlist/models.py")
+        assert re.search(r"class\s+WishlistItem\b", content), "WishlistItem model not defined"
+        assert "product_variant" in content, "WishlistItem must reference product_variant"
+        assert "wishlist" in content, "WishlistItem must reference wishlist"
 
-    def test_wishlist_model_fields(self):
-        """Verify Wishlist model defines user FK, product_variant FK, and added_at."""
-        content = self._read(os.path.join(self.REPO_DIR, "saleor/wishlist/models.py"))
-        assert content, "models.py is empty or unreadable"
-        for field in ("user", "product_variant", "added_at", "ForeignKey"):
-            assert field in content, f"'{field}' not found in models.py"
+    def test_unique_constraint_on_wishlist_item(self):
+        """Unique constraint on (wishlist, product_variant) must be enforced."""
+        content = self._read_file("saleor/wishlist/models.py")
+        assert re.search(
+            r"unique_together|UniqueConstraint|unique=True", content
+        ), "Unique constraint on (wishlist, product_variant) not found"
 
-    def test_view_is_authenticated_permission(self):
-        """Verify views.py uses IsAuthenticated permission class."""
-        content = self._read(os.path.join(self.REPO_DIR, "saleor/wishlist/views.py"))
-        assert content, "views.py is empty or unreadable"
-        assert "IsAuthenticated" in content, "IsAuthenticated not found in views.py"
+    def test_uuid_primary_keys(self):
+        """Models should use UUID primary keys."""
+        content = self._read_file("saleor/wishlist/models.py")
+        assert re.search(r"UUIDField|uuid", content, re.IGNORECASE), (
+            "UUID primary keys not found in models"
+        )
 
-    def test_view_filters_by_request_user(self):
-        """Verify views.py filters queryset by request.user for ownership isolation."""
-        content = self._read(os.path.join(self.REPO_DIR, "saleor/wishlist/views.py"))
-        assert content, "views.py is empty or unreadable"
-        assert "request.user" in content, "request.user filtering not found"
-        assert "get_queryset" in content, "get_queryset not found"
+    def test_serializer_has_nested_product_info(self):
+        """Serializer must include nested product variant details."""
+        content = self._read_file("saleor/wishlist/serializers.py")
+        assert re.search(r"variant_name|product_name|variant_price|is_available", content), (
+            "Serializer lacks nested product variant detail fields"
+        )
 
-    def test_serializer_nested_variant_fields(self):
-        """Verify serializer defines nested product_variant fields."""
-        content = self._read(os.path.join(self.REPO_DIR, "saleor/wishlist/serializers.py"))
-        assert content, "serializers.py is empty or unreadable"
-        found = any(kw in content for kw in ("name", "sku", "price", "nested"))
-        assert found, "No variant field references found in serializers.py"
+    def test_viewset_has_move_to_cart_action(self):
+        """ViewSet must have a move_to_cart custom action."""
+        content = self._read_file("saleor/wishlist/views.py")
+        assert re.search(r"move_to_cart|move-to-cart", content), (
+            "move_to_cart action not found in views"
+        )
 
-    # ── functional_check (command) ──────────────────────────────────
+    def test_authentication_required(self):
+        """All endpoints must require authentication."""
+        content = self._read_file("saleor/wishlist/views.py")
+        assert re.search(
+            r"IsAuthenticated|authentication_classes|permission_classes|login_required",
+            content,
+        ), "Authentication enforcement not found in views"
 
-    def _skip_unless_django(self):
-        if not os.path.isdir(self.REPO_DIR):
-            pytest.skip("Repo dir does not exist")
+    # ── functional_check ─────────────────────────────────────────────
 
-    def test_unauthenticated_get_returns_401(self):
-        """Unauthenticated GET /api/wishlist/ returns 401."""
-        self._skip_unless_django()
-        content = self._read(os.path.join(self.REPO_DIR, "saleor/wishlist/views.py"))
-        assert "IsAuthenticated" in content, \
-            "Auth enforcement via IsAuthenticated not found"
+    def test_models_valid_python(self):
+        """Models file must be valid Python syntax."""
+        path = os.path.join(REPO_DIR, "saleor", "wishlist", "models.py")
+        result = subprocess.run(
+            ["python", "-c", f"import ast; ast.parse(open('{path}').read())"],
+            capture_output=True, text=True, cwd=REPO_DIR,
+        )
+        assert result.returncode == 0, f"models.py has syntax errors: {result.stderr}"
 
-    def test_post_new_item_returns_201(self):
-        """Authenticated POST /api/wishlist/ with new variant_id returns 201."""
-        self._skip_unless_django()
-        # Verify test file covers 201 creation
-        for candidate in ("saleor/wishlist/tests.py", "saleor/wishlist/tests/test_views.py"):
-            tc = self._read(os.path.join(self.REPO_DIR, candidate))
-            if tc and ("201" in tc or "create" in tc.lower()):
-                return
-        # Fallback: check view for create method
-        content = self._read(os.path.join(self.REPO_DIR, "saleor/wishlist/views.py"))
-        assert "create" in content.lower() or "post" in content.lower(), \
-            "No POST/create handler found"
+    def test_views_valid_python(self):
+        """Views file must be valid Python syntax."""
+        path = os.path.join(REPO_DIR, "saleor", "wishlist", "views.py")
+        result = subprocess.run(
+            ["python", "-c", f"import ast; ast.parse(open('{path}').read())"],
+            capture_output=True, text=True, cwd=REPO_DIR,
+        )
+        assert result.returncode == 0, f"views.py has syntax errors: {result.stderr}"
 
-    def test_post_duplicate_returns_200_idempotent(self):
-        """Second POST with same variant_id returns 200 (idempotent)."""
-        self._skip_unless_django()
-        content = self._read(os.path.join(self.REPO_DIR, "saleor/wishlist/views.py"))
-        assert content, "views.py is empty"
-        found = "get_or_create" in content or "idempotent" in content.lower() or "200" in content
-        assert found, "No idempotent duplicate handling found in views.py"
+    def test_serializers_valid_python(self):
+        """Serializers file must be valid Python syntax."""
+        path = os.path.join(REPO_DIR, "saleor", "wishlist", "serializers.py")
+        result = subprocess.run(
+            ["python", "-c", f"import ast; ast.parse(open('{path}').read())"],
+            capture_output=True, text=True, cwd=REPO_DIR,
+        )
+        assert result.returncode == 0, f"serializers.py has syntax errors: {result.stderr}"
 
-    def test_cross_user_access_forbidden(self):
-        """User A accessing User B's wishlist item returns 403 or 404."""
-        self._skip_unless_django()
-        content = self._read(os.path.join(self.REPO_DIR, "saleor/wishlist/views.py"))
-        assert "request.user" in content, "Ownership isolation via request.user not found"
+    def test_urls_valid_python(self):
+        """URLs file must be valid Python syntax."""
+        path = os.path.join(REPO_DIR, "saleor", "wishlist", "urls.py")
+        result = subprocess.run(
+            ["python", "-c", f"import ast; ast.parse(open('{path}').read())"],
+            capture_output=True, text=True, cwd=REPO_DIR,
+        )
+        assert result.returncode == 0, f"urls.py has syntax errors: {result.stderr}"
+
+    def test_migration_file_exists(self):
+        """Initial migration must exist for wishlist models."""
+        migrations_dir = os.path.join(REPO_DIR, "saleor", "wishlist", "migrations")
+        if not os.path.isdir(migrations_dir):
+            assert False, f"Migrations directory not found: {migrations_dir}"
+        files = os.listdir(migrations_dir)
+        migration_files = [f for f in files if f.endswith(".py") and f != "__init__.py"]
+        assert len(migration_files) >= 1, "No migration files found for wishlist app"
+
+    def test_cascade_delete_configured(self):
+        """Models must configure CASCADE deletes for user and product_variant."""
+        content = self._read_file("saleor/wishlist/models.py")
+        assert content.count("CASCADE") >= 2 or content.count("on_delete") >= 2, (
+            "CASCADE deletes not properly configured for user and product_variant"
+        )
+
+    def test_queryset_scoped_to_user(self):
+        """ViewSet must scope queryset to authenticated user."""
+        content = self._read_file("saleor/wishlist/views.py")
+        assert re.search(r"get_queryset|request\.user|self\.request\.user", content), (
+            "Queryset scoping to authenticated user not found"
+        )
+
+    def test_move_to_cart_checks_stock(self):
+        """move_to_cart must check stock availability."""
+        content = self._read_file("saleor/wishlist/views.py")
+        assert re.search(r"stock|quantity|out.of.stock|is_available|in_stock", content, re.IGNORECASE), (
+            "Stock check not found in move_to_cart logic"
+        )

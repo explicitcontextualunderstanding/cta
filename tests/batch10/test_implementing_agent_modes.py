@@ -1,194 +1,335 @@
 """
-Test for 'implementing-agent-modes' skill — PostHog Agent Modes
-Validates that the Agent implemented SQL agent mode, feature flag agent mode,
-toolkit class, and related components in the PostHog codebase.
+Test skill: implementing-agent-modes
+Verify that the Agent correctly implements a SQL query agent mode
+with feature flag for PostHog.
 """
 
 import os
 import re
-
+import ast
+import subprocess
 import pytest
 
 
 class TestImplementingAgentModes:
-    """Verify PostHog agent modes implementation."""
-
     REPO_DIR = "/workspace/posthog"
 
-    def test_sql_agent_mode_file_exists(self):
-        """SQL agent mode module must exist."""
-        candidates = [
-            os.path.join(self.REPO_DIR, "ee", "hogai", "sql_agent", "mode.py"),
-            os.path.join(self.REPO_DIR, "ee", "hogai", "sql_agent.py"),
-        ]
-        assert any(os.path.isfile(p) for p in candidates), (
-            "SQL agent mode file not found"
+    # === File Path Checks ===
+
+    def test_sql_mode_exists(self):
+        """Verify sql.py was created"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "ee/hogai/core/agent_modes/presets/sql.py",
+        )
+        assert os.path.exists(path), "sql.py not found"
+
+    def test_sql_mode_test_exists(self):
+        """Verify test_sql.py was created"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "ee/hogai/core/agent_modes/presets/tests/test_sql.py",
+        )
+        assert os.path.exists(path), "test_sql.py not found"
+
+    # === Semantic Checks: SQLAgentToolkit ===
+
+    def test_sql_agent_toolkit_class(self):
+        """Verify SQLAgentToolkit class is defined"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "ee/hogai/core/agent_modes/presets/sql.py",
+        )
+        with open(path) as f:
+            content = f.read()
+        assert "class SQLAgentToolkit" in content, (
+            "SQLAgentToolkit class should be defined"
         )
 
-    def test_feature_flag_agent_mode_file_exists(self):
-        """Feature flag agent mode module must exist."""
-        candidates = [
-            os.path.join(self.REPO_DIR, "ee", "hogai", "feature_flag_agent", "mode.py"),
-            os.path.join(self.REPO_DIR, "ee", "hogai", "feature_flag_agent.py"),
-        ]
-        assert any(os.path.isfile(p) for p in candidates), (
-            "Feature flag agent mode file not found"
+    def test_toolkit_subclasses_assistant_toolkit(self):
+        """Verify SQLAgentToolkit subclasses AssistantToolkit"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "ee/hogai/core/agent_modes/presets/sql.py",
+        )
+        with open(path) as f:
+            content = f.read()
+        assert "AssistantToolkit" in content, (
+            "Should subclass AssistantToolkit"
         )
 
-    def test_toolkit_class_file_exists(self):
-        """Toolkit class must exist for tool registration."""
-        candidates = [
-            os.path.join(self.REPO_DIR, "ee", "hogai", "toolkit.py"),
-            os.path.join(self.REPO_DIR, "ee", "hogai", "tool_registry.py"),
-        ]
-        found = any(os.path.isfile(p) for p in candidates)
-        if not found:
-            for root, dirs, files in os.walk(os.path.join(self.REPO_DIR, "ee", "hogai")):
-                for f in files:
-                    if "toolkit" in f.lower() or "tool_registry" in f.lower():
-                        found = True
-                        break
-        assert found, "Toolkit class file not found"
-
-    def test_sql_agent_has_run_sql_method(self):
-        """SQL agent mode must have a run_sql or execute_sql method."""
-        mode_file = None
-        for candidate in [
-            os.path.join(self.REPO_DIR, "ee", "hogai", "sql_agent", "mode.py"),
-            os.path.join(self.REPO_DIR, "ee", "hogai", "sql_agent.py"),
-        ]:
-            if os.path.isfile(candidate):
-                mode_file = candidate
-                break
-        assert mode_file is not None, "SQL agent mode file not found"
-        with open(mode_file, "r", errors="ignore") as fh:
-            content = fh.read()
-        assert re.search(r"def\s+(run_sql|execute_sql|_run_query)", content), (
-            "SQL agent mode missing run_sql/execute_sql method"
+    def test_toolkit_exposes_hogql_tool(self):
+        """Verify execute_hogql_query tool is exposed"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "ee/hogai/core/agent_modes/presets/sql.py",
+        )
+        with open(path) as f:
+            content = f.read()
+        assert "execute_hogql_query" in content, (
+            "Should expose execute_hogql_query tool"
         )
 
-    def test_sql_agent_uses_hogql(self):
-        """SQL agent must reference HogQL for query execution."""
-        mode_file = None
-        for candidate in [
-            os.path.join(self.REPO_DIR, "ee", "hogai", "sql_agent", "mode.py"),
-            os.path.join(self.REPO_DIR, "ee", "hogai", "sql_agent.py"),
-        ]:
-            if os.path.isfile(candidate):
-                mode_file = candidate
-                break
-        if mode_file is None:
-            pytest.skip("SQL agent mode file not found")
-        with open(mode_file, "r", errors="ignore") as fh:
-            content = fh.read()
-        assert re.search(r"[Hh]og[Qq][Ll]|hogql", content), (
-            "SQL agent mode does not reference HogQL"
+    def test_toolkit_exposes_read_data_tool(self):
+        """Verify read_data tool is exposed"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "ee/hogai/core/agent_modes/presets/sql.py",
+        )
+        with open(path) as f:
+            content = f.read()
+        assert "read_data" in content, "Should expose read_data tool"
+
+    def test_toolkit_excludes_feature_flag_tool(self):
+        """Verify create_feature_flag is NOT imported"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "ee/hogai/core/agent_modes/presets/sql.py",
+        )
+        with open(path) as f:
+            content = f.read()
+        assert "create_feature_flag" not in content, (
+            "Should NOT expose create_feature_flag tool"
         )
 
-    def test_feature_flag_agent_references_feature_flags(self):
-        """Feature flag agent must reference feature flag models or APIs."""
-        mode_file = None
-        for candidate in [
-            os.path.join(self.REPO_DIR, "ee", "hogai", "feature_flag_agent", "mode.py"),
-            os.path.join(self.REPO_DIR, "ee", "hogai", "feature_flag_agent.py"),
-        ]:
-            if os.path.isfile(candidate):
-                mode_file = candidate
-                break
-        if mode_file is None:
-            pytest.skip("Feature flag agent mode file not found")
-        with open(mode_file, "r", errors="ignore") as fh:
-            content = fh.read()
-        assert re.search(r"[Ff]eature[Ff]lag|feature_flag", content), (
-            "Feature flag agent does not reference feature flags"
+    def test_toolkit_excludes_experiment_tool(self):
+        """Verify create_experiment is NOT imported"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "ee/hogai/core/agent_modes/presets/sql.py",
+        )
+        with open(path) as f:
+            content = f.read()
+        assert "create_experiment" not in content, (
+            "Should NOT expose create_experiment tool"
         )
 
-    def test_agent_mode_has_system_prompt(self):
-        """At least one agent mode must define a system prompt."""
-        hogai_dir = os.path.join(self.REPO_DIR, "ee", "hogai")
-        found = False
-        for root, dirs, files in os.walk(hogai_dir):
-            for f in files:
-                if f.endswith(".py"):
-                    path = os.path.join(root, f)
-                    with open(path, "r", errors="ignore") as fh:
-                        content = fh.read()
-                    if re.search(r"system_prompt|SYSTEM_PROMPT|SystemMessage", content):
-                        found = True
-                        break
-            if found:
-                break
-        assert found, "No agent mode defines a system prompt"
-
-    def test_mode_registry_or_dispatcher_exists(self):
-        """A mode registry or dispatcher that routes to different agent modes must exist."""
-        hogai_dir = os.path.join(self.REPO_DIR, "ee", "hogai")
-        found = False
-        for root, dirs, files in os.walk(hogai_dir):
-            for f in files:
-                if f.endswith(".py"):
-                    path = os.path.join(root, f)
-                    with open(path, "r", errors="ignore") as fh:
-                        content = fh.read()
-                    if re.search(r"mode_registry|dispatch|get_mode|MODE_MAP", content):
-                        found = True
-                        break
-            if found:
-                break
-        assert found, "No mode registry/dispatcher found in hogai directory"
-
-    def test_sql_agent_has_validation(self):
-        """SQL agent must validate or sanitize SQL queries."""
-        mode_file = None
-        for candidate in [
-            os.path.join(self.REPO_DIR, "ee", "hogai", "sql_agent", "mode.py"),
-            os.path.join(self.REPO_DIR, "ee", "hogai", "sql_agent.py"),
-        ]:
-            if os.path.isfile(candidate):
-                mode_file = candidate
-                break
-        if mode_file is None:
-            pytest.skip("SQL agent mode file not found")
-        with open(mode_file, "r", errors="ignore") as fh:
-            content = fh.read()
-        assert re.search(r"validat|sanitiz|allow|whitelist|parse", content, re.IGNORECASE), (
-            "SQL agent mode has no query validation logic"
+    def test_toolkit_no_feature_flags_import(self):
+        """Verify no import from feature_flags module"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "ee/hogai/core/agent_modes/presets/sql.py",
+        )
+        with open(path) as f:
+            content = f.read()
+        assert "ee.hogai.tools.feature_flags" not in content and \
+               "ee/hogai/tools/feature_flags" not in content, (
+            "Should not import from feature_flags module"
         )
 
-    def test_agent_mode_has_tool_definitions(self):
-        """At least one agent mode must define or register tools."""
-        hogai_dir = os.path.join(self.REPO_DIR, "ee", "hogai")
-        found = False
-        for root, dirs, files in os.walk(hogai_dir):
-            for f in files:
-                if f.endswith(".py"):
-                    path = os.path.join(root, f)
-                    with open(path, "r", errors="ignore") as fh:
-                        content = fh.read()
-                    if re.search(r"tools\s*=|register_tool|@tool|Tool\(", content):
-                        found = True
-                        break
-            if found:
-                break
-        assert found, "No tool definitions found in hogai directory"
+    def test_toolkit_trajectory_examples(self):
+        """Verify trajectory_examples property"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "ee/hogai/core/agent_modes/presets/sql.py",
+        )
+        with open(path) as f:
+            content = f.read()
+        assert "trajectory_examples" in content, (
+            "Should define trajectory_examples property"
+        )
 
-    def test_agent_mode_tests_exist(self):
-        """Test files for agent modes should exist."""
-        test_dirs = [
-            os.path.join(self.REPO_DIR, "ee", "hogai", "sql_agent", "test"),
-            os.path.join(self.REPO_DIR, "ee", "hogai", "tests"),
-        ]
-        found = False
-        for td in test_dirs:
-            if os.path.isdir(td):
-                found = True
-                break
-        if not found:
-            for root, dirs, files in os.walk(os.path.join(self.REPO_DIR, "ee", "hogai")):
-                for f in files:
-                    if f.startswith("test_") and f.endswith(".py"):
-                        found = True
-                        break
-                if found:
-                    break
-        assert found, "No test files found for agent modes"
+    # === Semantic Checks: AgentModeDefinition ===
+
+    def test_sql_agent_mode_definition(self):
+        """Verify sql_agent AgentModeDefinition variable"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "ee/hogai/core/agent_modes/presets/sql.py",
+        )
+        with open(path) as f:
+            content = f.read()
+        assert "sql_agent" in content, (
+            "Should define sql_agent AgentModeDefinition"
+        )
+        assert "AgentModeDefinition" in content, (
+            "Should use AgentModeDefinition"
+        )
+
+    def test_sql_agent_mode_value(self):
+        """Verify mode set to AgentMode.SQL"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "ee/hogai/core/agent_modes/presets/sql.py",
+        )
+        with open(path) as f:
+            content = f.read()
+        assert "AgentMode.SQL" in content, (
+            "Should set mode to AgentMode.SQL"
+        )
+
+    def test_sql_agent_toolkit_class_ref(self):
+        """Verify toolkit_class set to SQLAgentToolkit"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "ee/hogai/core/agent_modes/presets/sql.py",
+        )
+        with open(path) as f:
+            content = f.read()
+        assert "toolkit_class" in content and "SQLAgentToolkit" in content, (
+            "Should set toolkit_class to SQLAgentToolkit"
+        )
+
+    # === Semantic Checks: Feature Flag ===
+
+    def test_flag_definition_constant(self):
+        """Verify HOGAI_SQL_MODE constant in flag_definitions.py"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "posthog/models/feature_flag/flag_definitions.py",
+        )
+        with open(path) as f:
+            content = f.read()
+        assert 'HOGAI_SQL_MODE' in content, (
+            "Should define HOGAI_SQL_MODE constant"
+        )
+        assert '"hogai-sql-mode"' in content, (
+            "HOGAI_SQL_MODE should equal 'hogai-sql-mode'"
+        )
+
+    def test_has_hogai_sql_mode_function(self):
+        """Verify has_hogai_sql_mode_feature_flag function"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "posthog/models/feature_flag/flag_definitions.py",
+        )
+        with open(path) as f:
+            content = f.read()
+        assert "has_hogai_sql_mode_feature_flag" in content, (
+            "Should define has_hogai_sql_mode_feature_flag"
+        )
+
+    # === Semantic Checks: Mode Registration ===
+
+    def test_mode_manager_registers_sql(self):
+        """Verify mode_manager.py registers SQL mode"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "ee/hogai/chat_agent/mode_manager.py",
+        )
+        with open(path) as f:
+            content = f.read()
+        assert "AgentMode.SQL" in content, (
+            "Should register AgentMode.SQL in mode_manager"
+        )
+
+    def test_mode_manager_feature_flag_guard(self):
+        """Verify SQL mode guarded by feature flag"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "ee/hogai/chat_agent/mode_manager.py",
+        )
+        with open(path) as f:
+            content = f.read()
+        assert "has_hogai_sql_mode_feature_flag" in content, (
+            "Should guard SQL mode with feature flag"
+        )
+
+    # === Semantic Checks: Schema ===
+
+    def test_schema_has_sql_mode(self):
+        """Verify AgentMode enum has SQL entry in schema"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "frontend/src/queries/schema/schema-assistant-messages.ts",
+        )
+        with open(path) as f:
+            content = f.read()
+        assert "SQL" in content, (
+            "AgentMode enum should have SQL entry"
+        )
+
+    # === Semantic Checks: Tests ===
+
+    def test_test_sql_toolkit_tools(self):
+        """Verify TestSQLToolkitTools test class"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "ee/hogai/core/agent_modes/presets/tests/test_sql.py",
+        )
+        with open(path) as f:
+            content = f.read()
+        assert "TestSQLToolkitTools" in content, (
+            "Should have TestSQLToolkitTools class"
+        )
+
+    def test_test_sql_mode_definition(self):
+        """Verify TestSQLModeDefinition test class"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "ee/hogai/core/agent_modes/presets/tests/test_sql.py",
+        )
+        with open(path) as f:
+            content = f.read()
+        assert "TestSQLModeDefinition" in content, (
+            "Should have TestSQLModeDefinition class"
+        )
+
+    def test_test_registration_enabled(self):
+        """Verify TestSQLModeRegistrationEnabled test class"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "ee/hogai/core/agent_modes/presets/tests/test_sql.py",
+        )
+        with open(path) as f:
+            content = f.read()
+        assert "TestSQLModeRegistrationEnabled" in content, (
+            "Should have TestSQLModeRegistrationEnabled class"
+        )
+
+    def test_test_registration_disabled(self):
+        """Verify TestSQLModeRegistrationDisabled test class"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "ee/hogai/core/agent_modes/presets/tests/test_sql.py",
+        )
+        with open(path) as f:
+            content = f.read()
+        assert "TestSQLModeRegistrationDisabled" in content, (
+            "Should have TestSQLModeRegistrationDisabled class"
+        )
+
+    # === Functional Checks ===
+
+    def test_sql_py_parses(self):
+        """Verify sql.py has valid Python syntax"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "ee/hogai/core/agent_modes/presets/sql.py",
+        )
+        with open(path) as f:
+            source = f.read()
+        try:
+            ast.parse(source)
+        except SyntaxError as e:
+            pytest.fail(f"sql.py has syntax error: {e}")
+
+    def test_test_sql_parses(self):
+        """Verify test_sql.py has valid Python syntax"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "ee/hogai/core/agent_modes/presets/tests/test_sql.py",
+        )
+        with open(path) as f:
+            source = f.read()
+        try:
+            ast.parse(source)
+        except SyntaxError as e:
+            pytest.fail(f"test_sql.py has syntax error: {e}")
+
+    def test_sql_mode_tests_pass(self):
+        """Verify test_sql.py tests pass"""
+        result = subprocess.run(
+            [
+                "python", "-m", "pytest",
+                "ee/hogai/core/agent_modes/presets/tests/test_sql.py",
+                "-v", "--tb=short",
+            ],
+            cwd=self.REPO_DIR,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        assert result.returncode == 0, (
+            f"Tests failed:\n{result.stdout}\n{result.stderr}"
+        )

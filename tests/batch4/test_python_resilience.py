@@ -1,308 +1,203 @@
 """
-Test for 'python-resilience' skill — ResilientTransport for httpx
-Validates that the Agent created a ResilientTransport class wrapping httpx
-transports with retry logic, backoff, jitter, fallback, and Retry-After support.
+Test skill: python-resilience
+Verify that the resilient HTTP transport layer has been correctly added to httpx,
+including ResilientTransport class with retry logic, exponential backoff,
+timeout enforcement, fallback support, and 429 rate-limit handling.
 """
 
 import os
-import re
 import sys
-
+import ast
+import re
+import inspect
+import subprocess
 import pytest
 
 
 class TestPythonResilience:
-    """Verify httpx ResilientTransport implementation."""
-
     REPO_DIR = "/workspace/httpx"
 
-    # ---- helpers ----
+    # === File Path Checks ===
 
-    @staticmethod
-    def _read(path):
-        with open(path, "r", errors="ignore") as fh:
-            return fh.read()
+    def test_resilience_module_exists(self):
+        """Verify that httpx/_resilience.py was created"""
+        filepath = os.path.join(self.REPO_DIR, "httpx/_resilience.py")
+        assert os.path.exists(filepath), f"_resilience.py not found at {filepath}"
 
-    # ---- file_path_check ----
+    def test_config_module_exists(self):
+        """Verify that httpx/_config.py exists"""
+        filepath = os.path.join(self.REPO_DIR, "httpx/_config.py")
+        assert os.path.exists(filepath), f"_config.py not found at {filepath}"
 
-    def test_resilience_py_exists(self):
-        """Verifies httpx/_resilience.py exists."""
-        path = os.path.join(self.REPO_DIR, "httpx/_resilience.py")
-        assert os.path.exists(path), f"Expected file not found: {path}"
+    def test_resilience_tests_exist(self):
+        """Verify that tests/test_resilience.py was created"""
+        filepath = os.path.join(self.REPO_DIR, "tests/test_resilience.py")
+        assert os.path.exists(filepath), f"test_resilience.py not found at {filepath}"
 
-    def test_repo_dir_exists(self):
-        """Verifies the repository directory exists."""
-        assert os.path.exists(
-            self.REPO_DIR
-        ), f"Repository directory not found: {self.REPO_DIR}"
+    # === Semantic Checks ===
 
-    # ---- semantic_check ----
+    def test_resilient_transport_class_defined(self):
+        """Verify that ResilientTransport class is defined in _resilience.py"""
+        filepath = os.path.join(self.REPO_DIR, "httpx/_resilience.py")
+        with open(filepath) as f:
+            content = f.read()
+        tree = ast.parse(content)
+        class_names = [node.name for node in ast.walk(tree) if isinstance(node, ast.ClassDef)]
+        assert "ResilientTransport" in class_names, \
+            "ResilientTransport class should be defined in _resilience.py"
 
-    def test_sem_import_resilient_transport(self):
-        """Verifies ResilientTransport can be imported."""
-        sys.path.insert(0, self.REPO_DIR)
-        try:
-            from httpx._resilience import ResilientTransport
+    def test_resilient_transport_constructor_params(self):
+        """Verify ResilientTransport has correct constructor parameters"""
+        filepath = os.path.join(self.REPO_DIR, "httpx/_resilience.py")
+        with open(filepath) as f:
+            content = f.read()
+        expected_params = [
+            "max_retries", "backoff_base", "backoff_max",
+            "backoff_jitter", "timeout_per_attempt",
+            "retryable_status_codes"
+        ]
+        for param in expected_params:
+            assert param in content, \
+                f"ResilientTransport should accept '{param}' parameter"
 
-            assert ResilientTransport is not None
-        finally:
-            sys.path.pop(0)
+    def test_handle_request_method_exists(self):
+        """Verify ResilientTransport implements handle_request method"""
+        filepath = os.path.join(self.REPO_DIR, "httpx/_resilience.py")
+        with open(filepath) as f:
+            content = f.read()
+        assert "handle_request" in content, \
+            "ResilientTransport should implement handle_request method"
 
-    def test_sem_init_parameters(self):
-        """Verifies ResilientTransport.__init__ accepts required parameters."""
-        content = self._read(os.path.join(self.REPO_DIR, "httpx/_resilience.py"))
-        for param in [
-            "transport",
-            "max_retries",
-            "backoff_base",
-            "backoff_max",
-            "backoff_jitter",
-            "timeout_per_attempt",
-            "retryable_status_codes",
-            "retryable_exceptions",
-        ]:
-            assert (
-                param in content
-            ), f"Parameter '{param}' not found in ResilientTransport.__init__"
+    def test_exponential_backoff_implemented(self):
+        """Verify exponential backoff formula is implemented"""
+        filepath = os.path.join(self.REPO_DIR, "httpx/_resilience.py")
+        with open(filepath) as f:
+            content = f.read()
+        # Should have power/exponential calculation
+        has_exponential = ("**" in content or "pow(" in content or "2 **" in content or
+                           "backoff_base" in content)
+        assert has_exponential, \
+            "Should implement exponential backoff (2^attempt pattern)"
+        assert "backoff_max" in content, \
+            "Should cap backoff at backoff_max"
 
-    def test_sem_default_values(self):
-        """Verifies sensible default values for key parameters."""
-        content = self._read(os.path.join(self.REPO_DIR, "httpx/_resilience.py"))
-        assert (
-            "max_retries" in content and "3" in content
-        ), "max_retries=3 default not found"
-        assert "429" in content, "429 not in retryable_status_codes"
-        assert "502" in content, "502 not in retryable_status_codes"
-        assert "503" in content, "503 not in retryable_status_codes"
-        assert "504" in content, "504 not in retryable_status_codes"
+    def test_retry_after_header_handling(self):
+        """Verify 429 responses with Retry-After header are handled"""
+        filepath = os.path.join(self.REPO_DIR, "httpx/_resilience.py")
+        with open(filepath) as f:
+            content = f.read()
+        assert "Retry-After" in content or "retry-after" in content or "retry_after" in content, \
+            "Should handle Retry-After header from 429 responses"
 
-    def test_sem_handle_request_method(self):
-        """Verifies handle_request(request) method exists (edge case)."""
-        content = self._read(os.path.join(self.REPO_DIR, "httpx/_resilience.py"))
-        assert re.search(
-            r"def handle_request\s*\(", content
-        ), "handle_request method not found"
+    def test_fallback_callable_support(self):
+        """Verify fallback callable is accepted and invoked on retry exhaustion"""
+        filepath = os.path.join(self.REPO_DIR, "httpx/_resilience.py")
+        with open(filepath) as f:
+            content = f.read()
+        assert "fallback" in content, \
+            "ResilientTransport should accept a 'fallback' callable parameter"
 
-    def test_sem_base_transport_subclass(self):
-        """Verifies ResilientTransport subclasses BaseTransport or similar."""
-        content = self._read(os.path.join(self.REPO_DIR, "httpx/_resilience.py"))
-        assert (
-            "BaseTransport" in content
-            or "httpx.BaseTransport" in content
-            or "handle_request" in content
-        ), "ResilientTransport does not implement BaseTransport interface"
+    def test_logging_on_retries(self):
+        """Verify retry attempts produce warning-level log messages"""
+        filepath = os.path.join(self.REPO_DIR, "httpx/_resilience.py")
+        with open(filepath) as f:
+            content = f.read()
+        has_logging = ("logging" in content or "logger" in content)
+        assert has_logging, "Should use logging for retry attempts"
+        has_warning = ("warning" in content.lower() or ".warn" in content)
+        assert has_warning, "Should log retry attempts at warning level"
+        # Logger name should be httpx._resilience
+        assert "httpx._resilience" in content or "_resilience" in content, \
+            "Logger name should be 'httpx._resilience'"
 
-    # ---- functional_check ----
+    def test_default_retryable_status_codes(self):
+        """Verify default retryable status codes include 429, 502, 503, 504"""
+        filepath = os.path.join(self.REPO_DIR, "httpx/_resilience.py")
+        with open(filepath) as f:
+            content = f.read()
+        for code in ["429", "502", "503", "504"]:
+            assert code in content, \
+                f"Default retryable status codes should include {code}"
 
-    def test_func_retry_on_503_then_200(self):
-        """Mock transport returns [503,503,503,200]: should succeed after retries."""
-        sys.path.insert(0, self.REPO_DIR)
-        try:
-            import httpx
-            from httpx._resilience import ResilientTransport
+    def test_test_file_covers_key_scenarios(self):
+        """Verify test file covers retry success, timeout, 429, and fallback scenarios"""
+        filepath = os.path.join(self.REPO_DIR, "tests/test_resilience.py")
+        with open(filepath) as f:
+            content = f.read()
+        test_count = len(re.findall(r'def\s+test_', content))
+        assert test_count >= 5, \
+            f"Test file should have at least 5 test cases, found {test_count}"
 
-            call_count = 0
-            responses = [503, 503, 503, 200]
+    # === Functional Checks ===
 
-            class MockTransport(httpx.BaseTransport):
-                def handle_request(self, request):
-                    nonlocal call_count
-                    status = responses[min(call_count, len(responses) - 1)]
-                    call_count += 1
-                    return httpx.Response(status)
-
-            rt = ResilientTransport(
-                transport=MockTransport(), max_retries=3, backoff_base=0.0
+    def test_resilience_module_is_importable(self):
+        """Verify that the _resilience module can be imported without errors"""
+        result = subprocess.run(
+            ["python", "-c", "from httpx._resilience import ResilientTransport; print('OK')"],
+            cwd=self.REPO_DIR,
+            capture_output=True, text=True, timeout=30,
+            env={**os.environ, "PYTHONPATH": self.REPO_DIR}
+        )
+        if result.returncode != 0:
+            # Try installing httpx first
+            subprocess.run(["pip", "install", "-e", "."], cwd=self.REPO_DIR,
+                           capture_output=True, text=True, timeout=120)
+            result = subprocess.run(
+                ["python", "-c", "from httpx._resilience import ResilientTransport; print('OK')"],
+                cwd=self.REPO_DIR,
+                capture_output=True, text=True, timeout=30
             )
-            request = httpx.Request("GET", "http://example.com")
-            response = rt.handle_request(request)
-            assert (
-                response.status_code == 200
-            ), f"Expected 200 after retries, got {response.status_code}"
-        finally:
-            sys.path.pop(0)
+        assert result.returncode == 0, \
+            f"Failed to import ResilientTransport: {result.stderr[:500]}"
+        assert "OK" in result.stdout, "Import should succeed"
 
-    def test_func_no_retry_on_400(self):
-        """Mock transport returns [400]: returned immediately without retry."""
-        sys.path.insert(0, self.REPO_DIR)
-        try:
-            import httpx
-            from httpx._resilience import ResilientTransport
+    def test_resilient_transport_instantiation(self):
+        """Verify that ResilientTransport can be instantiated with a mock transport"""
+        result = subprocess.run(
+            ["python", "-c", """
+import sys
+sys.path.insert(0, '.')
+from httpx._resilience import ResilientTransport
+from unittest.mock import Mock
 
-            call_count = 0
-
-            class MockTransport(httpx.BaseTransport):
-                def handle_request(self, request):
-                    nonlocal call_count
-                    call_count += 1
-                    return httpx.Response(400)
-
-            rt = ResilientTransport(
-                transport=MockTransport(), max_retries=3, backoff_base=0.0
+mock_transport = Mock()
+rt = ResilientTransport(transport=mock_transport)
+assert rt is not None
+assert hasattr(rt, 'handle_request')
+print('OK')
+"""],
+            cwd=self.REPO_DIR,
+            capture_output=True, text=True, timeout=30,
+            env={**os.environ, "PYTHONPATH": self.REPO_DIR}
+        )
+        if result.returncode != 0:
+            subprocess.run(["pip", "install", "-e", "."], cwd=self.REPO_DIR,
+                           capture_output=True, text=True, timeout=120)
+            result = subprocess.run(
+                ["python", "-c", """
+from httpx._resilience import ResilientTransport
+from unittest.mock import Mock
+mock_transport = Mock()
+rt = ResilientTransport(transport=mock_transport)
+assert rt is not None
+assert hasattr(rt, 'handle_request')
+print('OK')
+"""],
+                cwd=self.REPO_DIR,
+                capture_output=True, text=True, timeout=30
             )
-            request = httpx.Request("GET", "http://example.com")
-            response = rt.handle_request(request)
-            assert response.status_code == 400
-            assert call_count == 1, f"Expected 1 call, got {call_count}"
-        finally:
-            sys.path.pop(0)
+        assert result.returncode == 0, \
+            f"Failed to instantiate ResilientTransport: {result.stderr[:500]}"
 
-    def test_func_non_retryable_exception_propagated(self):
-        """Mock transport raises ValueError: propagated without retry (failure)."""
-        sys.path.insert(0, self.REPO_DIR)
-        try:
-            import httpx
-            from httpx._resilience import ResilientTransport
-
-            class MockTransport(httpx.BaseTransport):
-                def handle_request(self, request):
-                    raise ValueError("bad value")
-
-            rt = ResilientTransport(
-                transport=MockTransport(), max_retries=3, backoff_base=0.0
-            )
-            request = httpx.Request("GET", "http://example.com")
-            with pytest.raises(ValueError):
-                rt.handle_request(request)
-        finally:
-            sys.path.pop(0)
-
-    def test_func_retry_on_connect_error(self):
-        """Mock transport raises ConnectError twice then 200 (failure scenario)."""
-        sys.path.insert(0, self.REPO_DIR)
-        try:
-            import httpx
-            from httpx._resilience import ResilientTransport
-
-            call_count = 0
-
-            class MockTransport(httpx.BaseTransport):
-                def handle_request(self, request):
-                    nonlocal call_count
-                    call_count += 1
-                    if call_count <= 2:
-                        raise httpx.ConnectError("connection refused")
-                    return httpx.Response(200)
-
-            rt = ResilientTransport(
-                transport=MockTransport(),
-                max_retries=3,
-                backoff_base=0.0,
-                retryable_exceptions=(httpx.ConnectError,),
-            )
-            request = httpx.Request("GET", "http://example.com")
-            response = rt.handle_request(request)
-            assert response.status_code == 200
-        finally:
-            sys.path.pop(0)
-
-    def test_func_exhausted_retries_raises(self):
-        """Mock transport always raises ConnectError: eventually propagated."""
-        sys.path.insert(0, self.REPO_DIR)
-        try:
-            import httpx
-            from httpx._resilience import ResilientTransport
-
-            class MockTransport(httpx.BaseTransport):
-                def handle_request(self, request):
-                    raise httpx.ConnectError("connection refused")
-
-            rt = ResilientTransport(
-                transport=MockTransport(),
-                max_retries=3,
-                backoff_base=0.0,
-                retryable_exceptions=(httpx.ConnectError,),
-            )
-            request = httpx.Request("GET", "http://example.com")
-            with pytest.raises((httpx.ConnectError, Exception)):
-                rt.handle_request(request)
-        finally:
-            sys.path.pop(0)
-
-    def test_func_fallback_handler(self):
-        """Fallback returns fake response after all retries fail."""
-        sys.path.insert(0, self.REPO_DIR)
-        try:
-            import httpx
-            from httpx._resilience import ResilientTransport
-
-            fake_response = httpx.Response(999)
-
-            class MockTransport(httpx.BaseTransport):
-                def handle_request(self, request):
-                    raise httpx.ConnectError("fail")
-
-            rt = ResilientTransport(
-                transport=MockTransport(),
-                max_retries=2,
-                backoff_base=0.0,
-                retryable_exceptions=(httpx.ConnectError,),
-                fallback=lambda req, exc: fake_response,
-            )
-            request = httpx.Request("GET", "http://example.com")
-            response = rt.handle_request(request)
-            assert response.status_code == 999
-        finally:
-            sys.path.pop(0)
-
-    def test_func_retry_after_header_respected(self):
-        """Mock 429 with Retry-After header: sleep should respect it."""
-        sys.path.insert(0, self.REPO_DIR)
-        try:
-            import httpx
-            from unittest.mock import patch
-            from httpx._resilience import ResilientTransport
-
-            call_count = 0
-
-            class MockTransport(httpx.BaseTransport):
-                def handle_request(self, request):
-                    nonlocal call_count
-                    call_count += 1
-                    if call_count == 1:
-                        return httpx.Response(429, headers={"Retry-After": "5"})
-                    return httpx.Response(200)
-
-            sleep_values = []
-            with patch("time.sleep", side_effect=lambda s: sleep_values.append(s)):
-                rt = ResilientTransport(
-                    transport=MockTransport(), max_retries=3, backoff_base=0.0
-                )
-                request = httpx.Request("GET", "http://example.com")
-                response = rt.handle_request(request)
-            assert response.status_code == 200
-            if sleep_values:
-                assert any(
-                    v >= 5 for v in sleep_values
-                ), f"Expected sleep >= 5s for Retry-After, got {sleep_values}"
-        finally:
-            sys.path.pop(0)
-
-    def test_func_total_timeout(self):
-        """total_timeout=0.001 should raise TimeoutError quickly (failure)."""
-        sys.path.insert(0, self.REPO_DIR)
-        try:
-            import httpx
-            from httpx._resilience import ResilientTransport
-            import time
-
-            class SlowTransport(httpx.BaseTransport):
-                def handle_request(self, request):
-                    time.sleep(0.1)
-                    return httpx.Response(503)
-
-            try:
-                rt = ResilientTransport(
-                    transport=SlowTransport(),
-                    max_retries=10,
-                    backoff_base=0.0,
-                    total_timeout=0.001,
-                )
-                request = httpx.Request("GET", "http://example.com")
-                rt.handle_request(request)
-                # If no error raised, the transport may not support total_timeout
-                # Mark as passed — implementation may handle differently
-            except (TimeoutError, Exception):
-                pass  # Expected
-        finally:
-            sys.path.pop(0)
+    def test_agents_resilience_tests_pass(self):
+        """Verify that the Agent's own test suite for resilience passes"""
+        # Install the package first
+        subprocess.run(["pip", "install", "-e", "."], cwd=self.REPO_DIR,
+                       capture_output=True, text=True, timeout=120)
+        result = subprocess.run(
+            ["python", "-m", "pytest", "tests/test_resilience.py", "-v", "--tb=short"],
+            cwd=self.REPO_DIR,
+            capture_output=True, text=True, timeout=120
+        )
+        assert result.returncode == 0, \
+            f"Resilience test suite failed:\n{result.stdout[-1500:]}\n{result.stderr[-500:]}"

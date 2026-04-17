@@ -1,155 +1,323 @@
 """
-Test for 'django-patterns' skill — Django Product Manager for Saleor
-Validates that the Agent implemented custom QuerySet managers, model methods,
-signals, and GraphQL structure for the Saleor product module.
+Tests for skill: django-patterns
+Repo: saleor/saleor
+Image: zhangyiiiiii/swe-skills-bench-python
+Task: Implement a Product Review system in Saleor with Django model,
+      DRF API, service layer, caching, and signals.
 """
 
 import ast
-import glob
+import importlib
 import os
 import re
+import subprocess
+import sys
 
 import pytest
 
+REPO_DIR = "/workspace/saleor"
 
-class TestDjangoPatterns:
-    """Verify Django design patterns in the Saleor product module."""
+# Expected file paths
+MODEL_FILE = os.path.join(REPO_DIR, "saleor", "product", "models.py")
+MANAGERS_FILE = os.path.join(REPO_DIR, "saleor", "product", "managers.py")
+SERVICES_FILE = os.path.join(REPO_DIR, "saleor", "product", "services.py")
+SIGNALS_FILE = os.path.join(REPO_DIR, "saleor", "product", "signals.py")
 
-    REPO_DIR = "/workspace/saleor"
+# API-related files — may be in different locations
+API_SERIALIZERS = os.path.join(REPO_DIR, "saleor", "product", "api", "serializers.py")
+API_VIEWS = os.path.join(REPO_DIR, "saleor", "product", "api", "views.py")
+API_URLS = os.path.join(REPO_DIR, "saleor", "product", "api", "urls.py")
 
-    # ---- helpers ----
 
-    @staticmethod
-    def _read(path):
-        with open(path, "r", errors="ignore") as fh:
-            return fh.read()
+# ---------------------------------------------------------------------------
+# Layer 1 — file_path_check
+# ---------------------------------------------------------------------------
 
-    def _managers_text(self):
-        return self._read(os.path.join(self.REPO_DIR, "saleor/product/managers.py"))
+class TestFilePathCheck:
+    """Verify that all required files exist."""
 
-    def _models_text(self):
-        return self._read(os.path.join(self.REPO_DIR, "saleor/product/models.py"))
-
-    def _method_names(self):
-        tree = ast.parse(self._managers_text())
-        return [n.name for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)]
-
-    # ---- file_path_check ----
-
-    def test_managers_py_exists(self):
-        """Verifies saleor/product/managers.py exists."""
-        path = os.path.join(self.REPO_DIR, "saleor/product/managers.py")
-        assert os.path.exists(path), f"File not found: {path}"
-
-    def test_models_py_exists(self):
-        """Verifies saleor/product/models.py exists."""
-        path = os.path.join(self.REPO_DIR, "saleor/product/models.py")
-        assert os.path.exists(path), f"File not found: {path}"
-
-    def test_views_py_exists(self):
-        """Verifies saleor/product/views.py exists."""
-        path = os.path.join(self.REPO_DIR, "saleor/product/views.py")
-        assert os.path.exists(path), f"File not found: {path}"
-
-    def test_graphql_product_dir_exists(self):
-        """Verifies saleor/graphql/product/ directory exists."""
-        path = os.path.join(self.REPO_DIR, "saleor/graphql/product/")
-        assert os.path.exists(path), f"Directory not found: {path}"
-
-    # ---- semantic_check ----
-
-    def test_sem_active_method_text(self):
-        """Verifies 'def active' or 'active()' in managers."""
-        text = self._managers_text()
-        assert (
-            "def active" in text or "active()" in text
-        ), "'active' method not found in managers.py"
-
-    def test_sem_active_in_method_names(self):
-        """Verifies 'active' method via AST."""
-        names = self._method_names()
-        assert "active" in names, "'active' not in parsed method names"
-
-    def test_sem_available_in_channel(self):
-        """Verifies 'available_in_channel' method via AST."""
-        names = self._method_names()
-        assert (
-            "available_in_channel" in names
-        ), "'available_in_channel' not in method names"
-
-    def test_sem_ast_parseable(self):
-        """Verifies managers.py is valid Python (AST-parseable)."""
-        tree = ast.parse(self._managers_text())
-        assert tree is not None
-
-    # ---- functional_check ----
-
-    def test_func_is_published_filter(self):
-        """Verifies 'is_published' and 'filter' in managers."""
-        text = self._managers_text()
-        assert (
-            "is_published" in text and "filter" in text
-        ), "'is_published' filter not found in managers"
-
-    def test_func_get_absolute_url(self):
-        """Verifies get_absolute_url in models.py."""
-        text = self._models_text()
-        assert "get_absolute_url" in text, "'get_absolute_url' not found in models.py"
-
-    def test_func_slug_and_products_url(self):
-        """Verifies 'slug' and '/products/' in models."""
-        text = self._models_text()
-        assert (
-            "slug" in text and "/products/" in text
-        ), "'slug' or '/products/' missing in models.py"
-
-    def test_func_signals_files_exist(self):
-        """Verifies at least one signals.py exists."""
-        signals_files = glob.glob(
-            os.path.join(self.REPO_DIR, "saleor/**/signals.py"),
-            recursive=True,
+    def test_models_file_exists(self):
+        assert os.path.isfile(MODEL_FILE), (
+            f"Expected models file at {MODEL_FILE}"
         )
-        assert len(signals_files) >= 1, "No signals.py files found"
 
-    def test_func_post_save_signal(self):
-        """Verifies post_save signal in some signals.py."""
-        signals_files = glob.glob(
-            os.path.join(self.REPO_DIR, "saleor/**/signals.py"),
-            recursive=True,
+    def test_services_file_exists(self):
+        assert os.path.isfile(SERVICES_FILE), (
+            f"Expected services file at {SERVICES_FILE}"
         )
-        assert any(
-            "post_save" in self._read(f) for f in signals_files
-        ), "'post_save' not found in any signals.py"
 
-    def test_func_created_signal(self):
-        """Verifies 'created' keyword in some signals.py."""
-        signals_files = glob.glob(
-            os.path.join(self.REPO_DIR, "saleor/**/signals.py"),
-            recursive=True,
+    def test_api_serializers_exist(self):
+        """Serializers file must exist (possibly in api/ subdirectory)."""
+        candidates = [
+            API_SERIALIZERS,
+            os.path.join(REPO_DIR, "saleor", "product", "serializers.py"),
+        ]
+        found = any(os.path.isfile(c) for c in candidates)
+        assert found, (
+            f"Expected serializers file in one of: {candidates}"
         )
-        assert any(
-            "created" in self._read(f) for f in signals_files
-        ), "'created' not found in any signals.py"
 
-    def test_func_select_related(self):
-        """Verifies select_related usage in managers or product code."""
-        managers_text = self._managers_text()
-        all_py = glob.glob(
-            os.path.join(self.REPO_DIR, "saleor/product/**/*.py"),
-            recursive=True,
+    def test_api_views_exist(self):
+        candidates = [
+            API_VIEWS,
+            os.path.join(REPO_DIR, "saleor", "product", "views.py"),
+        ]
+        found = any(os.path.isfile(c) for c in candidates)
+        assert found, f"Expected views file in one of: {candidates}"
+
+    def test_api_urls_exist(self):
+        candidates = [
+            API_URLS,
+            os.path.join(REPO_DIR, "saleor", "product", "urls.py"),
+        ]
+        found = any(os.path.isfile(c) for c in candidates)
+        assert found, f"Expected urls file in one of: {candidates}"
+
+
+# ---------------------------------------------------------------------------
+# Layer 2 — semantic_check
+# ---------------------------------------------------------------------------
+
+class TestSemanticModel:
+    """Verify ProductReview model structure in models.py."""
+
+    @pytest.fixture(autouse=True)
+    def _load_source(self):
+        with open(MODEL_FILE, "r", encoding="utf-8") as f:
+            self.src = f.read()
+        self.tree = ast.parse(self.src)
+
+    def test_product_review_class_defined(self):
+        """ProductReview model class must be defined."""
+        classes = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.ClassDef)]
+        assert "ProductReview" in classes, (
+            f"Expected ProductReview class in models.py; found: {classes}"
         )
-        select_related_used = "select_related" in managers_text or any(
-            "select_related" in self._read(f) for f in all_py
+
+    def test_model_has_rating_field(self):
+        """Model must have a rating field (PositiveSmallIntegerField)."""
+        assert "PositiveSmallIntegerField" in self.src or "rating" in self.src, (
+            "Expected PositiveSmallIntegerField for rating field"
         )
-        assert select_related_used, "'select_related' not used anywhere"
 
-    def test_func_active_missing_is_published(self):
-        """Failure case: active() must include is_published filter."""
-        text = self._managers_text()
-        assert "is_published" in text, "active() is missing is_published filter"
+    def test_model_has_status_choices(self):
+        """Model must define status choices: pending, approved, rejected."""
+        for status in ["pending", "approved", "rejected"]:
+            assert status in self.src, (
+                f"Expected status choice '{status}' in ProductReview model"
+            )
 
-    def test_func_graphql_schema_file(self):
-        """Verifies graphql product has a schema/types file."""
-        gql_dir = os.path.join(self.REPO_DIR, "saleor/graphql/product/")
-        files = os.listdir(gql_dir) if os.path.isdir(gql_dir) else []
-        assert len(files) > 0, "GraphQL product directory is empty"
+    def test_model_has_unique_constraint(self):
+        """Model must have a unique constraint on (product, user)."""
+        has_unique = (
+            "unique_together" in self.src
+            or "UniqueConstraint" in self.src
+            or "unique=True" in self.src
+        )
+        assert has_unique, (
+            "Expected unique constraint on (product, user) in ProductReview"
+        )
+
+    def test_model_has_related_name(self):
+        """FK to Product must use related_name='reviews'."""
+        assert "reviews" in self.src, (
+            "Expected related_name='reviews' on FK to Product"
+        )
+
+    def test_model_has_cascade_delete(self):
+        """FKs must use on_delete=CASCADE."""
+        assert "CASCADE" in self.src, (
+            "Expected on_delete=CASCADE in ProductReview FK definitions"
+        )
+
+
+class TestSemanticServices:
+    """Verify service layer structure."""
+
+    @pytest.fixture(autouse=True)
+    def _load_source(self):
+        with open(SERVICES_FILE, "r", encoding="utf-8") as f:
+            self.src = f.read()
+        self.tree = ast.parse(self.src)
+
+    def test_submit_review_function(self):
+        funcs = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.FunctionDef)]
+        assert "submit_review" in funcs, (
+            f"Expected submit_review function in services.py; found: {funcs}"
+        )
+
+    def test_moderate_review_function(self):
+        funcs = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.FunctionDef)]
+        assert "moderate_review" in funcs, (
+            f"Expected moderate_review function in services.py; found: {funcs}"
+        )
+
+    def test_get_product_review_summary_function(self):
+        funcs = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.FunctionDef)]
+        assert "get_product_review_summary" in funcs, (
+            f"Expected get_product_review_summary in services.py; found: {funcs}"
+        )
+
+    def test_purchase_verification_in_submit(self):
+        """submit_review must check order history / purchase before allowing review."""
+        has_purchase_check = (
+            "order" in self.src.lower()
+            or "purchase" in self.src.lower()
+            or "PermissionDenied" in self.src
+        )
+        assert has_purchase_check, (
+            "Expected purchase/order verification in submit_review"
+        )
+
+    def test_summary_uses_caching(self):
+        """get_product_review_summary must use caching."""
+        has_cache = (
+            "cache" in self.src.lower()
+            or "django.core.cache" in self.src
+        )
+        assert has_cache, (
+            "Expected caching in get_product_review_summary"
+        )
+
+
+class TestSemanticSignals:
+    """Verify signal handlers exist for cache invalidation."""
+
+    def _find_signals_file(self):
+        candidates = [
+            SIGNALS_FILE,
+            os.path.join(REPO_DIR, "saleor", "product", "signals.py"),
+        ]
+        for c in candidates:
+            if os.path.isfile(c):
+                return c
+        # Signals may also be defined in models.py or services.py
+        return MODEL_FILE
+
+    def test_post_save_signal(self):
+        """post_save signal must be connected for cache invalidation."""
+        path = self._find_signals_file()
+        with open(path, "r", encoding="utf-8") as f:
+            src = f.read()
+        # Also check services.py and models.py for signals
+        all_src = src
+        for extra in [SERVICES_FILE, MODEL_FILE]:
+            if os.path.isfile(extra) and extra != path:
+                with open(extra, "r", encoding="utf-8") as f:
+                    all_src += f.read()
+        has_signal = (
+            "post_save" in all_src
+            or "post_delete" in all_src
+            or "signal" in all_src.lower()
+        )
+        assert has_signal, (
+            "Expected post_save/post_delete signal for cache invalidation"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Layer 3 — functional_check
+# ---------------------------------------------------------------------------
+
+class TestFunctionalDjangoPatterns:
+    """Functional tests for the product review implementation."""
+
+    def _run(self, cmd, cwd=REPO_DIR, timeout=120):
+        result = subprocess.run(
+            cmd, shell=True, cwd=cwd,
+            capture_output=True, text=True, timeout=timeout,
+        )
+        return result
+
+    def test_models_file_parses(self):
+        """models.py must be valid Python."""
+        with open(MODEL_FILE, "r", encoding="utf-8") as f:
+            src = f.read()
+        try:
+            ast.parse(src)
+        except SyntaxError as e:
+            pytest.fail(f"models.py has syntax error: {e}")
+
+    def test_services_file_parses(self):
+        """services.py must be valid Python."""
+        with open(SERVICES_FILE, "r", encoding="utf-8") as f:
+            src = f.read()
+        try:
+            ast.parse(src)
+        except SyntaxError as e:
+            pytest.fail(f"services.py has syntax error: {e}")
+
+    def test_view_file_parses(self):
+        """views.py must be valid Python."""
+        candidates = [API_VIEWS, os.path.join(REPO_DIR, "saleor", "product", "views.py")]
+        for path in candidates:
+            if os.path.isfile(path):
+                with open(path, "r", encoding="utf-8") as f:
+                    src = f.read()
+                try:
+                    ast.parse(src)
+                except SyntaxError as e:
+                    pytest.fail(f"{path} has syntax error: {e}")
+                return
+        pytest.skip("views.py not found")
+
+    def test_serializer_file_parses(self):
+        """serializers.py must be valid Python."""
+        candidates = [API_SERIALIZERS, os.path.join(REPO_DIR, "saleor", "product", "serializers.py")]
+        for path in candidates:
+            if os.path.isfile(path):
+                with open(path, "r", encoding="utf-8") as f:
+                    src = f.read()
+                try:
+                    ast.parse(src)
+                except SyntaxError as e:
+                    pytest.fail(f"{path} has syntax error: {e}")
+                return
+        pytest.skip("serializers.py not found")
+
+    def test_review_api_uses_viewset_or_apiview(self):
+        """Views must use DRF ViewSet or APIView."""
+        candidates = [API_VIEWS, os.path.join(REPO_DIR, "saleor", "product", "views.py")]
+        for path in candidates:
+            if os.path.isfile(path):
+                with open(path, "r", encoding="utf-8") as f:
+                    src = f.read()
+                has_drf = (
+                    "ViewSet" in src
+                    or "APIView" in src
+                    or "ModelViewSet" in src
+                    or "GenericViewSet" in src
+                )
+                assert has_drf, (
+                    "Expected DRF ViewSet or APIView in views.py"
+                )
+                return
+        pytest.skip("views.py not found")
+
+    def test_django_check_passes(self):
+        """Django system check must pass (or at least not crash on import)."""
+        result = self._run(
+            "python -c \"import django; import os; "
+            "os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'saleor.settings'); "
+            "django.setup(); print('OK')\"",
+            timeout=60,
+        )
+        # We allow warnings; only fail if Python itself errors
+        assert result.returncode == 0 or "OK" in result.stdout, (
+            f"Django setup failed:\nstdout: {result.stdout[:500]}\nstderr: {result.stderr[:500]}"
+        )
+
+    def test_rating_validators_in_model(self):
+        """Rating field must have validators constraining range 1-5."""
+        with open(MODEL_FILE, "r", encoding="utf-8") as f:
+            src = f.read()
+        has_validators = (
+            "MinValueValidator" in src
+            or "MaxValueValidator" in src
+            or "validators" in src
+            or "IntegerRangeField" in src
+            or re.search(r"validators\s*=\s*\[", src)
+        )
+        assert has_validators, (
+            "Expected MinValueValidator/MaxValueValidator for rating (1-5)"
+        )

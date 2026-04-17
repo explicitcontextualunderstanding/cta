@@ -1,171 +1,185 @@
 """
-Test for 'grafana-dashboards' skill — Dashboard Provisioning Validator
-Validates that the Agent created a Grafana dashboard JSON validator in Go
-with proper validation logic, panel checks, and data source consistency.
+Test skill: grafana-dashboards
+Verify that the Agent creates a dashboard provisioning validator for
+Grafana in Go with JSON validation, panel checks, data source consistency,
+UID uniqueness, and structured error/warning output.
 """
 
 import os
 import re
 import subprocess
-
 import pytest
 
 
 class TestGrafanaDashboards:
-    """Verify Grafana dashboard provisioning validator."""
-
     REPO_DIR = "/workspace/grafana"
-    VALIDATOR_DIR = "pkg/services/provisioning/dashboards"
 
-    def _read(self, *parts):
-        fpath = os.path.join(self.REPO_DIR, *parts)
-        assert os.path.isfile(fpath), f"Required file not found: {fpath}"
-        with open(fpath, "r", errors="ignore") as fh:
-            return fh.read()
+    PKG = "pkg/services/provisioning/dashboards"
 
-    # ------------------------------------------------------------------
-    # L1: File existence
-    # ------------------------------------------------------------------
+    # === File Path Checks ===
 
     def test_validator_go_exists(self):
-        """validator.go must exist."""
-        assert os.path.isfile(
-            os.path.join(self.REPO_DIR, self.VALIDATOR_DIR, "validator.go")
+        """Verify validator.go exists"""
+        path = os.path.join(self.REPO_DIR, self.PKG, "validator.go")
+        assert os.path.exists(path), f"validator.go not found at {path}"
+
+    def test_validator_test_go_exists(self):
+        """Verify validator_test.go exists"""
+        path = os.path.join(self.REPO_DIR, self.PKG, "validator_test.go")
+        assert os.path.exists(path), f"validator_test.go not found at {path}"
+
+    # === Semantic Checks ===
+
+    def test_required_top_level_fields(self):
+        """Verify validation of required top-level fields (title, uid, panels)"""
+        path = os.path.join(self.REPO_DIR, self.PKG, "validator.go")
+        with open(path) as f:
+            content = f.read()
+
+        field_indicators = ["title", "uid", "panels", "Title", "UID", "Panels"]
+        found = [ind for ind in field_indicators if ind in content]
+        assert len(found) >= 3, (
+            f"Should validate required top-level fields. Found: {found}"
         )
 
-    def test_validator_test_exists(self):
-        """validator_test.go must exist."""
-        assert os.path.isfile(
-            os.path.join(self.REPO_DIR, self.VALIDATOR_DIR, "validator_test.go")
-        )
+    def test_uid_uniqueness_check(self):
+        """Verify duplicate UID detection across dashboards"""
+        path = os.path.join(self.REPO_DIR, self.PKG, "validator.go")
+        with open(path) as f:
+            content = f.read()
 
-    # ------------------------------------------------------------------
-    # L1: Package and basic structure
-    # ------------------------------------------------------------------
-
-    def test_validator_has_package(self):
-        """validator.go must declare a package."""
-        content = self._read(self.VALIDATOR_DIR, "validator.go")
-        assert re.search(r"^package\s+\w+", content, re.MULTILINE)
-
-    def test_test_has_package(self):
-        """validator_test.go must declare a package."""
-        content = self._read(self.VALIDATOR_DIR, "validator_test.go")
-        assert re.search(r"^package\s+\w+", content, re.MULTILINE)
-
-    def test_test_imports_testing(self):
-        """validator_test.go must import testing package."""
-        content = self._read(self.VALIDATOR_DIR, "validator_test.go")
-        assert re.search(
-            r'"testing"', content
-        ), "Test file does not import testing package"
-
-    # ------------------------------------------------------------------
-    # L2: Dashboard validation logic
-    # ------------------------------------------------------------------
-
-    def test_validates_required_fields(self):
-        """Validator must check for required dashboard fields (title, uid, panels)."""
-        content = self._read(self.VALIDATOR_DIR, "validator.go")
-        fields = ["title", "uid", "panels"]
-        found = sum(1 for f in fields if re.search(rf'"{f}"', content, re.IGNORECASE))
-        assert found >= 2, f"Validator only checks {found} of {fields}"
-
-    def test_validates_uid_uniqueness(self):
-        """Validator must check UID uniqueness across dashboards."""
-        content = self._read(self.VALIDATOR_DIR, "validator.go")
-        patterns = [
-            r"unique",
-            r"duplicate",
-            r"uid.*seen",
-            r"seen.*uid",
-            r"uidMap",
-            r"uidSet",
+        uid_indicators = [
+            "uid", "UID", "duplicate", "Duplicate", "unique",
+            "seen", "map[",
         ]
-        assert any(
-            re.search(p, content, re.IGNORECASE) for p in patterns
-        ), "Validator does not check UID uniqueness"
+        found = [ind for ind in uid_indicators if ind in content]
+        assert len(found) >= 3, (
+            f"Should detect duplicate UIDs. Found: {found}"
+        )
 
-    def test_validates_panel_ids(self):
-        """Validator must check that panel IDs are unique and non-negative."""
-        content = self._read(self.VALIDATOR_DIR, "validator.go")
-        patterns = [r"panel.*[Ii][Dd]", r"panelID", r"panel_id", r"PanelId"]
-        assert any(
-            re.search(p, content) for p in patterns
-        ), "Validator does not check panel IDs"
+    def test_panel_validation(self):
+        """Verify panel validation (type, title, gridPos)"""
+        path = os.path.join(self.REPO_DIR, self.PKG, "validator.go")
+        with open(path) as f:
+            content = f.read()
 
-    # ------------------------------------------------------------------
-    # L2: Panel validation
-    # ------------------------------------------------------------------
+        panel_indicators = [
+            "panel", "Panel", "type", "gridPos", "GridPos",
+        ]
+        found = [ind for ind in panel_indicators if ind in content]
+        assert len(found) >= 3, (
+            f"Should validate panel fields. Found: {found}"
+        )
 
-    def test_validates_panel_type(self):
-        """Validator must check panel type field."""
-        content = self._read(self.VALIDATOR_DIR, "validator.go")
-        assert re.search(r'"type"', content), "Validator does not check panel type"
+    def test_grid_pos_bounds(self):
+        """Verify gridPos checks: non-negative, width <= 24"""
+        path = os.path.join(self.REPO_DIR, self.PKG, "validator.go")
+        with open(path) as f:
+            content = f.read()
 
-    def test_validates_panel_gridpos(self):
-        """Validator must check panel gridPos field."""
-        content = self._read(self.VALIDATOR_DIR, "validator.go")
-        patterns = [r"gridPos", r"GridPos", r"grid_pos"]
-        assert any(
-            re.search(p, content) for p in patterns
-        ), "Validator does not check panel gridPos"
+        grid_indicators = ["24", "negative", "width", "gridPos", "GridPos"]
+        found = [ind for ind in grid_indicators if ind in content]
+        assert len(found) >= 2, (
+            f"Should enforce gridPos constraints. Found: {found}"
+        )
 
-    def test_validates_gridpos_bounds(self):
-        """Validator should check gridPos width (max 24 units)."""
-        content = self._read(self.VALIDATOR_DIR, "validator.go")
-        patterns = [r"24", r"maxWidth", r"dashboard.*width"]
-        assert any(
-            re.search(p, content) for p in patterns
-        ), "Validator does not check gridPos max width (24)"
+    def test_datasource_consistency(self):
+        """Verify data source reference validation"""
+        path = os.path.join(self.REPO_DIR, self.PKG, "validator.go")
+        with open(path) as f:
+            content = f.read()
 
-    # ------------------------------------------------------------------
-    # L2: Data source consistency
-    # ------------------------------------------------------------------
+        ds_indicators = [
+            "datasource", "DataSource", "data source",
+            "known", "reference", "Mixed",
+        ]
+        found = [ind for ind in ds_indicators if ind in content]
+        assert len(found) >= 2, (
+            f"Should validate data source references. Found: {found}"
+        )
 
-    def test_validates_data_source_references(self):
-        """Validator must check data source references."""
-        content = self._read(self.VALIDATOR_DIR, "validator.go")
-        patterns = [r"[Dd]ata[Ss]ource", r"datasource", r"data_source"]
-        assert any(
-            re.search(p, content) for p in patterns
-        ), "Validator does not check data source references"
+    def test_variable_datasource_allowed(self):
+        """Verify variable-based data source refs ($datasource) not flagged"""
+        path = os.path.join(self.REPO_DIR, self.PKG, "validator.go")
+        with open(path) as f:
+            content = f.read()
 
-    def test_allows_variable_datasource(self):
-        """Validator must allow variable-based data source references ($datasource)."""
-        content = self._read(self.VALIDATOR_DIR, "validator.go")
-        patterns = [r"\$datasource", r"variable", r"\$\{", r"starts.*\\$"]
-        assert any(
-            re.search(p, content, re.IGNORECASE) for p in patterns
-        ), "Validator does not handle variable data source references"
+        var_indicators = ["$", "variable", "Variable", "HasPrefix"]
+        found = [ind for ind in var_indicators if ind in content]
+        assert len(found) >= 1, (
+            f"Should allow variable-based data source references. "
+            f"Found: {found}"
+        )
 
-    def test_allows_mixed_datasource(self):
-        """Validator must allow '-- Mixed --' placeholder."""
-        content = self._read(self.VALIDATOR_DIR, "validator.go")
-        patterns = [r"Mixed", r"mixed", r"-- Mixed --"]
-        assert any(
-            re.search(p, content) for p in patterns
-        ), "Validator does not allow -- Mixed -- data source"
+    def test_errors_vs_warnings(self):
+        """Verify structured output distinguishes errors from warnings"""
+        path = os.path.join(self.REPO_DIR, self.PKG, "validator.go")
+        with open(path) as f:
+            content = f.read()
 
-    # ------------------------------------------------------------------
-    # L2: Error vs warning distinction
-    # ------------------------------------------------------------------
+        level_indicators = [
+            "Error", "Warning", "error", "warning",
+            "Errors", "Warnings",
+        ]
+        found = [ind for ind in level_indicators if ind in content]
+        assert len(found) >= 2, (
+            f"Should distinguish errors and warnings. Found: {found}"
+        )
 
-    def test_distinguishes_errors_and_warnings(self):
-        """Validation results must distinguish errors from warnings."""
-        content = self._read(self.VALIDATOR_DIR, "validator.go")
-        has_error = re.search(r"[Ee]rror", content)
-        has_warning = re.search(r"[Ww]arning", content)
-        assert (
-            has_error and has_warning
-        ), "Validator does not distinguish between errors and warnings"
+    # === Functional Checks ===
 
-    # ------------------------------------------------------------------
-    # L2: Tests
-    # ------------------------------------------------------------------
+    def test_validator_go_package(self):
+        """Verify validator.go has proper package declaration"""
+        path = os.path.join(self.REPO_DIR, self.PKG, "validator.go")
+        with open(path) as f:
+            content = f.read()
+        assert "package " in content[:200], (
+            "validator.go should start with package declaration"
+        )
 
-    def test_test_file_has_test_functions(self):
-        """validator_test.go must define test functions."""
-        content = self._read(self.VALIDATOR_DIR, "validator_test.go")
-        tests = re.findall(r"func\s+Test\w+", content)
-        assert len(tests) >= 2, f"Only {len(tests)} test function(s) — need at least 2"
+    def test_validator_test_go_package(self):
+        """Verify validator_test.go has proper package declaration"""
+        path = os.path.join(self.REPO_DIR, self.PKG, "validator_test.go")
+        with open(path) as f:
+            content = f.read()
+        assert "package " in content[:200], (
+            "validator_test.go should start with package declaration"
+        )
+
+    def test_test_file_has_tests(self):
+        """Verify validator_test.go defines test functions"""
+        path = os.path.join(self.REPO_DIR, self.PKG, "validator_test.go")
+        with open(path) as f:
+            content = f.read()
+
+        test_fns = re.findall(r"func\s+Test\w+", content)
+        assert len(test_fns) >= 3, (
+            f"Should define at least 3 test functions. Found: {test_fns}"
+        )
+
+    def test_struct_definitions(self):
+        """Verify validator defines Go structs for results"""
+        path = os.path.join(self.REPO_DIR, self.PKG, "validator.go")
+        with open(path) as f:
+            content = f.read()
+
+        structs = re.findall(r"type\s+\w+\s+struct\s*\{", content)
+        assert len(structs) >= 1, (
+            f"Should define at least 1 struct. Found: {structs}"
+        )
+
+    def test_consistent_package_name(self):
+        """Verify both files use the same package name"""
+        packages = set()
+        for fname in ["validator.go", "validator_test.go"]:
+            path = os.path.join(self.REPO_DIR, self.PKG, fname)
+            with open(path) as f:
+                for line in f:
+                    line = line.strip()
+                    if line.startswith("package "):
+                        packages.add(line)
+                        break
+
+        assert len(packages) == 1, (
+            f"Both files should share the same package. Found: {packages}"
+        )

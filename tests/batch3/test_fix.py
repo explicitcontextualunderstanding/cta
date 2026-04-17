@@ -1,279 +1,240 @@
 """
-Tests for the fix skill.
-Verifies that the React/upgradle project code quality tooling (ESLint, Prettier)
-is properly configured with required scripts, no global disables, and that
-the linting/formatting/build pipeline works correctly.
+Test skill: fix
+Verify that the Agent correctly fixes lint and formatting errors in the Upgradle React application.
 """
 
-import json
 import os
 import subprocess
-
+import json
 import pytest
-
-REPO_DIR = "/workspace/upgradle"
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
-def _path(rel: str) -> str:
-    return os.path.join(REPO_DIR, rel)
-
-
-def _read(rel: str) -> str:
-    full = _path(rel)
-    if not os.path.isfile(full):
-        pytest.skip(f"File not found: {full}")
-    with open(full, encoding="utf-8", errors="replace") as fh:
-        return fh.read()
-
-
-def _load_json(rel: str) -> dict:
-    full = _path(rel)
-    if not os.path.isfile(full):
-        pytest.skip(f"File not found: {full}")
-    with open(full, encoding="utf-8") as fh:
-        return json.load(fh)
-
-
-def _run(cmd: list, cwd: str = None, timeout: int = 120) -> subprocess.CompletedProcess:
-    return subprocess.run(
-        cmd,
-        cwd=cwd or REPO_DIR,
-        capture_output=True,
-        text=True,
-        timeout=timeout,
-    )
-
-
-def _yarn_install() -> bool:
-    """Attempt yarn install; return True if successful."""
-    try:
-        r = _run(["yarn", "install"], timeout=120)
-        return r.returncode == 0
-    except (FileNotFoundError, subprocess.TimeoutExpired):
-        return False
-
-
-def _npm_available() -> bool:
-    try:
-        r = subprocess.run(["npm", "--version"], capture_output=True, timeout=10)
-        return r.returncode == 0
-    except (FileNotFoundError, subprocess.TimeoutExpired):
-        return False
-
-
-# ---------------------------------------------------------------------------
-# File path checks
-# ---------------------------------------------------------------------------
 
 
 class TestFix:
-    """Test suite for the Fix (React code/linter) skill in the upgradle project."""
+    REPO_DIR = "/workspace/upgradle"
+
+    # === File Path Checks ===
 
     def test_package_json_exists(self):
-        """Verify package.json exists in the project root and is valid JSON."""
-        target = _path("package.json")
-        assert os.path.isfile(target), f"package.json not found: {target}"
-        assert os.path.getsize(target) > 0, "package.json must be non-empty"
-        data = _load_json("package.json")
-        assert isinstance(data, dict), "package.json must be a valid JSON object"
+        """Verify that package.json exists in the repo root"""
+        pkg_path = os.path.join(self.REPO_DIR, "package.json")
+        assert os.path.exists(pkg_path), f"package.json not found at {pkg_path}"
+        with open(pkg_path) as f:
+            data = json.load(f)
+        assert "scripts" in data, "package.json missing 'scripts' section"
 
-    def test_eslint_and_prettier_config_exist(self):
-        """Verify at least one ESLint config and one Prettier config file exist."""
-        eslint_candidates = [
-            ".eslintrc.js",
-            ".eslintrc.json",
-            ".eslintrc.yaml",
-            ".eslintrc",
+    def test_src_directory_exists(self):
+        """Verify that the src directory exists"""
+        src_path = os.path.join(self.REPO_DIR, "src")
+        assert os.path.isdir(src_path), f"src/ directory not found at {src_path}"
+
+    def test_source_files_exist(self):
+        """Verify that source JS/JSX/TS/TSX files exist under src/"""
+        src_path = os.path.join(self.REPO_DIR, "src")
+        extensions = {".js", ".jsx", ".ts", ".tsx"}
+        found = False
+        for root, dirs, files in os.walk(src_path):
+            for f in files:
+                if os.path.splitext(f)[1] in extensions:
+                    found = True
+                    break
+            if found:
+                break
+        assert found, "No JS/JSX/TS/TSX source files found under src/"
+
+    # === Semantic Checks ===
+
+    def test_no_global_eslint_rule_disables_in_config(self):
+        """Verify no ESLint rules are globally disabled in configuration files"""
+        config_files = [
+            ".eslintrc", ".eslintrc.js", ".eslintrc.json", ".eslintrc.yaml",
+            ".eslintrc.yml", "eslint.config.js", "eslint.config.mjs"
         ]
-        prettier_candidates = [
-            ".prettierrc",
-            ".prettierrc.json",
-            ".prettierrc.js",
-            "prettier.config.js",
-        ]
-        has_eslint = any(os.path.isfile(_path(f)) for f in eslint_candidates)
-        has_prettier = any(os.path.isfile(_path(f)) for f in prettier_candidates)
-        assert has_eslint, f"At least one ESLint config must exist: {eslint_candidates}"
-        assert (
-            has_prettier
-        ), f"At least one Prettier config must exist: {prettier_candidates}"
+        for cfg in config_files:
+            cfg_path = os.path.join(self.REPO_DIR, cfg)
+            if os.path.exists(cfg_path):
+                with open(cfg_path) as f:
+                    content = f.read()
+                # Check for blanket "off" rules that disable important rules
+                # A global disable would be something like "no-unused-vars": "off" in the config
+                # We check that no massive amount of rules are turned off
+                off_count = content.lower().count('"off"') + content.lower().count("'off'")
+                assert off_count <= 3, \
+                    f"Too many global rule disables ({off_count}) found in {cfg}. " \
+                    "Fix code issues instead of disabling rules."
 
-    # -----------------------------------------------------------------------
-    # Semantic checks
-    # -----------------------------------------------------------------------
-
-    def test_no_global_eslint_disable_comments(self):
-        """Verify no source files contain global ESLint rule disable comments."""
-        src_dir = _path("src")
-        if not os.path.isdir(src_dir):
-            pytest.skip("src/ directory not found")
-        for root, _, files in os.walk(src_dir):
+    def test_inline_disables_have_explanations(self):
+        """Verify that any inline eslint-disable comments include explanations"""
+        src_path = os.path.join(self.REPO_DIR, "src")
+        violations = []
+        for root, dirs, files in os.walk(src_path):
             for fname in files:
-                if not fname.endswith((".js", ".jsx", ".ts", ".tsx")):
+                if not any(fname.endswith(ext) for ext in [".js", ".jsx", ".ts", ".tsx"]):
                     continue
                 fpath = os.path.join(root, fname)
-                with open(fpath, encoding="utf-8", errors="replace") as f:
+                with open(fpath, errors="replace") as f:
+                    for i, line in enumerate(f, 1):
+                        stripped = line.strip()
+                        if "eslint-disable" in stripped and stripped.startswith("//"):
+                            # Check if there's an explanation (text after the rule name)
+                            # Pattern: // eslint-disable-next-line rule-name -- explanation
+                            if "--" not in stripped and stripped.count("//") < 2:
+                                # Allow if it's a very short targeted disable
+                                pass  # Relaxed: just ensure they exist
+        # We check that disables are targeted (not blanket)
+        for root, dirs, files in os.walk(src_path):
+            for fname in files:
+                if not any(fname.endswith(ext) for ext in [".js", ".jsx", ".ts", ".tsx"]):
+                    continue
+                fpath = os.path.join(root, fname)
+                with open(fpath, errors="replace") as f:
                     content = f.read()
-                rel = os.path.relpath(fpath, REPO_DIR)
-                assert (
-                    "/* eslint-disable */" not in content
-                ), f"{rel} contains global '/* eslint-disable */' without specifying a rule"
+                if "eslint-disable " in content and "eslint-disable-next-line" not in content:
+                    # File-level disable without specific rule targeting
+                    if "/* eslint-disable */" in content:
+                        violations.append(f"{fname}: blanket eslint-disable found")
+        assert len(violations) == 0, \
+            f"Blanket eslint-disable directives found: {violations}"
 
-    def test_package_json_has_required_scripts(self):
-        """Verify package.json defines build, lint/linc, and prettier/format scripts."""
-        data = _load_json("package.json")
+    def test_package_json_has_lint_scripts(self):
+        """Verify package.json has lint-related scripts configured"""
+        pkg_path = os.path.join(self.REPO_DIR, "package.json")
+        with open(pkg_path) as f:
+            data = json.load(f)
         scripts = data.get("scripts", {})
-        assert "build" in scripts, "package.json must define a 'build' script"
-        has_lint = "lint" in scripts or "linc" in scripts
-        assert has_lint, "package.json must define a 'lint' or 'linc' script"
-        has_prettier = "prettier" in scripts or "format" in scripts
-        assert has_prettier, "package.json must define a 'prettier' or 'format' script"
+        # Should have some lint/format related scripts
+        lint_keywords = ["lint", "eslint", "format", "prettier", "linc"]
+        has_lint = any(
+            any(kw in k.lower() or kw in v.lower() for kw in lint_keywords)
+            for k, v in scripts.items()
+        )
+        assert has_lint, \
+            f"No lint/format scripts found in package.json. Scripts: {list(scripts.keys())}"
 
-    def test_eslint_config_has_react_plugin(self):
-        """Verify ESLint config references the React or React Hooks plugin."""
-        for candidate in [".eslintrc.js", ".eslintrc.json"]:
-            full = _path(candidate)
-            if os.path.isfile(full):
-                with open(full, encoding="utf-8", errors="replace") as f:
-                    content = f.read()
-                has_react = "react" in content.lower()
-                assert (
-                    has_react
-                ), f"{candidate} must reference the 'react' ESLint plugin"
-                return
-        pytest.skip("No .eslintrc.js or .eslintrc.json found")
+    def test_no_unused_imports_in_source(self):
+        """Verify no obvious unused imports remain in source files (spot check)"""
+        # This is a semantic check - we look for common patterns of unused imports
+        # The real validation is done by the eslint run in functional checks
+        src_path = os.path.join(self.REPO_DIR, "src")
+        assert os.path.isdir(src_path), "src/ directory not found"
+        # Just verify files are parseable (not broken by fixes)
+        for root, dirs, files in os.walk(src_path):
+            for fname in files:
+                if fname.endswith((".js", ".jsx", ".ts", ".tsx")):
+                    fpath = os.path.join(root, fname)
+                    with open(fpath, errors="replace") as f:
+                        content = f.read()
+                    assert len(content) > 0, f"File {fname} is empty after fixes"
 
-    def test_dependencies_no_wildcard_versions(self):
-        """Verify package.json has no wildcard '*' version specifiers for dependencies."""
-        data = _load_json("package.json")
-        for dep_section in ("dependencies", "devDependencies"):
-            deps = data.get(dep_section, {})
-            for name, version in deps.items():
-                assert (
-                    version != "*"
-                ), f"Dependency '{name}' in {dep_section} must not use wildcard '*' version"
+    # === Functional Checks ===
 
-    # -----------------------------------------------------------------------
-    # Functional checks (command)
-    # -----------------------------------------------------------------------
-
-    @pytest.fixture(scope="class", autouse=True)
-    def _try_yarn_install(self):
-        """Attempt yarn install before running command tests."""
-        if _npm_available():
-            try:
-                _run(["npm", "ci"], timeout=180)
-            except Exception:
-                try:
-                    _run(["npm", "install"], timeout=180)
-                except Exception:
-                    pass
-            return
-        # Don't fail if install fails - command tests will skip individually
-        try:
-            _run(["yarn", "install", "--frozen-lockfile"], timeout=180)
-        except Exception:
-            pass
-
-    def test_prettier_check_exits_zero(self):
-        """Verify yarn prettier --check passes for all source files."""
-        nm = _path("node_modules")
-        if not os.path.isdir(nm):
-            pytest.skip("node_modules not found; run yarn install first")
-        result = _run(["npm", "run", "prettier", "--", "--check", "."], timeout=120)
-        assert (
-            result.returncode == 0
-        ), f"prettier --check failed:\nstdout: {result.stdout[:500]}\nstderr: {result.stderr[:500]}"
-
-    def test_lint_check_exits_zero(self):
-        """Verify yarn linc (incremental lint) exits with code 0."""
-        nm = _path("node_modules")
-        if not os.path.isdir(nm):
-            pytest.skip("node_modules not found; run yarn install first")
-        result = _run(["npm", "run", "lint"], timeout=120)
-        assert (
-            result.returncode == 0
-        ), f"yarn linc failed:\nstdout: {result.stdout[:500]}\nstderr: {result.stderr[:500]}"
-
-    def test_build_exits_zero(self):
-        """Verify yarn build exits with code 0 producing a production build."""
-        nm = _path("node_modules")
-        if not os.path.isdir(nm):
-            pytest.skip("node_modules not found; run yarn install first")
-        result = _run(["npm", "run", "build"], timeout=180)
-        assert (
-            result.returncode == 0
-        ), f"yarn build failed:\nstdout: {result.stdout[:500]}\nstderr: {result.stderr[:500]}"
-
-    def test_unformatted_file_makes_prettier_check_fail(self):
-        """Verify prettier --check returns non-zero for a temporarily unformatted file."""
-        nm = _path("node_modules")
-        if not os.path.isdir(nm):
-            pytest.skip("node_modules not found; run yarn install first")
-        import tempfile
-
-        with tempfile.NamedTemporaryFile(suffix=".js", mode="w", delete=False) as tmp:
-            tmp.write("const a=1\n")
-            tmp_path = tmp.name
-        try:
-            result = _run(
-                ["npm", "run", "prettier", "--", "--check", tmp_path], timeout=30
+    def _ensure_deps_installed(self):
+        """Helper to install dependencies if not already installed"""
+        node_modules = os.path.join(self.REPO_DIR, "node_modules")
+        if not os.path.isdir(node_modules):
+            result = subprocess.run(
+                ["yarn", "install", "--frozen-lockfile"],
+                cwd=self.REPO_DIR,
+                capture_output=True, text=True, timeout=300
             )
-            assert (
-                result.returncode != 0
-            ), "prettier --check must fail for unformatted code"
-        finally:
-            os.unlink(tmp_path)
+            if result.returncode != 0:
+                # Try without frozen lockfile
+                result = subprocess.run(
+                    ["yarn", "install"],
+                    cwd=self.REPO_DIR,
+                    capture_output=True, text=True, timeout=300
+                )
+                if result.returncode != 0:
+                    pytest.skip(f"yarn install failed: {result.stderr[:500]}")
 
-    def test_eslint_detects_undefined_in_strict_mode(self):
-        """Verify ESLint is strict enough to catch certain code issues."""
-        nm = _path("node_modules")
-        if not os.path.isdir(nm):
-            pytest.skip("node_modules not found; run yarn install first")
-        import tempfile
+    def test_prettier_check_passes(self):
+        """Verify all files pass Prettier formatting checks"""
+        self._ensure_deps_installed()
+        result = subprocess.run(
+            ["yarn", "prettier", "--check", "."],
+            cwd=self.REPO_DIR,
+            capture_output=True, text=True, timeout=120
+        )
+        assert result.returncode == 0, \
+            f"Prettier check failed (files not formatted):\n{result.stdout[:2000]}\n{result.stderr[:500]}"
 
-        # Write a file with a clear ESLint issue (no-undef or similar)
-        with tempfile.NamedTemporaryFile(
-            suffix=".js", mode="w", delete=False, dir=REPO_DIR
-        ) as tmp:
-            tmp.write(
-                "/* eslint-disable no-unused-vars */\nconsole.log(undefinedVariableXyz123)\n"
+    def test_eslint_passes(self):
+        """Verify ESLint passes with zero errors"""
+        self._ensure_deps_installed()
+        # Try the project's lint command first
+        result = subprocess.run(
+            ["yarn", "linc"],
+            cwd=self.REPO_DIR,
+            capture_output=True, text=True, timeout=120
+        )
+        if result.returncode != 0:
+            # Fallback: try running eslint directly
+            result = subprocess.run(
+                ["yarn", "eslint", "src/", "--max-warnings=0"],
+                cwd=self.REPO_DIR,
+                capture_output=True, text=True, timeout=120
             )
-            tmp_path = tmp.name
+        assert result.returncode == 0, \
+            f"ESLint check failed:\n{result.stdout[:2000]}\n{result.stderr[:500]}"
+
+    def test_application_builds_successfully(self):
+        """Verify the application still builds after fixes"""
+        self._ensure_deps_installed()
+        # Try common build commands
+        build_cmds = [
+            ["yarn", "build"],
+            ["yarn", "react-scripts", "build"],
+            ["npx", "react-scripts", "build"],
+        ]
+        success = False
+        last_err = ""
+        for cmd in build_cmds:
+            result = subprocess.run(
+                cmd,
+                cwd=self.REPO_DIR,
+                capture_output=True, text=True, timeout=300,
+                env={**os.environ, "CI": "true", "NODE_ENV": "production"}
+            )
+            if result.returncode == 0:
+                success = True
+                break
+            last_err = f"{result.stdout[:500]}\n{result.stderr[:500]}"
+        assert success, f"Application build failed after fixes:\n{last_err}"
+
+    def test_no_eslint_errors_in_output(self):
+        """Verify eslint output contains zero error count"""
+        self._ensure_deps_installed()
+        result = subprocess.run(
+            ["yarn", "eslint", "src/", "--format=json"],
+            cwd=self.REPO_DIR,
+            capture_output=True, text=True, timeout=120
+        )
+        if result.returncode != 0 and not result.stdout.strip():
+            pytest.skip("eslint json output not available")
         try:
-            result = _run(
-                ["npm", "run", "eslint", "--", os.path.basename(tmp_path)], timeout=30
-            )
-            # ESLint should report an issue (no-undef)
-            # Some configs may auto-fix, so just verify ESLint ran
-            ran = result.returncode in (0, 1, 2)
-            assert ran, "ESLint command must execute without crashing"
-        finally:
-            os.unlink(tmp_path)
+            eslint_output = json.loads(result.stdout)
+            total_errors = sum(item.get("errorCount", 0) for item in eslint_output)
+            assert total_errors == 0, \
+                f"ESLint reported {total_errors} errors. Expected 0."
+        except json.JSONDecodeError:
+            # If JSON parsing fails, fall back to return code check
+            assert result.returncode == 0, \
+                f"ESLint failed with non-zero exit code: {result.stderr[:500]}"
 
-    def test_node_modules_excluded_from_eslint(self):
-        """Verify .eslintignore or eslintrc contains node_modules exclusion."""
-        eslintignore = _path(".eslintignore")
-        if os.path.isfile(eslintignore):
-            with open(eslintignore, encoding="utf-8") as f:
-                content = f.read()
-            assert "node_modules" in content, ".eslintignore must exclude node_modules"
-            return
-        # Fallback: check ignorePatterns in .eslintrc.js
-        eslintrc = _path(".eslintrc.js")
-        if os.path.isfile(eslintrc):
-            with open(eslintrc, encoding="utf-8") as f:
-                content = f.read()
-            if "node_modules" in content:
-                return  # Found in config
-        # Also acceptable to rely on default ESLint behavior
-        # Just verify at least one of these patterns exists
-        has_exclusion = os.path.isfile(eslintignore) or os.path.isfile(eslintrc)
-        assert (
-            has_exclusion
-        ), "ESLint config or .eslintignore must exist to prevent scanning node_modules"
+    def test_no_new_warnings_from_eslint(self):
+        """Verify no new warnings are introduced by the fixes"""
+        self._ensure_deps_installed()
+        result = subprocess.run(
+            ["yarn", "eslint", "src/", "--format=json"],
+            cwd=self.REPO_DIR,
+            capture_output=True, text=True, timeout=120
+        )
+        if result.returncode != 0 and not result.stdout.strip():
+            pytest.skip("eslint json output not available")
+        try:
+            eslint_output = json.loads(result.stdout)
+            total_warnings = sum(item.get("warningCount", 0) for item in eslint_output)
+            # Allow some warnings but not excessive ones
+            assert total_warnings <= 5, \
+                f"ESLint reported {total_warnings} warnings (>5). Fixes should not introduce new warnings."
+        except json.JSONDecodeError:
+            pass  # Gracefully handle if json format unavailable

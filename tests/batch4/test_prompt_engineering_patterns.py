@@ -1,164 +1,254 @@
 """
-Test for 'prompt-engineering-patterns' skill — Structured Prompt Template
-Validates that the Agent created StructuredPromptTemplate and ExampleSelector
-with format, add_example, select_examples, and to_messages in langchain.
+Tests for skill: prompt-engineering-patterns
+Repo: langchain-ai/langchain
+Image: zhangyiiiiii/swe-skills-bench-python
+Task: Implement a prompt template library with few-shot selection,
+      chain-of-thought formatting, and self-consistency verification.
 """
 
+import ast
 import os
-import sys
+import re
+import subprocess
 
 import pytest
 
+REPO_DIR = "/workspace/langchain"
+LIB_DIR = os.path.join(REPO_DIR, "libs", "langchain", "langchain", "prompts")
+TEST_DIR = os.path.join(REPO_DIR, "libs", "langchain", "tests", "unit_tests", "prompts")
 
-class TestPromptEngineeringPatterns:
-    """Verify StructuredPromptTemplate and ExampleSelector in langchain."""
+TEMPLATE_FILE = os.path.join(LIB_DIR, "structured_template.py")
+SELECTOR_FILE = os.path.join(LIB_DIR, "few_shot_selector.py")
+COT_FILE = os.path.join(LIB_DIR, "chain_of_thought.py")
+TEST_TEMPLATE = os.path.join(TEST_DIR, "test_structured_template.py")
+TEST_SELECTOR = os.path.join(TEST_DIR, "test_few_shot_selector.py")
 
-    REPO_DIR = "/workspace/langchain"
 
-    # ---- helpers ----
+# ---------------------------------------------------------------------------
+# Layer 1 — file_path_check
+# ---------------------------------------------------------------------------
 
-    @staticmethod
-    def _read(path):
-        with open(path, "r", errors="ignore") as fh:
-            return fh.read()
-
-    def _import_all(self):
-        old_path = sys.path[:]
-        sys.path.insert(0, self.REPO_DIR)
-        try:
-            from langchain.prompts.structured_template import (
-                StructuredPromptTemplate,
-                ExampleSelector,
-            )
-
-            return StructuredPromptTemplate, ExampleSelector
-        finally:
-            sys.path[:] = old_path
-
-    # ---- file_path_check ----
+class TestFilePathCheck:
+    """Verify all required files were created."""
 
     def test_structured_template_exists(self):
-        """Verifies langchain/prompts/structured_template.py exists."""
-        path = os.path.join(self.REPO_DIR, "langchain/prompts/structured_template.py")
-        assert os.path.exists(path), f"File not found: {path}"
+        assert os.path.isfile(TEMPLATE_FILE), f"Expected {TEMPLATE_FILE}"
 
-    def test_init_py_exists(self):
-        """Verifies langchain/prompts/__init__.py exists."""
-        path = os.path.join(self.REPO_DIR, "langchain/prompts/__init__.py")
-        assert os.path.exists(path), f"File not found: {path}"
+    def test_few_shot_selector_exists(self):
+        assert os.path.isfile(SELECTOR_FILE), f"Expected {SELECTOR_FILE}"
 
-    # ---- semantic_check ----
+    def test_chain_of_thought_exists(self):
+        assert os.path.isfile(COT_FILE), f"Expected {COT_FILE}"
 
-    def test_sem_imports(self):
-        """Verifies StructuredPromptTemplate and ExampleSelector importable."""
-        SPT, ES = self._import_all()
-        assert SPT is not None
-        assert ES is not None
+    def test_template_tests_exist(self):
+        assert os.path.isfile(TEST_TEMPLATE), f"Expected {TEST_TEMPLATE}"
 
-    def test_sem_spt_methods(self):
-        """Verifies StructuredPromptTemplate has required methods."""
-        text = self._read(
-            os.path.join(self.REPO_DIR, "langchain/prompts/structured_template.py")
+    def test_selector_tests_exist(self):
+        assert os.path.isfile(TEST_SELECTOR), f"Expected {TEST_SELECTOR}"
+
+
+# ---------------------------------------------------------------------------
+# Layer 2 — semantic_check
+# ---------------------------------------------------------------------------
+
+class TestSemanticStructuredTemplate:
+    """Verify StructuredPromptTemplate class."""
+
+    @pytest.fixture(autouse=True)
+    def _load_source(self):
+        with open(TEMPLATE_FILE, "r", encoding="utf-8") as f:
+            self.src = f.read()
+        self.tree = ast.parse(self.src)
+
+    def test_class_defined(self):
+        classes = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.ClassDef)]
+        assert "StructuredPromptTemplate" in classes, (
+            f"Expected StructuredPromptTemplate class; found: {classes}"
         )
-        for method in [
-            "format",
-            "add_example",
-            "select_examples",
-            "set_system_message",
-            "get_token_estimate",
-            "to_messages",
-        ]:
-            assert method in text, f"Missing method: {method}"
 
-    def test_sem_es_select_method(self):
-        """Verifies ExampleSelector has select method."""
-        text = self._read(
-            os.path.join(self.REPO_DIR, "langchain/prompts/structured_template.py")
+    def test_render_method(self):
+        """Must have a render method."""
+        funcs = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.FunctionDef)]
+        assert "render" in funcs, "Expected render() method"
+
+    def test_validate_method(self):
+        """Must have a validate method."""
+        funcs = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.FunctionDef)]
+        assert "validate" in funcs, "Expected validate() method"
+
+    def test_sections_supported(self):
+        """Template must support system, instruction, output_format, examples."""
+        for section in ["system", "instruction", "output_format", "examples"]:
+            assert section in self.src, (
+                f"Expected section '{section}' in StructuredPromptTemplate"
+            )
+
+    def test_missing_variable_raises_valueerror(self):
+        """Missing variables must raise ValueError."""
+        assert "ValueError" in self.src, (
+            "Expected ValueError for missing template variables"
         )
-        assert "def select" in text, "ExampleSelector missing 'select' method"
 
-    def test_sem_es_constructor_params(self):
-        """Verifies ExampleSelector takes examples, embedding_fn, k."""
-        text = self._read(
-            os.path.join(self.REPO_DIR, "langchain/prompts/structured_template.py")
+
+class TestSemanticFewShotSelector:
+    """Verify FewShotSelector class."""
+
+    @pytest.fixture(autouse=True)
+    def _load_source(self):
+        with open(SELECTOR_FILE, "r", encoding="utf-8") as f:
+            self.src = f.read()
+        self.tree = ast.parse(self.src)
+
+    def test_class_defined(self):
+        classes = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.ClassDef)]
+        assert "FewShotSelector" in classes, (
+            f"Expected FewShotSelector class; found: {classes}"
         )
-        assert "examples" in text, "Missing 'examples' param"
-        assert "embedding_fn" in text or "embed" in text, "Missing embedding param"
-        assert "k" in text, "Missing 'k' param"
 
-    # ---- functional_check ----
+    def test_select_method(self):
+        funcs = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.FunctionDef)]
+        assert "select" in funcs, "Expected select() method"
 
-    def test_func_format_basic(self):
-        """Verifies format() substitutes {question} correctly."""
-        SPT, _ = self._import_all()
-        tmpl = SPT("Answer: {question}", examples=[])
-        result = tmpl.format(question="What is 2+2?")
-        assert "What is 2+2?" in result
+    def test_strategies_supported(self):
+        """Must support random, similarity, and diverse strategies."""
+        for strategy in ["random", "similarity", "diverse"]:
+            assert strategy in self.src, (
+                f"Expected selection strategy '{strategy}'"
+            )
 
-    def test_func_format_missing_raises(self):
-        """Failure: format() without required var raises."""
-        SPT, _ = self._import_all()
-        tmpl = SPT("Answer: {question}", examples=[])
-        with pytest.raises((KeyError, ValueError)):
-            tmpl.format()
-
-    def test_func_add_example(self):
-        """Verifies add_example adds to examples list."""
-        SPT, _ = self._import_all()
-        tmpl = SPT("Answer: {question}", examples=[])
-        tmpl.add_example({"input": "x", "output": "y"})
-        assert len(tmpl.examples) == 1
-
-    def test_func_example_selector_similarity(self):
-        """Verifies ExampleSelector selects closest match."""
-        import numpy as np
-
-        _, ES = self._import_all()
-        simple_embed = lambda t: np.array(
-            [1.0 if "python" in t else 0.0, 1.0 if "java" in t else 0.0]
+    def test_tfidf_or_similarity_computation(self):
+        """Similarity strategy must use TF-IDF or cosine similarity."""
+        has_tfidf = (
+            "TfidfVectorizer" in self.src
+            or "tfidf" in self.src.lower()
+            or "cosine_similarity" in self.src
+            or "cosine" in self.src
         )
-        es = ES(
-            [{"text": "python code"}, {"text": "java code"}],
-            simple_embed,
-            k=1,
+        assert has_tfidf, (
+            "Expected TF-IDF or cosine similarity for the similarity strategy"
         )
-        selected = es.select("python class")
-        assert selected[0]["text"] == "python code"
 
-    def test_func_empty_selector(self):
-        """Edge case: empty selector returns []."""
-        import numpy as np
+    def test_max_examples_parameter(self):
+        assert "max_examples" in self.src, "Expected max_examples parameter"
 
-        _, ES = self._import_all()
-        simple_embed = lambda t: np.array([0.0])
-        es_empty = ES([], simple_embed, k=3)
-        assert es_empty.select("query") == []
 
-    def test_func_k_limit(self):
-        """Verifies k=1 limits results to 1."""
-        import numpy as np
+class TestSemanticChainOfThought:
+    """Verify ChainOfThoughtTemplate class."""
 
-        _, ES = self._import_all()
-        simple_embed = lambda t: np.array([1.0])
-        es = ES(
-            [{"text": "a"}, {"text": "b"}, {"text": "c"}],
-            simple_embed,
-            k=1,
+    @pytest.fixture(autouse=True)
+    def _load_source(self):
+        with open(COT_FILE, "r", encoding="utf-8") as f:
+            self.src = f.read()
+        self.tree = ast.parse(self.src)
+
+    def test_class_defined(self):
+        classes = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.ClassDef)]
+        assert "ChainOfThoughtTemplate" in classes, (
+            f"Expected ChainOfThoughtTemplate class; found: {classes}"
         )
-        assert len(es.select("query")) <= 1
 
-    def test_func_select_examples_respects_count(self):
-        """Verifies select_examples returns at most len(examples) items."""
-        SPT, _ = self._import_all()
-        tmpl = SPT("Answer: {question}", examples=[])
-        tmpl.add_example({"input": "x", "output": "y"})
-        result = tmpl.select_examples("python", k=5)
-        assert len(result) <= len(tmpl.examples)
+    def test_extends_structured_template(self):
+        """Must extend StructuredPromptTemplate."""
+        found = False
+        for node in ast.walk(self.tree):
+            if isinstance(node, ast.ClassDef) and node.name == "ChainOfThoughtTemplate":
+                for base in node.bases:
+                    if isinstance(base, ast.Name) and "Structured" in base.id:
+                        found = True
+                    elif isinstance(base, ast.Attribute) and "Structured" in base.attr:
+                        found = True
+        # Fallback: check source text
+        if not found:
+            found = "StructuredPromptTemplate" in self.src
+        assert found, "Expected ChainOfThoughtTemplate to extend StructuredPromptTemplate"
 
-    def test_func_to_messages(self):
-        """Verifies to_messages returns list of dicts with role/content."""
-        SPT, _ = self._import_all()
-        tmpl = SPT("Answer: {question}", examples=[])
-        msgs = tmpl.to_messages()
-        assert isinstance(msgs, list)
-        assert all("role" in m and "content" in m for m in msgs)
+    def test_reasoning_steps(self):
+        assert "reasoning_steps" in self.src, (
+            "Expected reasoning_steps parameter"
+        )
+
+    def test_verification_step(self):
+        assert "verification" in self.src.lower() or "verify" in self.src.lower(), (
+            "Expected add_verification_step option"
+        )
+
+    def test_conclusion_prefix(self):
+        """Rendered prompt must include 'Therefore' conclusion prefix."""
+        assert "Therefore" in self.src or "therefore" in self.src, (
+            "Expected 'Therefore, the answer is:' conclusion prefix"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Layer 3 — functional_check
+# ---------------------------------------------------------------------------
+
+class TestFunctionalPromptEngineering:
+    """Functional checks — syntax and import verification."""
+
+    def _parse(self, filepath):
+        with open(filepath, "r", encoding="utf-8") as f:
+            src = f.read()
+        try:
+            ast.parse(src)
+            return True, None
+        except SyntaxError as e:
+            return False, str(e)
+
+    def test_template_valid_python(self):
+        ok, err = self._parse(TEMPLATE_FILE)
+        assert ok, f"structured_template.py syntax error: {err}"
+
+    def test_selector_valid_python(self):
+        ok, err = self._parse(SELECTOR_FILE)
+        assert ok, f"few_shot_selector.py syntax error: {err}"
+
+    def test_cot_valid_python(self):
+        ok, err = self._parse(COT_FILE)
+        assert ok, f"chain_of_thought.py syntax error: {err}"
+
+    def test_test_template_valid_python(self):
+        ok, err = self._parse(TEST_TEMPLATE)
+        assert ok, f"test_structured_template.py syntax error: {err}"
+
+    def test_test_selector_valid_python(self):
+        ok, err = self._parse(TEST_SELECTOR)
+        assert ok, f"test_few_shot_selector.py syntax error: {err}"
+
+    def test_template_importable(self):
+        """StructuredPromptTemplate must be importable."""
+        result = subprocess.run(
+            f"python -c \"import sys; sys.path.insert(0, '{os.path.dirname(LIB_DIR)}'); "
+            f"from prompts.structured_template import StructuredPromptTemplate; print('OK')\"",
+            shell=True, capture_output=True, text=True, timeout=30,
+            cwd=REPO_DIR,
+        )
+        if result.returncode != 0:
+            # Try alternative import path
+            result2 = subprocess.run(
+                f"python -c \"import sys; sys.path.insert(0, '{LIB_DIR}'); "
+                f"from structured_template import StructuredPromptTemplate; print('OK')\"",
+                shell=True, capture_output=True, text=True, timeout=30,
+                cwd=REPO_DIR,
+            )
+            assert "OK" in result.stdout or "OK" in result2.stdout, (
+                f"Could not import StructuredPromptTemplate:\n"
+                f"stderr1: {result.stderr[:300]}\nstderr2: {result2.stderr[:300]}"
+            )
+        else:
+            assert "OK" in result.stdout
+
+    def test_injection_prevention(self):
+        """Template must handle curly braces in variable values safely."""
+        with open(TEMPLATE_FILE, "r", encoding="utf-8") as f:
+            src = f.read()
+        has_escape = (
+            "escape" in src.lower()
+            or "replace" in src
+            or "safe_substitute" in src
+            or "Template" in src
+            or "{{" in src
+        )
+        assert has_escape, (
+            "Expected injection prevention (escaping curly braces in variables)"
+        )

@@ -1,157 +1,210 @@
-"""Test file for the python-resilience skill.
-
-This suite validates the ResilientAsyncClient with retry logic,
-circuit breaker, and error classification in httpx.
+"""
+Test skill: python-resilience
+Verify that the Agent correctly implements a resilient HTTP client wrapper
+with retry, exponential backoff, timeout, and circuit breaker for httpx.
 """
 
-from __future__ import annotations
-
-import ast
-import pathlib
+import os
 import re
-
+import ast
+import sys
+import subprocess
 import pytest
 
 
 class TestPythonResilience:
-    """Verify resilience patterns in httpx."""
-
     REPO_DIR = "/workspace/httpx"
 
-    RESILIENCE_PY = "httpx/_resilience.py"
-    CONFIG_PY = "httpx/_config.py"
-    TEST_PY = "tests/test_resilience.py"
+    # === File Path Checks ===
 
-    # ------------------------------------------------------------------
-    # Helpers
-    # ------------------------------------------------------------------
+    def test_resilience_module_exists(self):
+        """Verify _resilience.py exists in httpx directory"""
+        fpath = os.path.join(self.REPO_DIR, "httpx/_resilience.py")
+        assert os.path.isfile(fpath), f"_resilience.py not found at {fpath}"
 
-    def _repo_path(self, relative: str) -> pathlib.Path:
-        return pathlib.Path(self.REPO_DIR, *relative.split("/"))
+    def test_resilience_test_file_exists(self):
+        """Verify test_resilience.py exists in tests directory"""
+        fpath = os.path.join(self.REPO_DIR, "tests/test_resilience.py")
+        assert os.path.isfile(fpath), f"test_resilience.py not found at {fpath}"
 
-    def _read_text(self, relative: str) -> str:
-        path = self._repo_path(relative)
-        assert path.exists(), f"Expected path to exist: {path}"
-        return path.read_text(encoding="utf-8", errors="ignore")
+    def test_resilience_module_is_valid_python(self):
+        """Verify _resilience.py is syntactically valid Python"""
+        fpath = os.path.join(self.REPO_DIR, "httpx/_resilience.py")
+        with open(fpath, "r") as f:
+            source = f.read()
+        try:
+            ast.parse(source)
+        except SyntaxError as e:
+            pytest.fail(f"_resilience.py has syntax error: {e}")
 
-    def _assert_non_empty_file(self, relative: str) -> pathlib.Path:
-        path = self._repo_path(relative)
-        assert path.is_file(), f"Expected file to exist: {path}"
-        assert path.stat().st_size > 0, f"Expected non-empty file: {path}"
-        return path
+    # === Semantic Checks ===
 
-    def _class_source(self, source: str, class_name: str) -> str | None:
-        tree = ast.parse(source)
-        for node in ast.walk(tree):
-            if isinstance(node, ast.ClassDef) and node.name == class_name:
-                start = node.lineno - 1
-                end = node.end_lineno or start + 1
-                lines = source.splitlines()
-                return "\n".join(lines[start:end])
-        return None
+    def test_resilient_async_client_class_exists(self):
+        """Verify ResilientAsyncClient class is defined"""
+        fpath = os.path.join(self.REPO_DIR, "httpx/_resilience.py")
+        with open(fpath, "r") as f:
+            tree = ast.parse(f.read())
+        classes = [n.name for n in ast.walk(tree) if isinstance(n, ast.ClassDef)]
+        assert "ResilientAsyncClient" in classes, (
+            f"ResilientAsyncClient class not found. Found classes: {classes}"
+        )
 
-    # ------------------------------------------------------------------
-    # Layer 1 – file_path_check (3 cases)
-    # ------------------------------------------------------------------
+    def test_resilient_client_has_http_methods(self):
+        """Verify ResilientAsyncClient has get, post, put, patch, delete methods"""
+        fpath = os.path.join(self.REPO_DIR, "httpx/_resilience.py")
+        with open(fpath, "r") as f:
+            content = f.read()
+        required_methods = ["get", "post", "put", "patch", "delete"]
+        for method in required_methods:
+            pattern = rf'(async\s+)?def\s+{method}\s*\('
+            assert re.search(pattern, content), (
+                f"ResilientAsyncClient missing '{method}' method"
+            )
 
-    def test_file_path_httpx__resilience_py_exists(self):
-        """Verify _resilience.py exists and is non-empty."""
-        self._assert_non_empty_file(self.RESILIENCE_PY)
+    def test_circuit_breaker_states_defined(self):
+        """Verify circuit breaker defines CLOSED, OPEN, HALF_OPEN states"""
+        fpath = os.path.join(self.REPO_DIR, "httpx/_resilience.py")
+        with open(fpath, "r") as f:
+            content = f.read()
+        for state in ["CLOSED", "OPEN", "HALF_OPEN"]:
+            assert state in content, (
+                f"Circuit breaker missing state: '{state}'"
+            )
 
-    def test_file_path_httpx__config_py_modified_with_resilience_defaults(self):
-        """Verify _config.py modified with resilience defaults."""
-        self._assert_non_empty_file(self.CONFIG_PY)
-        src = self._read_text(self.CONFIG_PY)
-        assert re.search(
-            r"resilien|retry|circuit", src, re.IGNORECASE
-        ), "_config.py should contain resilience defaults"
+    def test_circuit_breaker_open_error_defined(self):
+        """Verify CircuitBreakerOpenError exception class is defined"""
+        fpath = os.path.join(self.REPO_DIR, "httpx/_resilience.py")
+        with open(fpath, "r") as f:
+            content = f.read()
+        has_error = bool(re.search(r'class\s+CircuitBreakerOpenError', content))
+        assert has_error, "CircuitBreakerOpenError exception class not found"
 
-    def test_file_path_tests_test_resilience_py_exists(self):
-        """Verify test_resilience.py exists and is non-empty."""
-        self._assert_non_empty_file(self.TEST_PY)
+    def test_exponential_backoff_formula(self):
+        """Verify exponential backoff implementation with base * 2^attempt pattern"""
+        fpath = os.path.join(self.REPO_DIR, "httpx/_resilience.py")
+        with open(fpath, "r") as f:
+            content = f.read()
+        has_exp = bool(re.search(r'(\*\*|pow|2\s*\*\*)', content))
+        has_min = bool(re.search(r'min\(', content))
+        has_jitter = bool(re.search(r'(jitter|random)', content, re.IGNORECASE))
+        assert has_exp, "Backoff should use exponential formula (2**attempt)"
+        assert has_min, "Backoff should cap delay with min()"
+        assert has_jitter, "Backoff should include jitter"
 
-    # ------------------------------------------------------------------
-    # Layer 2 – semantic_check (5 cases)
-    # ------------------------------------------------------------------
+    def test_retryable_status_codes_defined(self):
+        """Verify retryable status codes include 429, 502, 503, 504"""
+        fpath = os.path.join(self.REPO_DIR, "httpx/_resilience.py")
+        with open(fpath, "r") as f:
+            content = f.read()
+        for code in [429, 502, 503, 504]:
+            assert str(code) in content, (
+                f"Retryable status codes should include {code}"
+            )
 
-    def test_semantic_resilientasyncclient_class_with_retry_config_and_circuit_bre(
-        self,
-    ):
-        """ResilientAsyncClient class with retry_config and circuit_breaker_config."""
-        src = self._read_text(self.RESILIENCE_PY)
-        body = self._class_source(src, "ResilientAsyncClient")
-        assert body is not None, "ResilientAsyncClient class not found"
-        assert "retry_config" in body, "Missing retry_config parameter"
-        assert (
-            "circuit_breaker" in body.lower()
-        ), "Missing circuit_breaker_config parameter"
+    def test_non_retryable_4xx_handling(self):
+        """Verify 4xx errors (except 429) are not retried"""
+        fpath = os.path.join(self.REPO_DIR, "httpx/_resilience.py")
+        with open(fpath, "r") as f:
+            content = f.read()
+        # Should have logic excluding general 4xx from retry
+        has_4xx_check = bool(re.search(r'(4\d\d|status_code.*4|not.*retry|raise.*immediately)', content, re.IGNORECASE))
+        assert has_4xx_check, "Code should handle non-retryable 4xx errors"
 
-    def test_semantic_exponential_backoff_formula_min_base_2_attempt_jitter_max(self):
-        """Exponential backoff formula: min(base * 2^attempt + jitter, max)."""
-        src = self._read_text(self.RESILIENCE_PY)
-        assert re.search(
-            r"2\s*\*\*|pow\s*\(.*2|backoff|exponential", src
-        ), "Exponential backoff formula not found"
+    # === Functional Checks ===
 
-    def test_semantic_circuit_breaker_with_closed_open_half_open_states(self):
-        """Circuit breaker with CLOSED/OPEN/HALF_OPEN states."""
-        src = self._read_text(self.RESILIENCE_PY)
-        for state in ("CLOSED", "OPEN", "HALF_OPEN"):
-            assert state in src, f"Circuit breaker missing state: {state}"
+    def test_import_resilient_async_client(self):
+        """Verify ResilientAsyncClient can be imported"""
+        sys.path.insert(0, self.REPO_DIR)
+        try:
+            from httpx._resilience import ResilientAsyncClient
+            assert ResilientAsyncClient is not None
+        except ImportError as e:
+            pytest.fail(f"Cannot import ResilientAsyncClient: {e}")
 
-    def test_semantic_error_classification_separating_transient_from_permanent_fai(
-        self,
-    ):
-        """Error classification separating transient from permanent failures."""
-        src = self._read_text(self.RESILIENCE_PY)
-        assert re.search(
-            r"transient|permanent|is_transient|is_retryable", src, re.IGNORECASE
-        ), "Error classification for transient vs permanent not found"
+    def test_import_circuit_breaker_open_error(self):
+        """Verify CircuitBreakerOpenError can be imported"""
+        sys.path.insert(0, self.REPO_DIR)
+        try:
+            from httpx._resilience import CircuitBreakerOpenError
+            assert issubclass(CircuitBreakerOpenError, Exception), (
+                "CircuitBreakerOpenError should be an Exception subclass"
+            )
+        except ImportError as e:
+            pytest.fail(f"Cannot import CircuitBreakerOpenError: {e}")
 
-    def test_semantic_circuitbreakeropenerror_exception_class_defined(self):
-        """CircuitBreakerOpenError exception class defined."""
-        src = self._read_text(self.RESILIENCE_PY)
-        assert re.search(
-            r"class\s+CircuitBreakerOpenError", src
-        ), "CircuitBreakerOpenError exception class not found"
+    def test_client_constructor_accepts_config(self):
+        """Verify ResilientAsyncClient constructor accepts retry and circuit breaker config"""
+        sys.path.insert(0, self.REPO_DIR)
+        try:
+            from httpx._resilience import ResilientAsyncClient
+            import inspect
+            sig = inspect.signature(ResilientAsyncClient.__init__)
+            params = list(sig.parameters.keys())
+            # Should have parameters for retry and circuit breaker configuration
+            has_retry_config = any("retry" in p.lower() for p in params)
+            has_cb_config = any("circuit" in p.lower() or "breaker" in p.lower() for p in params)
+            # Or it could accept them as keyword arguments
+            assert has_retry_config or has_cb_config or len(params) >= 2, (
+                f"Constructor should accept retry/circuit breaker config. Params: {params}"
+            )
+        except ImportError:
+            pytest.skip("Cannot import ResilientAsyncClient")
 
-    # ------------------------------------------------------------------
-    # Layer 3 – functional_check (5 cases, source analysis)
-    # ------------------------------------------------------------------
+    def test_circuit_breaker_state_machine(self):
+        """Verify circuit breaker starts in CLOSED state and transitions correctly"""
+        sys.path.insert(0, self.REPO_DIR)
+        try:
+            from httpx._resilience import ResilientAsyncClient
+            client = ResilientAsyncClient()
+            # Check initial state
+            if hasattr(client, '_circuit_breaker'):
+                cb = client._circuit_breaker
+                state = getattr(cb, 'state', getattr(cb, '_state', None))
+                if state is not None:
+                    state_str = str(state).upper()
+                    assert "CLOSED" in state_str, (
+                        f"Circuit breaker should start CLOSED, got {state_str}"
+                    )
+            elif hasattr(client, 'circuit_breaker'):
+                cb = client.circuit_breaker
+                state = getattr(cb, 'state', getattr(cb, '_state', None))
+                if state is not None:
+                    state_str = str(state).upper()
+                    assert "CLOSED" in state_str, (
+                        f"Circuit breaker should start CLOSED, got {state_str}"
+                    )
+        except Exception as e:
+            pytest.fail(f"Error testing circuit breaker state: {e}")
 
-    def test_functional_503_three_times_then_200_succeeds_on_4th_attempt(self):
-        """503 three times then 200 -> succeeds on 4th attempt."""
-        src = self._read_text(self.RESILIENCE_PY)
-        assert re.search(r"retry|attempt|max_retries", src), "Retry logic required"
+    def test_resilience_tests_pass(self):
+        """Verify the project's resilience tests pass"""
+        test_path = os.path.join(self.REPO_DIR, "tests/test_resilience.py")
+        if not os.path.isfile(test_path):
+            pytest.skip("test_resilience.py not found")
+        result = subprocess.run(
+            ["python", "-m", "pytest", test_path, "-v", "--tb=short", "-x"],
+            cwd=self.REPO_DIR,
+            capture_output=True,
+            text=True,
+            timeout=120
+        )
+        assert result.returncode == 0, (
+            f"Resilience tests failed:\n{result.stdout[-1000:]}\n{result.stderr[-500:]}"
+        )
 
-    def test_functional_unreachable_host_with_max_retries_2_connecterror_after_3_att(
-        self,
-    ):
-        """Unreachable host with max_retries=2 -> ConnectError after 3 attempts."""
-        src = self._read_text(self.RESILIENCE_PY)
-        assert re.search(
-            r"max_retries|max_attempts", src
-        ), "max_retries/max_attempts parameter required"
-
-    def test_functional_400_response_immediate_raise_without_retry(self):
-        """400 response -> immediate raise without retry."""
-        src = self._read_text(self.RESILIENCE_PY)
-        assert re.search(
-            r"4\d\d|permanent|not.*retry", src, re.IGNORECASE
-        ), "400 responses should not be retried"
-
-    def test_functional_5_consecutive_failures_circuitbreakeropenerror_on_next_reque(
-        self,
-    ):
-        """5 consecutive failures -> CircuitBreakerOpenError on next request."""
-        src = self._read_text(self.RESILIENCE_PY)
-        assert re.search(
-            r"failure_threshold|failure_count|consecutive", src
-        ), "Circuit breaker failure threshold logic required"
-
-    def test_functional_after_recovery_timeout_probe_request_allowed(self):
-        """After recovery_timeout -> probe request allowed."""
-        src = self._read_text(self.RESILIENCE_PY)
-        assert re.search(
-            r"recovery_timeout|reset_timeout|half.open", src, re.IGNORECASE
-        ), "Recovery timeout / probe logic required"
+    def test_default_config_values(self):
+        """Verify default configuration values for retry and backoff"""
+        fpath = os.path.join(self.REPO_DIR, "httpx/_resilience.py")
+        with open(fpath, "r") as f:
+            content = f.read()
+        # Check default values mentioned in requirements
+        has_max_retries_3 = bool(re.search(r'(max_retries|MAX_RETRIES)\s*[=:]\s*3', content))
+        has_backoff_base = bool(re.search(r'(backoff_base|BACKOFF_BASE)\s*[=:]\s*0\.5', content))
+        has_backoff_max = bool(re.search(r'(backoff_max|BACKOFF_MAX)\s*[=:]\s*30', content))
+        has_failure_threshold = bool(re.search(r'(failure_threshold|FAILURE_THRESHOLD)\s*[=:]\s*5', content))
+        assert has_max_retries_3 or has_backoff_base or has_backoff_max, (
+            "Module should define default retry config values (max_retries=3, backoff_base=0.5, backoff_max=30)"
+        )
+        assert has_failure_threshold, (
+            "Module should define default circuit breaker failure_threshold=5"
+        )

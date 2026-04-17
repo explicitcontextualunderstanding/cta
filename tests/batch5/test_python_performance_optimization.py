@@ -1,176 +1,130 @@
 """
-Test for 'python-performance-optimization' skill — py-spy Performance Profiling
-Validates sample collection (100K), analyzer top functions,
-flamegraph SVG generation, and profiling data analysis.
+Test skill: python-performance-optimization
+Verify that the Agent optimizes hot paths in py-spy's profile processing
+scripts with benchmarking, deduplication, and streaming I/O.
 """
 
 import os
 import re
-import subprocess
-
+import ast
 import pytest
 
 
 class TestPythonPerformanceOptimization:
-    """Verify Python performance profiling tools."""
-
     REPO_DIR = "/workspace/py-spy"
 
-    # ── file_path_check ─────────────────────────────────────────────────────
+    BENCHMARK = "scripts/benchmark_processing.py"
+    PROCESS_PROFILE = "scripts/process_profile.py"
+    FLAMEGRAPH = "scripts/flamegraph.py"
+    TESTS = "scripts/tests/test_process_profile.py"
 
-    def test_repo_directory_exists(self):
-        """Verify py-spy repository exists."""
-        assert os.path.isdir(self.REPO_DIR), "py-spy repo not found"
+    def _read_file(self, rel_path):
+        filepath = os.path.join(self.REPO_DIR, rel_path)
+        with open(filepath) as f:
+            return f.read()
 
-    def test_source_files_exist(self):
-        """Verify source files (Rust/Python) exist."""
-        found_rs = False
-        found_py = False
-        for dirpath, _, fnames in os.walk(self.REPO_DIR):
-            if ".git" in dirpath:
-                continue
-            for f in fnames:
-                if f.endswith(".rs"):
-                    found_rs = True
-                if f.endswith(".py"):
-                    found_py = True
-            if found_rs or found_py:
-                break
-        assert found_rs or found_py, "No source files found"
+    # === File Path Checks ===
 
-    # ── semantic_check ──────────────────────────────────────────────────────
+    def test_benchmark_script_exists(self):
+        filepath = os.path.join(self.REPO_DIR, self.BENCHMARK)
+        assert os.path.exists(filepath), f"benchmark_processing.py not found"
 
-    def test_sample_count_reference(self):
-        """Verify reference to sample collection (e.g. 100K samples)."""
-        source_files = self._find_source_files()
-        for fpath in source_files:
-            content = self._read(fpath)
-            if re.search(
-                r"(sample|100.?000|100k|num_samples|sampling_rate)",
-                content,
-                re.IGNORECASE,
-            ):
-                return
-        pytest.fail("No sample count reference found")
+    def test_process_profile_exists(self):
+        filepath = os.path.join(self.REPO_DIR, self.PROCESS_PROFILE)
+        assert os.path.exists(filepath), f"process_profile.py not found"
 
-    def test_top_functions_analysis(self):
-        """Verify top functions / hotspot analysis."""
-        source_files = self._find_source_files()
-        for fpath in source_files:
-            content = self._read(fpath)
-            if re.search(
-                r"(top|hotspot|most.?time|stack.?frame|function.?name)",
-                content,
-                re.IGNORECASE,
-            ):
-                return
-        pytest.fail("No top functions analysis found")
+    def test_flamegraph_exists(self):
+        filepath = os.path.join(self.REPO_DIR, self.FLAMEGRAPH)
+        assert os.path.exists(filepath), f"flamegraph.py not found"
 
-    def test_flamegraph_support(self):
-        """Verify flamegraph SVG generation support."""
-        source_files = self._find_source_files()
-        for fpath in source_files:
-            content = self._read(fpath)
-            if re.search(
-                r"(flamegraph|flame.?graph|\.svg|svg_output)", content, re.IGNORECASE
-            ):
-                return
-        pytest.fail("No flamegraph support found")
+    def test_tests_file_exists(self):
+        filepath = os.path.join(self.REPO_DIR, self.TESTS)
+        assert os.path.exists(filepath), f"test_process_profile.py not found"
 
-    def test_stack_trace_collection(self):
-        """Verify stack trace collection mechanism."""
-        source_files = self._find_source_files()
-        for fpath in source_files:
-            content = self._read(fpath)
-            if re.search(
-                r"(stack.?trace|backtrace|frame|unwinding|call.?stack)",
-                content,
-                re.IGNORECASE,
-            ):
-                return
-        pytest.fail("No stack trace collection found")
+    # === Semantic Checks ===
 
-    def test_process_attach(self):
-        """Verify ability to attach to running processes."""
-        source_files = self._find_source_files()
-        for fpath in source_files:
-            content = self._read(fpath)
-            if re.search(r"(attach|pid|process_id|--pid)", content, re.IGNORECASE):
-                return
-        pytest.fail("No process attach capability found")
+    def test_benchmark_generates_synthetic_data(self):
+        """Verify benchmark generates configurable synthetic profile data"""
+        content = self._read_file(self.BENCHMARK)
+        has_samples = bool(re.search(r'(100[_,]?000|samples|sample_count)', content))
+        assert has_samples, "Benchmark missing sample count configuration"
 
-    # ── functional_check ────────────────────────────────────────────────────
+    def test_benchmark_reports_json(self):
+        """Verify benchmark outputs JSON with time, memory, throughput"""
+        content = self._read_file(self.BENCHMARK)
+        assert "json" in content.lower(), "Benchmark missing JSON output"
+        for field in ["time_seconds", "peak_memory", "throughput"]:
+            assert field in content, f"Benchmark missing report field: {field}"
 
-    def test_cargo_toml_exists(self):
-        """Verify Cargo.toml for Rust project build."""
-        cargo = os.path.join(self.REPO_DIR, "Cargo.toml")
-        if not os.path.exists(cargo):
-            pytest.skip("Not a Rust project")
-        content = self._read(cargo)
-        assert (
-            "py-spy" in content.lower() or "pyspy" in content.lower()
-        ), "Cargo.toml doesn't reference py-spy"
+    def test_benchmark_measures_memory(self):
+        """Verify benchmark measures peak memory usage"""
+        content = self._read_file(self.BENCHMARK)
+        has_mem = bool(re.search(r'(tracemalloc|resource|memory_profiler|psutil)', content))
+        assert has_mem, "Benchmark missing memory measurement"
 
-    def test_output_format_options(self):
-        """Verify multiple output format options (flamegraph, speedscope, raw)."""
-        source_files = self._find_source_files()
-        formats_found = set()
-        for fpath in source_files:
-            content = self._read(fpath)
-            for fmt in ["flamegraph", "speedscope", "raw", "json", "top"]:
-                if fmt in content.lower():
-                    formats_found.add(fmt)
-        assert (
-            len(formats_found) >= 2
-        ), f"Only {formats_found} output formats found, expected ≥ 2"
+    def test_process_profile_integer_dedup(self):
+        """Verify deduplication uses integer IDs instead of strings"""
+        content = self._read_file(self.PROCESS_PROFILE)
+        has_dedup = bool(re.search(
+            r'(intern|id_map|frame_id|string_table|lookup)', content
+        ))
+        assert has_dedup, "process_profile missing integer-based deduplication"
 
-    def test_duration_or_timeout(self):
-        """Verify duration/timeout parameter for profiling."""
-        source_files = self._find_source_files()
-        for fpath in source_files:
-            content = self._read(fpath)
-            if re.search(
-                r"(duration|timeout|--duration|seconds)", content, re.IGNORECASE
-            ):
-                return
-        pytest.fail("No duration/timeout parameter found")
+    def test_process_profile_counter_aggregation(self):
+        """Verify aggregation uses Counter or similar O(1) approach"""
+        content = self._read_file(self.PROCESS_PROFILE)
+        has_counter = bool(re.search(
+            r'(Counter|defaultdict|counter)', content
+        ))
+        assert has_counter, "process_profile missing Counter-based aggregation"
 
-    def test_rate_or_frequency(self):
-        """Verify sampling rate/frequency configuration."""
-        source_files = self._find_source_files()
-        for fpath in source_files:
-            content = self._read(fpath)
-            if re.search(
-                r"(rate|frequency|--rate|sampling_rate|hz)", content, re.IGNORECASE
-            ):
-                return
-        pytest.fail("No sampling rate/frequency config found")
+    def test_flamegraph_join_instead_of_concat(self):
+        """Verify flamegraph uses str.join instead of += concatenation"""
+        content = self._read_file(self.FLAMEGRAPH)
+        assert ".join(" in content, "flamegraph missing str.join optimization"
 
-    def test_subprocesses_support(self):
-        """Verify subprocess profiling support."""
-        source_files = self._find_source_files()
-        for fpath in source_files:
-            content = self._read(fpath)
-            if re.search(
-                r"(subprocess|subproces|child.?process|--subprocesses)",
-                content,
-                re.IGNORECASE,
-            ):
-                return
-        pytest.fail("No subprocess profiling support found")
+    def test_flamegraph_streaming_io(self):
+        """Verify flamegraph uses buffered/streaming I/O"""
+        content = self._read_file(self.FLAMEGRAPH)
+        has_streaming = bool(re.search(
+            r'(BufferedWriter|buffered|chunk|io\.open|write_lines)', content
+        ))
+        assert has_streaming, "flamegraph missing streaming I/O"
 
-    # ── helpers ──────────────────────────────────────────────────────────────
+    def test_process_profile_buffered_read(self):
+        """Verify profile reading uses buffered chunks"""
+        content = self._read_file(self.PROCESS_PROFILE)
+        has_buffered = bool(re.search(
+            r'(chunk|buffer|readline|iter|mmap)', content
+        ))
+        assert has_buffered, "process_profile missing buffered read"
 
-    def _find_source_files(self):
-        results = []
-        for dirpath, _, fnames in os.walk(self.REPO_DIR):
-            if ".git" in dirpath:
-                continue
-            for f in fnames:
-                if f.endswith((".rs", ".py", ".toml")):
-                    results.append(os.path.join(dirpath, f))
-        return results
+    # === Functional Checks ===
 
-    def _read(self, path):
-        with open(path, "r", errors="ignore") as fh:
-            return fh.read()
+    def test_all_files_valid_python(self):
+        """Verify all Python files have valid syntax"""
+        for path in [self.BENCHMARK, self.PROCESS_PROFILE,
+                     self.FLAMEGRAPH, self.TESTS]:
+            filepath = os.path.join(self.REPO_DIR, path)
+            with open(filepath) as f:
+                try:
+                    ast.parse(f.read())
+                except SyntaxError as e:
+                    pytest.fail(f"{path} syntax error: {e}")
+
+    def test_tests_have_correctness_checks(self):
+        """Verify test file has correctness and performance tests"""
+        content = self._read_file(self.TESTS)
+        tree = ast.parse(content)
+        test_funcs = [
+            n.name for n in ast.walk(tree)
+            if isinstance(n, ast.FunctionDef) and n.name.startswith("test_")
+        ]
+        assert len(test_funcs) >= 3, \
+            f"Expected >=3 tests, found {len(test_funcs)}"
+
+    def test_benchmark_has_argparse(self):
+        """Verify benchmark script accepts --samples argument"""
+        content = self._read_file(self.BENCHMARK)
+        has_args = bool(re.search(r'(argparse|--samples|sys\.argv)', content))
+        assert has_args, "Benchmark missing --samples argument parsing"

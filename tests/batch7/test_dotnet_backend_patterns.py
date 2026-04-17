@@ -1,178 +1,175 @@
-"""Test file for the dotnet-backend-patterns skill.
-
-This suite validates the eShop Catalog API optimization: async data access,
-DTO projections, caching, and pagination in the CatalogService,
-CatalogApi, and CatalogContext C# files.
+"""
+Test skill: dotnet-backend-patterns
+Verify that the Agent optimizes the Catalog Service in eShop —
+async data access, EF Core query optimizations (projections, eager loading),
+caching for read-only data, and proper DTO responses.
 """
 
-from __future__ import annotations
-
-import pathlib
+import os
 import re
-
+import subprocess
 import pytest
 
 
 class TestDotnetBackendPatterns:
-    """Verify eShop Catalog API optimization patterns."""
+    REPO_DIR = "/workspace/eshop"
 
-    REPO_DIR = "/workspace/eShop"
+    # ────── helpers ──────
 
-    SERVICE_CS = "src/Catalog.API/Services/CatalogService.cs"
-    API_CS = "src/Catalog.API/Apis/CatalogApi.cs"
-    CONTEXT_CS = "src/Catalog.API/Infrastructure/CatalogContext.cs"
+    def _read(self, rel_path):
+        fpath = os.path.join(self.REPO_DIR, rel_path)
+        with open(fpath, "r") as f:
+            return f.read()
 
-    # ------------------------------------------------------------------
-    # Helpers
-    # ------------------------------------------------------------------
+    def _exists(self, rel_path):
+        return os.path.isfile(os.path.join(self.REPO_DIR, rel_path))
 
-    def _repo_path(self, relative: str) -> pathlib.Path:
-        return pathlib.Path(self.REPO_DIR, *relative.split("/"))
+    def _find_file(self, pattern):
+        """Walk repo to find a file matching pattern."""
+        for root, dirs, files in os.walk(self.REPO_DIR):
+            for fn in files:
+                if re.search(pattern, fn, re.IGNORECASE):
+                    return os.path.relpath(os.path.join(root, fn), self.REPO_DIR)
+        return None
 
-    def _read_text(self, relative: str) -> str:
-        path = self._repo_path(relative)
-        assert path.exists(), f"Expected path to exist: {path}"
-        return path.read_text(encoding="utf-8", errors="ignore")
+    # === File Path Checks ===
 
-    def _assert_non_empty_file(self, relative: str) -> pathlib.Path:
-        path = self._repo_path(relative)
-        assert path.is_file(), f"Expected file to exist: {path}"
-        assert path.stat().st_size > 0, f"Expected non-empty file: {path}"
-        return path
+    def test_catalog_service_exists(self):
+        """CatalogService.cs must exist"""
+        found = self._find_file(r'CatalogService\.cs$')
+        assert found, "CatalogService.cs not found"
 
-    def _all_cs_sources(self) -> str:
-        """Read and concatenate the three main C# files."""
-        parts = []
-        for f in (self.SERVICE_CS, self.API_CS, self.CONTEXT_CS):
-            path = self._repo_path(f)
-            if path.exists():
-                parts.append(path.read_text(encoding="utf-8", errors="ignore"))
-        return "\n".join(parts)
+    def test_catalog_api_exists(self):
+        """CatalogApi.cs must exist"""
+        found = self._find_file(r'CatalogApi\.cs$')
+        assert found, "CatalogApi.cs not found"
 
-    def _cs_class_body(self, source: str, class_name: str) -> str | None:
-        """Extract a C# class body by rough brace matching."""
-        m = re.search(rf"class\s+{class_name}\b", source)
-        if m is None:
-            return None
-        start = source.find("{", m.end())
-        if start < 0:
-            return None
-        depth, i = 1, start + 1
-        while i < len(source) and depth > 0:
-            if source[i] == "{":
-                depth += 1
-            elif source[i] == "}":
-                depth -= 1
-            i += 1
-        return source[m.start() : i]
+    def test_catalog_context_exists(self):
+        """CatalogContext.cs must exist"""
+        found = self._find_file(r'CatalogContext\.cs$')
+        assert found, "CatalogContext.cs not found"
 
-    # ------------------------------------------------------------------
-    # Layer 1 – file_path_check (3 cases)
-    # ------------------------------------------------------------------
+    # === Semantic Checks — Async Patterns ===
 
-    def test_file_path_src_catalog_api_services_catalogservice_cs_exists_or_modifie(
-        self,
-    ):
-        """Verify CatalogService.cs exists and is non-empty."""
-        self._assert_non_empty_file(self.SERVICE_CS)
+    def test_async_methods_in_service(self):
+        """CatalogService must use async methods"""
+        fpath = self._find_file(r'CatalogService\.cs$')
+        assert fpath, "CatalogService.cs not found"
+        src = self._read(fpath)
+        assert "async" in src, "No async methods found in CatalogService"
+        assert "await" in src, "No await usage found in CatalogService"
 
-    def test_file_path_src_catalog_api_apis_catalogapi_cs_is_modified(self):
-        """Verify CatalogApi.cs exists and is non-empty."""
-        self._assert_non_empty_file(self.API_CS)
+    def test_async_to_list(self):
+        """Must use ToListAsync / FirstOrDefaultAsync"""
+        fpath = self._find_file(r'CatalogService\.cs$')
+        src = self._read(fpath)
+        assert "Async" in src, "No async EF Core methods found"
 
-    def test_file_path_src_catalog_api_infrastructure_catalogcontext_cs_is_modified(
-        self,
-    ):
-        """Verify CatalogContext.cs exists and is non-empty."""
-        self._assert_non_empty_file(self.CONTEXT_CS)
+    # === Semantic Checks — Query Optimization ===
 
-    # ------------------------------------------------------------------
-    # Layer 2 – semantic_check (5 cases)
-    # ------------------------------------------------------------------
+    def test_projection_queries(self):
+        """Must use Select projections"""
+        fpath = self._find_file(r'CatalogService\.cs$')
+        src = self._read(fpath)
+        assert "Select" in src or ".Select(" in src, (
+            "No projection queries (Select) found"
+        )
 
-    def test_semantic_all_data_access_methods_return_task_t_async_pattern(self):
-        """All data access methods return Task<T> (async pattern)."""
-        src = self._all_cs_sources()
-        assert re.search(
-            r"async\s+Task|await\s+", src
-        ), "Methods should use async/await pattern"
+    def test_no_full_entity_loading(self):
+        """Should use DTOs rather than returning full entities"""
+        fpath = self._find_file(r'CatalogApi\.cs$')
+        src = self._read(fpath)
+        lower = src.lower()
+        assert "dto" in lower or "response" in lower or "model" in lower, (
+            "No DTO/response model pattern found"
+        )
 
-    def test_semantic_catalogcontext_uses_include_for_eager_loading_where_needed(self):
-        """CatalogContext uses .Include() for eager loading where needed."""
-        src = self._all_cs_sources()
-        assert re.search(
-            r"\.Include\s*\(", src
-        ), "Should use .Include() for eager loading related entities"
+    def test_eager_loading_or_include(self):
+        """Should use Include/ThenInclude for eager loading where needed"""
+        fpath = self._find_file(r'CatalogContext\.cs$')
+        if not fpath:
+            fpath = self._find_file(r'CatalogService\.cs$')
+        src = self._read(fpath)
+        # Eager loading or explicit join strategy
+        lower = src.lower()
+        assert "include" in lower or "join" in lower or "select" in lower, (
+            "No eager loading strategy found"
+        )
 
-    def test_semantic_select_projections_map_to_dto_types_instead_of_returning_ful(
-        self,
-    ):
-        """Select() projections map to DTO types instead of returning full entities."""
-        src = self._all_cs_sources()
-        assert re.search(
-            r"\.Select\s*\(", src
-        ), "Should use .Select() for DTO projections"
-        assert re.search(
-            r"Dto|DTO|ViewModel|Response", src, re.IGNORECASE
-        ), "Should project to DTO/ViewModel types"
+    def test_pagination_efficiency(self):
+        """Pagination must use Skip/Take or equivalent"""
+        fpath = self._find_file(r'CatalogService\.cs$')
+        if not fpath:
+            fpath = self._find_file(r'CatalogApi\.cs$')
+        src = self._read(fpath)
+        lower = src.lower()
+        assert "skip" in lower or "take" in lower or "pagesize" in lower or "limit" in lower, (
+            "No pagination pattern found"
+        )
 
-    def test_semantic_imemorycache_or_idistributedcache_used_for_caching(self):
-        """IMemoryCache or IDistributedCache used for caching."""
-        src = self._all_cs_sources()
-        assert re.search(
-            r"IMemoryCache|IDistributedCache|MemoryCache|GetOrCreate|Cache", src
-        ), "Service should use IMemoryCache or IDistributedCache"
+    # === Semantic Checks — Caching ===
 
-    def test_semantic_pagination_uses_skip_take_or_equivalent(self):
-        """Pagination uses Skip/Take or equivalent."""
-        src = self._all_cs_sources()
-        assert re.search(
-            r"\.Skip\s*\(|\.Take\s*\(|pageSize|pageIndex|PageSize|PageIndex", src
-        ), "Pagination should use Skip/Take or page-based parameters"
+    def test_caching_mechanism(self):
+        """Must implement caching for read-only data"""
+        found = False
+        for pattern in [r'CatalogService\.cs$', r'CatalogApi\.cs$']:
+            fpath = self._find_file(pattern)
+            if fpath:
+                src = self._read(fpath)
+                lower = src.lower()
+                if any(k in lower for k in ["cache", "memorycache", "icache",
+                                              "distributedcache", "cacheentry"]):
+                    found = True
+                    break
+        assert found, "No caching mechanism found"
 
-    # ------------------------------------------------------------------
-    # Layer 3 – functional_check (5 cases, mocked via source analysis)
-    # ------------------------------------------------------------------
+    def test_category_brand_caching(self):
+        """Categories or brands should be cached"""
+        fpath = self._find_file(r'CatalogService\.cs$')
+        if fpath:
+            src = self._read(fpath)
+            lower = src.lower()
+            assert ("brand" in lower or "category" in lower or "type" in lower), (
+                "No category/brand data access found"
+            )
 
-    def test_functional_product_list_endpoint_returns_paginated_dto_response(self):
-        """Product list endpoint returns paginated DTO response."""
-        src = self._all_cs_sources()
-        assert re.search(
-            r"\.Skip\s*\(|\.Take\s*\(|pageSize", src
-        ), "List endpoint must implement pagination"
-        assert re.search(r"\.Select\s*\(", src), "List endpoint must project to DTOs"
+    # === Semantic Checks — Concurrency ===
 
-    def test_functional_product_detail_endpoint_returns_dto_without_entity_graph(self):
-        """Product detail endpoint returns DTO without entity graph."""
-        src = self._all_cs_sources()
-        assert re.search(
-            r"FindAsync|FirstOrDefaultAsync|SingleOrDefaultAsync|GetById", src
-        ), "Detail endpoint must retrieve single product"
+    def test_scoped_dbcontext(self):
+        """DbContext should be properly scoped"""
+        fpath = self._find_file(r'CatalogService\.cs$')
+        src = self._read(fpath)
+        # Should inject context or use scoped lifetime
+        assert "CatalogContext" in src or "DbContext" in src, (
+            "No DbContext usage found"
+        )
 
-    def test_functional_categories_endpoint_returns_cached_data_on_second_call(self):
-        """Categories endpoint returns cached data on second call."""
-        src = self._all_cs_sources()
-        assert re.search(
-            r"GetOrCreate|TryGetValue|SetAsync|Set\s*\(|Cache", src
-        ), "Categories should be cached"
+    # === Functional Checks ===
 
-    def test_functional_concurrent_requests_don_t_cause_objectdisposedexception(self):
-        """Concurrent requests don't cause ObjectDisposedException."""
-        src = self._all_cs_sources()
-        assert re.search(
-            r"AddScoped|AddTransient|IServiceScope|DbContextFactory|IDbContextFactory|CatalogContext",
-            src,
-        ), "DbContext should be properly scoped to prevent disposal issues"
+    def test_dotnet_build(self):
+        """Project must build"""
+        # Find the Catalog.API project file
+        proj = self._find_file(r'Catalog\.API.*\.csproj$')
+        if proj:
+            result = subprocess.run(
+                ["dotnet", "build", proj, "--no-restore"],
+                capture_output=True, text=True, cwd=self.REPO_DIR, timeout=300,
+            )
+        else:
+            result = subprocess.run(
+                ["dotnet", "build", "--no-restore"],
+                capture_output=True, text=True, cwd=self.REPO_DIR, timeout=300,
+            )
+        assert result.returncode == 0, (
+            f"Build failed:\n{result.stdout}\n{result.stderr}"
+        )
 
-    def test_functional_build_succeeds_without_errors(self):
-        """Build succeeds without errors (via source analysis)."""
-        src = self._all_cs_sources()
-        assert re.search(
-            r"^using\s+", src, re.MULTILINE
-        ), "C# files should have using directives"
-        assert re.search(r"namespace\s+", src), "C# files should declare a namespace"
-        open_braces = src.count("{")
-        close_braces = src.count("}")
-        assert (
-            abs(open_braces - close_braces) <= 2
-        ), f"Brace mismatch suggests compilation error: {{ = {open_braces}, }} = {close_braces}"
+    def test_dotnet_restore(self):
+        """Project restore must succeed"""
+        result = subprocess.run(
+            ["dotnet", "restore"],
+            capture_output=True, text=True, cwd=self.REPO_DIR, timeout=300,
+        )
+        assert result.returncode == 0, (
+            f"Restore failed:\n{result.stdout}\n{result.stderr}"
+        )

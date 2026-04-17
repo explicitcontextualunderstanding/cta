@@ -1,210 +1,154 @@
 """
-Tests for 'langsmith-fetch' skill.
-Generated from benchmark case definitions for langsmith-fetch.
+Tests for langsmith-fetch skill.
+Verifies creation of debug/analysis scripts and diagnostic report for
+debugging a LangGraph agent using LangSmith traces.
 """
 
 import ast
-import base64
-import glob
-import json
 import os
-import py_compile
 import re
 import subprocess
-import textwrap
 
 import pytest
 
-try:
-    import yaml
-except ModuleNotFoundError:
-    yaml = None
-
 
 class TestLangsmithFetch:
-    """Verify the langsmith-fetch skill output."""
+    """Tests for langsmith-fetch skill."""
 
-    REPO_DIR = '/workspace/langchain'
+    REPO_DIR = "/workspace/langchain"
 
-
-    # ── helpers ──────────────────────────────────────────────
-
-    _SETUP_CACHE: dict = {}
-
-    @staticmethod
-    def _repo_path(rel: str) -> str:
-        return os.path.join(TestLangsmithFetch.REPO_DIR, rel)
-
-    @staticmethod
-    def _safe_read(path: str) -> str:
-        with open(path, "r", encoding="utf-8", errors="ignore") as fh:
-            return fh.read()
-
-    @staticmethod
-    def _load_yaml(path: str):
-        if yaml is None:
-            pytest.skip("PyYAML not available")
-        with open(path, "r", encoding="utf-8", errors="ignore") as fh:
-            return yaml.safe_load(fh)
-
-    @staticmethod
-    def _load_json(path: str):
-        with open(path, "r", encoding="utf-8", errors="ignore") as fh:
-            return json.load(fh)
-
-    @classmethod
-    def _run_in_repo(cls, script: str, timeout: int = 120) -> subprocess.CompletedProcess:
-        return subprocess.run(
-            ["python", "-c", textwrap.dedent(script)],
-            cwd=cls.REPO_DIR,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-        )
-
-    @classmethod
-    def _run_cmd(cls, command, args=None, timeout=120):
-        args = args or []
-        if isinstance(command, str) and args:
-            return subprocess.run(
-                [command, *args],
-                cwd=cls.REPO_DIR,
-                capture_output=True,
-                text=True,
-                timeout=timeout,
-            )
-        return subprocess.run(
-            command if isinstance(command, list) else command,
-            cwd=cls.REPO_DIR,
-            shell=isinstance(command, str),
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-        )
-
-    @classmethod
-    def _ensure_setup(cls, label, setup_cmds, fallback):
-        if not setup_cmds:
-            return
-        key = tuple(setup_cmds)
-        if key in cls._SETUP_CACHE:
-            ok, msg = cls._SETUP_CACHE[key]
-            if ok:
-                return
-            if fallback == "skip_if_setup_fails":
-                pytest.skip(f"{label} setup failed: {msg}")
-            pytest.fail(f"{label} setup failed: {msg}")
-        for cmd in setup_cmds:
-            r = subprocess.run(cmd, cwd=cls.REPO_DIR, shell=True,
-                               capture_output=True, text=True, timeout=300)
-            if r.returncode != 0:
-                msg = (r.stderr or r.stdout or 'failed').strip()
-                cls._SETUP_CACHE[key] = (False, msg)
-                if fallback == "skip_if_setup_fails":
-                    pytest.skip(f"{label} setup failed: {msg}")
-                pytest.fail(f"{label} setup failed: {msg}")
-        cls._SETUP_CACHE[key] = (True, 'ok')
-
-
-    # ── file_path_check (static) ────────────────────────────────────────
+    # ------------------------------------------------------------------ #
+    #  file_path_check – verify expected files exist
+    # ------------------------------------------------------------------ #
 
     def test_debug_agent_sh_exists(self):
-        """Verify debug_agent.sh script exists"""
-        _p = self._repo_path('scripts/debug_agent.sh')
-        assert os.path.isfile(_p), f'Missing file: scripts/debug_agent.sh'
+        assert os.path.isfile(os.path.join(self.REPO_DIR, "scripts", "debug_agent.sh"))
 
     def test_analyze_traces_py_exists(self):
-        """Verify analyze_traces.py script exists"""
-        _p = self._repo_path('scripts/analyze_traces.py')
-        assert os.path.isfile(_p), f'Missing file: scripts/analyze_traces.py'
-        py_compile.compile(_p, doraise=True)
+        assert os.path.isfile(os.path.join(self.REPO_DIR, "scripts", "analyze_traces.py"))
 
-    # ── semantic_check (static) ────────────────────────────────────────
+    def test_agent_diagnostic_md_exists(self):
+        assert os.path.isfile(os.path.join(self.REPO_DIR, "reports", "agent_diagnostic.md"))
 
-    def test_bash_shebang_line(self):
-        """Verify debug_agent.sh has proper shebang"""
-        _p = self._repo_path('scripts/debug_agent.sh')
-        assert os.path.exists(_p), f'Missing: scripts/debug_agent.sh'
-        _contents = self._safe_read(_p)
-        _all = _contents if isinstance(_contents, str) else ''
-        assert '#!/bin/bash' in _all, 'Missing: #!/bin/bash'
-        assert '#!/usr/bin/env bash' in _all, 'Missing: #!/usr/bin/env bash'
+    # ------------------------------------------------------------------ #
+    #  semantic_check – structural / content validation
+    # ------------------------------------------------------------------ #
 
-    def test_bash_api_key_check(self):
-        """Verify debug_agent.sh checks for LANGCHAIN_API_KEY"""
-        _p = self._repo_path('scripts/debug_agent.sh')
-        assert os.path.exists(_p), f'Missing: scripts/debug_agent.sh'
-        _contents = self._safe_read(_p)
-        _all = _contents if isinstance(_contents, str) else ''
-        assert 'LANGCHAIN_API_KEY' in _all, 'Missing: LANGCHAIN_API_KEY'
+    def _read(self, relpath):
+        path = os.path.join(self.REPO_DIR, relpath)
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read()
 
-    def test_python_argparse_arguments(self):
-        """Verify analyze_traces.py has --project, --since, --output arguments"""
-        _p = self._repo_path('scripts/analyze_traces.py')
-        assert os.path.exists(_p), f'Missing: scripts/analyze_traces.py'
-        _contents = self._safe_read(_p)
-        _all = _contents if isinstance(_contents, str) else ''
-        assert 'argparse' in _all, 'Missing: argparse'
-        assert '--project' in _all, 'Missing: --project'
-        assert '--since' in _all, 'Missing: --since'
-        assert '--output' in _all, 'Missing: --output'
+    def test_debug_script_checks_env_vars(self):
+        """debug_agent.sh validates LANGSMITH_API_KEY and LANGSMITH_PROJECT."""
+        content = self._read("scripts/debug_agent.sh")
+        assert "LANGSMITH_API_KEY" in content, "Should check LANGSMITH_API_KEY"
+        assert "LANGSMITH_PROJECT" in content, "Should check LANGSMITH_PROJECT"
 
-    def test_python_uses_auth_header(self):
-        """Verify API key sent via Authorization header not query param"""
-        _p = self._repo_path('scripts/analyze_traces.py')
-        assert os.path.exists(_p), f'Missing: scripts/analyze_traces.py'
-        _contents = self._safe_read(_p)
-        _all = _contents if isinstance(_contents, str) else ''
-        assert 'Authorization' in _all, 'Missing: Authorization'
-        assert 'Bearer' in _all, 'Missing: Bearer'
-        assert 'headers' in _all, 'Missing: headers'
+    def test_debug_script_uses_langsmith_fetch(self):
+        """debug_agent.sh calls langsmith-fetch commands."""
+        content = self._read("scripts/debug_agent.sh")
+        assert "langsmith-fetch" in content or "langsmith_fetch" in content, \
+            "Should invoke langsmith-fetch CLI"
 
-    # ── functional_check ────────────────────────────────────────
+    def test_debug_script_creates_output_dirs(self):
+        """debug_agent.sh creates output directories."""
+        content = self._read("scripts/debug_agent.sh")
+        assert "mkdir" in content, "Should create output directories with mkdir"
 
-    def test_python_help_exits_zero(self):
-        """Verify analyze_traces.py --help exits 0"""
-        self._ensure_setup('test_python_help_exits_zero', ['pip install langsmith requests'], 'fail_if_missing')
-        result = self._run_cmd('python', args=['scripts/analyze_traces.py', '--help'], timeout=120)
-        assert result.returncode == 0, (
-            f'test_python_help_exits_zero failed (exit {result.returncode})\n' + result.stderr[:500]
-        )
+    def test_debug_script_exits_on_missing_env(self):
+        """debug_agent.sh exits with code 1 when env vars are missing."""
+        content = self._read("scripts/debug_agent.sh")
+        assert "exit 1" in content or "exit1" in content.replace(" ", ""), \
+            "Should exit with code 1 on missing env vars"
 
-    def test_bash_missing_api_key_exit_1(self):
-        """Verify debug_agent.sh exits 1 when LANGCHAIN_API_KEY unset"""
-        result = self._run_cmd('bash', args=['-c', 'unset LANGCHAIN_API_KEY; bash scripts/debug_agent.sh; echo EXIT:$?'], timeout=120)
-        assert result.returncode == 1, (
-            f'test_bash_missing_api_key_exit_1 failed (exit {result.returncode})\n' + result.stderr[:500]
-        )
+    def test_analyze_traces_valid_python(self):
+        """analyze_traces.py is valid Python."""
+        content = self._read("scripts/analyze_traces.py")
+        try:
+            ast.parse(content)
+        except SyntaxError as e:
+            pytest.fail(f"analyze_traces.py has syntax error: {e}")
 
-    def test_csv_output_valid(self):
-        """Verify CSV output has header row with expected columns"""
-        self._ensure_setup('test_csv_output_valid', ['pip install langsmith requests'], 'fail_if_missing')
-        result = self._run_cmd('python', args=['-c', "import subprocess,csv,io; result=subprocess.run(['python','scripts/analyze_traces.py','--output','/dev/stdout','--since','0'],capture_output=True,text=True,env={**__import__('os').environ,'LANGCHAIN_API_KEY':'test'}); reader=csv.reader(io.StringIO(result.stdout)); headers=next(reader,[]); assert len(headers)>=3; print('PASS')"], timeout=120)
-        assert result.returncode == 0, (
-            f'test_csv_output_valid failed (exit {result.returncode})\n' + result.stderr[:500]
-        )
-        assert 'PASS' in (result.stdout + result.stderr), 'Expected PASS in output'
+    def test_analyze_traces_detects_failure_patterns(self):
+        """analyze_traces.py detects the 5 required failure patterns."""
+        content = self._read("scripts/analyze_traces.py").lower()
+        patterns = ["empty_response", "tool_loop", "context_ignored", "timeout", "tool_error"]
+        for pattern in patterns:
+            assert pattern in content, f"Missing failure pattern detection: {pattern}"
 
-    def test_bash_help_exits_zero(self):
-        """Verify debug_agent.sh --help exits 0"""
-        result = self._run_cmd('bash', args=['scripts/debug_agent.sh', '--help'], timeout=120)
-        assert result.returncode == 0, (
-            f'test_bash_help_exits_zero failed (exit {result.returncode})\n' + result.stderr[:500]
-        )
+    def test_analyze_traces_generates_json_report(self):
+        """analyze_traces.py writes a JSON report to reports/agent_diagnostic.json."""
+        content = self._read("scripts/analyze_traces.py")
+        assert "agent_diagnostic.json" in content or "diagnostic" in content.lower(), \
+            "Should output agent_diagnostic.json"
+        assert "json" in content.lower(), "Should use json module for output"
 
-    def test_python_syntax_check(self):
-        """Verify analyze_traces.py has no syntax errors"""
-        result = self._run_cmd('python', args=['-c', "import py_compile; py_compile.compile('scripts/analyze_traces.py', doraise=True); print('PASS')"], timeout=120)
-        assert result.returncode == 0, (
-            f'test_python_syntax_check failed (exit {result.returncode})\n' + result.stderr[:500]
-        )
-        assert 'PASS' in (result.stdout + result.stderr), 'Expected PASS in output'
+    def test_diagnostic_report_has_required_sections(self):
+        """agent_diagnostic.md contains all required report sections."""
+        content = self._read("reports/agent_diagnostic.md")
+        content_lower = content.lower()
+        assert "executive summary" in content_lower or "summary" in content_lower, \
+            "Report should have Executive Summary section"
+        assert "failure" in content_lower and ("pattern" in content_lower or "breakdown" in content_lower), \
+            "Report should have Failure Pattern Breakdown section"
+        assert "recommendation" in content_lower, \
+            "Report should have Recommendations section"
 
-    def test_bash_no_hardcoded_key(self):
-        """Verify debug_agent.sh does not hardcode API keys"""
-        result = self._run_cmd('python', args=['-c', "content=open('scripts/debug_agent.sh').read(); assert 'lsv2_' not in content.lower() and 'sk-' not in content, 'Hardcoded API key found'; print('PASS')"], timeout=120)
-        assert result.returncode == 0, (
-            f'test_bash_no_hardcoded_key failed (exit {result.returncode})\n' + result.stderr[:500]
-        )
-        assert 'PASS' in (result.stdout + result.stderr), 'Expected PASS in output'
+    # ------------------------------------------------------------------ #
+    #  functional_check – deeper content validation
+    # ------------------------------------------------------------------ #
 
+    def test_debug_script_is_executable_bash(self):
+        """debug_agent.sh starts with a bash shebang."""
+        content = self._read("scripts/debug_agent.sh")
+        first_line = content.strip().split("\n")[0]
+        assert first_line.startswith("#!") and ("bash" in first_line or "sh" in first_line), \
+            "Should have a bash/sh shebang line"
+
+    def test_debug_script_fetches_traces_and_threads(self):
+        """debug_agent.sh fetches both traces and threads from LangSmith."""
+        content = self._read("scripts/debug_agent.sh")
+        assert "traces" in content.lower(), "Should fetch traces"
+        assert "thread" in content.lower(), "Should fetch threads"
+
+    def test_debug_script_deep_fetches_failing_traces(self):
+        """debug_agent.sh deep-fetches individual failing traces."""
+        content = self._read("scripts/debug_agent.sh")
+        # Should iterate over failing trace IDs
+        assert "failing_trace_ids" in content or "trace_id" in content.lower() or "trace-id" in content, \
+            "Should reference failing trace IDs for deep fetch"
+
+    def test_analyze_traces_tool_loop_detection(self):
+        """analyze_traces.py checks for consecutive repeated tool calls."""
+        content = self._read("scripts/analyze_traces.py").lower()
+        assert "consecutive" in content or "repeat" in content or "loop" in content, \
+            "Should detect consecutive/repeated tool calls"
+
+    def test_analyze_traces_context_ignored_keyword_overlap(self):
+        """analyze_traces.py checks keyword overlap for context-ignored detection."""
+        content = self._read("scripts/analyze_traces.py").lower()
+        assert "keyword" in content or "overlap" in content or "context" in content, \
+            "Should check keyword overlap for context_ignored pattern"
+
+    def test_analyze_traces_recommendations(self):
+        """analyze_traces.py generates pattern-specific recommendations."""
+        content = self._read("scripts/analyze_traces.py").lower()
+        assert "recommendation" in content, "Should generate recommendations"
+        # Should have conditional recommendation logic
+        assert "max_iteration" in content or "retry" in content or "timeout" in content, \
+            "Should include specific remediation advice"
+
+    def test_analyze_traces_summary_statistics(self):
+        """analyze_traces.py computes aggregate statistics (failure rate, p95, etc.)."""
+        content = self._read("scripts/analyze_traces.py").lower()
+        assert "failure_rate" in content or "failure rate" in content, \
+            "Should compute failure rate"
+        assert "p95" in content or "percentile" in content or "quantile" in content, \
+            "Should compute p95 execution time"
+
+    def test_debug_script_prints_summary(self):
+        """debug_agent.sh prints a summary of fetched traces and failures."""
+        content = self._read("scripts/debug_agent.sh").lower()
+        assert "fetched" in content or "summary" in content or "total" in content, \
+            "Should print a summary of fetched data"

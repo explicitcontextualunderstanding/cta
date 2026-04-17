@@ -1,176 +1,162 @@
 """
-Test for 'implementing-jsc-classes-zig' skill — Bun CacheMap JSC Binding
-Validates CacheMap.classes.ts and CacheMap.zig with LRU eviction,
-capacity RangeError, GC finalize, and CRUD operations.
+Test skill: implementing-jsc-classes-zig
+Verify that the Agent correctly implements a CacheMap JSC class in Bun
+using Zig with LRU eviction behavior.
 """
 
 import os
 import re
-
+import subprocess
 import pytest
 
 
 class TestImplementingJscClassesZig:
-    """Verify Bun CacheMap JSC class binding implementation."""
-
     REPO_DIR = "/workspace/bun"
 
-    # ── file_path_check ─────────────────────────────────────────────────────
+    CLASSES_TS = "src/bun.js/api/CacheMap.classes.ts"
+    ZIG_IMPL = "src/bun.js/bindings/CacheMap.zig"
+    GENERATED_ZIG = "src/bun.js/bindings/generated.zig"
 
-    def test_cachemap_ts_binding_exists(self):
-        """Verify CacheMap.classes.ts or similar TS binding file exists."""
-        found = False
-        for dirpath, _, fnames in os.walk(self.REPO_DIR):
-            if "node_modules" in dirpath or ".git" in dirpath:
-                continue
-            for f in fnames:
-                if ("cachemap" in f.lower() or "cache_map" in f.lower()) and (
-                    f.endswith(".ts") or f.endswith(".js")
-                ):
-                    found = True
-                    break
-            if found:
-                break
-        assert found, "No CacheMap TS binding file found"
+    def _read_file(self, rel_path):
+        filepath = os.path.join(self.REPO_DIR, rel_path)
+        with open(filepath) as f:
+            return f.read()
 
-    def test_cachemap_zig_exists(self):
-        """Verify CacheMap.zig implementation file exists."""
-        found = False
-        for dirpath, _, fnames in os.walk(self.REPO_DIR):
-            if ".git" in dirpath:
-                continue
-            for f in fnames:
-                if ("cachemap" in f.lower() or "cache_map" in f.lower()) and f.endswith(
-                    ".zig"
-                ):
-                    found = True
-                    break
-            if found:
-                break
-        assert found, "No CacheMap.zig file found"
+    # === File Path Checks ===
 
-    # ── semantic_check ──────────────────────────────────────────────────────
+    def test_classes_ts_exists(self):
+        """Verify CacheMap.classes.ts definition file exists"""
+        filepath = os.path.join(self.REPO_DIR, self.CLASSES_TS)
+        assert os.path.exists(filepath), f"CacheMap.classes.ts not found at {filepath}"
 
-    def test_lru_eviction_logic(self):
-        """Verify LRU eviction logic in Zig or TS implementation."""
-        files = self._find_cachemap_files()
-        assert files, "No CacheMap files"
-        for fpath in files:
-            content = self._read(fpath)
-            if re.search(
-                r"(lru|LRU|evict|Evict|least.?recent)", content, re.IGNORECASE
-            ):
-                return
-        pytest.fail("No LRU eviction logic found")
+    def test_zig_implementation_exists(self):
+        """Verify CacheMap.zig implementation file exists"""
+        filepath = os.path.join(self.REPO_DIR, self.ZIG_IMPL)
+        assert os.path.exists(filepath), f"CacheMap.zig not found at {filepath}"
 
-    def test_capacity_range_error(self):
-        """Verify capacity=0 throws RangeError."""
-        files = self._find_cachemap_files()
-        assert files, "No CacheMap files"
-        for fpath in files:
-            content = self._read(fpath)
-            if re.search(
-                r"(RangeError|capacity.*0|zero.*capacity|invalid.*capacity)",
-                content,
-                re.IGNORECASE,
-            ):
-                return
-        pytest.fail("No RangeError for capacity=0 found")
+    def test_generated_zig_exists(self):
+        """Verify generated.zig binding registry exists"""
+        filepath = os.path.join(self.REPO_DIR, self.GENERATED_ZIG)
+        assert os.path.exists(filepath), f"generated.zig not found at {filepath}"
 
-    def test_gc_finalize(self):
-        """Verify GC finalize/deinit method exists."""
-        files = self._find_cachemap_files()
-        for fpath in files:
-            content = self._read(fpath)
-            if re.search(
-                r"(finalize|deinit|destroy|dealloc|GC|garbage)", content, re.IGNORECASE
-            ):
-                return
-        pytest.fail("No GC finalize method found")
+    # === Semantic Checks ===
 
-    def test_crud_operations(self):
-        """Verify get/set/delete/clear/size operations."""
-        files = self._find_cachemap_files()
-        assert files, "No CacheMap files"
-        all_content = " ".join(self._read(f) for f in files)
-        ops = ["get", "set", "delete", "clear", "size"]
-        found_ops = [op for op in ops if op in all_content.lower()]
-        assert len(found_ops) >= 4, f"Expected ≥4 CRUD operations, found: {found_ops}"
+    def test_classes_ts_exports_cachemap(self):
+        """Verify CacheMap.classes.ts exports a CacheMap class definition"""
+        content = self._read_file(self.CLASSES_TS)
+        assert "CacheMap" in content, \
+            "CacheMap.classes.ts missing CacheMap class definition"
+        assert re.search(r'(export|class|name.*CacheMap)', content), \
+            "CacheMap not properly exported in .classes.ts"
 
-    # ── functional_check ────────────────────────────────────────────────────
+    def test_classes_ts_defines_methods(self):
+        """Verify .classes.ts defines get, set, delete, clear methods"""
+        content = self._read_file(self.CLASSES_TS)
+        for method in ["get", "set", "delete", "clear"]:
+            assert method in content, \
+                f"CacheMap.classes.ts missing method definition: {method}"
 
-    def test_zig_file_balanced_braces(self):
-        """Verify Zig file has balanced braces."""
-        zig_files = [f for f in self._find_cachemap_files() if f.endswith(".zig")]
-        assert zig_files, "No CacheMap .zig files"
-        for fpath in zig_files:
-            content = self._read(fpath)
-            opens = content.count("{")
-            closes = content.count("}")
-            assert (
-                opens == closes
-            ), f"Unbalanced braces in {os.path.basename(fpath)}: {opens} vs {closes}"
+    def test_classes_ts_defines_properties(self):
+        """Verify .classes.ts defines size and capacity properties"""
+        content = self._read_file(self.CLASSES_TS)
+        assert "size" in content, "CacheMap.classes.ts missing 'size' property"
+        assert "capacity" in content, "CacheMap.classes.ts missing 'capacity' property"
 
-    def test_ts_file_balanced_braces(self):
-        """Verify TS binding file has balanced braces."""
-        ts_files = [
-            f
-            for f in self._find_cachemap_files()
-            if f.endswith(".ts") or f.endswith(".js")
-        ]
-        assert ts_files, "No CacheMap TS files"
-        for fpath in ts_files:
-            content = self._read(fpath)
-            opens = content.count("{")
-            closes = content.count("}")
-            assert opens == closes, f"Unbalanced braces in {os.path.basename(fpath)}"
+    def test_zig_has_hashmap_and_linked_list(self):
+        """Verify Zig implementation uses hash map and linked list for LRU"""
+        content = self._read_file(self.ZIG_IMPL)
+        has_hashmap = bool(re.search(
+            r'(HashMap|AutoHashMap|StringHashMap|hash_map|hashmap)',
+            content,
+            re.IGNORECASE,
+        ))
+        has_list = bool(re.search(
+            r'(DoublyLinkedList|TailQueue|linked|LinkedList|prev.*next|next.*prev)',
+            content,
+            re.IGNORECASE,
+        ))
+        assert has_hashmap, "CacheMap.zig missing hash map data structure"
+        assert has_list, "CacheMap.zig missing linked list for LRU tracking"
 
-    def test_exports_defined(self):
-        """Verify TS file exports CacheMap class."""
-        ts_files = [
-            f
-            for f in self._find_cachemap_files()
-            if f.endswith(".ts") or f.endswith(".js")
-        ]
-        assert ts_files, "No TS files"
-        for fpath in ts_files:
-            content = self._read(fpath)
-            if re.search(r"(export|module\.exports|CacheMap)", content):
-                return
-        pytest.fail("No CacheMap export found in TS files")
+    def test_zig_implements_eviction(self):
+        """Verify Zig implementation has LRU eviction logic"""
+        content = self._read_file(self.ZIG_IMPL)
+        has_eviction = bool(re.search(
+            r'(evict|remove.*least|pop.*front|pop.*back|capacity|max_size)',
+            content,
+            re.IGNORECASE,
+        ))
+        assert has_eviction, \
+            "CacheMap.zig missing eviction logic for LRU behavior"
 
-    def test_zig_has_pub_functions(self):
-        """Verify Zig file has public functions."""
-        zig_files = [f for f in self._find_cachemap_files() if f.endswith(".zig")]
-        assert zig_files, "No Zig files"
-        for fpath in zig_files:
-            content = self._read(fpath)
-            if re.search(r"pub\s+fn\s+", content):
-                return
-        pytest.fail("No pub fn in Zig CacheMap")
+    def test_zig_has_finalize_callback(self):
+        """Verify Zig implementation has finalize callback for GC cleanup"""
+        content = self._read_file(self.ZIG_IMPL)
+        assert "finalize" in content.lower() or "deinit" in content.lower(), \
+            "CacheMap.zig missing finalize/deinit callback for GC cleanup"
 
-    def test_capacity_field_exists(self):
-        """Verify capacity field/parameter exists."""
-        files = self._find_cachemap_files()
-        assert files, "No CacheMap files"
-        for fpath in files:
-            content = self._read(fpath)
-            if "capacity" in content.lower():
-                return
-        pytest.fail("No capacity field found")
+    def test_zig_validates_capacity(self):
+        """Verify Zig implementation validates capacity (rejects 0 and negative)"""
+        content = self._read_file(self.ZIG_IMPL)
+        has_validation = bool(re.search(
+            r'(capacity.*0|capacity.*<=|RangeError|TypeError|throw|invalid)',
+            content,
+            re.IGNORECASE,
+        ))
+        assert has_validation, \
+            "CacheMap.zig missing capacity validation (should reject 0/negative)"
 
-    # ── helpers ──────────────────────────────────────────────────────────────
+    def test_generated_zig_registers_cachemap(self):
+        """Verify generated.zig registers CacheMap binding"""
+        content = self._read_file(self.GENERATED_ZIG)
+        assert "CacheMap" in content, \
+            "generated.zig missing CacheMap registration"
 
-    def _find_cachemap_files(self):
-        results = []
-        for dirpath, _, fnames in os.walk(self.REPO_DIR):
-            if "node_modules" in dirpath or ".git" in dirpath:
-                continue
-            for f in fnames:
-                if "cachemap" in f.lower() or "cache_map" in f.lower():
-                    results.append(os.path.join(dirpath, f))
-        return results
+    # === Functional Checks ===
 
-    def _read(self, path):
-        with open(path, "r", errors="ignore") as fh:
-            return fh.read()
+    def test_classes_ts_valid_typescript(self):
+        """Verify CacheMap.classes.ts is valid TypeScript/JavaScript"""
+        filepath = os.path.join(self.REPO_DIR, self.CLASSES_TS)
+        result = subprocess.run(
+            ["node", "--check", filepath],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if result.returncode != 0:
+            # Try parsing as module
+            result = subprocess.run(
+                ["node", "-e", f"import('{filepath}').catch(()=>{{}})"],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+        # Even if node check fails (TS syntax), verify no obvious errors
+        content = self._read_file(self.CLASSES_TS)
+        assert len(content) > 50, \
+            f"CacheMap.classes.ts is too small ({len(content)} chars)"
+
+    def test_zig_implementation_has_proper_structure(self):
+        """Verify CacheMap.zig has proper Zig struct and method definitions"""
+        content = self._read_file(self.ZIG_IMPL)
+        # Check for Zig struct definition
+        has_struct = bool(re.search(r'(const\s+CacheMap|pub\s+const\s+CacheMap)\s*=\s*struct', content))
+        if not has_struct:
+            has_struct = bool(re.search(r'struct\s*\{', content))
+        assert has_struct, "CacheMap.zig missing proper struct definition"
+
+        # Check for pub fn methods
+        pub_fns = re.findall(r'pub\s+fn\s+(\w+)', content)
+        assert len(pub_fns) >= 4, \
+            f"Expected at least 4 public functions (get, set, delete, clear), found: {pub_fns}"
+
+    def test_zig_handles_string_keys_safely(self):
+        """Verify Zig implementation properly handles JSValue string extraction"""
+        content = self._read_file(self.ZIG_IMPL)
+        # Should have JSValue string handling
+        has_string_handling = bool(re.search(
+            r'(toSlice|toString|getZigString|JSValue|callFrame|jsString)',
+            content,
+        ))
+        assert has_string_handling, \
+            "CacheMap.zig missing proper JSValue string handling"

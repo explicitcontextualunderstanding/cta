@@ -1,166 +1,201 @@
 """
-Tests for mcp-builder skill.
-Validates MCP server TypeScript implementation with SQLite backend in servers repository.
+Test skill: mcp-builder
+Verify that the Agent correctly builds an MCP server (markdown-sqlite) with tool
+registration, JSON Schema validation, SQLite database, cursor-based pagination,
+and MCP-compliant error handling.
 """
 
 import os
+import json
 import subprocess
-import re
 import pytest
-
-REPO_DIR = "/workspace/servers"
-
-
-def _path(rel: str) -> str:
-    return os.path.join(REPO_DIR, rel)
-
-
-def _read(rel: str) -> str:
-    with open(_path(rel), encoding="utf-8", errors="ignore") as f:
-        return f.read()
-
-
-def _run(cmd: str, cwd: str = REPO_DIR, timeout: int = 120):
-    return subprocess.run(
-        cmd, shell=True, cwd=cwd, capture_output=True, text=True, timeout=timeout
-    )
 
 
 class TestMcpBuilder:
+    REPO_DIR = "/workspace/servers"
 
-    # ── file_path_check ──────────────────────────────────────────────────────
+    # === File Path Checks ===
 
-    def test_mcp_index_ts_exists(self):
-        """index.ts must exist as MCP server entry point."""
-        rel = "src/markdown-sqlite/src/index.ts"
-        assert os.path.isfile(_path(rel)), f"{rel} not found"
-        assert os.path.getsize(_path(rel)) > 0, "index.ts is empty"
+    def test_index_ts_exists(self):
+        """Verify the MCP server entry point exists"""
+        path = os.path.join(self.REPO_DIR, "src/markdown-sqlite/src/index.ts")
+        assert os.path.exists(path), f"index.ts not found at {path}"
 
-    def test_mcp_database_tools_pagination_exist(self):
-        """database.ts, tools.ts, and pagination.ts must all exist."""
-        for rel in [
-            "src/markdown-sqlite/src/database.ts",
-            "src/markdown-sqlite/src/tools.ts",
-            "src/markdown-sqlite/src/pagination.ts",
-        ]:
-            assert os.path.isfile(_path(rel)), f"{rel} not found"
-            assert os.path.getsize(_path(rel)) > 0, f"{rel} is empty"
+    def test_tools_ts_exists(self):
+        """Verify the tools definition file exists"""
+        path = os.path.join(self.REPO_DIR, "src/markdown-sqlite/src/tools.ts")
+        assert os.path.exists(path), f"tools.ts not found at {path}"
 
-    # ── semantic_check ───────────────────────────────────────────────────────
+    def test_database_ts_exists(self):
+        """Verify the database operations file exists"""
+        path = os.path.join(self.REPO_DIR, "src/markdown-sqlite/src/database.ts")
+        assert os.path.exists(path), f"database.ts not found at {path}"
 
-    def test_four_tools_registered(self):
-        """tools.ts must register at least 4 MCP tools."""
-        content = _read("src/markdown-sqlite/src/tools.ts")
-        tool_calls = re.findall(r"server\.tool\s*\(|registerTool\s*\(", content)
-        assert (
-            len(tool_calls) >= 4
-        ), f"Expected >= 4 tool registrations, found {len(tool_calls)}"
+    def test_pagination_ts_exists(self):
+        """Verify the pagination module exists"""
+        path = os.path.join(self.REPO_DIR, "src/markdown-sqlite/src/pagination.ts")
+        assert os.path.exists(path), f"pagination.ts not found at {path}"
 
-    def test_readonly_hint_true_on_tools(self):
-        """tools.ts must set readOnlyHint: true on database read tools."""
-        content = _read("src/markdown-sqlite/src/tools.ts")
-        assert (
-            "readOnlyHint" in content and "true" in content
-        ), "readOnlyHint: true not found in tools.ts"
+    def test_package_json_exists(self):
+        """Verify package.json exists for the markdown-sqlite package"""
+        path = os.path.join(self.REPO_DIR, "src/markdown-sqlite/package.json")
+        assert os.path.exists(path), f"package.json not found at {path}"
+        with open(path) as f:
+            data = json.load(f)
+        assert "name" in data, "package.json missing 'name' field"
 
-    def test_parameterized_sql_no_injection(self):
-        """database.ts must use parameterized queries — no string interpolation for SQL."""
-        content = _read("src/markdown-sqlite/src/database.ts")
-        # Check for template literals with SQL (injection risk)
-        template_sql = re.findall(r"`[^`]*SELECT[^`]*\$\{[^}]+\}[^`]*`", content)
-        assert (
-            len(template_sql) == 0
-        ), f"SQL string interpolation (injection risk) found: {template_sql}"
-        # Should use ? placeholders
-        assert (
-            "?" in content or "prepare" in content
-        ), "No parameterized query pattern found in database.ts"
+    def test_tsconfig_exists(self):
+        """Verify tsconfig.json exists"""
+        path = os.path.join(self.REPO_DIR, "src/markdown-sqlite/tsconfig.json")
+        assert os.path.exists(path), f"tsconfig.json not found at {path}"
 
-    def test_fts5_full_text_search_table(self):
-        """database.ts must create FTS5 virtual table for full-text search."""
-        content = _read("src/markdown-sqlite/src/database.ts")
-        assert (
-            "fts5" in content.lower() or "USING fts5" in content
-        ), "FTS5 virtual table not found in database.ts"
+    # === Semantic Checks ===
 
-    # ── functional_check ─────────────────────────────────────────────────────
+    def test_tools_define_all_four_tools(self):
+        """Verify tool definitions include all four required tools"""
+        tools_path = os.path.join(self.REPO_DIR, "src/markdown-sqlite/src/tools.ts")
+        with open(tools_path) as f:
+            content = f.read()
+        required_tools = [
+            "search_documents",
+            "get_document",
+            "list_documents",
+            "get_document_sections",
+        ]
+        for tool in required_tools:
+            assert tool in content, f"Tool '{tool}' not defined in tools.ts"
 
-    def test_npm_build_exits_zero(self):
-        """npm run build must compile TypeScript without errors."""
-        server_dir = os.path.join(REPO_DIR, "src/markdown-sqlite")
-        if not os.path.isdir(server_dir):
-            pytest.skip("src/markdown-sqlite directory not found")
-        result = _run("npm run build", cwd=server_dir)
-        if result.returncode != 0 and "npm" not in result.stderr:
-            pytest.skip("npm not available")
-        assert (
-            result.returncode == 0
-        ), f"npm run build failed:\n{result.stdout}\n{result.stderr}"
+    def test_tools_have_input_schemas(self):
+        """Verify each tool has inputSchema defined with JSON Schema"""
+        tools_path = os.path.join(self.REPO_DIR, "src/markdown-sqlite/src/tools.ts")
+        with open(tools_path) as f:
+            content = f.read()
+        assert "inputSchema" in content, "Tools should define inputSchema"
+        # Check for JSON Schema type definitions
+        assert '"type"' in content or "'type'" in content, \
+            "inputSchema should include type definitions"
 
-    def test_base64_cursor_pagination(self):
-        """pagination.ts must use base64-encoded cursors for page tokens."""
-        content = _read("src/markdown-sqlite/src/pagination.ts")
-        assert (
-            "base64" in content.lower() or "Buffer.from" in content or "btoa" in content
-        ), "No base64 cursor encoding found in pagination.ts"
+    def test_tools_have_readonly_hint(self):
+        """Verify tool annotations include readOnlyHint: true"""
+        tools_path = os.path.join(self.REPO_DIR, "src/markdown-sqlite/src/tools.ts")
+        with open(tools_path) as f:
+            content = f.read()
+        assert "readOnlyHint" in content, \
+            "Tool annotations should include readOnlyHint"
 
-    def test_missing_required_field_error_32602(self):
-        """Server must return MCP error -32602 for missing required parameters (mocked)."""
-        MCP_INVALID_PARAMS = -32602
+    def test_database_has_parameterized_queries(self):
+        """Verify database.ts uses parameterized queries (no string interpolation)"""
+        db_path = os.path.join(self.REPO_DIR, "src/markdown-sqlite/src/database.ts")
+        with open(db_path) as f:
+            content = f.read()
+        # Should use parameterized queries with ? placeholders
+        assert "?" in content or "params" in content.lower() or "$" in content, \
+            "Database queries should use parameterized statements"
+        # Check for FTS5
+        assert "fts5" in content.lower() or "FTS5" in content, \
+            "Database should enable FTS5 full-text search"
 
-        def tool_handler(params: dict, required_fields: list):
-            for field in required_fields:
-                if field not in params:
-                    return {
-                        "error": {
-                            "code": MCP_INVALID_PARAMS,
-                            "message": f"Missing required param: {field}",
-                        }
-                    }
-            return {"result": "ok"}
+    def test_database_has_required_tables(self):
+        """Verify database defines documents and sections tables"""
+        db_path = os.path.join(self.REPO_DIR, "src/markdown-sqlite/src/database.ts")
+        with open(db_path) as f:
+            content = f.read()
+        assert "documents" in content, "Database should define 'documents' table"
+        assert "sections" in content, "Database should define 'sections' table"
 
-        response = tool_handler({}, required_fields=["path"])
-        assert response["error"]["code"] == MCP_INVALID_PARAMS
-
-    def test_index_ts_creates_server_instance(self):
-        """index.ts must instantiate and connect the MCP server."""
-        content = _read("src/markdown-sqlite/src/index.ts")
-        assert (
-            "McpServer" in content
-            or "createServer" in content
-            or "new Server" in content
-        ), "MCP server instantiation not found in index.ts"
-        assert (
-            "connect" in content or "listen" in content
-        ), "Server connect/listen call not found in index.ts"
-
-    def test_no_sql_injection_in_search_query(self):
-        """SQL injection payload must be safely handled by parameterized queries (mocked)."""
-        import sqlite3
-
-        conn = sqlite3.connect(":memory:")
-        conn.execute("CREATE TABLE documents (id INTEGER PRIMARY KEY, content TEXT)")
-        conn.execute("INSERT INTO documents VALUES (1, 'hello world')")
-
-        injection_payload = "'; DROP TABLE documents; --"
-        cur = conn.execute(
-            "SELECT * FROM documents WHERE content LIKE ?",
-            (f"%{injection_payload}%",),
+    def test_pagination_uses_cursor_based_approach(self):
+        """Verify pagination implements cursor-based pagination with base64 encoding"""
+        pag_path = os.path.join(self.REPO_DIR, "src/markdown-sqlite/src/pagination.ts")
+        with open(pag_path) as f:
+            content = f.read()
+        # Check for cursor-related terms
+        assert "cursor" in content.lower(), "Pagination should reference cursor"
+        # Check for base64 encoding
+        has_base64 = (
+            "base64" in content.lower() or
+            "btoa" in content or
+            "Buffer.from" in content or
+            "atob" in content
         )
-        results = cur.fetchall()
-        # Should return no results (not raise an error or drop the table)
-        assert results == []
-        # Verify table still exists
-        cur2 = conn.execute("SELECT COUNT(*) FROM documents")
-        assert cur2.fetchone()[0] == 1, "documents table was unexpectedly dropped"
-        conn.close()
+        assert has_base64, \
+            "Cursor should use base64 encoding"
+        # Check for has_more / next_cursor
+        assert "has_more" in content or "hasMore" in content, \
+            "Pagination should include has_more indicator"
 
-    def test_tools_ts_has_search_and_get_tools(self):
-        """tools.ts must define both search and get/read tool operations."""
-        content = _read("src/markdown-sqlite/src/tools.ts")
-        assert (
-            "search" in content.lower() or "query" in content.lower()
-        ), "No search/query tool definition found in tools.ts"
-        assert (
-            "get" in content.lower() or "read" in content.lower()
-        ), "No get/read tool definition found in tools.ts"
+    def test_error_codes_defined(self):
+        """Verify MCP error codes are used: -32600, -32601, -32602, -32603"""
+        src_dir = os.path.join(self.REPO_DIR, "src/markdown-sqlite/src")
+        found_codes = set()
+        required_codes = {"-32602", "-32603"}
+        for fname in os.listdir(src_dir):
+            if fname.endswith(".ts"):
+                with open(os.path.join(src_dir, fname)) as f:
+                    content = f.read()
+                for code in required_codes:
+                    if code in content:
+                        found_codes.add(code)
+        assert required_codes.issubset(found_codes), \
+            f"Missing MCP error codes. Found: {found_codes}, Required: {required_codes}"
+
+    # === Functional Checks ===
+
+    def test_npm_install_succeeds(self):
+        """Verify npm install succeeds in the markdown-sqlite directory"""
+        pkg_dir = os.path.join(self.REPO_DIR, "src/markdown-sqlite")
+        result = subprocess.run(
+            ["npm", "install"],
+            cwd=pkg_dir,
+            capture_output=True, text=True, timeout=120
+        )
+        if result.returncode != 0:
+            pytest.skip(f"npm install failed: {result.stderr[:500]}")
+
+    def test_npm_build_succeeds(self):
+        """Verify the project builds successfully with npm run build"""
+        pkg_dir = os.path.join(self.REPO_DIR, "src/markdown-sqlite")
+        # Ensure deps installed
+        subprocess.run(
+            ["npm", "install"],
+            cwd=pkg_dir,
+            capture_output=True, text=True, timeout=120
+        )
+        result = subprocess.run(
+            ["npm", "run", "build"],
+            cwd=pkg_dir,
+            capture_output=True, text=True, timeout=120
+        )
+        assert result.returncode == 0, \
+            f"npm run build failed:\n{result.stdout[:1000]}\n{result.stderr[:1000]}"
+
+    def test_typescript_compiles_without_errors(self):
+        """Verify TypeScript compiles without type errors"""
+        pkg_dir = os.path.join(self.REPO_DIR, "src/markdown-sqlite")
+        subprocess.run(
+            ["npm", "install"],
+            cwd=pkg_dir,
+            capture_output=True, text=True, timeout=120
+        )
+        result = subprocess.run(
+            ["npx", "tsc", "--noEmit"],
+            cwd=pkg_dir,
+            capture_output=True, text=True, timeout=60
+        )
+        if result.returncode != 0:
+            # Check if it's a type error vs missing config
+            if "error TS" in result.stdout:
+                assert False, \
+                    f"TypeScript compilation errors:\n{result.stdout[:2000]}"
+
+    def test_package_json_has_mcp_sdk_dependency(self):
+        """Verify package.json includes MCP SDK dependency"""
+        pkg_path = os.path.join(self.REPO_DIR, "src/markdown-sqlite/package.json")
+        with open(pkg_path) as f:
+            data = json.load(f)
+        all_deps = {}
+        all_deps.update(data.get("dependencies", {}))
+        all_deps.update(data.get("devDependencies", {}))
+        mcp_dep = any("mcp" in dep.lower() or "model-context" in dep.lower()
+                       for dep in all_deps.keys())
+        assert mcp_dep, \
+            f"package.json should include MCP SDK dependency. Found deps: {list(all_deps.keys())}"

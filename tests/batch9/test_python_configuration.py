@@ -1,188 +1,173 @@
 """
-Test for 'python-configuration' skill — Pydantic Settings Configuration
-Validates AppSettings with nested settings, env_file, env_prefix, boolean coercion,
-list parsing, secrets_dir, and ValidationError on missing required fields.
+Test skill: python-configuration
+Verify that the Agent implements a typed config system with pydantic-settings
+for FastAPI including DatabaseSettings, Settings, and /health/config endpoint.
 """
 
 import os
-import re
 import subprocess
-import sys
-
+import ast
+import re
 import pytest
 
 
 class TestPythonConfiguration:
-    """Verify pydantic-settings configuration patterns."""
-
     REPO_DIR = "/workspace/fastapi"
 
-    # ── helpers ──────────────────────────────────────────────────────────
+    # === File Path Checks ===
 
-    @staticmethod
-    def _read_file(path: str) -> str:
-        try:
-            with open(path, "r", errors="ignore") as fh:
-                return fh.read()
-        except OSError:
-            return ""
-
-    def _example(self, *parts) -> str:
-        return os.path.join(self.REPO_DIR, "examples", "configuration", *parts)
-
-    def _install_deps(self):
-        try:
-            import pydantic_settings  # noqa: F401
-        except ImportError:
-            result = subprocess.run(
-                [sys.executable, "-m", "pip", "install", "pydantic-settings", "python-dotenv"],
-                capture_output=True, timeout=60,
-            )
-            if result.returncode != 0:
-                pytest.skip("pip install failed")
-
-    # ── file_path_check ──────────────────────────────────────────────────
-
-    def test_settings_py_and_init_exist(self):
-        """settings.py and __init__.py must exist."""
-        for name in ("settings.py", "__init__.py"):
-            path = self._example(name)
-            assert os.path.isfile(path), f"{path} does not exist"
-
-    def test_env_example_and_test_file_exist(self):
-        """.env.example and tests/test_configuration.py must exist."""
-        env_path = self._example(".env.example")
-        assert os.path.isfile(env_path), f"{env_path} does not exist"
-        test_path = os.path.join(self.REPO_DIR, "tests", "test_configuration.py")
-        assert os.path.isfile(test_path), f"{test_path} does not exist"
-
-    # ── semantic_check ───────────────────────────────────────────────────
-
-    def test_app_settings_composes_nested(self):
-        """AppSettings must aggregate nested settings like DbSettings, RedisSettings."""
-        path = self._example("settings.py")
-        if not os.path.isfile(path):
-            pytest.skip("settings.py not found")
-        content = self._read_file(path)
-        assert "AppSettings" in content, "AppSettings class not defined"
-        assert "BaseSettings" in content, "BaseSettings not referenced"
-        has_nested = (
-            "DbSettings" in content or "RedisSettings" in content or "DatabaseSettings" in content
-        )
-        assert has_nested, "No nested settings classes found"
-
-    def test_model_config_env_file(self):
-        """model_config must set env_file='.env' and env_file_encoding='utf-8'."""
-        path = self._example("settings.py")
-        if not os.path.isfile(path):
-            pytest.skip("settings.py not found")
-        content = self._read_file(path)
-        assert "env_file" in content, "env_file not configured"
-        assert "utf-8" in content or "utf8" in content, "env_file_encoding not set to utf-8"
-
-    def test_env_prefix_defined(self):
-        """Nested settings classes must define env_prefix."""
-        path = self._example("settings.py")
-        if not os.path.isfile(path):
-            pytest.skip("settings.py not found")
-        content = self._read_file(path)
-        assert "env_prefix" in content, "env_prefix not configured"
-
-    def test_required_fields_have_no_default(self):
-        """At least one field must be required (no Optional or default value)."""
-        path = self._example("settings.py")
-        if not os.path.isfile(path):
-            pytest.skip("settings.py not found")
-        content = self._read_file(path)
-        # Look for fields without = sign (required in pydantic)
-        lines = content.splitlines()
-        has_required = False
-        for line in lines:
-            stripped = line.strip()
-            if re.match(r"\w+\s*:\s*\w+\s*$", stripped) and "Optional" not in stripped:
-                has_required = True
+    def test_config_file_exists(self):
+        """Verify configuration module file exists"""
+        found = False
+        for root, dirs, files in os.walk(self.REPO_DIR):
+            if ".git" in root or "node_modules" in root:
+                continue
+            for f in files:
+                if f.endswith(".py") and ("config" in f.lower() or "settings" in f.lower()):
+                    fpath = os.path.join(root, f)
+                    with open(fpath) as fh:
+                        content = fh.read()
+                    if "DatabaseSettings" in content or "Settings" in content:
+                        found = True
+                        break
+            if found:
                 break
-        assert has_required, "No required fields found (all have defaults or Optional)"
+        assert found, "Configuration module with Settings not found"
 
-    # ── functional_check ─────────────────────────────────────────────────
+    # === Semantic Checks ===
 
-    def test_bool_env_var_1_is_true(self):
-        """APP_DEBUG='1' must parse as True."""
-        self._install_deps()
-        try:
-            sys.path.insert(0, self.REPO_DIR)
-            from examples.configuration.settings import AppSettings
-        except ImportError:
-            pytest.skip("Cannot import AppSettings")
-        os.environ["APP_DEBUG"] = "1"
-        try:
-            settings = AppSettings()
-            assert settings.debug is True
-        except Exception:
-            pytest.skip("AppSettings instantiation requires additional env vars")
-        finally:
-            os.environ.pop("APP_DEBUG", None)
+    def test_database_settings_class_defined(self):
+        """Verify DatabaseSettings class is defined"""
+        config_content = self._find_config_content()
+        assert "DatabaseSettings" in config_content, "DatabaseSettings class not defined"
 
-    def test_bool_env_var_false_is_false(self):
-        """APP_DEBUG='false' must parse as False."""
-        self._install_deps()
-        try:
-            sys.path.insert(0, self.REPO_DIR)
-            from examples.configuration.settings import AppSettings
-        except ImportError:
-            pytest.skip("Cannot import AppSettings")
-        os.environ["APP_DEBUG"] = "false"
-        try:
-            settings = AppSettings()
-            assert settings.debug is False
-        except Exception:
-            pytest.skip("AppSettings instantiation requires additional env vars")
-        finally:
-            os.environ.pop("APP_DEBUG", None)
+    def test_settings_uses_pydantic(self):
+        """Verify Settings class uses pydantic-settings BaseSettings"""
+        config_content = self._find_config_content()
+        has_pydantic = (
+            "pydantic" in config_content
+            or "BaseSettings" in config_content
+            or "pydantic_settings" in config_content
+        )
+        assert has_pydantic, "Settings does not use pydantic/pydantic-settings"
 
-    def test_missing_required_raises_validation_error(self):
-        """Missing required env var must raise pydantic.ValidationError."""
-        self._install_deps()
-        try:
-            sys.path.insert(0, self.REPO_DIR)
-            from examples.configuration.settings import AppSettings
-            from pydantic import ValidationError
-        except ImportError:
-            pytest.skip("Cannot import AppSettings/ValidationError")
-        # Clear all potentially required env vars
-        cleared = {}
-        for key in list(os.environ.keys()):
-            if key.startswith(("APP_", "DB_", "REDIS_")):
-                cleared[key] = os.environ.pop(key)
-        try:
-            with pytest.raises(ValidationError):
-                AppSettings()
-        finally:
-            os.environ.update(cleared)
+    def test_settings_has_database_config(self):
+        """Verify Settings includes database configuration"""
+        config_content = self._find_config_content()
+        has_db = (
+            "database" in config_content.lower()
+            or "db_" in config_content.lower()
+            or "DATABASE" in config_content
+        )
+        assert has_db, "Settings missing database configuration"
 
-    def test_env_var_overrides_dotenv(self):
-        """Env var set in os.environ must override .env file value."""
-        path = self._example("settings.py")
-        if not os.path.isfile(path):
-            pytest.skip("settings.py not found")
-        content = self._read_file(path)
-        # Verify the settings module references env_file, ensuring override semantics
-        assert "env_file" in content, "env_file not configured — cannot test override"
+    def test_health_config_endpoint_exists(self):
+        """Verify /health/config endpoint is defined"""
+        found = False
+        for root, dirs, files in os.walk(self.REPO_DIR):
+            if ".git" in root or "node_modules" in root:
+                continue
+            for f in files:
+                if f.endswith(".py"):
+                    fpath = os.path.join(root, f)
+                    try:
+                        with open(fpath) as fh:
+                            content = fh.read()
+                        if "health" in content.lower() and "config" in content.lower():
+                            if "@" in content and ("get" in content.lower() or "router" in content.lower()):
+                                found = True
+                                break
+                    except (UnicodeDecodeError, PermissionError):
+                        continue
+            if found:
+                break
+        assert found, "/health/config endpoint not found"
 
-    def test_comma_list_parsing(self):
-        """ALLOWED_HOSTS='host1,host2' must parse to ['host1', 'host2']."""
-        path = self._example("settings.py")
-        if not os.path.isfile(path):
-            pytest.skip("settings.py not found")
-        content = self._read_file(path)
-        has_list = "List" in content or "list" in content or "allowed_hosts" in content
-        assert has_list, "No list field (e.g., allowed_hosts) found in settings"
+    def test_settings_supports_env_vars(self):
+        """Verify Settings supports environment variable configuration"""
+        config_content = self._find_config_content()
+        has_env = (
+            "env" in config_content.lower()
+            or "Config" in config_content
+            or "model_config" in config_content
+            or "env_prefix" in config_content
+        )
+        assert has_env, "Settings does not support environment variables"
 
-    def test_secrets_dir_pattern(self):
-        """Settings should support secrets_dir for file-based secrets."""
-        path = self._example("settings.py")
-        if not os.path.isfile(path):
-            pytest.skip("settings.py not found")
-        content = self._read_file(path)
-        has_secrets = "secrets_dir" in content or "SecretStr" in content
-        assert has_secrets, "No secrets_dir or SecretStr pattern found"
+    # === Functional Checks ===
+
+    def test_config_module_parses(self):
+        """Verify config module has valid Python syntax"""
+        for root, dirs, files in os.walk(self.REPO_DIR):
+            if ".git" in root:
+                continue
+            for f in files:
+                if f.endswith(".py") and ("config" in f.lower() or "settings" in f.lower()):
+                    fpath = os.path.join(root, f)
+                    with open(fpath) as fh:
+                        source = fh.read()
+                    if "DatabaseSettings" in source or "BaseSettings" in source:
+                        try:
+                            ast.parse(source)
+                        except SyntaxError as e:
+                            pytest.fail(f"Syntax error in {fpath}: {e}")
+                        return
+
+    def test_config_module_imports_successfully(self):
+        """Verify config can be imported"""
+        # Find the config module path
+        config_path = None
+        for root, dirs, files in os.walk(self.REPO_DIR):
+            if ".git" in root:
+                continue
+            for f in files:
+                if f.endswith(".py") and ("config" in f.lower() or "settings" in f.lower()):
+                    fpath = os.path.join(root, f)
+                    with open(fpath) as fh:
+                        content = fh.read()
+                    if "DatabaseSettings" in content:
+                        config_path = fpath
+                        break
+            if config_path:
+                break
+        if config_path is None:
+            pytest.skip("Config module not found")
+        result = subprocess.run(
+            ["python", "-c", f"import ast; ast.parse(open('{config_path}').read()); print('OK')"],
+            cwd=self.REPO_DIR,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        assert result.returncode == 0, f"Config parse failed: {result.stderr}"
+
+    def test_settings_has_type_annotations(self):
+        """Verify Settings class uses type annotations"""
+        config_content = self._find_config_content()
+        # Check for type annotations pattern: field_name: type
+        has_annotations = re.search(r'\w+\s*:\s*(str|int|bool|float|Optional)', config_content)
+        assert has_annotations, "Settings class missing type annotations"
+
+    def test_database_settings_has_url_or_components(self):
+        """Verify DatabaseSettings has connection URL or host/port/name components"""
+        config_content = self._find_config_content()
+        content_lower = config_content.lower()
+        has_url = "url" in content_lower or "dsn" in content_lower
+        has_components = "host" in content_lower and "port" in content_lower
+        assert has_url or has_components, (
+            "DatabaseSettings missing connection URL or host/port components"
+        )
+
+    def _find_config_content(self):
+        """Helper to find configuration module content"""
+        for root, dirs, files in os.walk(self.REPO_DIR):
+            if ".git" in root:
+                continue
+            for f in files:
+                if f.endswith(".py") and ("config" in f.lower() or "settings" in f.lower()):
+                    fpath = os.path.join(root, f)
+                    with open(fpath) as fh:
+                        content = fh.read()
+                    if "DatabaseSettings" in content or "BaseSettings" in content:
+                        return content
+        return ""

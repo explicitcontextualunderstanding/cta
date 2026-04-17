@@ -1,138 +1,150 @@
 """
-Test for 'llm-evaluation' skill — LLM Quality Evaluator
-Validates that the Agent created a Python module for evaluating LLM outputs
-with judge functions, pass counts, error handling, and per-sample results.
+Tests for the llm-evaluation skill.
+Validates an evaluation framework for LLM output quality in HELM with
+automated metrics, LLM-as-judge, regression detection, and suite orchestration.
 """
 
 import os
 import re
-import sys
+import ast
 
-import pytest
+REPO_DIR = "/workspace/helm"
+METRICS_DIR = os.path.join(REPO_DIR, "src", "helm", "benchmark", "metrics")
 
 
 class TestLlmEvaluation:
-    """Verify LLM evaluation module implementation."""
+    """Tests for the HELM LLM evaluation framework."""
 
-    REPO_DIR = "/workspace/helm"
+    # ── file_path_check ──────────────────────────────────────────────
 
-    @staticmethod
-    def _read(path: str) -> str:
-        try:
-            with open(path, "r", errors="ignore") as fh:
-                return fh.read()
-        except OSError:
+    def test_quality_evaluator_exists(self):
+        """QualityEvaluator module must exist."""
+        path = os.path.join(METRICS_DIR, "quality_evaluator.py")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    def test_llm_judge_exists(self):
+        """LLMJudge module must exist."""
+        path = os.path.join(METRICS_DIR, "llm_judge.py")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    def test_regression_detector_exists(self):
+        """RegressionDetector module must exist."""
+        path = os.path.join(METRICS_DIR, "regression_detector.py")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    def test_evaluation_suite_exists(self):
+        """EvaluationSuite module must exist."""
+        path = os.path.join(METRICS_DIR, "evaluation_suite.py")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    # ── semantic_check ───────────────────────────────────────────────
+
+    def _read(self, filename):
+        path = os.path.join(METRICS_DIR, filename)
+        if not os.path.isfile(path):
             return ""
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read()
 
-    # ── file_path_check ─────────────────────────────────────────────
+    def test_quality_evaluator_class(self):
+        """QualityEvaluator must define evaluate and evaluate_batch methods."""
+        content = self._read("quality_evaluator.py")
+        assert re.search(r"class\s+QualityEvaluator", content), (
+            "QualityEvaluator class not defined"
+        )
+        assert re.search(r"def\s+evaluate\b", content), "evaluate method not defined"
+        assert re.search(r"def\s+evaluate_batch\b", content), "evaluate_batch method not defined"
 
-    def test_llm_evaluation_package_exists(self):
-        """Verify __init__.py and judge.py exist under src/llm_evaluation/."""
-        for rel in ("src/llm_evaluation/__init__.py", "src/llm_evaluation/judge.py"):
-            path = os.path.join(self.REPO_DIR, rel)
-            assert os.path.isfile(path), f"Missing: {rel}"
+    def test_metric_implementations(self):
+        """QualityEvaluator must implement exact_match, bleu, rouge_l, f1."""
+        content = self._read("quality_evaluator.py")
+        for metric in ["exact_match", "bleu", "rouge_l", "f1"]:
+            assert metric in content, f"Metric '{metric}' implementation not found"
 
-    def test_evaluator_suite_models_exist(self):
-        """Verify evaluator.py, suite.py, and models.py exist."""
-        for rel in ("src/llm_evaluation/evaluator.py", "src/llm_evaluation/suite.py",
-                     "src/llm_evaluation/models.py"):
-            path = os.path.join(self.REPO_DIR, rel)
-            assert os.path.isfile(path), f"Missing: {rel}"
+    def test_custom_metric_registration(self):
+        """QualityEvaluator must support custom metric registration."""
+        content = self._read("quality_evaluator.py")
+        assert re.search(r"def\s+register_metric\b", content), (
+            "register_metric method not defined"
+        )
 
-    def test_classes_importable(self):
-        """LLMJudge, QualityEvaluator, EvaluationSuite are importable."""
-        if not os.path.isdir(self.REPO_DIR):
-            pytest.skip("Repo dir does not exist")
-        sys.path.insert(0, os.path.join(self.REPO_DIR, "src"))
-        try:
-            from llm_evaluation.judge import LLMJudge  # noqa: F401
-            from llm_evaluation.evaluator import QualityEvaluator  # noqa: F401
-            from llm_evaluation.suite import EvaluationSuite  # noqa: F401
-        except ImportError:
-            pytest.skip("llm_evaluation not importable")
-        finally:
-            sys.path.pop(0)
+    def test_llm_judge_class(self):
+        """LLMJudge must define score_pointwise and compare_pairwise methods."""
+        content = self._read("llm_judge.py")
+        assert re.search(r"class\s+LLMJudge", content), "LLMJudge class not defined"
+        assert re.search(r"def\s+score_pointwise\b", content), "score_pointwise not defined"
+        assert re.search(r"def\s+compare_pairwise\b", content), "compare_pairwise not defined"
 
-    # ── semantic_check ──────────────────────────────────────────────
+    def test_judge_dimensions(self):
+        """LLMJudge must use accuracy, coherence, relevance, helpfulness dimensions."""
+        content = self._read("llm_judge.py")
+        for dim in ["accuracy", "coherence", "relevance", "helpfulness"]:
+            assert dim in content, f"Dimension '{dim}' not found in LLMJudge"
 
-    def test_judgement_result_and_evaluation_report_models(self):
-        """Verify models.py defines JudgementResult, EvaluationReport, avg_score, per_sample_results."""
-        content = self._read(os.path.join(self.REPO_DIR, "src/llm_evaluation/models.py"))
-        assert content, "models.py is empty or unreadable"
-        for field in ("JudgementResult", "EvaluationReport", "avg_score", "per_sample_results"):
-            assert field in content, f"'{field}' not found in models.py"
+    def test_regression_detector_class(self):
+        """RegressionDetector must define compare method with t-test."""
+        content = self._read("regression_detector.py")
+        assert re.search(r"class\s+RegressionDetector", content), (
+            "RegressionDetector class not defined"
+        )
+        assert re.search(r"def\s+compare\b", content), "compare method not defined"
+        assert re.search(r"t.test|ttest|scipy.*stats", content, re.IGNORECASE), (
+            "Paired t-test not found in regression detector"
+        )
 
-    def test_pass_count_threshold_configurable(self):
-        """Verify evaluator.py implements pass_count with configurable threshold."""
-        content = self._read(os.path.join(self.REPO_DIR, "src/llm_evaluation/evaluator.py"))
-        assert content, "evaluator.py is empty or unreadable"
-        assert "pass_count" in content, "'pass_count' not found"
-        assert "threshold" in content, "'threshold' not found"
+    def test_evaluation_suite_class(self):
+        """EvaluationSuite must define run method orchestrating evaluators."""
+        content = self._read("evaluation_suite.py")
+        assert re.search(r"class\s+EvaluationSuite", content), (
+            "EvaluationSuite class not defined"
+        )
+        assert re.search(r"def\s+run\b", content), "run method not defined"
 
-    def test_exception_handling_in_evaluator(self):
-        """Verify evaluator.py handles judge_fn exceptions gracefully."""
-        content = self._read(os.path.join(self.REPO_DIR, "src/llm_evaluation/evaluator.py"))
-        assert content, "evaluator.py is empty or unreadable"
-        found = any(kw in content for kw in ("try:", "except", "Exception"))
-        assert found, "No exception handling found in evaluator.py"
+    # ── functional_check ─────────────────────────────────────────────
 
-    # ── functional_check (import) ───────────────────────────────────
+    def test_all_files_valid_python(self):
+        """All evaluation Python files must have valid syntax."""
+        errors = []
+        for fname in ["quality_evaluator.py", "llm_judge.py",
+                       "regression_detector.py", "evaluation_suite.py"]:
+            content = self._read(fname)
+            if not content:
+                continue
+            try:
+                ast.parse(content)
+            except SyntaxError as e:
+                errors.append(f"{fname}: {e}")
+        assert not errors, "Syntax errors:\n" + "\n".join(errors)
 
-    def _import(self, dotpath: str):
-        if not os.path.isdir(self.REPO_DIR):
-            pytest.skip("Repo dir does not exist")
-        sys.path.insert(0, os.path.join(self.REPO_DIR, "src"))
-        try:
-            return __import__(dotpath, fromlist=[""])
-        except ImportError:
-            pytest.skip(f"{dotpath} not importable")
-        finally:
-            sys.path.pop(0)
+    def test_bleu_brevity_penalty(self):
+        """BLEU implementation must include brevity penalty."""
+        content = self._read("quality_evaluator.py")
+        assert re.search(r"brevity|penalty|bp|exp\(|min\(", content, re.IGNORECASE), (
+            "BLEU brevity penalty not found"
+        )
 
-    def test_single_sample_avg_score(self):
-        """Single sample with mock_judge returning 0.8 produces avg_score=0.8."""
-        mod = self._import("llm_evaluation.evaluator")
-        mock_judge = lambda q, a, r: 0.8
-        report = mod.QualityEvaluator().evaluate(
-            [{"q": "hi", "a": "hello", "rubric": {}}], mock_judge)
-        assert report.avg_score == 0.8
+    def test_rouge_l_lcs(self):
+        """ROUGE-L must use longest common subsequence."""
+        content = self._read("quality_evaluator.py")
+        assert re.search(r"lcs|longest.common|subsequence", content, re.IGNORECASE), (
+            "Longest common subsequence not found for ROUGE-L"
+        )
 
-    def test_empty_dataset_returns_zeros(self):
-        """evaluate([]) returns avg_score=0.0 and pass_count=0."""
-        mod = self._import("llm_evaluation.evaluator")
-        report = mod.QualityEvaluator().evaluate([], lambda q, a, r: 0.5)
-        assert report.avg_score == 0.0
-        assert report.pass_count == 0
+    def test_json_parse_error_handling(self):
+        """LLMJudge must handle malformed JSON from judge responses."""
+        content = self._read("llm_judge.py")
+        assert re.search(r"parse_error|JSONDecodeError|json\.loads|except", content), (
+            "JSON parse error handling not found in LLMJudge"
+        )
 
-    def test_pass_count_at_threshold(self):
-        """Scores [0.5, 0.8, 0.9] with threshold=0.7 produce pass_count=2."""
-        mod = self._import("llm_evaluation.evaluator")
-        scores = [0.5, 0.8, 0.9]
-        idx = {"i": 0}
+    def test_regression_significance_level(self):
+        """RegressionDetector must use configurable significance level."""
+        content = self._read("regression_detector.py")
+        assert re.search(r"significance|p_value|alpha|0\.05", content), (
+            "Significance level configuration not found"
+        )
 
-        def judge(q, a, r):
-            s = scores[idx["i"]]
-            idx["i"] += 1
-            return s
-
-        report = mod.QualityEvaluator(threshold=0.7).evaluate(
-            [{"q": "q", "a": "a", "rubric": {}} for _ in scores], judge)
-        assert report.pass_count == 2
-
-    def test_failing_judge_marks_sample_score_zero(self):
-        """When judge_fn raises, the sample is scored 0.0."""
-        mod = self._import("llm_evaluation.evaluator")
-
-        def bad_judge(q, a, r):
-            raise ValueError("API error")
-
-        report = mod.QualityEvaluator().evaluate(
-            [{"q": "q", "a": "a", "rubric": {}}], bad_judge)
-        assert report.per_sample_results[0].score == 0.0
-
-    def test_per_sample_results_count_matches_dataset(self):
-        """len(report.per_sample_results) equals number of dataset samples."""
-        mod = self._import("llm_evaluation.evaluator")
-        dataset = [{"q": str(i), "a": "a", "rubric": {}} for i in range(5)]
-        report = mod.QualityEvaluator().evaluate(dataset, lambda q, a, r: 1.0)
-        assert len(report.per_sample_results) == 5
+    def test_test_file_exists(self):
+        """Test suite file must exist."""
+        path = os.path.join(REPO_DIR, "tests", "test_llm_evaluation.py")
+        assert os.path.isfile(path), f"Missing {path}"

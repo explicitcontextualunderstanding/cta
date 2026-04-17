@@ -1,121 +1,172 @@
 """
-Test for 'python-background-jobs' skill — Celery Background Jobs
-Validates that the Agent implemented Celery task modules with retry logic,
-queue routing, JSON serialization security, and exponential backoff.
+Tests for the python-background-jobs skill.
+Validates a scheduled report generation pipeline using Celery with
+task chaining, state management, cancellation, retries, and an API layer.
 """
 
 import os
 import re
-import sys
+import ast
+import subprocess
 
-import pytest
+REPO_DIR = "/workspace/celery"
+PIPELINE_DIR = os.path.join(REPO_DIR, "examples", "report_pipeline")
 
 
 class TestPythonBackgroundJobs:
-    """Verify Celery background jobs implementation."""
+    """Tests for the Celery report pipeline example."""
 
-    REPO_DIR = "/workspace/celery"
+    # ── file_path_check ──────────────────────────────────────────────
 
-    @staticmethod
-    def _read(path: str) -> str:
-        try:
-            with open(path, "r", errors="ignore") as fh:
-                return fh.read()
-        except OSError:
+    def test_app_file_exists(self):
+        """Celery application instance file must exist."""
+        path = os.path.join(PIPELINE_DIR, "app.py")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    def test_tasks_file_exists(self):
+        """Task definitions file must exist."""
+        path = os.path.join(PIPELINE_DIR, "tasks.py")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    def test_models_file_exists(self):
+        """ReportJob model file must exist."""
+        path = os.path.join(PIPELINE_DIR, "models.py")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    def test_store_file_exists(self):
+        """Job store file must exist."""
+        path = os.path.join(PIPELINE_DIR, "store.py")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    def test_api_file_exists(self):
+        """API endpoints file must exist."""
+        path = os.path.join(PIPELINE_DIR, "api.py")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    # ── semantic_check ───────────────────────────────────────────────
+
+    def _read(self, filename):
+        path = os.path.join(PIPELINE_DIR, filename)
+        if not os.path.isfile(path):
             return ""
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read()
 
-    # ── file_path_check ─────────────────────────────────────────────
+    def test_four_task_stages_defined(self):
+        """Tasks file must define collect_data, aggregate_data, format_report, send_report."""
+        content = self._read("tasks.py")
+        for fn in ["collect_data", "aggregate_data", "format_report", "send_report"]:
+            assert re.search(rf"def\s+{fn}\b", content), (
+                f"Task function {fn} not defined in tasks.py"
+            )
 
-    def test_tasks_package_and_pipeline_exist(self):
-        """Verify tasks/__init__.py and tasks/pipeline.py exist."""
-        for rel in ("tasks/__init__.py", "tasks/pipeline.py"):
-            path = os.path.join(self.REPO_DIR, rel)
-            assert os.path.isfile(path), f"Missing: {rel}"
+    def test_celery_chain_usage(self):
+        """Pipeline must use Celery's chain primitive to link stages."""
+        content = self._read("tasks.py") + self._read("api.py") + self._read("app.py")
+        assert re.search(r"from\s+celery\b.*import.*chain|celery\.chain|chain\(", content), (
+            "Celery chain primitive not used"
+        )
 
-    def test_workers_and_config_exist(self):
-        """Verify tasks/workers.py and tasks/config.py exist."""
-        for rel in ("tasks/workers.py", "tasks/config.py"):
-            path = os.path.join(self.REPO_DIR, rel)
-            assert os.path.isfile(path), f"Missing: {rel}"
+    def test_report_job_states(self):
+        """ReportJob must define all required state values."""
+        content = self._read("models.py")
+        required_states = ["PENDING", "COLLECTING", "AGGREGATING", "FORMATTING", "SENDING",
+                           "COMPLETED", "FAILED", "CANCELLED"]
+        for state in required_states:
+            assert state in content, f"State {state} not defined in models.py"
 
-    # ── semantic_check ──────────────────────────────────────────────
+    def test_report_job_fields(self):
+        """ReportJob must have required fields: id, status, created_at, stages_completed."""
+        content = self._read("models.py")
+        for field in ["id", "status", "created_at", "stages_completed"]:
+            assert field in content, f"Field '{field}' not found in ReportJob model"
 
-    def test_task_serializer_is_json(self):
-        """Verify CeleryConfig.task_serializer='json' (not pickle) for security."""
-        content = self._read(os.path.join(self.REPO_DIR, "tasks/config.py"))
-        assert content, "tasks/config.py is empty or unreadable"
-        assert "task_serializer" in content, "task_serializer not found"
-        assert "'json'" in content or '"json"' in content, \
-            "task_serializer must be set to 'json'"
+    def test_retry_configuration_on_collect_data(self):
+        """collect_data must configure retries for ConnectionError/TimeoutError."""
+        content = self._read("tasks.py")
+        assert re.search(r"retry|autoretry|max_retries|retry_backoff", content), (
+            "No retry configuration found in tasks.py"
+        )
+        assert re.search(r"ConnectionError|TimeoutError", content), (
+            "ConnectionError/TimeoutError not referenced for retry logic"
+        )
 
-    def test_data_processor_retry_config(self):
-        """Verify DataProcessor has autoretry_for=(TransientError,) and max_retries=3."""
-        content = self._read(os.path.join(self.REPO_DIR, "tasks/workers.py"))
-        assert content, "tasks/workers.py is empty or unreadable"
-        for kw in ("autoretry_for", "TransientError", "max_retries"):
-            assert kw in content, f"'{kw}' not found in tasks/workers.py"
+    def test_cancellation_check_in_tasks(self):
+        """Tasks must check for CANCELLED status before executing."""
+        content = self._read("tasks.py")
+        assert re.search(r"CANCELLED|cancelled|cancel", content, re.IGNORECASE), (
+            "Cancellation check not found in tasks.py"
+        )
 
-    def test_notification_worker_queue_routing(self):
-        """Verify NotificationWorker routed to 'notifications' queue."""
-        content = self._read(os.path.join(self.REPO_DIR, "tasks/workers.py"))
-        assert content, "tasks/workers.py is empty or unreadable"
-        assert "notifications" in content, "'notifications' queue not found"
-        assert "queue" in content, "'queue' keyword not found"
+    def test_idempotency_check(self):
+        """Tasks must check stages_completed for idempotency."""
+        content = self._read("tasks.py")
+        assert re.search(r"stages_completed|already.completed|idempoten", content, re.IGNORECASE), (
+            "Idempotency check (stages_completed) not found in tasks.py"
+        )
+
+    # ── functional_check ─────────────────────────────────────────────
+
+    def test_all_files_valid_python(self):
+        """All pipeline Python files must have valid syntax."""
+        errors = []
+        for fname in ["app.py", "tasks.py", "models.py", "store.py", "api.py"]:
+            content = self._read(fname)
+            if not content:
+                continue
+            try:
+                ast.parse(content)
+            except SyntaxError as e:
+                errors.append(f"{fname}: {e}")
+        assert not errors, f"Syntax errors found:\n" + "\n".join(errors)
+
+    def test_api_post_reports_endpoint(self):
+        """API must define POST /reports endpoint returning 202."""
+        content = self._read("api.py")
+        assert re.search(r'"/reports"|/reports|post.*report', content, re.IGNORECASE), (
+            "POST /reports endpoint not found in api.py"
+        )
+        assert "202" in content, "HTTP 202 status not found for POST /reports"
+
+    def test_api_get_reports_status_endpoint(self):
+        """API must define GET /reports/{id} for polling status."""
+        content = self._read("api.py")
+        assert re.search(r'"/reports/.*id|GET.*reports|get.*report', content, re.IGNORECASE), (
+            "GET /reports/{id} endpoint not found in api.py"
+        )
+
+    def test_api_cancel_endpoint(self):
+        """API must define POST /reports/{id}/cancel endpoint."""
+        content = self._read("api.py")
+        assert re.search(r"cancel", content, re.IGNORECASE), (
+            "Cancel endpoint not found in api.py"
+        )
+
+    def test_aggregate_valid_types(self):
+        """aggregate_data must validate aggregation type is one of sum/average/min/max/count."""
+        content = self._read("tasks.py")
+        valid_types = ["sum", "average", "min", "max", "count"]
+        found = sum(1 for t in valid_types if t in content.lower())
+        assert found >= 3, (
+            f"Only {found}/5 aggregation types found in tasks.py; expected at least 3"
+        )
+
+    def test_format_report_supports_formats(self):
+        """format_report must support json, csv, text output formats."""
+        content = self._read("tasks.py")
+        for fmt in ["json", "csv", "text"]:
+            assert fmt in content.lower(), f"Format '{fmt}' not handled in format_report"
 
     def test_exponential_backoff_configured(self):
-        """Verify exponential backoff via retry_backoff or countdown=2**retries."""
-        content = self._read(os.path.join(self.REPO_DIR, "tasks/workers.py"))
-        assert content, "tasks/workers.py is empty or unreadable"
-        found = any(kw in content for kw in ("retry_backoff", "2**", "countdown"))
-        assert found, "No exponential backoff configuration found"
+        """Retry logic must implement exponential backoff."""
+        content = self._read("tasks.py")
+        assert re.search(r"backoff|countdown.*\*|2\s*\*\*|exponential", content, re.IGNORECASE), (
+            "Exponential backoff not found in retry configuration"
+        )
 
-    # ── functional_check (import) ───────────────────────────────────
-
-    def _skip_unless_importable(self):
-        if not os.path.isdir(self.REPO_DIR):
-            pytest.skip("Repo dir does not exist")
-        if self.REPO_DIR not in sys.path:
-            sys.path.insert(0, self.REPO_DIR)
-
-    def test_task_serializer_json_at_runtime(self):
-        """CeleryConfig.task_serializer equals 'json' at runtime."""
-        self._skip_unless_importable()
-        try:
-            from tasks.config import CeleryConfig
-        except Exception as exc:
-            pytest.skip(f"Cannot import tasks.config: {exc}")
-        assert CeleryConfig.task_serializer == "json", \
-            "task_serializer must be 'json' at runtime"
-
-    def test_submit_returns_async_result_with_id(self):
-        """submit({}) returns AsyncResult with a valid 36-char UUID id."""
-        self._skip_unless_importable()
-        os.environ["CELERY_TASK_ALWAYS_EAGER"] = "1"
-        try:
-            from tasks.pipeline import CeleryPipeline
-        except Exception as exc:
-            pytest.skip(f"Cannot import tasks.pipeline: {exc}")
-        result = CeleryPipeline().submit({"key": "val"})
-        assert hasattr(result, "id"), "submit() result has no 'id' attribute"
-        assert isinstance(result.id, str), "id is not a string"
-        assert len(result.id) == 36, f"id length {len(result.id)} != 36"
-
-    def test_data_processor_task_attributes(self):
-        """DataProcessor.process task has max_retries=3 set on task object."""
-        self._skip_unless_importable()
-        try:
-            from tasks.workers import DataProcessor
-        except Exception as exc:
-            pytest.skip(f"Cannot import tasks.workers: {exc}")
-        assert DataProcessor.process.max_retries == 3, \
-            "max_retries must be 3"
-
-    def test_notification_worker_queue_attribute(self):
-        """NotificationWorker.notify task queue attribute is 'notifications'."""
-        self._skip_unless_importable()
-        try:
-            from tasks.workers import NotificationWorker
-        except Exception as exc:
-            pytest.skip(f"Cannot import tasks.workers: {exc}")
-        assert NotificationWorker.notify.queue == "notifications", \
-            "queue must be 'notifications'"
+    def test_store_concurrent_access_protection(self):
+        """Job store must handle concurrent access with locking or atomic writes."""
+        content = self._read("store.py")
+        assert re.search(r"lock|flock|atomic|fcntl|filelock|threading\.Lock", content, re.IGNORECASE), (
+            "No concurrent access protection found in store.py"
+        )

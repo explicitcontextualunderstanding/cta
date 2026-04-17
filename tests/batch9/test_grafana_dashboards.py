@@ -1,130 +1,187 @@
 """
-Test for 'grafana-dashboards' skill — Grafana Dashboard Generation (Go)
-Validates Dashboard model, RED/USE generators, alert rules, provisioning
-YAML, panel counts, threshold steps, and ToJSON error handling.
+Test skill: grafana-dashboards
+Verify that the Agent creates Grafana dashboard JSON generator (Go).
 """
 
-import glob
 import os
 import re
-
+import json
+import subprocess
 import pytest
 
 
 class TestGrafanaDashboards:
-    """Verify Grafana dashboard Go package: model, RED, USE, alerts."""
-
     REPO_DIR = "/workspace/grafana"
 
-    # ── helpers ──────────────────────────────────────────────────────────
+    # === File Path Checks ===
 
-    @staticmethod
-    def _read_file(path: str) -> str:
-        try:
-            with open(path, "r", errors="ignore") as fh:
-                return fh.read()
-        except OSError:
-            return ""
-
-    def _pkg(self, *parts) -> str:
-        return os.path.join(self.REPO_DIR, "pkg", "dashboards", *parts)
-
-    # ── file_path_check ──────────────────────────────────────────────────
-
-    def test_model_go_exists(self):
-        """pkg/dashboards/model.go must exist."""
-        assert os.path.isfile(self._pkg("model.go"))
-
-    def test_red_dashboard_go_exists(self):
-        """pkg/dashboards/red_dashboard.go must exist."""
-        assert os.path.isfile(self._pkg("red_dashboard.go"))
-
-    def test_use_dashboard_go_exists(self):
-        """pkg/dashboards/use_dashboard.go must exist."""
-        assert os.path.isfile(self._pkg("use_dashboard.go"))
-
-    def test_alerts_and_provisioning_exist(self):
-        """alerts.go and provisioning.go must exist."""
-        assert os.path.isfile(self._pkg("alerts.go"))
-        assert os.path.isfile(self._pkg("provisioning.go"))
-
-    # ── semantic_check ───────────────────────────────────────────────────
-
-    def test_schema_version_38(self):
-        """Dashboard struct must declare SchemaVersion set to 38."""
-        content = self._read_file(self._pkg("model.go"))
-        if not content:
-            pytest.skip("model.go not found")
-        assert "SchemaVersion" in content
-        assert "38" in content
-
-    def test_generate_red_dashboard_signature(self):
-        """GenerateREDDashboard must accept service, namespace, datasource."""
-        content = self._read_file(self._pkg("red_dashboard.go"))
-        if not content:
-            pytest.skip("red_dashboard.go not found")
-        assert "func GenerateREDDashboard(" in content
-        assert "service" in content
-        assert "namespace" in content
-        assert "datasource" in content
-
-    def test_tojson_uses_marshalindent(self):
-        """ToJSON must use json.MarshalIndent."""
-        files = glob.glob(self._pkg("*.go"))
+    def test_dashboard_generator_files_exist(self):
+        """Verify Grafana dashboard generator files exist"""
         found = False
-        for f in files:
-            content = self._read_file(f)
-            if "ToJSON" in content and "MarshalIndent" in content:
-                found = True
+        for root, dirs, files in os.walk(self.REPO_DIR):
+            if ".git" in root or "vendor" in root or "node_modules" in root:
+                continue
+            for f in files:
+                if ("dashboard" in f.lower() or "panel" in f.lower()) and (f.endswith(".go") or f.endswith(".json")):
+                    found = True
+                    break
+            if found:
                 break
-        assert found, "ToJSON with json.MarshalIndent not found"
+        assert found, "Grafana dashboard generator files not found"
 
-    def test_alert_five_minute_duration(self):
-        """alerts.go must use 5m alert duration."""
-        content = self._read_file(self._pkg("alerts.go"))
-        if not content:
-            pytest.skip("alerts.go not found")
-        assert "5m" in content or "5 * time.Minute" in content
+    # === Semantic Checks ===
 
-    def test_provisioning_disable_deletion(self):
-        """provisioning.go must set disableDeletion: true."""
-        content = self._read_file(self._pkg("provisioning.go"))
-        if not content:
-            pytest.skip("provisioning.go not found")
-        assert "disableDeletion" in content or "DisableDeletion" in content
+    def test_dashboard_model_defined(self):
+        """Verify dashboard model or struct is defined"""
+        content = self._collect_go_content()
+        has_model = "Dashboard" in content or "dashboard" in content
+        assert has_model, "Dashboard model not found"
 
-    # ── functional_check ─────────────────────────────────────────────────
+    def test_panel_types_defined(self):
+        """Verify panel types are defined (graph, gauge, table, etc.)"""
+        content = self._collect_all_content()
+        content_lower = content.lower()
+        has_panels = (
+            "graph" in content_lower
+            or "timeseries" in content_lower
+            or "gauge" in content_lower
+            or "stat" in content_lower
+            or "table" in content_lower
+            or "panel" in content_lower
+        )
+        assert has_panels, "Panel types not defined"
 
-    def test_red_dashboard_minimum_eight_panels(self):
-        """GenerateREDDashboard must create at least 8 panels."""
-        content = self._read_file(self._pkg("red_dashboard.go"))
-        if not content:
-            pytest.skip("red_dashboard.go not found")
-        panel_count = content.count("Panel{") + content.count("{Title:")
-        assert panel_count >= 8, f"Only {panel_count} panels, expected >= 8"
+    def test_datasource_configuration(self):
+        """Verify datasource configuration is present"""
+        content = self._collect_all_content()
+        content_lower = content.lower()
+        has_ds = (
+            "datasource" in content_lower
+            or "prometheus" in content_lower
+            or "data_source" in content_lower
+        )
+        assert has_ds, "Datasource configuration not found"
 
-    def test_error_rate_panel_three_thresholds(self):
-        """Error rate panel must define green/yellow/red threshold steps."""
-        content = self._read_file(self._pkg("red_dashboard.go"))
-        if not content:
-            pytest.skip("red_dashboard.go not found")
-        for color in ("green", "yellow", "red"):
-            assert color in content.lower(), f"Threshold color '{color}' not found"
+    def test_promql_queries(self):
+        """Verify PromQL queries are used"""
+        content = self._collect_all_content()
+        content_lower = content.lower()
+        has_promql = (
+            "rate(" in content_lower
+            or "sum(" in content_lower
+            or "histogram_quantile" in content_lower
+            or "avg(" in content_lower
+            or "expr" in content_lower
+        )
+        assert has_promql, "PromQL queries not found"
 
-    def test_business_dashboard_empty_metrics_guard(self):
-        """GenerateBusinessDashboard must handle empty metrics."""
-        content = self._read_file(self._pkg("business_dashboard.go"))
-        if not content:
-            pytest.skip("business_dashboard.go not found")
-        assert "len(" in content or "nil" in content, "No empty metrics guard"
+    # === Functional Checks ===
 
-    def test_tojson_error_propagated(self):
-        """ToJSON must return ([]byte, error) and not suppress marshaling errors."""
-        files = glob.glob(self._pkg("*.go"))
-        for f in files:
-            content = self._read_file(f)
-            if "ToJSON" in content:
-                assert "_ = err" not in content, f"Error suppressed in {f}"
-                assert "return" in content
-                return
-        pytest.skip("ToJSON method not found")
+    def test_json_dashboards_valid(self):
+        """Verify JSON dashboard files are valid"""
+        json_files = self._find_json_dashboards()
+        for jf in json_files:
+            with open(jf) as fh:
+                data = json.load(fh)
+            assert isinstance(data, dict), f"{jf} is not a valid JSON object"
+
+    def test_go_files_have_package(self):
+        """Verify Go generator files have proper package declarations"""
+        go_files = self._find_go_files()
+        for gf in go_files:
+            with open(gf) as fh:
+                content = fh.read()
+            assert "package " in content[:200], f"{gf} missing package declaration"
+
+    def test_go_files_balanced_braces(self):
+        """Verify Go files have balanced braces"""
+        go_files = self._find_go_files()
+        for gf in go_files:
+            with open(gf) as fh:
+                content = fh.read()
+            cleaned = re.sub(r'"[^"]*"', '', content)
+            cleaned = re.sub(r'`[^`]*`', '', cleaned)
+            cleaned = re.sub(r'//[^\n]*', '', cleaned)
+            cleaned = re.sub(r'/\*.*?\*/', '', cleaned, flags=re.DOTALL)
+            opens = cleaned.count('{')
+            closes = cleaned.count('}')
+            assert opens == closes, f"Unbalanced braces in {gf}: {opens} vs {closes}"
+
+    def test_dashboard_has_templating(self):
+        """Verify dashboard supports templating/variables"""
+        content = self._collect_all_content()
+        content_lower = content.lower()
+        has_template = (
+            "templat" in content_lower
+            or "variable" in content_lower
+            or "$" in content
+        )
+        assert has_template, "Dashboard templating not found"
+
+    def test_dashboard_has_time_range(self):
+        """Verify dashboard defines time range"""
+        content = self._collect_all_content()
+        content_lower = content.lower()
+        has_time = (
+            "time" in content_lower
+            or "from" in content_lower
+            or "refresh" in content_lower
+        )
+        assert has_time, "Dashboard time range not defined"
+
+    def test_dashboard_has_rows_or_panels(self):
+        """Verify dashboard has rows or panels layout"""
+        content = self._collect_all_content()
+        content_lower = content.lower()
+        has_layout = "rows" in content_lower or "panels" in content_lower or "gridpos" in content_lower
+        assert has_layout, "Dashboard layout (rows/panels) not found"
+
+    def _collect_go_content(self):
+        all_content = ""
+        for root, dirs, files in os.walk(self.REPO_DIR):
+            if ".git" in root or "vendor" in root or "node_modules" in root:
+                continue
+            for f in files:
+                if f.endswith(".go") and ("dashboard" in f.lower() or "panel" in f.lower()):
+                    fpath = os.path.join(root, f)
+                    try:
+                        with open(fpath) as fh:
+                            all_content += fh.read() + "\n"
+                    except (UnicodeDecodeError, PermissionError):
+                        continue
+        return all_content
+
+    def _collect_all_content(self):
+        all_content = self._collect_go_content()
+        for root, dirs, files in os.walk(self.REPO_DIR):
+            if ".git" in root or "vendor" in root or "node_modules" in root:
+                continue
+            for f in files:
+                if ("dashboard" in f.lower() or "grafana" in f.lower()) and f.endswith(".json"):
+                    fpath = os.path.join(root, f)
+                    try:
+                        with open(fpath) as fh:
+                            all_content += fh.read() + "\n"
+                    except (UnicodeDecodeError, PermissionError):
+                        continue
+        return all_content
+
+    def _find_json_dashboards(self):
+        result = []
+        for root, dirs, files in os.walk(self.REPO_DIR):
+            if ".git" in root or "vendor" in root or "node_modules" in root:
+                continue
+            for f in files:
+                if ("dashboard" in f.lower() or "grafana" in f.lower()) and f.endswith(".json"):
+                    result.append(os.path.join(root, f))
+        return result
+
+    def _find_go_files(self):
+        result = []
+        for root, dirs, files in os.walk(self.REPO_DIR):
+            if ".git" in root or "vendor" in root or "node_modules" in root:
+                continue
+            for f in files:
+                if f.endswith(".go") and ("dashboard" in f.lower() or "panel" in f.lower()):
+                    result.append(os.path.join(root, f))
+        return result

@@ -1,193 +1,284 @@
 """
-Tests for prompt-engineering-patterns skill.
-Validates TemplateLibrary, FewShotBuilder, ChainOfThoughtFormatter in langchain repository.
+Tests for the prompt-engineering-patterns skill.
+
+Validates that a prompt template library with few-shot builder,
+chain-of-thought formatter, and prompt testing framework was
+implemented for LangChain.
+
+Repo: langchain (https://github.com/langchain-ai/langchain)
 """
 
+import ast
 import os
 import re
-import glob
-import pytest
+import subprocess
+import sys
 
 REPO_DIR = "/workspace/langchain"
 
 
-def _path(rel: str) -> str:
-    return os.path.join(REPO_DIR, rel)
-
-
-def _read(rel: str) -> str:
-    with open(_path(rel), encoding="utf-8", errors="ignore") as f:
-        return f.read()
-
-
-class TestPromptEngineeringPatterns:
-
-    # ── file_path_check ──────────────────────────────────────────────────────
+class TestFilePathCheck:
+    """Verify that all required files were created."""
 
     def test_template_library_file_exists(self):
-        """template_library.py must exist in langchain_core/prompts."""
-        rel = "libs/core/langchain_core/prompts/template_library.py"
-        assert os.path.isfile(_path(rel)), f"{rel} not found"
-        assert os.path.getsize(_path(rel)) > 0, "template_library.py is empty"
+        path = os.path.join(
+            REPO_DIR, "libs", "core", "langchain_core", "prompts", "template_library.py"
+        )
+        assert os.path.isfile(path), f"Expected template_library.py at {path}"
 
-    def test_prompts_module_has_multiple_files(self):
-        """langchain_core/prompts must contain multiple Python files."""
-        pattern = os.path.join(REPO_DIR, "libs/core/langchain_core/prompts", "*.py")
-        files = glob.glob(pattern)
-        assert (
-            len(files) >= 2
-        ), f"Expected >= 2 Python files in prompts/, found {len(files)}"
+    def test_prompt_tester_file_exists(self):
+        path = os.path.join(
+            REPO_DIR, "libs", "core", "langchain_core", "prompts", "prompt_tester.py"
+        )
+        assert os.path.isfile(path), f"Expected prompt_tester.py at {path}"
 
-    # ── semantic_check ───────────────────────────────────────────────────────
+    def test_template_library_test_exists(self):
+        path = os.path.join(
+            REPO_DIR, "libs", "core", "tests", "unit_tests", "prompts", "test_template_library.py"
+        )
+        assert os.path.isfile(path), f"Expected test_template_library.py at {path}"
 
-    def test_template_library_class_defined(self):
-        """TemplateLibrary must define register() and get() methods."""
-        content = _read("libs/core/langchain_core/prompts/template_library.py")
-        assert "class TemplateLibrary" in content, "TemplateLibrary class not defined"
-        assert "def register" in content, "register() method not found"
-        assert "def get" in content, "get() method not found"
+    def test_prompt_tester_test_exists(self):
+        path = os.path.join(
+            REPO_DIR, "libs", "core", "tests", "unit_tests", "prompts", "test_prompt_tester.py"
+        )
+        assert os.path.isfile(path), f"Expected test_prompt_tester.py at {path}"
 
-    def test_duplicate_template_error_defined(self):
-        """DuplicateTemplateError and ParseError must be defined as custom exceptions."""
-        content = _read("libs/core/langchain_core/prompts/template_library.py")
-        assert (
-            "class DuplicateTemplateError" in content
-        ), "DuplicateTemplateError not defined"
-        assert "class ParseError" in content, "ParseError not defined"
 
-    def test_few_shot_builder_max_examples(self):
-        """FewShotBuilder must accept a max_examples parameter."""
-        content = _read("libs/core/langchain_core/prompts/template_library.py")
-        assert "class FewShotBuilder" in content, "FewShotBuilder class not defined"
-        assert "max_examples" in content, "max_examples parameter not found"
+class TestSemanticTemplateLibrary:
+    """Verify the TemplateLibrary class structure and features."""
 
-    def test_cot_formatter_answer_tag_parsing(self):
-        """ChainOfThoughtFormatter.parse_answer must extract content from <answer> tags."""
-        content = _read("libs/core/langchain_core/prompts/template_library.py")
-        assert (
-            "ChainOfThoughtFormatter" in content
-        ), "ChainOfThoughtFormatter not defined"
-        assert (
-            "<answer>" in content or "answer" in content
-        ), "answer tag parsing pattern not found"
+    def _read_library(self):
+        path = os.path.join(
+            REPO_DIR, "libs", "core", "langchain_core", "prompts", "template_library.py"
+        )
+        with open(path, "r") as f:
+            return f.read()
 
-    # ── functional_check ─────────────────────────────────────────────────────
+    def test_template_library_class(self):
+        content = self._read_library()
+        assert re.search(r"class\s+TemplateLibrary", content), (
+            "Expected TemplateLibrary class"
+        )
 
-    def test_template_library_get_returns_latest_version(self):
-        """TemplateLibrary.get() must return the highest version by default (mocked)."""
-        from packaging.version import Version
+    def test_register_method(self):
+        content = self._read_library()
+        assert re.search(r"def\s+register\b", content), (
+            "Expected register method in TemplateLibrary"
+        )
 
-        class TemplateLibrary:
-            def __init__(self):
-                self._store = {}
+    def test_get_by_category_method(self):
+        content = self._read_library()
+        assert re.search(r"def\s+get_by_category\b", content), (
+            "Expected get_by_category method in TemplateLibrary"
+        )
 
-            def register(self, name, template, version="1.0"):
-                key = (name, version)
-                if key in self._store:
-                    raise ValueError("Duplicate")
-                self._store[key] = template
+    def test_versioned_get_method(self):
+        content = self._read_library()
+        assert re.search(r"def\s+get\b", content), (
+            "Expected get method in TemplateLibrary"
+        )
+        assert re.search(r"version", content), (
+            "Expected version parameter support in TemplateLibrary"
+        )
 
-            def get(self, name):
-                versions = {k[1]: v for k, v in self._store.items() if k[0] == name}
-                if not versions:
-                    raise KeyError(name)
-                latest = max(versions.keys(), key=lambda v: Version(v))
-                return versions[latest]
+    def test_duplicate_template_error(self):
+        content = self._read_library()
+        assert re.search(r"class\s+DuplicateTemplateError|DuplicateTemplateError", content), (
+            "Expected DuplicateTemplateError exception"
+        )
 
-        lib = TemplateLibrary()
-        lib.register("qa", "template1", version="1.0")
-        lib.register("qa", "template2", version="2.0")
-        result = lib.get("qa")
-        assert result == "template2", f"Expected 'template2' (v2.0), got {result!r}"
+    def test_category_support(self):
+        content = self._read_library()
+        assert re.search(r"category", content), (
+            "Expected category parameter in template registration"
+        )
 
-    def test_duplicate_template_same_name_version_error(self):
-        """Registering same name+version twice must raise DuplicateTemplateError (mocked)."""
 
-        class DuplicateTemplateError(Exception):
-            pass
+class TestSemanticFewShotBuilder:
+    """Verify the FewShotBuilder class."""
 
-        class TemplateLibrary:
-            def __init__(self):
-                self._store = {}
+    def _read_library(self):
+        path = os.path.join(
+            REPO_DIR, "libs", "core", "langchain_core", "prompts", "template_library.py"
+        )
+        with open(path, "r") as f:
+            return f.read()
 
-            def register(self, name, template, version="1.0"):
-                key = (name, version)
-                if key in self._store:
-                    raise DuplicateTemplateError(f"{name}@{version} already registered")
-                self._store[key] = template
+    def test_few_shot_builder_class(self):
+        content = self._read_library()
+        assert re.search(r"class\s+FewShotBuilder", content), (
+            "Expected FewShotBuilder class"
+        )
 
-        lib = TemplateLibrary()
-        lib.register("qa", "template1", version="1.0")
-        with pytest.raises(DuplicateTemplateError):
-            lib.register("qa", "template_dup", version="1.0")
+    def test_max_examples_parameter(self):
+        content = self._read_library()
+        assert re.search(r"max_examples", content), (
+            "Expected max_examples parameter in FewShotBuilder"
+        )
 
-    def test_few_shot_builder_limits_to_3_from_10(self):
-        """FewShotBuilder(max_examples=3) must truncate pool to 3 examples (mocked)."""
+    def test_selector_support(self):
+        """FewShotBuilder should support dynamic example selection."""
+        content = self._read_library()
+        assert re.search(r"selector|select", content, re.IGNORECASE), (
+            "Expected selector function support for dynamic example selection"
+        )
 
-        class FewShotBuilder:
-            def __init__(self, max_examples: int = 5):
-                self.max_examples = max_examples
+    def test_example_formatting(self):
+        content = self._read_library()
+        assert re.search(r"Input:|Output:|format|template", content), (
+            "Expected example formatting logic (Input/Output pattern)"
+        )
 
-            def build(self, pool: list) -> list:
-                return pool[: self.max_examples]
 
-        builder = FewShotBuilder(max_examples=3)
-        examples = builder.build(pool=[f"ex{i}" for i in range(10)])
-        assert len(examples) == 3, f"Expected 3 examples, got {len(examples)}"
+class TestSemanticChainOfThought:
+    """Verify the ChainOfThoughtFormatter class."""
 
-    def test_parse_answer_extracts_42(self):
-        """parse_answer must extract '42' from <answer>42</answer> (mocked)."""
+    def _read_library(self):
+        path = os.path.join(
+            REPO_DIR, "libs", "core", "langchain_core", "prompts", "template_library.py"
+        )
+        with open(path, "r") as f:
+            return f.read()
 
-        class ParseError(Exception):
-            pass
+    def test_cot_formatter_class(self):
+        content = self._read_library()
+        assert re.search(r"class\s+ChainOfThoughtFormatter", content), (
+            "Expected ChainOfThoughtFormatter class"
+        )
 
-        class ChainOfThoughtFormatter:
-            def parse_answer(self, text: str) -> dict:
-                m = re.search(r"<answer>(.*?)</answer>", text, re.DOTALL)
-                if not m:
-                    raise ParseError("No <answer>...</answer> tag found")
-                return {"answer": m.group(1).strip()}
+    def test_step_by_step_instruction(self):
+        content = self._read_library()
+        assert re.search(r"step by step|step-by-step", content, re.IGNORECASE), (
+            "Expected 'step by step' instruction in CoT formatter"
+        )
 
-        f = ChainOfThoughtFormatter()
-        result = f.parse_answer("Let me think... <answer>42</answer>")
-        assert result["answer"] == "42", f"Expected '42', got {result['answer']!r}"
+    def test_answer_tag_support(self):
+        content = self._read_library()
+        assert re.search(r"<answer>|answer.*tag", content, re.IGNORECASE), (
+            "Expected <answer> tag support in CoT formatter"
+        )
 
-    def test_parse_answer_no_tag_raises_parse_error(self):
-        """parse_answer must raise ParseError when no <answer> tag present (mocked)."""
+    def test_parse_answer_method(self):
+        content = self._read_library()
+        assert re.search(r"def\s+parse_answer", content), (
+            "Expected parse_answer method in ChainOfThoughtFormatter"
+        )
 
-        class ParseError(Exception):
-            pass
+    def test_parse_error_exception(self):
+        content = self._read_library()
+        assert re.search(r"ParseError|parse_error", content), (
+            "Expected ParseError exception for missing answer tag"
+        )
 
-        class ChainOfThoughtFormatter:
-            def parse_answer(self, text: str) -> dict:
-                m = re.search(r"<answer>(.*?)</answer>", text, re.DOTALL)
-                if not m:
-                    raise ParseError("No <answer>...</answer> tag found")
-                return {"answer": m.group(1).strip()}
 
-        f = ChainOfThoughtFormatter()
-        with pytest.raises(ParseError):
-            f.parse_answer("The answer is 42 but no tag")
+class TestSemanticPromptTester:
+    """Verify the PromptTester class."""
 
-    def test_prompt_tester_pass_rate_0_8(self):
-        """PromptTester.pass_rate must return 0.8 for 4/5 passing tests (mocked)."""
+    def _read_tester(self):
+        path = os.path.join(
+            REPO_DIR, "libs", "core", "langchain_core", "prompts", "prompt_tester.py"
+        )
+        with open(path, "r") as f:
+            return f.read()
 
-        class PromptTester:
-            def __init__(self):
-                self._results = []
+    def test_prompt_tester_class(self):
+        content = self._read_tester()
+        assert re.search(r"class\s+PromptTester", content), (
+            "Expected PromptTester class"
+        )
 
-            def record_result(self, passed: bool):
-                self._results.append(passed)
+    def test_run_method(self):
+        content = self._read_tester()
+        assert re.search(r"def\s+run\b", content), (
+            "Expected run method in PromptTester"
+        )
 
-            @property
-            def pass_rate(self) -> float:
-                if not self._results:
-                    return 0.0
-                return sum(self._results) / len(self._results)
+    def test_test_report_class(self):
+        content = self._read_tester()
+        assert re.search(r"class\s+TestReport|TestReport", content), (
+            "Expected TestReport class or usage"
+        )
 
-        tester = PromptTester()
-        for i in range(5):
-            tester.record_result(passed=(i < 4))
-        assert (
-            abs(tester.pass_rate - 0.8) < 1e-9
-        ), f"Expected pass_rate=0.8, got {tester.pass_rate}"
+    def test_regex_match_mode(self):
+        content = self._read_tester()
+        assert re.search(r"regex|match_mode", content, re.IGNORECASE), (
+            "Expected regex match mode support in PromptTester"
+        )
+
+    def test_pass_rate_tracking(self):
+        content = self._read_tester()
+        assert re.search(r"pass_rate|passed|failed", content), (
+            "Expected pass/fail rate tracking in TestReport"
+        )
+
+
+class TestFunctionalPythonSyntax:
+    """Validate Python syntax of all created files."""
+
+    def _check_syntax(self, filepath):
+        with open(filepath, "r") as f:
+            source = f.read()
+        ast.parse(source)
+
+    def test_template_library_syntax(self):
+        self._check_syntax(
+            os.path.join(
+                REPO_DIR, "libs", "core", "langchain_core", "prompts", "template_library.py"
+            )
+        )
+
+    def test_prompt_tester_syntax(self):
+        self._check_syntax(
+            os.path.join(
+                REPO_DIR, "libs", "core", "langchain_core", "prompts", "prompt_tester.py"
+            )
+        )
+
+    def test_template_library_test_syntax(self):
+        self._check_syntax(
+            os.path.join(
+                REPO_DIR, "libs", "core", "tests", "unit_tests", "prompts",
+                "test_template_library.py",
+            )
+        )
+
+    def test_prompt_tester_test_syntax(self):
+        self._check_syntax(
+            os.path.join(
+                REPO_DIR, "libs", "core", "tests", "unit_tests", "prompts",
+                "test_prompt_tester.py",
+            )
+        )
+
+
+class TestFunctionalAgentTests:
+    """Verify the agent's own tests pass."""
+
+    def test_template_library_tests_pass(self):
+        result = subprocess.run(
+            [sys.executable, "-m", "pytest",
+             "libs/core/tests/unit_tests/prompts/test_template_library.py",
+             "-v", "--tb=short"],
+            cwd=REPO_DIR,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        assert result.returncode == 0, (
+            f"Template library tests failed:\n{result.stdout[-1000:]}\n{result.stderr[-500:]}"
+        )
+
+    def test_prompt_tester_tests_pass(self):
+        result = subprocess.run(
+            [sys.executable, "-m", "pytest",
+             "libs/core/tests/unit_tests/prompts/test_prompt_tester.py",
+             "-v", "--tb=short"],
+            cwd=REPO_DIR,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        assert result.returncode == 0, (
+            f"Prompt tester tests failed:\n{result.stdout[-1000:]}\n{result.stderr[-500:]}"
+        )

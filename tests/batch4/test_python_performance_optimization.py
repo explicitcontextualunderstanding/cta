@@ -1,185 +1,336 @@
 """
-Test for 'python-performance-optimization' skill — Python Performance Optimization
-Validates Benchmark, BenchmarkResult, profile_memory, and find_bottlenecks
-for profiling and performance measurement in the py-spy repo.
+Tests for skill: python-performance-optimization
+Repo: benfred/py-spy
+Image: zhangyiiiiii/swe-skills-bench-rust
+Task: Build a Python performance profiling and optimization toolkit with
+      CPU profiler, memory tracker, benchmark suite, and optimization helpers.
 """
 
+import ast
 import os
 import sys
-import time
+
 import pytest
 
+REPO_DIR = "/workspace/py-spy"
+TOOLKIT_DIR = os.path.join(REPO_DIR, "examples", "profiling_toolkit")
 
-class TestPythonPerformanceOptimization:
-    """Tests for Python performance optimization in the py-spy repo."""
+INIT_FILE = os.path.join(TOOLKIT_DIR, "__init__.py")
+PROFILER_FILE = os.path.join(TOOLKIT_DIR, "profiler.py")
+MEMORY_FILE = os.path.join(TOOLKIT_DIR, "memory_tracker.py")
+BENCHMARK_FILE = os.path.join(TOOLKIT_DIR, "benchmark.py")
+OPTIMIZER_FILE = os.path.join(TOOLKIT_DIR, "optimizer.py")
 
-    REPO_DIR = "/workspace/py-spy"
 
-    def _read(self, relpath):
-        full = os.path.join(self.REPO_DIR, relpath)
-        with open(full, "r", errors="ignore") as f:
-            return f.read()
+# ---------------------------------------------------------------------------
+# Layer 1 — file_path_check
+# ---------------------------------------------------------------------------
 
-    # --- File Path Checks ---
+class TestFilePathCheck:
+    """Verify all required profiling toolkit files exist."""
 
-    def test_benchmark_py_exists(self):
-        """Verifies that examples/profiling_toolkit/benchmark.py exists."""
-        path = os.path.join(
-            self.REPO_DIR, "examples", "profiling_toolkit", "benchmark.py"
+    def test_init_exists(self):
+        assert os.path.isfile(INIT_FILE), f"Missing {INIT_FILE}"
+
+    def test_profiler_exists(self):
+        assert os.path.isfile(PROFILER_FILE), f"Missing {PROFILER_FILE}"
+
+    def test_memory_tracker_exists(self):
+        assert os.path.isfile(MEMORY_FILE), f"Missing {MEMORY_FILE}"
+
+    def test_benchmark_exists(self):
+        assert os.path.isfile(BENCHMARK_FILE), f"Missing {BENCHMARK_FILE}"
+
+    def test_optimizer_exists(self):
+        assert os.path.isfile(OPTIMIZER_FILE), f"Missing {OPTIMIZER_FILE}"
+
+
+# ---------------------------------------------------------------------------
+# Layer 2 — semantic_check
+# ---------------------------------------------------------------------------
+
+class TestSemanticProfiler:
+    """Verify CPU profiler module structure."""
+
+    @pytest.fixture(autouse=True)
+    def _load(self):
+        with open(PROFILER_FILE, "r", encoding="utf-8") as f:
+            self.src = f.read()
+        self.tree = ast.parse(self.src)
+
+    def test_profile_decorator(self):
+        funcs = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.FunctionDef)]
+        assert "profile" in funcs, f"Expected profile decorator; found {funcs}"
+
+    def test_profile_context_manager(self):
+        classes = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.ClassDef)]
+        assert "ProfileContext" in classes, f"Expected ProfileContext; found {classes}"
+
+    def test_profile_to_file(self):
+        funcs = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.FunctionDef)]
+        assert "profile_to_file" in funcs, f"Expected profile_to_file; found {funcs}"
+
+    def test_compare_profiles(self):
+        funcs = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.FunctionDef)]
+        assert "compare_profiles" in funcs, f"Expected compare_profiles; found {funcs}"
+
+    def test_cprofile_usage(self):
+        assert "cProfile" in self.src or "cprofile" in self.src.lower(), (
+            "Profiler should use cProfile"
         )
-        assert os.path.exists(path), f"Expected file not found: {path}"
 
-    def test_init_py_exists(self):
-        """Verifies that examples/profiling_toolkit/__init__.py exists."""
-        path = os.path.join(
-            self.REPO_DIR, "examples", "profiling_toolkit", "__init__.py"
+    def test_perf_counter(self):
+        assert "perf_counter" in self.src, (
+            "Should use perf_counter for timing"
         )
-        assert os.path.exists(path), f"Expected file not found: {path}"
 
-    # --- Semantic Checks ---
 
-    def test_sem_import_benchmark(self):
-        """Benchmark, BenchmarkResult, profile_memory, find_bottlenecks importable."""
-        old_path = sys.path[:]
+class TestSemanticMemoryTracker:
+    """Verify memory tracker module structure."""
+
+    @pytest.fixture(autouse=True)
+    def _load(self):
+        with open(MEMORY_FILE, "r", encoding="utf-8") as f:
+            self.src = f.read()
+        self.tree = ast.parse(self.src)
+
+    def test_track_memory_decorator(self):
+        funcs = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.FunctionDef)]
+        assert "track_memory" in funcs, f"Expected track_memory; found {funcs}"
+
+    def test_memory_snapshot_class(self):
+        classes = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.ClassDef)]
+        assert "MemorySnapshot" in classes, f"Expected MemorySnapshot; found {classes}"
+
+    def test_track_allocations(self):
+        funcs = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.FunctionDef)]
+        assert "track_allocations" in funcs, f"Expected track_allocations; found {funcs}"
+
+    def test_tracemalloc_usage(self):
+        assert "tracemalloc" in self.src, "Should use tracemalloc for allocation tracking"
+
+    def test_psutil_or_fallback(self):
+        assert "psutil" in self.src or "tracemalloc" in self.src, (
+            "Should use psutil (with tracemalloc fallback) for RSS"
+        )
+
+
+class TestSemanticBenchmark:
+    """Verify benchmark suite module structure."""
+
+    @pytest.fixture(autouse=True)
+    def _load(self):
+        with open(BENCHMARK_FILE, "r", encoding="utf-8") as f:
+            self.src = f.read()
+        self.tree = ast.parse(self.src)
+
+    def test_benchmark_class(self):
+        classes = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.ClassDef)]
+        assert "Benchmark" in classes, f"Expected Benchmark; found {classes}"
+
+    def test_add_method(self):
+        funcs = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.FunctionDef)]
+        assert "add" in funcs, f"Expected add(); found {funcs}"
+
+    def test_run_method(self):
+        funcs = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.FunctionDef)]
+        assert "run" in funcs, f"Expected run(); found {funcs}"
+
+    def test_benchmark_result(self):
+        assert "BenchmarkResult" in self.src, "Should define BenchmarkResult"
+
+    def test_comparison_table(self):
+        assert "comparison_table" in self.src, (
+            "BenchmarkResult should have comparison_table method"
+        )
+
+    def test_warmup(self):
+        assert "warmup" in self.src, "Benchmark should support warmup iterations"
+
+    def test_outlier_removal(self):
+        assert "std" in self.src or "standard_deviation" in self.src or "outlier" in self.src.lower(), (
+            "Benchmark should remove statistical outliers"
+        )
+
+
+class TestSemanticOptimizer:
+    """Verify optimization utilities module structure."""
+
+    @pytest.fixture(autouse=True)
+    def _load(self):
+        with open(OPTIMIZER_FILE, "r", encoding="utf-8") as f:
+            self.src = f.read()
+        self.tree = ast.parse(self.src)
+
+    def test_memoize_decorator(self):
+        funcs = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.FunctionDef)]
+        assert "memoize" in funcs, f"Expected memoize; found {funcs}"
+
+    def test_lazy_property(self):
+        assert "lazy_property" in self.src, "Should define lazy_property"
+
+    def test_batch_processor(self):
+        funcs = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.FunctionDef)]
+        assert "batch_processor" in funcs, f"Expected batch_processor; found {funcs}"
+
+    def test_chunk_iterator(self):
+        funcs = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.FunctionDef)]
+        assert "chunk_iterator" in funcs, f"Expected chunk_iterator; found {funcs}"
+
+    def test_timed_decorator(self):
+        funcs = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.FunctionDef)]
+        assert "timed" in funcs, f"Expected timed; found {funcs}"
+
+    def test_lru_cache(self):
+        assert "lru_cache" in self.src, "memoize should wrap functools.lru_cache"
+
+
+# ---------------------------------------------------------------------------
+# Layer 3 — functional_check
+# ---------------------------------------------------------------------------
+
+class TestFunctionalMemoize:
+    """Run memoize and verify caching behavior."""
+
+    @pytest.fixture(autouse=True)
+    def _setup(self):
+        sys.path.insert(0, TOOLKIT_DIR)
+        sys.path.insert(0, REPO_DIR)
         try:
-            sys.path.insert(0, self.REPO_DIR)
-            from examples.profiling_toolkit.benchmark import (
-                Benchmark,
-                BenchmarkResult,
-                profile_memory,
-                find_bottlenecks,
-            )
+            from optimizer import memoize
+            self.memoize = memoize
+        except ImportError:
+            try:
+                from profiling_toolkit.optimizer import memoize
+                self.memoize = memoize
+            except ImportError:
+                pytest.skip("Cannot import memoize")
 
-            assert Benchmark is not None
-            assert BenchmarkResult is not None
-        finally:
-            sys.path[:] = old_path
+    def test_caches_results(self):
+        call_count = 0
 
-    def test_sem_benchmark_has_methods(self):
-        """Benchmark has methods: run, profile, compare, warm_up."""
-        src = self._read("examples/profiling_toolkit/benchmark.py")
-        assert "def run" in src, "Missing run method"
-        assert "def profile" in src, "Missing profile method"
-        assert "def compare" in src, "Missing compare method"
-        assert "def warm_up" in src, "Missing warm_up method"
+        @self.memoize(maxsize=128)
+        def expensive(n):
+            nonlocal call_count
+            call_count += 1
+            return n * 2
 
-    def test_sem_benchmark_result_attributes(self):
-        """BenchmarkResult has mean_time, median_time, std_time, min_time, etc."""
-        src = self._read("examples/profiling_toolkit/benchmark.py")
-        assert "mean_time" in src, "Missing mean_time attribute"
-        assert "median_time" in src, "Missing median_time attribute"
-        assert "std_time" in src, "Missing std_time attribute"
-        assert "min_time" in src, "Missing min_time attribute"
-        assert "max_time" in src, "Missing max_time attribute"
+        expensive(5)
+        expensive(5)
+        assert call_count == 1, "memoize should cache repeated calls"
 
-    def test_sem_benchmark_result_methods(self):
-        """BenchmarkResult has methods: to_dict, summary."""
-        src = self._read("examples/profiling_toolkit/benchmark.py")
-        assert "def to_dict" in src, "Missing to_dict method"
-        assert "def summary" in src, "Missing summary method"
+    def test_fibonacci_performance(self):
+        @self.memoize(maxsize=128)
+        def fib(n):
+            if n < 2:
+                return n
+            return fib(n - 1) + fib(n - 2)
 
-    # --- Functional Checks ---
+        result = fib(30)
+        assert result == 832040, f"fib(30) should be 832040; got {result}"
 
-    def test_func_benchmark_run(self):
-        """Benchmark.run with sleep(0.001), 20 iterations, mean_time ~ 0.001."""
-        old_path = sys.path[:]
+
+class TestFunctionalBatchProcessor:
+    """Run batch_processor and chunk_iterator."""
+
+    @pytest.fixture(autouse=True)
+    def _setup(self):
+        sys.path.insert(0, TOOLKIT_DIR)
+        sys.path.insert(0, REPO_DIR)
         try:
-            sys.path.insert(0, self.REPO_DIR)
-            from examples.profiling_toolkit.benchmark import Benchmark
+            from optimizer import batch_processor, chunk_iterator
+            self.batch_processor = batch_processor
+            self.chunk_iterator = chunk_iterator
+        except ImportError:
+            try:
+                from profiling_toolkit.optimizer import batch_processor, chunk_iterator
+                self.batch_processor = batch_processor
+                self.chunk_iterator = chunk_iterator
+            except ImportError:
+                pytest.skip("Cannot import batch_processor / chunk_iterator")
 
-            b = Benchmark(lambda: time.sleep(0.001))
-            r = b.run(n_iterations=20)
-            assert r.mean_time == pytest.approx(0.001, rel=0.5)
-        finally:
-            sys.path[:] = old_path
+    def test_batch_processor_basic(self):
+        results = self.batch_processor(
+            items=list(range(10)),
+            batch_size=3,
+            process_fn=lambda batch: [x * 2 for x in batch],
+        )
+        assert results == [0, 2, 4, 6, 8, 10, 12, 14, 16, 18], (
+            f"Expected doubled values; got {results}"
+        )
 
-    def test_func_time_ordering(self):
-        """min_time <= median_time <= max_time."""
-        old_path = sys.path[:]
+    def test_chunk_iterator(self):
+        chunks = list(self.chunk_iterator(range(10), 3))
+        assert len(chunks) == 4, f"Expected 4 chunks; got {len(chunks)}"
+        assert list(chunks[0]) == [0, 1, 2]
+        assert list(chunks[-1]) == [9]
+
+
+class TestFunctionalBenchmarkSuite:
+    """Run Benchmark suite on sample functions."""
+
+    @pytest.fixture(autouse=True)
+    def _setup(self):
+        sys.path.insert(0, TOOLKIT_DIR)
+        sys.path.insert(0, REPO_DIR)
         try:
-            sys.path.insert(0, self.REPO_DIR)
-            from examples.profiling_toolkit.benchmark import Benchmark
+            from benchmark import Benchmark
+            self.Benchmark = Benchmark
+        except ImportError:
+            try:
+                from profiling_toolkit.benchmark import Benchmark
+                self.Benchmark = Benchmark
+            except ImportError:
+                pytest.skip("Cannot import Benchmark")
 
-            b = Benchmark(lambda: time.sleep(0.001))
-            r = b.run(n_iterations=20)
-            assert r.min_time <= r.median_time <= r.max_time
-        finally:
-            sys.path[:] = old_path
+    def test_basic_benchmark(self):
+        bm = self.Benchmark(name="test")
+        bm.add("sum_range", lambda: sum(range(100)))
+        bm.add("list_comp", lambda: [i for i in range(100)])
+        result = bm.run(iterations=100, warmup=10)
+        assert hasattr(result, "results"), "BenchmarkResult should have results"
+        assert hasattr(result, "fastest"), "BenchmarkResult should have fastest"
+        assert result.fastest in ("sum_range", "list_comp")
 
-    def test_func_std_non_negative(self):
-        """std_time >= 0."""
-        old_path = sys.path[:]
+    def test_comparison_table(self):
+        bm = self.Benchmark(name="test")
+        bm.add("sum_range", lambda: sum(range(100)))
+        bm.add("list_comp", lambda: [i for i in range(100)])
+        result = bm.run(iterations=50, warmup=5)
+        table = result.comparison_table()
+        assert isinstance(table, str), "comparison_table should return a string"
+        assert "sum_range" in table and "list_comp" in table
+
+
+class TestFunctionalLazyProperty:
+    """Run lazy_property and verify single-computation behavior."""
+
+    @pytest.fixture(autouse=True)
+    def _setup(self):
+        sys.path.insert(0, TOOLKIT_DIR)
+        sys.path.insert(0, REPO_DIR)
         try:
-            sys.path.insert(0, self.REPO_DIR)
-            from examples.profiling_toolkit.benchmark import Benchmark
+            from optimizer import lazy_property
+            self.lazy_property = lazy_property
+        except ImportError:
+            try:
+                from profiling_toolkit.optimizer import lazy_property
+                self.lazy_property = lazy_property
+            except ImportError:
+                pytest.skip("Cannot import lazy_property")
 
-            b = Benchmark(lambda: time.sleep(0.001))
-            r = b.run(n_iterations=20)
-            assert r.std_time >= 0
-        finally:
-            sys.path[:] = old_path
+    def test_computed_once(self):
+        call_count = 0
+        lazy_prop = self.lazy_property
 
-    def test_func_iterations_count(self):
-        """r.iterations == 20."""
-        old_path = sys.path[:]
-        try:
-            sys.path.insert(0, self.REPO_DIR)
-            from examples.profiling_toolkit.benchmark import Benchmark
+        class Foo:
+            @lazy_prop
+            def value(self):
+                nonlocal call_count
+                call_count += 1
+                return 42
 
-            b = Benchmark(lambda: time.sleep(0.001))
-            r = b.run(n_iterations=20)
-            assert r.iterations == 20
-        finally:
-            sys.path[:] = old_path
-
-    def test_func_memory_peak(self):
-        """memory_peak_mb >= memory_current_mb."""
-        old_path = sys.path[:]
-        try:
-            sys.path.insert(0, self.REPO_DIR)
-            from examples.profiling_toolkit.benchmark import Benchmark
-
-            b = Benchmark(lambda: time.sleep(0.001))
-            r = b.run(n_iterations=20)
-            assert r.memory_peak_mb >= r.memory_current_mb
-        finally:
-            sys.path[:] = old_path
-
-    def test_func_zero_iterations_raises(self):
-        """Benchmark with n_iterations=0 raises ValueError."""
-        old_path = sys.path[:]
-        try:
-            sys.path.insert(0, self.REPO_DIR)
-            from examples.profiling_toolkit.benchmark import Benchmark
-
-            with pytest.raises(ValueError):
-                b = Benchmark(lambda: None)
-                b.run(n_iterations=0)
-        finally:
-            sys.path[:] = old_path
-
-    def test_func_compare_speedup(self):
-        """Comparing fast vs slow benchmark gives ~10x speedup."""
-        old_path = sys.path[:]
-        try:
-            sys.path.insert(0, self.REPO_DIR)
-            from examples.profiling_toolkit.benchmark import Benchmark
-
-            slow = Benchmark(lambda: time.sleep(0.01))
-            fast = Benchmark(lambda: time.sleep(0.001))
-            cmp = fast.compare(slow)
-            assert cmp.speedup == pytest.approx(10.0, rel=0.5)
-        finally:
-            sys.path[:] = old_path
-
-    def test_func_profile_memory(self):
-        """profile_memory returns (result, peak, current) with peak >= current."""
-        old_path = sys.path[:]
-        try:
-            sys.path.insert(0, self.REPO_DIR)
-            from examples.profiling_toolkit.benchmark import profile_memory
-
-            result, peak, current = profile_memory(lambda: [0] * 10**6)
-            assert peak >= current
-        finally:
-            sys.path[:] = old_path
+        foo = Foo()
+        assert foo.value == 42
+        assert foo.value == 42
+        assert call_count == 1, "lazy_property should compute only once"

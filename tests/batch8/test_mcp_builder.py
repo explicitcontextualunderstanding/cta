@@ -1,121 +1,211 @@
 """
-Test for 'mcp-builder' skill — MCP SQLite Server
-Validates that the Agent created a TypeScript MCP server with query_database,
-get_schema, list_tables tools and SELECT-only SQL guard.
+Test skill: mcp-builder
+Verify that the Agent correctly builds an MCP server for Markdown-to-SQLite
+conversion and querying in the modelcontextprotocol/servers repository.
 """
 
 import os
-import re
 import subprocess
-
+import json
+import re
 import pytest
 
 
 class TestMcpBuilder:
-    """Verify MCP SQLite server implementation."""
-
     REPO_DIR = "/workspace/servers"
+    MCP_DIR = "/workspace/servers/src/markdown-sqlite"
 
-    @staticmethod
-    def _read(path: str) -> str:
-        try:
-            with open(path, "r", errors="ignore") as fh:
-                return fh.read()
-        except OSError:
-            return ""
+    # === File Path Checks ===
 
-    # ── file_path_check ─────────────────────────────────────────────
+    def test_index_ts_exists(self):
+        """Verify that the MCP server entry point exists"""
+        filepath = os.path.join(self.MCP_DIR, "src/index.ts")
+        assert os.path.exists(filepath), f"index.ts not found at {filepath}"
 
-    def test_server_and_tool_files_exist(self):
-        """Verify src/server.ts, src/tools/query.ts, and src/tools/schema.ts exist."""
-        for rel in ("src/server.ts", "src/tools/query.ts", "src/tools/schema.ts"):
-            path = os.path.join(self.REPO_DIR, rel)
-            assert os.path.isfile(path), f"Missing: {rel}"
+    def test_parser_ts_exists(self):
+        """Verify that the Markdown parser module exists"""
+        filepath = os.path.join(self.MCP_DIR, "src/parser.ts")
+        assert os.path.exists(filepath), f"parser.ts not found at {filepath}"
 
-    def test_database_resource_and_config_exist(self):
-        """Verify src/resources/database.ts, package.json, and tsconfig.json exist."""
-        for rel in ("src/resources/database.ts", "package.json", "tsconfig.json"):
-            path = os.path.join(self.REPO_DIR, rel)
-            assert os.path.isfile(path), f"Missing: {rel}"
+    def test_database_ts_exists(self):
+        """Verify that the database module exists"""
+        filepath = os.path.join(self.MCP_DIR, "src/database.ts")
+        assert os.path.exists(filepath), f"database.ts not found at {filepath}"
 
-    def test_package_json_has_mcp_scripts(self):
-        """package.json contains mcp-server related script entry."""
-        content = self._read(os.path.join(self.REPO_DIR, "package.json"))
-        assert content, "package.json is empty or unreadable"
-        found = any(kw in content for kw in ("mcp", "server", "start"))
-        assert found, "No server startup script found in package.json"
+    def test_tools_ts_exists(self):
+        """Verify that the tools module exists"""
+        filepath = os.path.join(self.MCP_DIR, "src/tools.ts")
+        assert os.path.exists(filepath), f"tools.ts not found at {filepath}"
 
-    # ── semantic_check ──────────────────────────────────────────────
-
-    def test_server_registers_all_three_tools(self):
-        """Verify server.ts registers query_database, get_schema, and list_tables."""
-        content = self._read(os.path.join(self.REPO_DIR, "src/server.ts"))
-        assert content, "server.ts is empty or unreadable"
-        for tool in ("query_database", "get_schema", "list_tables"):
-            assert tool in content, f"'{tool}' not registered in server.ts"
-
-    def test_query_tool_validates_select_only(self):
-        """Verify query.ts validates SQL starts with SELECT before executing."""
-        content = self._read(os.path.join(self.REPO_DIR, "src/tools/query.ts"))
-        assert content, "query.ts is empty or unreadable"
-        found = any(kw in content for kw in ("SELECT", "startsWith", "toUpperCase", "Error"))
-        assert found, "SELECT-only guard not found in query.ts"
-
-    def test_database_resource_uses_mcp_db_path(self):
-        """Verify database.ts reads SQLite path from MCP_DB_PATH env variable."""
-        content = self._read(os.path.join(self.REPO_DIR, "src/resources/database.ts"))
-        assert content, "database.ts is empty or unreadable"
-        assert "MCP_DB_PATH" in content, "MCP_DB_PATH not found"
-        assert "process.env" in content, "process.env not found"
-
-    # ── functional_check (command) ──────────────────────────────────
-
-    def _skip_unless_node(self):
-        if not os.path.isdir(self.REPO_DIR):
-            pytest.skip("Repo dir does not exist")
-        if not os.path.isfile(os.path.join(self.REPO_DIR, "package.json")):
-            pytest.skip("package.json missing")
-
-    def test_typescript_compiles_without_errors(self):
-        """npx tsc --noEmit exits 0."""
-        self._skip_unless_node()
-        result = subprocess.run(
-            ["npx", "tsc", "--noEmit"], capture_output=True, text=True,
-            cwd=self.REPO_DIR, timeout=120,
+    def test_package_json_exists_and_valid(self):
+        """Verify that package.json exists and is valid JSON with required fields"""
+        filepath = os.path.join(self.MCP_DIR, "package.json")
+        assert os.path.exists(filepath), f"package.json not found at {filepath}"
+        with open(filepath) as f:
+            data = json.load(f)
+        assert "name" in data, "package.json missing 'name'"
+        assert "scripts" in data, "package.json missing 'scripts'"
+        assert "build" in data.get("scripts", {}), (
+            "package.json missing 'build' script"
         )
-        if result.returncode != 0 and "not found" in result.stderr.lower():
-            pytest.skip("tsc not available")
-        assert result.returncode == 0, f"tsc failed: {result.stderr}"
 
-    def test_npm_tests_pass(self):
-        """npm test exits 0 with all tests passing."""
-        self._skip_unless_node()
-        result = subprocess.run(
-            ["npm", "test"], capture_output=True, text=True,
-            cwd=self.REPO_DIR, timeout=120,
-        )
-        if result.returncode != 0 and "no test" in (result.stderr + result.stdout).lower():
-            pytest.skip("No tests configured")
-        assert result.returncode == 0, f"npm test failed: {result.stderr}"
+    def test_tsconfig_exists(self):
+        """Verify that tsconfig.json exists"""
+        filepath = os.path.join(self.MCP_DIR, "tsconfig.json")
+        assert os.path.exists(filepath), f"tsconfig.json not found at {filepath}"
 
-    def test_insert_sql_returns_error_response(self):
-        """query_database with INSERT SQL returns MCP error response."""
-        self._skip_unless_node()
-        result = subprocess.run(
-            ["npm", "test", "--", "--testNamePattern=INSERT.*error|write.*rejected"],
-            capture_output=True, text=True, cwd=self.REPO_DIR, timeout=120,
-        )
-        if result.returncode != 0 and "no tests" in (result.stderr + result.stdout).lower():
-            pytest.skip("No INSERT error test found")
-        assert result.returncode == 0
+    # === Semantic Checks ===
 
-    def test_select_1_returns_correct_row(self):
-        """query_database with 'SELECT 1 as n' returns correct result."""
-        self._skip_unless_node()
-        result = subprocess.run(
-            ["npm", "test", "--", "--testNamePattern=SELECT 1|query.*result"],
-            capture_output=True, text=True, cwd=self.REPO_DIR, timeout=120,
+    def test_parser_implements_section_extraction(self):
+        """Verify that parser.ts implements heading/section parsing logic"""
+        filepath = os.path.join(self.MCP_DIR, "src/parser.ts")
+        with open(filepath) as f:
+            content = f.read()
+
+        required_concepts = {
+            "heading": "heading" in content.lower(),
+            "level": "level" in content.lower(),
+            "content": "content" in content.lower(),
+            "word_count or wordCount": "word_count" in content.lower() or "wordcount" in content.lower(),
+            "path": "path" in content.lower(),
+        }
+        missing = [c for c, found in required_concepts.items() if not found]
+        assert len(missing) == 0, (
+            f"parser.ts missing required concepts: {missing}. "
+            "Parser must extract heading, level, path, content, and word_count."
         )
-        if result.returncode != 0 and "no tests" in (result.stderr + result.stdout).lower():
-            pytest.skip("No SELECT 1 test found")
-        assert result.returncode == 0
+
+    def test_database_has_required_tables(self):
+        """Verify that database.ts defines documents, sections, and FTS tables"""
+        filepath = os.path.join(self.MCP_DIR, "src/database.ts")
+        with open(filepath) as f:
+            content = f.read()
+
+        required_tables = {
+            "documents": "documents" in content,
+            "sections": "sections" in content,
+            "FTS5/sections_fts": "fts" in content.lower() or "sections_fts" in content,
+        }
+        missing = [t for t, found in required_tables.items() if not found]
+        assert len(missing) == 0, (
+            f"database.ts missing table definitions: {missing}"
+        )
+
+    def test_tools_defines_all_mcp_tools(self):
+        """Verify that tools.ts defines all 4 required MCP tools"""
+        filepath = os.path.join(self.MCP_DIR, "src/tools.ts")
+        with open(filepath) as f:
+            content = f.read()
+
+        required_tools = ["ingest_document", "query_sections", "search_content", "list_documents"]
+        for tool in required_tools:
+            assert tool in content, (
+                f"tools.ts missing MCP tool '{tool}'. "
+                "All 4 tools must be defined."
+            )
+
+    def test_tools_use_zod_validation(self):
+        """Verify that tools use Zod schemas for input validation"""
+        filepath = os.path.join(self.MCP_DIR, "src/tools.ts")
+        with open(filepath) as f:
+            content = f.read()
+
+        # Also check index.ts in case schemas are defined there
+        index_path = os.path.join(self.MCP_DIR, "src/index.ts")
+        if os.path.exists(index_path):
+            with open(index_path) as f:
+                content += f.read()
+
+        has_zod = "zod" in content.lower() or "z.object" in content or "z.string" in content
+        assert has_zod, (
+            "No Zod schema validation found in tools.ts or index.ts. "
+            "All MCP tools must include Zod input schemas."
+        )
+
+    def test_database_supports_reingestion(self):
+        """Verify that database.ts supports re-ingesting documents (replace on same name)"""
+        filepath = os.path.join(self.MCP_DIR, "src/database.ts")
+        with open(filepath) as f:
+            content = f.read()
+
+        has_replace_logic = (
+            "DELETE" in content or "delete" in content.lower()
+            or "REPLACE" in content or "replace" in content.lower()
+            or "upsert" in content.lower()
+            or "ON CONFLICT" in content
+        )
+        assert has_replace_logic, (
+            "database.ts does not appear to support re-ingestion. "
+            "Re-ingesting a document with the same name should replace the previous version."
+        )
+
+    # === Functional Checks ===
+
+    def test_npm_install_succeeds(self):
+        """Verify that npm install succeeds in the MCP server directory"""
+        result = subprocess.run(
+            ["npm", "install"],
+            cwd=self.MCP_DIR,
+            capture_output=True,
+            text=True,
+            timeout=120
+        )
+        assert result.returncode == 0, (
+            f"npm install failed: {result.stderr[:2000]}"
+        )
+
+    def test_npm_build_succeeds(self):
+        """Verify that npm run build compiles TypeScript successfully"""
+        subprocess.run(["npm", "install"], cwd=self.MCP_DIR, capture_output=True, timeout=120)
+
+        result = subprocess.run(
+            ["npm", "run", "build"],
+            cwd=self.MCP_DIR,
+            capture_output=True,
+            text=True,
+            timeout=120
+        )
+        assert result.returncode == 0, (
+            f"npm run build failed with exit code {result.returncode}.\n"
+            f"stdout: {result.stdout[:2000]}\n"
+            f"stderr: {result.stderr[:2000]}"
+        )
+
+    def test_dist_directory_created(self):
+        """Verify that build output is in the dist/ directory"""
+        subprocess.run(["npm", "install"], cwd=self.MCP_DIR, capture_output=True, timeout=120)
+        subprocess.run(["npm", "run", "build"], cwd=self.MCP_DIR, capture_output=True, timeout=120)
+
+        dist_dir = os.path.join(self.MCP_DIR, "dist")
+        assert os.path.exists(dist_dir), (
+            f"dist/ directory not found at {dist_dir}. "
+            "TypeScript build should output to dist/."
+        )
+        # Check that compiled JS files exist
+        js_files = [f for f in os.listdir(dist_dir) if f.endswith(".js")]
+        assert len(js_files) > 0, (
+            "dist/ directory contains no .js files. Build may not have produced output."
+        )
+
+    def test_tsconfig_has_strict_mode(self):
+        """Verify that tsconfig.json enables strict mode"""
+        filepath = os.path.join(self.MCP_DIR, "tsconfig.json")
+        with open(filepath) as f:
+            data = json.load(f)
+
+        compiler_options = data.get("compilerOptions", {})
+        assert compiler_options.get("strict") is True, (
+            "tsconfig.json should have strict mode enabled. "
+            f"Found compilerOptions: {compiler_options}"
+        )
+
+    def test_parser_handles_root_section(self):
+        """Verify parser handles content before first heading as _root section"""
+        filepath = os.path.join(self.MCP_DIR, "src/parser.ts")
+        with open(filepath) as f:
+            content = f.read()
+
+        assert "_root" in content, (
+            "parser.ts does not reference '_root' section. "
+            "Content before the first heading must be assigned to a virtual _root section."
+        )

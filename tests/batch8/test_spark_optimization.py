@@ -1,151 +1,128 @@
 """
-Test for 'spark-optimization' skill — PySpark Optimization
-Validates that the Agent implemented Spark query analyzer, broadcast join
-optimizer, and partition strategy advisor with AQE configuration.
+Tests for the spark-optimization skill.
+Validates a Partition-Aware Caching Advisor for Spark SQL that analyzes
+query plans and detects performance anti-patterns.
 """
 
 import os
 import re
-import sys
+import ast
 
-import pytest
+REPO_DIR = "/workspace/spark"
+ADVISOR_DIR = os.path.join(REPO_DIR, "python", "pyspark", "sql", "advisor")
 
 
 class TestSparkOptimization:
-    """Verify Spark optimization implementation."""
+    """Tests for the Spark SQL Caching Advisor."""
 
-    REPO_DIR = "/workspace/spark"
+    # ── file_path_check ──────────────────────────────────────────────
 
-    @staticmethod
-    def _read(path: str) -> str:
-        try:
-            with open(path, "r", errors="ignore") as fh:
-                return fh.read()
-        except OSError:
+    def test_init_file_exists(self):
+        """Package __init__.py must exist."""
+        path = os.path.join(ADVISOR_DIR, "__init__.py")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    def test_analyzer_file_exists(self):
+        """Plan analyzer module must exist."""
+        path = os.path.join(ADVISOR_DIR, "analyzer.py")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    def test_rules_file_exists(self):
+        """Anti-pattern rules module must exist."""
+        path = os.path.join(ADVISOR_DIR, "rules.py")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    def test_report_file_exists(self):
+        """Report generator module must exist."""
+        path = os.path.join(ADVISOR_DIR, "report.py")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    def test_models_file_exists(self):
+        """Data models module must exist."""
+        path = os.path.join(ADVISOR_DIR, "models.py")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    # ── semantic_check ───────────────────────────────────────────────
+
+    def _read(self, filename):
+        path = os.path.join(ADVISOR_DIR, filename)
+        if not os.path.isfile(path):
             return ""
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read()
 
-    # ── file_path_check ─────────────────────────────────────────────
+    def test_analyze_function_defined(self):
+        """Public analyze() function must be defined."""
+        init_content = self._read("__init__.py")
+        analyzer_content = self._read("analyzer.py")
+        combined = init_content + analyzer_content
+        assert re.search(r"def\s+analyze\b", combined), (
+            "analyze() function not defined"
+        )
 
-    def _find_file(self, *candidates):
-        for c in candidates:
-            p = os.path.join(self.REPO_DIR, c)
-            if os.path.isfile(p):
-                return p
-        return None
+    def test_anti_pattern_rules_defined(self):
+        """Rules for excessive_shuffles, redundant_computation, partition_mismatch must exist."""
+        content = self._read("rules.py")
+        for rule in ["excessive_shuffle", "redundant_computation", "partition_mismatch"]:
+            assert re.search(rule, content, re.IGNORECASE), (
+                f"Rule '{rule}' not found in rules.py"
+            )
 
-    def test_query_analyzer_module_exists(self):
-        """Verify spark_optimization/query_analyzer.py or spark/analyzer.py exists."""
-        candidates = ("spark_optimization/query_analyzer.py", "spark/analyzer.py")
-        found = any(
-            os.path.isfile(os.path.join(self.REPO_DIR, c)) for c in candidates)
-        assert found, f"Missing: none of {candidates} found"
+    def test_report_to_dict_and_to_text(self):
+        """Report must have to_dict() and to_text() methods."""
+        content = self._read("report.py") + self._read("models.py")
+        assert re.search(r"def\s+to_dict\b", content), "to_dict method not defined"
+        assert re.search(r"def\s+to_text\b", content), "to_text method not defined"
 
-    def test_broadcast_optimizer_module_exists(self):
-        """Verify spark_optimization/broadcast_optimizer.py or spark/broadcast.py exists."""
-        candidates = ("spark_optimization/broadcast_optimizer.py",
-                       "spark/broadcast.py")
-        found = any(
-            os.path.isfile(os.path.join(self.REPO_DIR, c)) for c in candidates)
-        assert found, f"Missing: none of {candidates} found"
+    def test_severity_levels(self):
+        """Rules must use severity levels: low, medium, high."""
+        content = self._read("rules.py") + self._read("models.py")
+        for level in ["low", "medium", "high"]:
+            assert level in content.lower(), f"Severity level '{level}' not found"
 
-    def test_partition_advisor_module_exists(self):
-        """Verify spark_optimization/partition_advisor.py or spark/partition.py exists."""
-        candidates = ("spark_optimization/partition_advisor.py",
-                       "spark/partition.py")
-        found = any(
-            os.path.isfile(os.path.join(self.REPO_DIR, c)) for c in candidates)
-        assert found, f"Missing: none of {candidates} found"
+    def test_plan_node_types_recognized(self):
+        """Analyzer must recognize Exchange, BroadcastHashJoin, SortMergeJoin nodes."""
+        content = self._read("analyzer.py") + self._read("rules.py")
+        for node in ["Exchange", "SortMergeJoin", "BroadcastHashJoin"]:
+            assert node in content, f"Plan node type '{node}' not recognized"
 
-    # ── semantic_check ──────────────────────────────────────────────
+    def test_invalid_rule_raises_valueerror(self):
+        """analyze() with invalid rule name must raise ValueError."""
+        content = self._read("analyzer.py")
+        assert re.search(r"ValueError|Unknown rule|Available rules", content), (
+            "ValueError for unknown rule names not found"
+        )
 
-    def test_aqe_setting_string_present(self):
-        """Verify spark.sql.adaptive.enabled string present for AQE recommendation."""
-        path = self._find_file("spark_optimization/query_analyzer.py",
-                               "spark/analyzer.py")
-        assert path, "Query analyzer module not found"
-        content = self._read(path)
-        assert "spark.sql.adaptive.enabled" in content, \
-            "spark.sql.adaptive.enabled not found"
+    # ── functional_check ─────────────────────────────────────────────
 
-    def test_broadcast_threshold_constant(self):
-        """Verify broadcast optimizer uses 10MB or 100MB as default threshold."""
-        path = self._find_file("spark_optimization/broadcast_optimizer.py",
-                               "spark/broadcast.py")
-        assert path, "Broadcast optimizer module not found"
-        content = self._read(path)
-        found = any(kw in content for kw in ("100", "10"))
-        assert found, "Broadcast threshold value not found"
+    def test_all_files_valid_python(self):
+        """All advisor Python files must have valid syntax."""
+        errors = []
+        for fname in ["__init__.py", "analyzer.py", "rules.py", "report.py", "models.py"]:
+            content = self._read(fname)
+            if not content:
+                continue
+            try:
+                ast.parse(content)
+            except SyntaxError as e:
+                errors.append(f"{fname}: {e}")
+        assert not errors, "Syntax errors:\n" + "\n".join(errors)
 
-    def test_partition_formula_present(self):
-        """Verify partition advisor contains formula referencing num_cores or data_size."""
-        path = self._find_file("spark_optimization/partition_advisor.py",
-                               "spark/partition.py")
-        assert path, "Partition advisor module not found"
-        content = self._read(path)
-        found = any(kw in content for kw in (
-            "num_cores", "data_size", "target_partition_size"))
-        assert found, "Partition formula not found"
+    def test_report_sorted_by_severity(self):
+        """Recommendations must be sorted by severity (high first)."""
+        content = self._read("report.py")
+        assert re.search(r"sort|sorted|severity", content, re.IGNORECASE), (
+            "Report sorting by severity not found"
+        )
 
-    def test_join_types_key_in_analyze_return(self):
-        """Verify analyze() returns dict with join_types key."""
-        path = self._find_file("spark_optimization/query_analyzer.py",
-                               "spark/analyzer.py")
-        assert path, "Query analyzer module not found"
-        content = self._read(path)
-        assert "join_types" in content, "join_types not found in analyzer"
+    def test_no_issues_empty_message(self):
+        """Clean plan produces empty recommendations with summary message."""
+        content = self._read("report.py") + self._read("analyzer.py")
+        assert re.search(r"No optimization|no.*issue|empty|no.*detect", content, re.IGNORECASE), (
+            "No-issues summary message not found"
+        )
 
-    # ── functional_check (import) ───────────────────────────────────
-
-    def _skip_unless_importable(self):
-        if not os.path.isdir(self.REPO_DIR):
-            pytest.skip("Repo dir does not exist")
-        if self.REPO_DIR not in sys.path:
-            sys.path.insert(0, self.REPO_DIR)
-
-    def test_broadcast_recommend_small_table(self):
-        """BroadcastJoinOptimizer.recommend(50) returns dict with broadcast_threshold."""
-        self._skip_unless_importable()
-        try:
-            from spark_optimization.broadcast_optimizer import BroadcastJoinOptimizer
-        except Exception as exc:
-            pytest.skip(f"Cannot import: {exc}")
-        rec = BroadcastJoinOptimizer().recommend(50)
-        assert rec is not None and "broadcast_threshold" in rec, \
-            "50MB table should receive broadcast recommendation"
-
-    def test_broadcast_not_recommended_large_table(self):
-        """BroadcastJoinOptimizer.recommend(200) returns None or no broadcast hint."""
-        self._skip_unless_importable()
-        try:
-            from spark_optimization.broadcast_optimizer import BroadcastJoinOptimizer
-        except Exception as exc:
-            pytest.skip(f"Cannot import: {exc}")
-        rec = BroadcastJoinOptimizer().recommend(200)
-        assert rec is None or rec.get("broadcast_threshold") is None, \
-            "200MB table should not receive broadcast recommendation"
-
-    def test_partition_advise_100gb_32cores(self):
-        """PartitionStrategyAdvisor.advise(100, 32) returns int in range [100, 500]."""
-        self._skip_unless_importable()
-        try:
-            from spark_optimization.partition_advisor import PartitionStrategyAdvisor
-        except Exception as exc:
-            pytest.skip(f"Cannot import: {exc}")
-        n = PartitionStrategyAdvisor().advise(100, 32)
-        assert isinstance(n, int) and 100 <= n <= 500, \
-            f"Expected 100-500 partitions, got {n}"
-
-    def test_analyze_no_join_plan(self):
-        """SparkQueryAnalyzer: plan with no joins returns empty join_types."""
-        self._skip_unless_importable()
-        try:
-            from spark_optimization.query_analyzer import SparkQueryAnalyzer
-        except Exception as exc:
-            pytest.skip(f"Cannot import: {exc}")
-        plan_text = ("== Physical Plan ==\n"
-                     "FileScan parquet [id, value] Batched: true, DataFilters: []")
-        result = SparkQueryAnalyzer().analyze_plan(plan_text)
-        assert result["join_types"] == [], \
-            f"Expected empty join_types, got {result['join_types']}"
-        assert result["stage_count"] >= 1, \
-            f"Expected stage_count >= 1, got {result['stage_count']}"
+    def test_test_file_exists(self):
+        """Test file for analyzer must exist."""
+        test_path = os.path.join(ADVISOR_DIR, "tests", "test_analyzer.py")
+        assert os.path.isfile(test_path), f"Missing {test_path}"

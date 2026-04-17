@@ -1,139 +1,156 @@
 """
-Test for 'python-performance-optimization' skill — Performance Benchmarks
-Validates that the Agent implemented a benchmarking framework with profiler,
-analyzer, and reporter modules including statistical percentile computations.
+Tests for the python-performance-optimization skill.
+Validates a py-spy profiling benchmark suite with CPU/memory/IO/threaded
+workloads, benchmark runner, analysis, and regression detection.
 """
 
 import os
 import re
-import sys
+import ast
 
-import pytest
+REPO_DIR = "/workspace/py-spy"
+BENCH_DIR = os.path.join(REPO_DIR, "benchmarks")
+WORKLOADS_DIR = os.path.join(BENCH_DIR, "workloads")
 
 
 class TestPythonPerformanceOptimization:
-    """Verify performance benchmark implementation."""
+    """Tests for the py-spy profiling benchmark suite."""
 
-    REPO_DIR = "/workspace/py-spy"
+    # ── file_path_check ──────────────────────────────────────────────
 
-    @staticmethod
-    def _read(path: str) -> str:
-        try:
-            with open(path, "r", errors="ignore") as fh:
-                return fh.read()
-        except OSError:
+    def test_cpu_bound_exists(self):
+        """CPU-bound workload must exist."""
+        path = os.path.join(WORKLOADS_DIR, "cpu_bound.py")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    def test_memory_bound_exists(self):
+        """Memory-bound workload must exist."""
+        path = os.path.join(WORKLOADS_DIR, "memory_bound.py")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    def test_io_bound_exists(self):
+        """I/O-bound workload must exist."""
+        path = os.path.join(WORKLOADS_DIR, "io_bound.py")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    def test_threaded_exists(self):
+        """Multi-threaded workload must exist."""
+        path = os.path.join(WORKLOADS_DIR, "threaded.py")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    def test_runner_exists(self):
+        """Benchmark runner must exist."""
+        path = os.path.join(BENCH_DIR, "runner.py")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    def test_analysis_exists(self):
+        """Analysis module must exist."""
+        path = os.path.join(BENCH_DIR, "analysis.py")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    # ── semantic_check ───────────────────────────────────────────────
+
+    def _read(self, rel_path):
+        path = os.path.join(BENCH_DIR, rel_path)
+        if not os.path.isfile(path):
             return ""
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read()
 
-    # ── file_path_check ─────────────────────────────────────────────
+    def test_cpu_distinct_functions(self):
+        """CPU workload must define fibonacci, prime_sieve, matrix_multiply."""
+        content = self._read("workloads/cpu_bound.py")
+        for func in ["fibonacci", "prime_sieve", "matrix_multiply"]:
+            assert re.search(rf"def\s+{func}\b", content), f"{func} function not defined"
 
-    def test_benchmark_module_files_exist(self):
-        """Verify benchmarks/profiler.py and benchmarks/analyzer.py exist."""
-        for rel in ("benchmarks/profiler.py", "benchmarks/analyzer.py"):
-            path = os.path.join(self.REPO_DIR, rel)
-            assert os.path.isfile(path), f"Missing: {rel}"
+    def test_threaded_four_threads(self):
+        """Threaded workload must use 4 threads with distinct names."""
+        content = self._read("workloads/threaded.py")
+        assert re.search(r"Thread|threading", content), "threading module not used"
+        for name in ["compute", "sleep", "allocate", "io"]:
+            assert name in content, f"Thread name '{name}' not found"
 
-    def test_reporter_module_exists(self):
-        """Verify benchmarks/reporter.py exists."""
-        path = os.path.join(self.REPO_DIR, "benchmarks/reporter.py")
-        assert os.path.isfile(path), "Missing: benchmarks/reporter.py"
+    def test_ready_signal(self):
+        """Workloads must print READY signal for synchronization."""
+        for wl in ["workloads/cpu_bound.py", "workloads/memory_bound.py",
+                    "workloads/io_bound.py", "workloads/threaded.py"]:
+            content = self._read(wl)
+            assert "READY" in content, f"READY signal not found in {wl}"
 
-    # ── semantic_check ──────────────────────────────────────────────
+    def test_duration_argument(self):
+        """Workloads must accept --duration CLI argument."""
+        content = self._read("workloads/cpu_bound.py")
+        assert re.search(r"--duration|duration|argparse", content), (
+            "--duration argument not found"
+        )
 
-    def test_benchmark_result_fields_defined(self):
-        """Verify BenchmarkResult has timings, p95, p99, std_dev fields."""
-        content = self._read(os.path.join(self.REPO_DIR, "benchmarks/profiler.py"))
-        assert content, "benchmarks/profiler.py is empty or unreadable"
-        for kw in ("timings", "p95", "p99", "std_dev"):
-            assert kw in content, f"'{kw}' not found in profiler.py"
+    def test_runner_subprocess_launch(self):
+        """Runner must launch workloads via subprocess."""
+        content = self._read("runner.py")
+        assert re.search(r"subprocess|Popen", content), "subprocess usage not found in runner"
+        assert re.search(r"py-spy|py.spy|record", content), "py-spy invocation not found"
 
-    def test_regression_error_defined(self):
-        """Verify RegressionError and regression threshold 1.20 are defined."""
-        content = self._read(os.path.join(self.REPO_DIR, "benchmarks/profiler.py"))
-        assert content, "benchmarks/profiler.py is empty or unreadable"
-        found = any(kw in content for kw in ("RegressionError", "1.20", "threshold"))
-        assert found, "RegressionError or threshold not found in profiler.py"
+    def test_overhead_calculation(self):
+        """Runner must calculate profiling overhead percentage."""
+        content = self._read("runner.py")
+        assert re.search(r"overhead|overhead_pct", content, re.IGNORECASE), (
+            "Overhead calculation not found"
+        )
 
-    def test_performance_report_header_string(self):
-        """Verify reporter.py uses '# Performance Report' as the report header."""
-        content = self._read(os.path.join(self.REPO_DIR, "benchmarks/reporter.py"))
-        assert content, "benchmarks/reporter.py is empty or unreadable"
-        assert "# Performance Report" in content, \
-            "'# Performance Report' header not found in reporter.py"
+    def test_analysis_regression_detection(self):
+        """Analysis must detect regressions against baseline."""
+        content = self._read("analysis.py")
+        assert re.search(r"regression|baseline|PASS|FAIL", content, re.IGNORECASE), (
+            "Regression detection not found"
+        )
 
-    def test_environment_error_for_missing_pyspy(self):
-        """Verify analyzer.py raises EnvironmentError when py-spy is not found."""
-        content = self._read(os.path.join(self.REPO_DIR, "benchmarks/analyzer.py"))
-        assert content, "benchmarks/analyzer.py is empty or unreadable"
-        found = any(kw in content for kw in ("EnvironmentError", "py-spy", "shutil.which"))
-        assert found, "EnvironmentError or py-spy check not found in analyzer.py"
+    # ── functional_check ─────────────────────────────────────────────
 
-    # ── functional_check (import) ───────────────────────────────────
+    def test_workloads_valid_python(self):
+        """All workload files must have valid Python syntax."""
+        errors = []
+        for wl in ["workloads/cpu_bound.py", "workloads/memory_bound.py",
+                    "workloads/io_bound.py", "workloads/threaded.py"]:
+            content = self._read(wl)
+            if not content:
+                continue
+            try:
+                ast.parse(content)
+            except SyntaxError as e:
+                errors.append(f"{wl}: {e}")
+        assert not errors, "Syntax errors:\n" + "\n".join(errors)
 
-    def _skip_unless_importable(self):
-        if not os.path.isdir(self.REPO_DIR):
-            pytest.skip("Repo dir does not exist")
-        if self.REPO_DIR not in sys.path:
-            sys.path.insert(0, self.REPO_DIR)
+    def test_runner_valid_python(self):
+        """Runner must have valid Python syntax."""
+        content = self._read("runner.py")
+        if content:
+            ast.parse(content)
 
-    def test_timing_list_length_equals_iterations(self):
-        """BenchmarkRunner.run() returns result with len(timings) == iterations."""
-        self._skip_unless_importable()
-        try:
-            from benchmarks.profiler import BenchmarkRunner
-        except Exception as exc:
-            pytest.skip(f"Cannot import benchmarks.profiler: {exc}")
-        result = BenchmarkRunner().run(lambda: 1 + 1, iterations=50)
-        assert len(result.timings) == 50, \
-            f"Expected 50 timings, got {len(result.timings)}"
+    def test_analysis_valid_python(self):
+        """Analysis module must have valid Python syntax."""
+        content = self._read("analysis.py")
+        if content:
+            ast.parse(content)
 
-    def test_percentile_ordering_p99_gte_p95_gte_p50(self):
-        """BenchmarkResult percentiles satisfy p99 >= p95 >= median >= 0."""
-        self._skip_unless_importable()
-        try:
-            from benchmarks.profiler import BenchmarkRunner
-        except Exception as exc:
-            pytest.skip(f"Cannot import benchmarks.profiler: {exc}")
-        r = BenchmarkRunner().run(lambda: None, iterations=100)
-        assert r.p99 >= r.p95 >= r.median >= 0, \
-            f"Percentile ordering violated: p99={r.p99} p95={r.p95} median={r.median}"
+    def test_no_external_deps_in_workloads(self):
+        """Workloads must use only standard library (no pip packages)."""
+        third_party = ["numpy", "pandas", "scipy", "torch", "requests"]
+        for wl in ["workloads/cpu_bound.py", "workloads/memory_bound.py",
+                    "workloads/io_bound.py", "workloads/threaded.py"]:
+            content = self._read(wl)
+            for pkg in third_party:
+                assert not re.search(rf"^\s*import\s+{pkg}|^\s*from\s+{pkg}", content, re.MULTILINE), (
+                    f"External dependency '{pkg}' found in {wl}"
+                )
 
-    def test_mean_calculation(self):
-        """BenchmarkResult.mean equals sum(timings)/len(timings) within tolerance."""
-        self._skip_unless_importable()
-        try:
-            from benchmarks.profiler import BenchmarkRunner
-        except Exception as exc:
-            pytest.skip(f"Cannot import benchmarks.profiler: {exc}")
-        r = BenchmarkRunner().run(lambda: None, iterations=20)
-        expected = sum(r.timings) / len(r.timings)
-        assert abs(r.mean - expected) < 1e-9, \
-            f"mean {r.mean} != expected {expected}"
+    def test_baseline_json_exists(self):
+        """Baseline reference file must exist."""
+        path = os.path.join(BENCH_DIR, "baseline.json")
+        assert os.path.isfile(path), f"Missing {path}"
 
-    def test_regression_error_raised_when_p95_exceeds_threshold(self):
-        """PerformanceReporter.generate() raises RegressionError when p95 exceeds baseline * 1.20."""
-        self._skip_unless_importable()
-        try:
-            from benchmarks.reporter import PerformanceReporter
-            from benchmarks.profiler import BenchmarkResult, RegressionError
-        except Exception as exc:
-            pytest.skip(f"Cannot import benchmarks modules: {exc}")
-        current = BenchmarkResult(
-            timings=[150] * 10, mean=150, median=150, p95=150, p99=160, std_dev=0)
-        baseline = BenchmarkResult(
-            timings=[100] * 10, mean=100, median=100, p95=100, p99=110, std_dev=0)
-        with pytest.raises(RegressionError):
-            PerformanceReporter().generate(current, baseline)
-
-    def test_report_starts_with_performance_report_header(self):
-        """Report string without regression starts with '# Performance Report'."""
-        self._skip_unless_importable()
-        try:
-            from benchmarks.reporter import PerformanceReporter
-            from benchmarks.profiler import BenchmarkResult
-        except Exception as exc:
-            pytest.skip(f"Cannot import benchmarks modules: {exc}")
-        r = BenchmarkResult(
-            timings=[100] * 10, mean=100, median=100, p95=100, p99=100, std_dev=0)
-        report = PerformanceReporter().generate(r, r)
-        assert report.startswith("# Performance Report"), \
-            "Report must start with '# Performance Report'"
+    def test_lock_in_threaded(self):
+        """Threaded workload must use threading.Lock for shared counter."""
+        content = self._read("workloads/threaded.py")
+        assert re.search(r"Lock|lock|threading\.Lock", content), (
+            "threading.Lock not found in threaded workload"
+        )

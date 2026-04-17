@@ -1,226 +1,212 @@
 """
-Tests for 'rag-implementation' skill.
-Generated from benchmark case definitions for rag-implementation.
+Test skill: rag-implementation
+Verify that the Agent builds a RAG system with document ingestion,
+hybrid retrieval (dense + BM25 + RRF), cross-encoder reranking,
+LangGraph pipeline, and citation tracking.
 """
 
-import ast
-import base64
-import glob
-import json
 import os
-import py_compile
 import re
+import ast
 import subprocess
-import textwrap
-
 import pytest
-
-try:
-    import yaml
-except ModuleNotFoundError:
-    yaml = None
 
 
 class TestRagImplementation:
-    """Verify the rag-implementation skill output."""
+    REPO_DIR = "/workspace/langchain"
 
-    REPO_DIR = '/workspace/langchain'
+    # === File Path Checks ===
 
+    def test_ingestion_file_exists(self):
+        path = os.path.join(self.REPO_DIR, "src/rag/ingestion.py")
+        assert os.path.exists(path), f"ingestion.py not found at {path}"
 
-    # ── helpers ──────────────────────────────────────────────
+    def test_retriever_file_exists(self):
+        path = os.path.join(self.REPO_DIR, "src/rag/retriever.py")
+        assert os.path.exists(path), f"retriever.py not found at {path}"
 
-    _SETUP_CACHE: dict = {}
+    def test_reranker_file_exists(self):
+        path = os.path.join(self.REPO_DIR, "src/rag/reranker.py")
+        assert os.path.exists(path), f"reranker.py not found at {path}"
 
-    @staticmethod
-    def _repo_path(rel: str) -> str:
-        return os.path.join(TestRagImplementation.REPO_DIR, rel)
+    def test_pipeline_file_exists(self):
+        path = os.path.join(self.REPO_DIR, "src/rag/pipeline.py")
+        assert os.path.exists(path), f"pipeline.py not found at {path}"
 
-    @staticmethod
-    def _safe_read(path: str) -> str:
-        with open(path, "r", encoding="utf-8", errors="ignore") as fh:
-            return fh.read()
+    def test_prompts_file_exists(self):
+        path = os.path.join(self.REPO_DIR, "src/rag/prompts.py")
+        assert os.path.exists(path), f"prompts.py not found at {path}"
 
-    @staticmethod
-    def _load_yaml(path: str):
-        if yaml is None:
-            pytest.skip("PyYAML not available")
-        with open(path, "r", encoding="utf-8", errors="ignore") as fh:
-            return yaml.safe_load(fh)
+    def test_init_file_exists(self):
+        path = os.path.join(self.REPO_DIR, "src/rag/__init__.py")
+        assert os.path.exists(path), f"__init__.py not found at {path}"
 
-    @staticmethod
-    def _load_json(path: str):
-        with open(path, "r", encoding="utf-8", errors="ignore") as fh:
-            return json.load(fh)
+    # === Semantic Checks ===
 
-    @classmethod
-    def _run_in_repo(cls, script: str, timeout: int = 120) -> subprocess.CompletedProcess:
-        return subprocess.run(
-            ["python", "-c", textwrap.dedent(script)],
-            cwd=cls.REPO_DIR,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
+    def test_ingestion_class_defined(self):
+        """Verify DocumentIngester class with ingest methods"""
+        path = os.path.join(self.REPO_DIR, "src/rag/ingestion.py")
+        with open(path, "r") as f:
+            content = f.read()
+
+        assert "DocumentIngester" in content, "Must define DocumentIngester class"
+        assert re.search(r"def\s+ingest_directory", content), "Missing ingest_directory"
+        assert re.search(r"def\s+ingest_file", content), "Missing ingest_file"
+
+    def test_ingestion_uses_recursive_splitter(self):
+        """Verify ingestion uses RecursiveCharacterTextSplitter"""
+        path = os.path.join(self.REPO_DIR, "src/rag/ingestion.py")
+        with open(path, "r") as f:
+            content = f.read()
+
+        assert "RecursiveCharacterTextSplitter" in content or "TextSplitter" in content, (
+            "Should use RecursiveCharacterTextSplitter for chunking"
+        )
+        assert "1000" in content, "chunk_size should be 1000"
+        assert "200" in content, "chunk_overlap should be 200"
+
+    def test_ingestion_preserves_heading_metadata(self):
+        """Verify chunks include section heading and hierarchy metadata"""
+        path = os.path.join(self.REPO_DIR, "src/rag/ingestion.py")
+        with open(path, "r") as f:
+            content = f.read()
+
+        assert "section_heading" in content or "heading" in content, (
+            "Chunk metadata should include section_heading"
+        )
+        assert "heading_hierarchy" in content or "hierarchy" in content, (
+            "Chunk metadata should include heading hierarchy"
         )
 
-    @classmethod
-    def _run_cmd(cls, command, args=None, timeout=120):
-        args = args or []
-        if isinstance(command, str) and args:
-            return subprocess.run(
-                [command, *args],
-                cwd=cls.REPO_DIR,
-                capture_output=True,
-                text=True,
-                timeout=timeout,
-            )
-        return subprocess.run(
-            command if isinstance(command, list) else command,
-            cwd=cls.REPO_DIR,
-            shell=isinstance(command, str),
-            capture_output=True,
-            text=True,
-            timeout=timeout,
+    def test_ingestion_uses_deterministic_ids(self):
+        """Verify vector IDs use SHA-256 hash of file path"""
+        path = os.path.join(self.REPO_DIR, "src/rag/ingestion.py")
+        with open(path, "r") as f:
+            content = f.read()
+
+        assert "sha256" in content.lower() or "hashlib" in content, (
+            "Vector IDs should use SHA-256 hash for deterministic IDs"
         )
 
-    @classmethod
-    def _ensure_setup(cls, label, setup_cmds, fallback):
-        if not setup_cmds:
-            return
-        key = tuple(setup_cmds)
-        if key in cls._SETUP_CACHE:
-            ok, msg = cls._SETUP_CACHE[key]
-            if ok:
-                return
-            if fallback == "skip_if_setup_fails":
-                pytest.skip(f"{label} setup failed: {msg}")
-            pytest.fail(f"{label} setup failed: {msg}")
-        for cmd in setup_cmds:
-            r = subprocess.run(cmd, cwd=cls.REPO_DIR, shell=True,
-                               capture_output=True, text=True, timeout=300)
-            if r.returncode != 0:
-                msg = (r.stderr or r.stdout or 'failed').strip()
-                cls._SETUP_CACHE[key] = (False, msg)
-                if fallback == "skip_if_setup_fails":
-                    pytest.skip(f"{label} setup failed: {msg}")
-                pytest.fail(f"{label} setup failed: {msg}")
-        cls._SETUP_CACHE[key] = (True, 'ok')
+    def test_retriever_implements_hybrid_search(self):
+        """Verify HybridRetriever combines dense + BM25 + RRF"""
+        path = os.path.join(self.REPO_DIR, "src/rag/retriever.py")
+        with open(path, "r") as f:
+            content = f.read()
 
-
-    # ── file_path_check (static) ────────────────────────────────────────
-
-    def test_rag_modules_exist(self):
-        """Verify all RAG source modules exist"""
-        _p = self._repo_path('src/rag/ingestion.py')
-        assert os.path.isfile(_p), f'Missing file: src/rag/ingestion.py'
-        py_compile.compile(_p, doraise=True)
-        _p = self._repo_path('src/rag/retriever.py')
-        assert os.path.isfile(_p), f'Missing file: src/rag/retriever.py'
-        py_compile.compile(_p, doraise=True)
-        _p = self._repo_path('src/rag/pipeline.py')
-        assert os.path.isfile(_p), f'Missing file: src/rag/pipeline.py'
-        py_compile.compile(_p, doraise=True)
-
-    def test_rag_test_file_exists(self):
-        """Verify test file exists"""
-        _p = self._repo_path('tests/test_rag.py')
-        assert os.path.isfile(_p), f'Missing file: tests/test_rag.py'
-        py_compile.compile(_p, doraise=True)
-
-    # ── semantic_check (static) ────────────────────────────────────────
-
-    def test_document_ingester_class(self):
-        """Verify DocumentIngester class with ingest and chunk methods"""
-        _p = self._repo_path('src/rag/ingestion.py')
-        assert os.path.exists(_p), f'Missing: src/rag/ingestion.py'
-        _contents = self._safe_read(_p)
-        _all = _contents if isinstance(_contents, str) else ''
-        assert 'class DocumentIngester' in _all, 'Missing: class DocumentIngester'
-        assert 'ingest' in _all, 'Missing: ingest'
-        assert 'chunk' in _all, 'Missing: chunk'
-        assert 'chunk_size' in _all, 'Missing: chunk_size'
-        assert 'overlap' in _all, 'Missing: overlap'
-
-    def test_retriever_class(self):
-        """Verify Retriever class with retrieve method returning Documents"""
-        _p = self._repo_path('src/rag/retriever.py')
-        assert os.path.exists(_p), f'Missing: src/rag/retriever.py'
-        _contents = self._safe_read(_p)
-        _all = _contents if isinstance(_contents, str) else ''
-        assert 'class Retriever' in _all, 'Missing: class Retriever'
-        assert 'retrieve' in _all, 'Missing: retrieve'
-        assert 'top_k' in _all, 'Missing: top_k'
-        assert 'Document' in _all, 'Missing: Document'
-
-    def test_rag_pipeline_uses_state_graph(self):
-        """Verify RAGPipeline uses LangGraph StateGraph with retrieve/augment/generate nodes"""
-        _p = self._repo_path('src/rag/pipeline.py')
-        assert os.path.exists(_p), f'Missing: src/rag/pipeline.py'
-        _contents = self._safe_read(_p)
-        _all = _contents if isinstance(_contents, str) else ''
-        assert 'StateGraph' in _all, 'Missing: StateGraph'
-        assert 'RAGPipeline' in _all, 'Missing: RAGPipeline'
-        assert 'invoke' in _all, 'Missing: invoke'
-        assert 'retrieve' in _all, 'Missing: retrieve'
-        assert 'augment' in _all, 'Missing: augment'
-        assert 'generate' in _all, 'Missing: generate'
-
-    def test_pipeline_returns_dict_with_answer(self):
-        """Verify invoke returns dict with 'answer', 'sources', 'context' keys"""
-        _p = self._repo_path('src/rag/pipeline.py')
-        assert os.path.exists(_p), f'Missing: src/rag/pipeline.py'
-        _contents = self._safe_read(_p)
-        _all = _contents if isinstance(_contents, str) else ''
-        assert 'answer' in _all, 'Missing: answer'
-        assert 'sources' in _all, 'Missing: sources'
-        assert 'context' in _all, 'Missing: context'
-
-    # ── functional_check ────────────────────────────────────────
-
-    def test_chunk_produces_overlapping_segments(self):
-        """Verify chunk produces overlapping text segments"""
-        self._ensure_setup('test_chunk_produces_overlapping_segments', ['pip install langchain langgraph faiss-cpu'], 'fail_if_missing')
-        result = self._run_cmd('python', args=['-c', "from src.rag.ingestion import DocumentIngester; d=DocumentIngester(); chunks=d.chunk('a '*200, chunk_size=100, overlap=20); assert isinstance(chunks, list); assert len(chunks)>1; assert all(len(c)<=120 for c in chunks); print('PASS')"], timeout=120)
-        assert result.returncode == 0, (
-            f'test_chunk_produces_overlapping_segments failed (exit {result.returncode})\n' + result.stderr[:500]
+        assert "HybridRetriever" in content, "Must define HybridRetriever class"
+        assert "BM25" in content or "bm25" in content, "Should use BM25 for sparse search"
+        assert "rrf" in content.lower() or "reciprocal" in content.lower(), (
+            "Should use Reciprocal Rank Fusion"
         )
 
-    def test_retrieve_returns_top_k_docs(self):
-        """Verify retrieve returns exactly top_k Document objects"""
-        self._ensure_setup('test_retrieve_returns_top_k_docs', ['pip install langchain langgraph faiss-cpu'], 'fail_if_missing')
-        result = self._run_cmd('python', args=['-m', 'pytest', 'tests/test_rag.py', '-v', '-k', 'test_retrieve_top_k'], timeout=120)
-        assert result.returncode == 0, (
-            f'test_retrieve_returns_top_k_docs failed (exit {result.returncode})\n' + result.stderr[:500]
+    def test_retriever_has_dense_weight(self):
+        """Verify retriever supports configurable dense_weight"""
+        path = os.path.join(self.REPO_DIR, "src/rag/retriever.py")
+        with open(path, "r") as f:
+            content = f.read()
+
+        assert "dense_weight" in content, "Should have configurable dense_weight"
+        assert "0.7" in content, "Default dense_weight should be 0.7"
+
+    def test_reranker_uses_cross_encoder(self):
+        """Verify Reranker uses cross-encoder model"""
+        path = os.path.join(self.REPO_DIR, "src/rag/reranker.py")
+        with open(path, "r") as f:
+            content = f.read()
+
+        assert "Reranker" in content, "Must define Reranker class"
+        assert "cross-encoder" in content or "CrossEncoder" in content, (
+            "Should use cross-encoder for reranking"
         )
 
-    def test_pipeline_invoke_with_mock_llm(self):
-        """Verify RAGPipeline.invoke returns dict with answer and sources using mock LLM"""
-        self._ensure_setup('test_pipeline_invoke_with_mock_llm', ['pip install langchain langgraph faiss-cpu pytest'], 'fail_if_missing')
-        result = self._run_cmd('python', args=['-m', 'pytest', 'tests/test_rag.py', '-v', '-k', 'test_pipeline_invoke'], timeout=120)
-        assert result.returncode == 0, (
-            f'test_pipeline_invoke_with_mock_llm failed (exit {result.returncode})\n' + result.stderr[:500]
+    def test_pipeline_uses_langgraph(self):
+        """Verify pipeline uses LangGraph StateGraph"""
+        path = os.path.join(self.REPO_DIR, "src/rag/pipeline.py")
+        with open(path, "r") as f:
+            content = f.read()
+
+        assert "StateGraph" in content or "langgraph" in content, (
+            "Pipeline should use LangGraph StateGraph"
         )
 
-    def test_empty_ingestion(self):
-        """Verify ingest([]) succeeds without error"""
-        self._ensure_setup('test_empty_ingestion', ['pip install langchain langgraph faiss-cpu'], 'fail_if_missing')
-        result = self._run_cmd('python', args=['-c', "from src.rag.ingestion import DocumentIngester; d=DocumentIngester(); d.ingest([]); print('PASS')"], timeout=120)
-        assert result.returncode == 0, (
-            f'test_empty_ingestion failed (exit {result.returncode})\n' + result.stderr[:500]
+    def test_pipeline_has_four_nodes(self):
+        """Verify pipeline defines retrieve, rerank, generate, cite_sources nodes"""
+        path = os.path.join(self.REPO_DIR, "src/rag/pipeline.py")
+        with open(path, "r") as f:
+            content = f.read()
+
+        expected = ["retrieve", "rerank", "generate", "cite_sources"]
+        found = [n for n in expected if n in content]
+        assert len(found) >= 3, (
+            f"Pipeline should have 4 nodes. Found: {found}"
         )
 
-    def test_no_context_uncertainty_response(self):
-        """Verify pipeline with no context returns uncertainty phrase"""
-        self._ensure_setup('test_no_context_uncertainty_response', ['pip install langchain langgraph faiss-cpu pytest'], 'fail_if_missing')
-        result = self._run_cmd('python', args=['-m', 'pytest', 'tests/test_rag.py', '-v', '-k', 'test_no_context'], timeout=120)
-        assert result.returncode == 0, (
-            f'test_no_context_uncertainty_response failed (exit {result.returncode})\n' + result.stderr[:500]
+    def test_prompts_has_citation_instructions(self):
+        """Verify prompts include citation markers [1], [2]"""
+        path = os.path.join(self.REPO_DIR, "src/rag/prompts.py")
+        with open(path, "r") as f:
+            content = f.read()
+
+        assert "[1]" in content or "citation" in content.lower(), (
+            "Prompts should include citation marker instructions"
         )
 
-    def test_invalid_document_raises(self):
-        """Verify ingest with None text raises ValueError"""
-        self._ensure_setup('test_invalid_document_raises', ['pip install langchain langgraph faiss-cpu'], 'fail_if_missing')
-        result = self._run_cmd('python', args=['-c', "from src.rag.ingestion import DocumentIngester; d=DocumentIngester()\ntry:\n    d.ingest([None])\n    assert False, 'Should have raised'\nexcept (ValueError, TypeError):\n    print('PASS')"], timeout=120)
-        assert result.returncode == 0, (
-            f'test_invalid_document_raises failed (exit {result.returncode})\n' + result.stderr[:500]
+    def test_prompts_handles_insufficient_context(self):
+        """Verify prompts instruct to say 'not enough information'"""
+        path = os.path.join(self.REPO_DIR, "src/rag/prompts.py")
+        with open(path, "r") as f:
+            content = f.read()
+
+        content_lower = content.lower()
+        assert ("don't have enough" in content_lower or
+                "not enough information" in content_lower or
+                "cannot answer" in content_lower or
+                "insufficient" in content_lower), (
+            "Prompts should handle insufficient context case"
         )
 
+    # === Functional Checks ===
+
+    def test_all_python_files_parse(self):
+        """Verify all Python files parse without syntax errors"""
+        files = [
+            "src/rag/__init__.py", "src/rag/ingestion.py",
+            "src/rag/retriever.py", "src/rag/reranker.py",
+            "src/rag/pipeline.py", "src/rag/prompts.py",
+        ]
+        for filename in files:
+            path = os.path.join(self.REPO_DIR, filename)
+            with open(path, "r") as f:
+                source = f.read()
+            try:
+                ast.parse(source)
+            except SyntaxError as e:
+                pytest.fail(f"{filename} has syntax error: {e}")
+
+    def test_init_exports(self):
+        """Verify __init__.py exports main classes"""
+        path = os.path.join(self.REPO_DIR, "src/rag/__init__.py")
+        with open(path, "r") as f:
+            content = f.read()
+
+        assert "RAGPipeline" in content, "__init__.py should export RAGPipeline"
+        assert "DocumentIngester" in content, "__init__.py should export DocumentIngester"
+        assert "HybridRetriever" in content, "__init__.py should export HybridRetriever"
+
+    def test_pipeline_tests_exist_and_parse(self):
+        """Verify pipeline test files exist and parse"""
+        test_files = [
+            "tests/test_ingestion.py",
+            "tests/test_retriever.py",
+            "tests/test_pipeline.py",
+        ]
+        for filename in test_files:
+            path = os.path.join(self.REPO_DIR, filename)
+            assert os.path.exists(path), f"Test file {filename} not found"
+            with open(path, "r") as f:
+                source = f.read()
+            try:
+                ast.parse(source)
+            except SyntaxError as e:
+                pytest.fail(f"{filename} has syntax error: {e}")

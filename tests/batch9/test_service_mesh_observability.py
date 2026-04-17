@@ -1,123 +1,167 @@
 """
-Test for 'service-mesh-observability' skill — Service Mesh Observability
-Validates Go observability package: TracingConfigBuilder, MetricsAggregator,
-AlertRuleBuilder, DashboardConfigBuilder, percentile methods, thresholds.
+Test skill: service-mesh-observability
+Verify that the Agent creates Grafana dashboard JSON generators
+for Linkerd service mesh observability (Go).
 """
 
-import glob
 import os
-
+import re
+import json
+import subprocess
 import pytest
 
 
 class TestServiceMeshObservability:
-    """Verify service mesh observability: tracing, metrics, alerts, dashboards."""
-
     REPO_DIR = "/workspace/linkerd2"
 
-    # ── helpers ──────────────────────────────────────────────────────────
+    # === File Path Checks ===
 
-    @staticmethod
-    def _read_file(path: str) -> str:
-        try:
-            with open(path, "r", errors="ignore") as fh:
-                return fh.read()
-        except OSError:
-            return ""
+    def test_dashboard_generator_files_exist(self):
+        """Verify Grafana dashboard generator files exist"""
+        found = False
+        for root, dirs, files in os.walk(self.REPO_DIR):
+            if ".git" in root or "vendor" in root:
+                continue
+            for f in files:
+                if ("dashboard" in f.lower() or "grafana" in f.lower()) and (f.endswith(".go") or f.endswith(".json") or f.endswith(".jsonnet")):
+                    found = True
+                    break
+            if found:
+                break
+        assert found, "Grafana dashboard files not found"
 
-    def _obs(self, *parts) -> str:
-        return os.path.join(self.REPO_DIR, "observability", *parts)
+    # === Semantic Checks ===
 
-    # ── file_path_check ──────────────────────────────────────────────────
+    def test_grafana_dashboard_structure(self):
+        """Verify Grafana dashboard has standard structure"""
+        content = self._collect_dashboard_content()
+        has_structure = (
+            "panels" in content
+            or "dashboard" in content.lower()
+            or "Panel" in content
+            or "datasource" in content.lower()
+        )
+        assert has_structure, "Grafana dashboard structure not found"
 
-    def test_go_mod_and_tracing_go_exist(self):
-        """go.mod and observability/tracing.go must exist."""
-        assert os.path.isfile(os.path.join(self.REPO_DIR, "go.mod"))
-        assert os.path.isfile(self._obs("tracing.go"))
+    def test_mesh_metrics_included(self):
+        """Verify service mesh metrics are included"""
+        content = self._collect_dashboard_content()
+        content_lower = content.lower()
+        has_metrics = (
+            "request_total" in content_lower
+            or "latency" in content_lower
+            or "success_rate" in content_lower
+            or "tcp_" in content_lower
+            or "response_total" in content_lower
+        )
+        assert has_metrics, "Service mesh metrics not included in dashboards"
 
-    def test_metrics_and_dashboard_go_exist(self):
-        """observability/metrics.go and dashboard.go must exist."""
-        assert os.path.isfile(self._obs("metrics.go"))
-        assert os.path.isfile(self._obs("dashboard.go"))
+    def test_promql_queries_present(self):
+        """Verify PromQL queries are present"""
+        content = self._collect_dashboard_content()
+        content_lower = content.lower()
+        has_promql = (
+            "rate(" in content_lower
+            or "sum(" in content_lower
+            or "histogram_quantile" in content_lower
+            or "irate(" in content_lower
+        )
+        assert has_promql, "PromQL queries not found in dashboards"
 
-    def test_alerts_and_test_files_exist(self):
-        """alerts.go and at least one *_test.go must exist."""
-        assert os.path.isfile(self._obs("alerts.go"))
-        assert glob.glob(self._obs("*_test.go")), "No *_test.go in observability/"
+    def test_linkerd_specific_metrics(self):
+        """Verify Linkerd-specific metrics are used"""
+        content = self._collect_dashboard_content()
+        content_lower = content.lower()
+        has_linkerd = (
+            "linkerd" in content_lower
+            or "proxy" in content_lower
+            or "meshed" in content_lower
+        )
+        assert has_linkerd, "Linkerd-specific metrics not found"
 
-    # ── semantic_check ───────────────────────────────────────────────────
+    # === Functional Checks ===
 
-    def test_tracing_config_builder_struct(self):
-        """TracingConfigBuilder and Build() must be defined."""
-        content = self._read_file(self._obs("tracing.go"))
-        if not content:
-            pytest.skip("tracing.go not found")
-        assert "TracingConfigBuilder" in content
-        assert "Build" in content
+    def test_json_dashboards_valid(self):
+        """Verify JSON dashboard files are valid"""
+        json_files = self._find_json_dashboards()
+        for jf in json_files:
+            with open(jf) as fh:
+                data = json.load(fh)
+            assert isinstance(data, dict), f"{jf} is not a JSON object"
 
-    def test_tracing_references_otlp_receivers(self):
-        """tracing.go must reference otlp and receivers for YAML config."""
-        content = self._read_file(self._obs("tracing.go"))
-        if not content:
-            pytest.skip("tracing.go not found")
-        assert "otlp" in content
-        assert "receivers" in content.lower() or "Receivers" in content
+    def test_go_generator_files_valid(self):
+        """Verify Go generator files have valid package declarations"""
+        go_files = self._find_go_files()
+        for gf in go_files:
+            with open(gf) as fh:
+                content = fh.read()
+            assert "package " in content[:200], f"{gf} missing package declaration"
 
-    def test_metrics_aggregator_percentile_methods(self):
-        """MetricsAggregator must have P50, P95, P99 methods."""
-        content = self._read_file(self._obs("metrics.go"))
-        if not content:
-            pytest.skip("metrics.go not found")
-        assert "MetricsAggregator" in content
-        for p in ("P50", "P95", "P99"):
-            assert p in content, f"{p} method not found"
+    def test_go_files_balanced_braces(self):
+        """Verify Go files have balanced braces"""
+        go_files = self._find_go_files()
+        for gf in go_files:
+            with open(gf) as fh:
+                content = fh.read()
+            cleaned = re.sub(r'"[^"]*"', '', content)
+            cleaned = re.sub(r'`[^`]*`', '', cleaned)
+            cleaned = re.sub(r'//[^\n]*', '', cleaned)
+            cleaned = re.sub(r'/\*.*?\*/', '', cleaned, flags=re.DOTALL)
+            opens = cleaned.count('{')
+            closes = cleaned.count('}')
+            assert opens == closes, f"Unbalanced braces in {gf}: {opens} vs {closes}"
 
-    def test_alert_severity_thresholds(self):
-        """alerts.go must define 0.05/critical and 0.01/warning thresholds."""
-        content = self._read_file(self._obs("alerts.go"))
-        if not content:
-            pytest.skip("alerts.go not found")
-        assert "0.05" in content
-        assert "critical" in content.lower()
-        assert "0.01" in content
-        assert "warning" in content.lower()
+    def test_dashboard_has_title(self):
+        """Verify dashboards have titles"""
+        content = self._collect_dashboard_content()
+        has_title = "title" in content.lower()
+        assert has_title, "Dashboard title not found"
 
-    def test_dashboard_config_builder_panels(self):
-        """DashboardConfigBuilder must reference panels and JSON."""
-        content = self._read_file(self._obs("dashboard.go"))
-        if not content:
-            pytest.skip("dashboard.go not found")
-        assert "DashboardConfigBuilder" in content
-        assert "panels" in content.lower() or "Panels" in content
+    def test_panel_types_defined(self):
+        """Verify dashboards define panel types (graph, gauge, etc.)"""
+        content = self._collect_dashboard_content()
+        content_lower = content.lower()
+        has_panels = (
+            "graph" in content_lower
+            or "timeseries" in content_lower
+            or "gauge" in content_lower
+            or "stat" in content_lower
+            or "table" in content_lower
+            or "type" in content_lower
+        )
+        assert has_panels, "Panel types not defined in dashboards"
 
-    # ── functional_check ─────────────────────────────────────────────────
+    def _collect_dashboard_content(self):
+        all_content = ""
+        for root, dirs, files in os.walk(self.REPO_DIR):
+            if ".git" in root or "vendor" in root:
+                continue
+            for f in files:
+                if ("dashboard" in f.lower() or "grafana" in f.lower()):
+                    fpath = os.path.join(root, f)
+                    try:
+                        with open(fpath) as fh:
+                            all_content += fh.read() + "\n"
+                    except (UnicodeDecodeError, PermissionError):
+                        continue
+        return all_content
 
-    def test_p99_nil_guard(self):
-        """MetricsAggregator must handle empty data without panicking (nil/len check)."""
-        content = self._read_file(self._obs("metrics.go"))
-        if not content:
-            pytest.skip("metrics.go not found")
-        has_guard = ("nil" in content or "len(" in content) and "return" in content
-        assert has_guard, "No nil/empty guard in metrics.go P99 method"
+    def _find_json_dashboards(self):
+        result = []
+        for root, dirs, files in os.walk(self.REPO_DIR):
+            if ".git" in root or "vendor" in root:
+                continue
+            for f in files:
+                if ("dashboard" in f.lower() or "grafana" in f.lower()) and f.endswith(".json"):
+                    result.append(os.path.join(root, f))
+        return result
 
-    def test_critical_threshold_0_05(self):
-        """alerts.go must pair 0.05 with critical severity."""
-        content = self._read_file(self._obs("alerts.go"))
-        if not content:
-            pytest.skip("alerts.go not found")
-        # Both must appear in the file
-        assert "0.05" in content and "critical" in content.lower()
-
-    def test_warning_threshold_0_01(self):
-        """alerts.go must pair 0.01 with warning severity."""
-        content = self._read_file(self._obs("alerts.go"))
-        if not content:
-            pytest.skip("alerts.go not found")
-        assert "0.01" in content and "warning" in content.lower()
-
-    def test_dashboard_produces_json(self):
-        """dashboard.go must use json.Marshal or json.NewEncoder."""
-        content = self._read_file(self._obs("dashboard.go"))
-        if not content:
-            pytest.skip("dashboard.go not found")
-        assert "json.Marshal" in content or "json.NewEncoder" in content
+    def _find_go_files(self):
+        result = []
+        for root, dirs, files in os.walk(self.REPO_DIR):
+            if ".git" in root or "vendor" in root:
+                continue
+            for f in files:
+                if f.endswith(".go") and ("dashboard" in f.lower() or "grafana" in f.lower()):
+                    result.append(os.path.join(root, f))
+        return result

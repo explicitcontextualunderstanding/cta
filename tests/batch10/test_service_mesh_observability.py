@@ -1,177 +1,216 @@
 """
-Test for 'service-mesh-observability' skill — Linkerd2 service mesh observability
-Validates that the Agent implemented service mesh observability patterns
-including metrics, dashboards, and health checks for linkerd2.
+Test skill: service-mesh-observability
+Verify that the Agent correctly implements Golden Signal Metrics
+and a Grafana Dashboard for Linkerd2 viz.
 """
 
 import os
 import re
-
+import json
 import pytest
 
 
 class TestServiceMeshObservability:
-    """Verify service mesh observability in linkerd2."""
-
     REPO_DIR = "/workspace/linkerd2"
 
-    def test_prometheus_metrics_defined(self):
-        """Prometheus metrics must be defined for service mesh."""
-        found = False
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            for f in files:
-                if f.endswith((".go", ".yaml", ".yml")):
-                    path = os.path.join(root, f)
-                    with open(path, "r", errors="ignore") as fh:
-                        content = fh.read()
-                    if re.search(r"prometheus|Counter|Histogram|Gauge|metrics|request_total|latency", content, re.IGNORECASE):
-                        found = True
-                        break
-            if found:
-                break
-        assert found, "No Prometheus metrics defined"
+    # === File Path Checks ===
 
-    def test_grafana_dashboard_config(self):
-        """Grafana dashboard config or reference must exist."""
-        found = False
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            for f in files:
-                if f.endswith((".json", ".yaml", ".yml")):
-                    path = os.path.join(root, f)
-                    with open(path, "r", errors="ignore") as fh:
-                        content = fh.read()
-                    if re.search(r"grafana|dashboard|panels|datasource", content, re.IGNORECASE):
-                        found = True
-                        break
-            if found:
-                break
-        assert found, "No Grafana dashboard config found"
+    def test_prometheus_go_exists(self):
+        """Verify prometheus.go was modified"""
+        path = os.path.join(
+            self.REPO_DIR, "viz/metrics-api/prometheus.go"
+        )
+        assert os.path.exists(path), "prometheus.go not found"
 
-    def test_golden_signals_metrics(self):
-        """Golden signals (latency, traffic, errors, saturation) should be tracked."""
-        found = False
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            for f in files:
-                if f.endswith((".go", ".yaml", ".yml")):
-                    path = os.path.join(root, f)
-                    with open(path, "r", errors="ignore") as fh:
-                        content = fh.read()
-                    if re.search(r"latency|request_duration|response_latency", content, re.IGNORECASE):
-                        if re.search(r"error|success|failure|status_code", content, re.IGNORECASE):
-                            found = True
-                            break
-            if found:
-                break
-        assert found, "Golden signals metrics not found"
+    def test_prometheus_configmap_yaml_exists(self):
+        """Verify prometheus-configmap.yaml exists"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "viz/charts/prometheus/templates/prometheus-configmap.yaml",
+        )
+        assert os.path.exists(path), "prometheus-configmap.yaml not found"
 
-    def test_health_check_endpoint(self):
-        """Health check endpoint must exist."""
-        found = False
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            for f in files:
-                if f.endswith((".go", ".yaml", ".yml")):
-                    path = os.path.join(root, f)
-                    with open(path, "r", errors="ignore") as fh:
-                        content = fh.read()
-                    if re.search(r"health|healthz|readyz|livez|readiness|liveness", content, re.IGNORECASE):
-                        found = True
-                        break
-            if found:
-                break
-        assert found, "No health check endpoint found"
+    def test_grafana_dashboard_json_exists(self):
+        """Verify linkerd-service-health.json was created"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "viz/charts/grafana/dashboards/linkerd-service-health.json",
+        )
+        assert os.path.exists(path), "linkerd-service-health.json not found"
 
-    def test_distributed_tracing(self):
-        """Distributed tracing support must exist."""
-        found = False
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            for f in files:
-                if f.endswith((".go", ".yaml", ".yml")):
-                    path = os.path.join(root, f)
-                    with open(path, "r", errors="ignore") as fh:
-                        content = fh.read()
-                    if re.search(r"trace|tracing|span|jaeger|zipkin|opentelemetry|opencensus", content, re.IGNORECASE):
-                        found = True
-                        break
-            if found:
-                break
-        assert found, "No distributed tracing found"
+    def test_prometheus_test_go_exists(self):
+        """Verify prometheus_test.go was modified"""
+        path = os.path.join(
+            self.REPO_DIR, "viz/metrics-api/prometheus_test.go"
+        )
+        assert os.path.exists(path), "prometheus_test.go not found"
 
-    def test_service_topology_or_map(self):
-        """Service topology or service map should be available."""
-        found = False
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            for f in files:
-                if f.endswith((".go", ".yaml", ".yml", ".json")):
-                    path = os.path.join(root, f)
-                    with open(path, "r", errors="ignore") as fh:
-                        content = fh.read()
-                    if re.search(r"topology|service.map|graph|dependency|edges|namespace", content, re.IGNORECASE):
-                        found = True
-                        break
-            if found:
-                break
-        assert found, "No service topology found"
+    # === Semantic Checks: Golden Signal Queries ===
 
-    def test_alerting_rules(self):
-        """Alerting rules for service mesh must exist."""
-        found = False
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            for f in files:
-                if f.endswith((".yaml", ".yml", ".rules")):
-                    path = os.path.join(root, f)
-                    with open(path, "r", errors="ignore") as fh:
-                        content = fh.read()
-                    if re.search(r"alert:|alerting|PrometheusRule|AlertmanagerConfig", content):
-                        found = True
-                        break
-            if found:
-                break
-        assert found, "No alerting rules found"
+    def _load_prometheus_go(self):
+        path = os.path.join(
+            self.REPO_DIR, "viz/metrics-api/prometheus.go"
+        )
+        return open(path).read()
 
-    def test_sli_or_slo_definition(self):
-        """SLI or SLO definitions should exist."""
-        found = False
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            for f in files:
-                if f.endswith((".go", ".yaml", ".yml", ".json")):
-                    path = os.path.join(root, f)
-                    with open(path, "r", errors="ignore") as fh:
-                        content = fh.read()
-                    if re.search(r"SLI|SLO|error.budget|service.level|success.rate|availability", content, re.IGNORECASE):
-                        found = True
-                        break
-            if found:
-                break
-        assert found, "No SLI/SLO definitions found"
+    def test_golden_signal_queries_function(self):
+        """Verify GoldenSignalQueries function is defined"""
+        source = self._load_prometheus_go()
+        assert "GoldenSignalQueries" in source, (
+            "GoldenSignalQueries function not found"
+        )
 
-    def test_proxy_metrics(self):
-        """Proxy-level metrics should be collected."""
-        found = False
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            for f in files:
-                if f.endswith((".go", ".rs", ".yaml", ".yml")):
-                    path = os.path.join(root, f)
-                    with open(path, "r", errors="ignore") as fh:
-                        content = fh.read()
-                    if re.search(r"proxy|inbound|outbound|tcp_|connection|request_total", content, re.IGNORECASE):
-                        found = True
-                        break
-            if found:
-                break
-        assert found, "No proxy metrics found"
+    def test_golden_signal_takes_service_namespace(self):
+        """Verify GoldenSignalQueries accepts service and namespace params"""
+        source = self._load_prometheus_go()
+        match = re.search(r'func\s+GoldenSignalQueries\s*\((.*?)\)', source, re.DOTALL)
+        assert match, "GoldenSignalQueries function signature not found"
+        params = match.group(1)
+        assert "service" in params.lower() and "namespace" in params.lower(), (
+            "GoldenSignalQueries does not accept service and namespace params"
+        )
 
-    def test_tap_or_debug_capability(self):
-        """Tap or debug capability for live traffic inspection."""
-        found = False
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            for f in files:
-                if f.endswith((".go", ".rs")):
-                    path = os.path.join(root, f)
-                    with open(path, "r", errors="ignore") as fh:
-                        content = fh.read()
-                    if re.search(r"[Tt]ap|debug|inspect|live.*traffic|pcap", content):
-                        found = True
-                        break
-            if found:
-                break
-        assert found, "No tap or debug capability found"
+    def test_golden_signal_returns_four_queries(self):
+        """Verify GoldenSignalQueries returns 4 PromQL expressions"""
+        source = self._load_prometheus_go()
+        # Check for latency, error rate, request rate, saturation
+        has_latency = "latency" in source.lower() or "histogram_quantile" in source
+        has_error = "error" in source.lower()
+        has_request_rate = "request" in source.lower() and "rate" in source.lower()
+        has_saturation = "saturation" in source.lower() or "active" in source.lower()
+        all_signals = [has_latency, has_error, has_request_rate, has_saturation]
+        assert sum(all_signals) >= 3, (
+            f"Expected at least 3 of 4 golden signals, found {sum(all_signals)}"
+        )
+
+    # === Semantic Checks: Recording Rules ===
+
+    def _load_configmap_yaml(self):
+        path = os.path.join(
+            self.REPO_DIR,
+            "viz/charts/prometheus/templates/prometheus-configmap.yaml",
+        )
+        return open(path).read()
+
+    def test_recording_rules_group_name(self):
+        """Verify recording rules group is named linkerd_golden_signals"""
+        source = self._load_configmap_yaml()
+        assert "linkerd_golden_signals" in source, (
+            "Recording rules group 'linkerd_golden_signals' not found"
+        )
+
+    def test_recording_rules_latency_percentiles(self):
+        """Verify P50/P95/P99 latency recording rules exist"""
+        source = self._load_configmap_yaml()
+        has_p50 = "0.5" in source or "p50" in source.lower() or "P50" in source
+        has_p95 = "0.95" in source or "p95" in source.lower() or "P95" in source
+        has_p99 = "0.99" in source or "p99" in source.lower() or "P99" in source
+        assert has_p50 and has_p95 and has_p99, (
+            "Missing P50/P95/P99 latency percentile recording rules"
+        )
+
+    def test_recording_rules_error_rate(self):
+        """Verify error rate recording rule exists"""
+        source = self._load_configmap_yaml()
+        assert "error" in source.lower() and "rate" in source.lower(), (
+            "Error rate recording rule not found"
+        )
+
+    # === Semantic Checks: Grafana Dashboard ===
+
+    def _load_dashboard_json(self):
+        path = os.path.join(
+            self.REPO_DIR,
+            "viz/charts/grafana/dashboards/linkerd-service-health.json",
+        )
+        return open(path).read()
+
+    def _parse_dashboard(self):
+        content = self._load_dashboard_json()
+        return json.loads(content)
+
+    def test_dashboard_valid_json(self):
+        """Verify dashboard file is valid JSON"""
+        try:
+            self._parse_dashboard()
+        except json.JSONDecodeError as e:
+            pytest.fail(f"Dashboard JSON is invalid: {e}")
+
+    def test_dashboard_schema_version(self):
+        """Verify dashboard uses schema version 36"""
+        dashboard = self._parse_dashboard()
+        assert dashboard.get("schemaVersion") == 36, (
+            f"Expected schemaVersion 36, got {dashboard.get('schemaVersion')}"
+        )
+
+    def test_dashboard_has_service_template_variable(self):
+        """Verify dashboard has 'service' template variable"""
+        dashboard = self._parse_dashboard()
+        templating = dashboard.get("templating", {})
+        var_list = templating.get("list", [])
+        service_vars = [v for v in var_list if v.get("name") == "service"]
+        assert len(service_vars) > 0, (
+            "Dashboard missing 'service' template variable"
+        )
+
+    # === Functional Checks ===
+
+    def test_dashboard_has_required_panels(self):
+        """Verify dashboard contains key panels for golden signals"""
+        dashboard = self._parse_dashboard()
+        panels = dashboard.get("panels", [])
+        panel_titles = [p.get("title", "") for p in panels]
+        # Should have panels related to latency, error rate, request rate
+        combined = " ".join(panel_titles).lower()
+        assert "latency" in combined or "duration" in combined, (
+            "No latency panel found in dashboard"
+        )
+        assert "error" in combined, "No error rate panel found in dashboard"
+        assert "request" in combined or "rate" in combined, (
+            "No request rate panel found in dashboard"
+        )
+
+    def test_dashboard_panels_use_datasource_variable(self):
+        """Verify dashboard panels reference datasource variable"""
+        content = self._load_dashboard_json()
+        assert "${datasource}" in content or "datasource" in content, (
+            "Panels do not reference the datasource variable"
+        )
+
+    def test_recording_rules_request_rate(self):
+        """Verify request rate recording rule exists"""
+        source = self._load_configmap_yaml()
+        assert "request" in source.lower() and "rate" in source.lower(), (
+            "Request rate recording rule not found"
+        )
+
+    def test_prometheus_go_has_promql(self):
+        """Verify prometheus.go contains PromQL query expressions"""
+        source = self._load_prometheus_go()
+        has_promql = (
+            "histogram_quantile" in source
+            or "rate(" in source
+            or "sum(" in source
+        )
+        assert has_promql, "No PromQL expressions found in prometheus.go"
+
+    def test_dashboard_has_datasource_template_variable(self):
+        """Verify dashboard has 'datasource' template variable"""
+        dashboard = self._parse_dashboard()
+        templating = dashboard.get("templating", {})
+        var_list = templating.get("list", [])
+        ds_vars = [v for v in var_list if v.get("name") == "datasource"]
+        assert len(ds_vars) > 0, (
+            "Dashboard missing 'datasource' template variable"
+        )
+
+    def test_recording_rules_saturation(self):
+        """Verify saturation recording rule exists"""
+        source = self._load_configmap_yaml()
+        has_saturation = (
+            "saturation" in source.lower()
+            or "connections" in source.lower()
+            or "active" in source.lower()
+            or "concurrent" in source.lower()
+        )
+        assert has_saturation, "Saturation recording rule not found"

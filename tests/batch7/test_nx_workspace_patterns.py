@@ -1,165 +1,222 @@
-"""Test file for the nx-workspace-patterns skill.
-
-This suite validates the project constraint checker, layer rule,
-circular dependency detection, and public API rule in Nx.
+"""
+Test skill: nx-workspace-patterns
+Verify that the Agent implements a Project Constraint Enforcement Plugin for Nx —
+ConstraintChecker (checkAll, checkProject, checkDependency), plus four rules:
+layer-rule, circular-rule, public-api-rule, depth-rule.
 """
 
-from __future__ import annotations
-
-import pathlib
+import os
 import re
-
+import subprocess
 import pytest
 
 
 class TestNxWorkspacePatterns:
-    """Verify Nx project constraint enforcement patterns."""
-
     REPO_DIR = "/workspace/nx"
 
-    INDEX_TS = "packages/nx/src/plugins/project-constraints/index.ts"
-    CHECKER_TS = "packages/nx/src/plugins/project-constraints/constraint-checker.ts"
-    LAYER_RULE_TS = "packages/nx/src/plugins/project-constraints/rules/layer-rule.ts"
+    # ────── helpers ──────
 
-    # ------------------------------------------------------------------
-    # Helpers
-    # ------------------------------------------------------------------
+    def _read(self, rel_path):
+        fpath = os.path.join(self.REPO_DIR, rel_path)
+        with open(fpath, "r") as f:
+            return f.read()
 
-    def _repo_path(self, relative: str) -> pathlib.Path:
-        return pathlib.Path(self.REPO_DIR, *relative.split("/"))
+    def _exists(self, rel_path):
+        return os.path.isfile(os.path.join(self.REPO_DIR, rel_path))
 
-    def _read_text(self, relative: str) -> str:
-        path = self._repo_path(relative)
-        assert path.exists(), f"Expected path to exist: {path}"
-        return path.read_text(encoding="utf-8", errors="ignore")
+    def _find_file(self, candidates):
+        for c in candidates:
+            if self._exists(c):
+                return c
+        return None
 
-    def _assert_non_empty_file(self, relative: str) -> pathlib.Path:
-        path = self._repo_path(relative)
-        assert path.is_file(), f"Expected file to exist: {path}"
-        assert path.stat().st_size > 0, f"Expected non-empty file: {path}"
-        return path
+    # === File Path Checks ===
 
-    def _all_ts_sources(self) -> str:
-        base = self._repo_path("packages/nx/src/plugins/project-constraints")
-        if not base.is_dir():
-            return ""
-        parts = []
-        for f in sorted(base.rglob("*.ts")):
-            parts.append(f.read_text(encoding="utf-8", errors="ignore"))
-        return "\n".join(parts)
+    def test_constraint_checker_exists(self):
+        """constraint-checker.ts must exist"""
+        assert self._exists(
+            "packages/nx/src/plugins/project-constraints/constraint-checker.ts"
+        )
 
-    # ------------------------------------------------------------------
-    # Layer 1 – file_path_check (3 cases)
-    # ------------------------------------------------------------------
+    def test_layer_rule_exists(self):
+        """layer-rule.ts must exist"""
+        assert self._exists(
+            "packages/nx/src/plugins/project-constraints/layer-rule.ts"
+        )
 
-    def test_file_path_packages_nx_src_plugins_project_constraints_index_ts_exists(
-        self,
-    ):
-        """Verify index.ts exists and is non-empty."""
-        self._assert_non_empty_file(self.INDEX_TS)
+    def test_circular_rule_exists(self):
+        """circular-rule.ts must exist"""
+        assert self._exists(
+            "packages/nx/src/plugins/project-constraints/circular-rule.ts"
+        )
 
-    def test_file_path_packages_nx_src_plugins_project_constraints_constraint_check(
-        self,
-    ):
-        """Verify constraint-checker.ts exists and is non-empty."""
-        self._assert_non_empty_file(self.CHECKER_TS)
+    def test_public_api_rule_exists(self):
+        """public-api-rule.ts must exist"""
+        assert self._exists(
+            "packages/nx/src/plugins/project-constraints/public-api-rule.ts"
+        )
 
-    def test_file_path_packages_nx_src_plugins_project_constraints_rules_layer_rule(
-        self,
-    ):
-        """Verify rules/layer-rule.ts exists and is non-empty."""
-        self._assert_non_empty_file(self.LAYER_RULE_TS)
+    def test_depth_rule_exists(self):
+        """depth-rule.ts must exist"""
+        assert self._exists(
+            "packages/nx/src/plugins/project-constraints/depth-rule.ts"
+        )
 
-    # ------------------------------------------------------------------
-    # Layer 2 – semantic_check (5 cases)
-    # ------------------------------------------------------------------
+    # === Semantic Checks — ConstraintChecker ===
 
-    def test_semantic_constraintchecker_constructor_accepts_projectgraph_and_confi(
-        self,
-    ):
-        """ConstraintChecker constructor accepts ProjectGraph and config."""
-        src = self._read_text(self.CHECKER_TS)
-        assert re.search(
-            r"class\s+ConstraintChecker", src
-        ), "ConstraintChecker class not found"
-        assert re.search(
-            r"ProjectGraph|projectGraph", src
-        ), "ConstraintChecker should accept ProjectGraph"
+    def test_constraint_checker_class_or_function(self):
+        """ConstraintChecker must be defined"""
+        src = self._read(
+            "packages/nx/src/plugins/project-constraints/constraint-checker.ts"
+        )
+        assert "ConstraintChecker" in src, "ConstraintChecker not found"
 
-    def test_semantic_constraintviolation_interface_has_rule_severity_sourceprojec(
-        self,
-    ):
-        """ConstraintViolation interface has rule, severity, sourceProject, targetProject, message."""
-        src = self._all_ts_sources()
-        assert re.search(
-            r"interface\s+ConstraintViolation|type\s+ConstraintViolation", src
-        ), "ConstraintViolation interface not found"
-        for field in ("rule", "severity", "sourceProject", "targetProject", "message"):
-            assert re.search(
-                rf"{field}\s*[:\?]", src
-            ), f"ConstraintViolation missing field: {field}"
+    def test_check_all_method(self):
+        """checkAll method must exist"""
+        src = self._read(
+            "packages/nx/src/plugins/project-constraints/constraint-checker.ts"
+        )
+        assert "checkAll" in src, "checkAll method not found"
 
-    def test_semantic_checklayerrule_function_accepts_source_target_config_paramet(
-        self,
-    ):
-        """checkLayerRule function accepts source, target, config parameters."""
-        src = self._read_text(self.LAYER_RULE_TS)
-        assert re.search(
-            r"function\s+checkLayerRule|export\s+.*checkLayerRule", src
-        ), "checkLayerRule function not found"
+    def test_check_project_method(self):
+        """checkProject method must exist"""
+        src = self._read(
+            "packages/nx/src/plugins/project-constraints/constraint-checker.ts"
+        )
+        assert "checkProject" in src, "checkProject method not found"
 
-    def test_semantic_detectcirculardependencies_function_accepts_projectgraph(self):
-        """detectCircularDependencies function accepts ProjectGraph."""
-        src = self._all_ts_sources()
-        assert re.search(
-            r"detectCircularDependencies|detectCircular", src
-        ), "detectCircularDependencies function not found"
+    def test_check_dependency_method(self):
+        """checkDependency method must exist"""
+        src = self._read(
+            "packages/nx/src/plugins/project-constraints/constraint-checker.ts"
+        )
+        assert "checkDependency" in src, "checkDependency method not found"
 
-    def test_semantic_checkpublicapirule_function_checks_import_path_against_publi(
-        self,
-    ):
-        """checkPublicApiRule function checks import path against publicApiPattern."""
-        src = self._all_ts_sources()
-        assert re.search(
-            r"checkPublicApiRule|publicApi|publicApiPattern", src
-        ), "checkPublicApiRule function not found"
+    def test_constraint_violation_interface(self):
+        """ConstraintViolation interface or type must be defined"""
+        base = "packages/nx/src/plugins/project-constraints"
+        found = False
+        for fn in os.listdir(os.path.join(self.REPO_DIR, base)):
+            if fn.endswith(".ts"):
+                content = self._read(os.path.join(base, fn))
+                if "ConstraintViolation" in content:
+                    found = True
+                    break
+        assert found, "ConstraintViolation interface/type not found"
 
-    # ------------------------------------------------------------------
-    # Layer 3 – functional_check (5 cases, source analysis)
-    # ------------------------------------------------------------------
+    # === Semantic Checks — layer-rule ===
 
-    def test_functional_data_access_ui_produces_layer_violation(self):
-        """data-access -> ui produces layer violation."""
-        src = self._read_text(self.LAYER_RULE_TS)
-        assert re.search(
-            r"violation|Violation|error", src, re.IGNORECASE
-        ), "Layer rule should produce violations"
-        assert re.search(r"layer|Layer", src), "Layer rule should check layer ordering"
+    def test_layer_rule_export(self):
+        """layer-rule must export a rule function or class"""
+        src = self._read(
+            "packages/nx/src/plugins/project-constraints/layer-rule.ts"
+        )
+        assert re.search(r'export\s+(function|class|const)', src), (
+            "No exported rule in layer-rule.ts"
+        )
 
-    def test_functional_ui_feature_allowed_in_correct_layer_order(self):
-        """ui -> feature allowed in correct layer order."""
-        src = self._read_text(self.LAYER_RULE_TS)
-        assert re.search(
-            r"indexOf|findIndex|order|layer", src, re.IGNORECASE
-        ), "Layer rule should compare layer positions"
+    def test_layer_order_enforcement(self):
+        """Must enforce layer ordering"""
+        src = self._read(
+            "packages/nx/src/plugins/project-constraints/layer-rule.ts"
+        )
+        lower = src.lower()
+        assert any(k in lower for k in ["layer", "order", "level", "hierarchy"]), (
+            "Layer order enforcement not found"
+        )
 
-    def test_functional_ui_util_with_allowskiplayers_false_produces_violation(self):
-        """ui -> util with allowSkipLayers=false produces violation."""
-        src = self._all_ts_sources()
-        assert re.search(
-            r"allowSkipLayers|skipLayers", src
-        ), "Layer rule should support allowSkipLayers option"
+    # === Semantic Checks — circular-rule ===
 
-    def test_functional_same_layer_dependency_with_allowsamelayer_true_is_allowed(self):
-        """same-layer dependency with allowSameLayer=true is allowed."""
-        src = self._all_ts_sources()
-        assert re.search(
-            r"allowSameLayer|sameLayer", src
-        ), "Layer rule should support allowSameLayer option"
+    def test_circular_rule_dfs(self):
+        """circular-rule must detect cycles (DFS or similar)"""
+        src = self._read(
+            "packages/nx/src/plugins/project-constraints/circular-rule.ts"
+        )
+        lower = src.lower()
+        assert any(k in lower for k in ["cycle", "circular", "visited", "dfs", "stack"]), (
+            "Cycle detection algorithm not found"
+        )
 
-    def test_functional_a_b_c_a_detected_as_circular_dependency(self):
-        """A->B->C->A detected as circular dependency."""
-        src = self._all_ts_sources()
-        assert re.search(
-            r"circular|cycle|visited|stack", src, re.IGNORECASE
-        ), "Circular dependency detection logic should exist"
+    # === Semantic Checks — public-api-rule ===
+
+    def test_public_api_boundary(self):
+        """public-api-rule must enforce public API boundary (index.ts / barrel)"""
+        src = self._read(
+            "packages/nx/src/plugins/project-constraints/public-api-rule.ts"
+        )
+        lower = src.lower()
+        assert any(k in lower for k in ["public", "barrel", "index", "export", "boundary"]), (
+            "Public API boundary enforcement not found"
+        )
+
+    # === Semantic Checks — depth-rule ===
+
+    def test_depth_rule_max_depth(self):
+        """depth-rule must enforce max dependency depth (BFS or similar)"""
+        src = self._read(
+            "packages/nx/src/plugins/project-constraints/depth-rule.ts"
+        )
+        lower = src.lower()
+        assert any(k in lower for k in ["depth", "bfs", "breadth", "max", "level"]), (
+            "Depth enforcement not found"
+        )
+
+    # === Semantic Checks — Tests ===
+
+    def test_constraint_checker_test_exists(self):
+        """Test file for constraint-checker must exist"""
+        base = "packages/nx/src/plugins/project-constraints"
+        found = False
+        for fn in os.listdir(os.path.join(self.REPO_DIR, base)):
+            if "constraint-checker" in fn and ("spec" in fn or "test" in fn):
+                found = True
+                break
+        assert found, "constraint-checker test file not found"
+
+    # === Functional Checks ===
+
+    def test_typescript_compile(self):
+        """TypeScript files must compile without errors"""
+        result = subprocess.run(
+            ["npx", "tsc", "--noEmit", "--project",
+             "packages/nx/tsconfig.lib.json"],
+            capture_output=True, text=True, cwd=self.REPO_DIR, timeout=300,
+        )
+        # Fallback: try project-level tsconfig
+        if result.returncode != 0:
+            result = subprocess.run(
+                ["npx", "tsc", "--noEmit",
+                 "packages/nx/src/plugins/project-constraints/constraint-checker.ts",
+                 "--skipLibCheck"],
+                capture_output=True, text=True, cwd=self.REPO_DIR, timeout=300,
+            )
+        assert result.returncode == 0, (
+            f"TypeScript compilation failed:\n{result.stdout}\n{result.stderr}"
+        )
+
+    def test_jest_constraint_checker(self):
+        """Jest tests for constraint-checker must pass"""
+        result = subprocess.run(
+            ["npx", "jest", "--testPathPattern",
+             "project-constraints", "--passWithNoTests"],
+            capture_output=True, text=True, cwd=self.REPO_DIR, timeout=300,
+        )
+        assert result.returncode == 0, (
+            f"Jest tests failed:\n{result.stdout}\n{result.stderr}"
+        )
+
+    def test_build_nx_package(self):
+        """Nx package must build"""
+        result = subprocess.run(
+            ["npx", "nx", "build", "nx"],
+            capture_output=True, text=True, cwd=self.REPO_DIR, timeout=300,
+        )
+        # Accept either success or the project might use a different build target
+        if result.returncode != 0:
+            result = subprocess.run(
+                ["npm", "run", "build", "--", "--scope=nx"],
+                capture_output=True, text=True, cwd=self.REPO_DIR, timeout=300,
+            )
+        assert result.returncode == 0, (
+            f"Build failed:\n{result.stdout}\n{result.stderr}"
+        )

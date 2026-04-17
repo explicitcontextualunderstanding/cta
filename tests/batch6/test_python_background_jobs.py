@@ -1,220 +1,285 @@
 """
-Tests for 'python-background-jobs' skill.
-Generated from benchmark case definitions for python-background-jobs.
+Test skill: python-background-jobs
+Verify that the Agent correctly implements a Celery multi-step order
+processing pipeline with task chaining, idempotency, error callbacks,
+state tracking, and proper Celery configuration.
 """
 
-import ast
-import base64
-import glob
-import json
 import os
-import py_compile
 import re
+import ast
 import subprocess
-import textwrap
-
 import pytest
-
-try:
-    import yaml
-except ModuleNotFoundError:
-    yaml = None
 
 
 class TestPythonBackgroundJobs:
-    """Verify the python-background-jobs skill output."""
+    REPO_DIR = "/workspace/celery"
 
-    REPO_DIR = '/workspace/celery'
+    # === File Path Checks ===
 
+    def test_tasks_file_exists(self):
+        """Verify order pipeline tasks file exists"""
+        path = os.path.join(self.REPO_DIR, "examples/order_pipeline/tasks.py")
+        assert os.path.exists(path), f"tasks.py not found at {path}"
 
-    # ── helpers ──────────────────────────────────────────────
+    def test_models_file_exists(self):
+        """Verify order pipeline models file exists"""
+        path = os.path.join(self.REPO_DIR, "examples/order_pipeline/models.py")
+        assert os.path.exists(path), f"models.py not found at {path}"
 
-    _SETUP_CACHE: dict = {}
+    def test_pipeline_file_exists(self):
+        """Verify pipeline orchestrator file exists"""
+        path = os.path.join(self.REPO_DIR, "examples/order_pipeline/pipeline.py")
+        assert os.path.exists(path), f"pipeline.py not found at {path}"
 
-    @staticmethod
-    def _repo_path(rel: str) -> str:
-        return os.path.join(TestPythonBackgroundJobs.REPO_DIR, rel)
+    def test_config_file_exists(self):
+        """Verify Celery config file exists"""
+        path = os.path.join(self.REPO_DIR, "examples/order_pipeline/config.py")
+        assert os.path.exists(path), f"config.py not found at {path}"
 
-    @staticmethod
-    def _safe_read(path: str) -> str:
-        with open(path, "r", encoding="utf-8", errors="ignore") as fh:
-            return fh.read()
+    def test_test_file_exists(self):
+        """Verify test file exists"""
+        path = os.path.join(self.REPO_DIR, "tests/test_order_pipeline.py")
+        assert os.path.exists(path), f"test_order_pipeline.py not found"
 
-    @staticmethod
-    def _load_yaml(path: str):
-        if yaml is None:
-            pytest.skip("PyYAML not available")
-        with open(path, "r", encoding="utf-8", errors="ignore") as fh:
-            return yaml.safe_load(fh)
+    # === Semantic Checks ===
 
-    @staticmethod
-    def _load_json(path: str):
-        with open(path, "r", encoding="utf-8", errors="ignore") as fh:
-            return json.load(fh)
+    def test_order_status_enum_defined(self):
+        """Verify OrderStatus enum has all required states"""
+        path = os.path.join(self.REPO_DIR, "examples/order_pipeline/models.py")
+        with open(path, "r") as f:
+            content = f.read()
 
-    @classmethod
-    def _run_in_repo(cls, script: str, timeout: int = 120) -> subprocess.CompletedProcess:
-        return subprocess.run(
-            ["python", "-c", textwrap.dedent(script)],
-            cwd=cls.REPO_DIR,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-        )
+        assert "OrderStatus" in content, "Must define OrderStatus enum"
+        expected_states = [
+            "PENDING", "VALIDATING", "PAYMENT_PROCESSING",
+            "RESERVING_INVENTORY", "SENDING_NOTIFICATION",
+            "COMPLETED", "FAILED"
+        ]
+        for state in expected_states:
+            assert state in content, f"OrderStatus missing state: {state}"
 
-    @classmethod
-    def _run_cmd(cls, command, args=None, timeout=120):
-        args = args or []
-        if isinstance(command, str) and args:
-            return subprocess.run(
-                [command, *args],
-                cwd=cls.REPO_DIR,
-                capture_output=True,
-                text=True,
-                timeout=timeout,
+    def test_four_task_functions_defined(self):
+        """Verify all four pipeline tasks are defined"""
+        path = os.path.join(self.REPO_DIR, "examples/order_pipeline/tasks.py")
+        with open(path, "r") as f:
+            content = f.read()
+
+        expected_tasks = [
+            "validate_order", "process_payment",
+            "reserve_inventory", "send_notification"
+        ]
+        for task in expected_tasks:
+            assert re.search(rf"def\s+{task}", content), (
+                f"Missing task function: {task}"
             )
-        return subprocess.run(
-            command if isinstance(command, list) else command,
-            cwd=cls.REPO_DIR,
-            shell=isinstance(command, str),
-            capture_output=True,
-            text=True,
-            timeout=timeout,
+
+    def test_process_payment_has_retry_config(self):
+        """Verify process_payment has autoretry_for, max_retries, exponential backoff"""
+        path = os.path.join(self.REPO_DIR, "examples/order_pipeline/tasks.py")
+        with open(path, "r") as f:
+            content = f.read()
+
+        assert "autoretry_for" in content or "retry" in content, (
+            "process_payment should configure auto-retry for transient errors"
+        )
+        assert "max_retries" in content, (
+            "process_payment should set max_retries"
+        )
+        assert "backoff" in content.lower() or "countdown" in content, (
+            "process_payment should use exponential backoff"
         )
 
-    @classmethod
-    def _ensure_setup(cls, label, setup_cmds, fallback):
-        if not setup_cmds:
-            return
-        key = tuple(setup_cmds)
-        if key in cls._SETUP_CACHE:
-            ok, msg = cls._SETUP_CACHE[key]
-            if ok:
-                return
-            if fallback == "skip_if_setup_fails":
-                pytest.skip(f"{label} setup failed: {msg}")
-            pytest.fail(f"{label} setup failed: {msg}")
-        for cmd in setup_cmds:
-            r = subprocess.run(cmd, cwd=cls.REPO_DIR, shell=True,
-                               capture_output=True, text=True, timeout=300)
-            if r.returncode != 0:
-                msg = (r.stderr or r.stdout or 'failed').strip()
-                cls._SETUP_CACHE[key] = (False, msg)
-                if fallback == "skip_if_setup_fails":
-                    pytest.skip(f"{label} setup failed: {msg}")
-                pytest.fail(f"{label} setup failed: {msg}")
-        cls._SETUP_CACHE[key] = (True, 'ok')
+    def test_process_payment_has_idempotency_key(self):
+        """Verify process_payment uses an idempotency key"""
+        path = os.path.join(self.REPO_DIR, "examples/order_pipeline/tasks.py")
+        with open(path, "r") as f:
+            content = f.read()
 
+        assert "idempotency" in content.lower() or "payment-" in content, (
+            "process_payment should use idempotency key (e.g. payment-{order_id})"
+        )
 
-    # ── file_path_check (static) ────────────────────────────────────────
+    def test_reserve_inventory_is_idempotent(self):
+        """Verify reserve_inventory handles already-reserved orders"""
+        path = os.path.join(self.REPO_DIR, "examples/order_pipeline/tasks.py")
+        with open(path, "r") as f:
+            content = f.read()
 
-    def test_tasks_module_exists(self):
-        """Verify order processing tasks module exists"""
-        _p = self._repo_path('app/tasks/order_tasks.py')
-        assert os.path.isfile(_p), f'Missing file: app/tasks/order_tasks.py'
-        py_compile.compile(_p, doraise=True)
+        # Find reserve_inventory function
+        func_match = re.search(
+            r"def\s+reserve_inventory.*?\n((?:[ \t]+.*\n)*)",
+            content
+        )
+        assert func_match, "reserve_inventory function not found"
+        body = func_match.group(1)
 
-    def test_models_module_exists(self):
-        """Verify OrderStatus enum and order model exist"""
-        _p = self._repo_path('app/models/order.py')
-        assert os.path.isfile(_p), f'Missing file: app/models/order.py'
-        py_compile.compile(_p, doraise=True)
+        has_idempotent = (
+            "already" in body.lower()
+            or "reserved" in body.lower()
+            or "RESERVING_INVENTORY" in body
+        )
+        assert has_idempotent, (
+            "reserve_inventory should be idempotent (check if already reserved)"
+        )
 
-    # ── semantic_check (static) ────────────────────────────────────────
+    def test_send_notification_does_not_fail_order(self):
+        """Verify send_notification failure doesn't prevent COMPLETED status"""
+        path = os.path.join(self.REPO_DIR, "examples/order_pipeline/tasks.py")
+        with open(path, "r") as f:
+            content = f.read()
 
-    def test_order_status_enum_values(self):
-        """Verify OrderStatus enum defines all 7 required states"""
-        _p = self._repo_path('app/models/order.py')
-        assert os.path.exists(_p), f'Missing: app/models/order.py'
-        _contents = self._safe_read(_p)
-        _all = _contents if isinstance(_contents, str) else ''
-        assert 'PENDING' in _all, 'Missing: PENDING'
-        assert 'VALIDATING' in _all, 'Missing: VALIDATING'
-        assert 'PAYMENT_PROCESSING' in _all, 'Missing: PAYMENT_PROCESSING'
-        assert 'RESERVING_INVENTORY' in _all, 'Missing: RESERVING_INVENTORY'
-        assert 'COMPLETED' in _all, 'Missing: COMPLETED'
-        assert 'FAILED' in _all, 'Missing: FAILED'
-        assert 'NOTIFYING' in _all, 'Missing: NOTIFYING'
+        # Find send_notification function
+        func_match = re.search(
+            r"def\s+send_notification.*?\n((?:[ \t]+.*\n)*)",
+            content
+        )
+        assert func_match, "send_notification function not found"
+        body = func_match.group(1)
 
-    def test_celery_chain_composition(self):
-        """Verify tasks are composed using celery.chain"""
-        _p = self._repo_path('app/tasks/order_tasks.py')
-        assert os.path.exists(_p), f'Missing: app/tasks/order_tasks.py'
-        _contents = self._safe_read(_p)
-        _all = _contents if isinstance(_contents, str) else ''
-        assert 'chain' in _all, 'Missing: chain'
-        assert 'validate_order' in _all, 'Missing: validate_order'
-        assert 'process_payment' in _all, 'Missing: process_payment'
-        assert 'reserve_inventory' in _all, 'Missing: reserve_inventory'
-        assert 'send_notification' in _all, 'Missing: send_notification'
+        has_error_handling = (
+            "except" in body
+            or "try" in body
+            or "warning" in body.lower()
+            or "COMPLETED" in body
+        )
+        assert has_error_handling, (
+            "send_notification should handle errors gracefully and still complete"
+        )
 
-    def test_retry_decorator_on_payment(self):
-        """Verify process_payment has retry configuration for ConnectionError only"""
-        _p = self._repo_path('app/tasks/order_tasks.py')
-        assert os.path.exists(_p), f'Missing: app/tasks/order_tasks.py'
-        _contents = self._safe_read(_p)
-        _all = _contents if isinstance(_contents, str) else ''
-        assert 'autoretry_for' in _all, 'Missing: autoretry_for'
-        assert 'ConnectionError' in _all, 'Missing: ConnectionError'
-        assert 'max_retries' in _all, 'Missing: max_retries'
+    def test_pipeline_uses_chain(self):
+        """Verify pipeline orchestrator uses Celery chain()"""
+        path = os.path.join(self.REPO_DIR, "examples/order_pipeline/pipeline.py")
+        with open(path, "r") as f:
+            content = f.read()
 
-    def test_idempotency_pattern(self):
-        """Verify reserve_inventory has idempotency check"""
-        _p = self._repo_path('app/tasks/order_tasks.py')
-        assert os.path.exists(_p), f'Missing: app/tasks/order_tasks.py'
-        _contents = self._safe_read(_p)
-        _all = _contents if isinstance(_contents, str) else ''
-        assert 'already_reserved' in _all, 'Missing: already_reserved'
-        assert 'idempotency' in _all, 'Missing: idempotency'
-        assert 'reserved' in _all, 'Missing: reserved'
+        assert "chain" in content, "Pipeline should use Celery chain() primitive"
 
-    # ── functional_check ────────────────────────────────────────
+    def test_submit_order_function_defined(self):
+        """Verify submit_order function is defined and returns order_id"""
+        path = os.path.join(self.REPO_DIR, "examples/order_pipeline/pipeline.py")
+        with open(path, "r") as f:
+            content = f.read()
 
-    def test_validate_order_success(self):
-        """Verify validate_order passes a valid order and updates status"""
-        self._ensure_setup('test_validate_order_success', ['pip install celery pytest'], 'fail_if_missing')
-        result = self._run_cmd('python', args=['-m', 'pytest', 'tests/test_validate_order.py', '-v', '-k', 'test_valid_order'], timeout=120)
+        assert re.search(r"def\s+submit_order", content), (
+            "pipeline.py must define submit_order function"
+        )
+        assert "order_id" in content, (
+            "submit_order should return an order_id"
+        )
+
+    def test_error_callback_defined(self):
+        """Verify handle_pipeline_error callback is defined"""
+        path = os.path.join(self.REPO_DIR, "examples/order_pipeline/pipeline.py")
+        with open(path, "r") as f:
+            content = f.read()
+
+        tasks_path = os.path.join(self.REPO_DIR, "examples/order_pipeline/tasks.py")
+        with open(tasks_path, "r") as f:
+            tasks_content = f.read()
+
+        combined = content + tasks_content
+        assert "handle_pipeline_error" in combined or "on_error" in combined, (
+            "Must define an error callback (handle_pipeline_error or on_error)"
+        )
+
+    def test_get_order_status_function_defined(self):
+        """Verify get_order_status function is defined"""
+        path = os.path.join(self.REPO_DIR, "examples/order_pipeline/pipeline.py")
+        with open(path, "r") as f:
+            content = f.read()
+
+        assert re.search(r"def\s+get_order_status", content), (
+            "pipeline.py must define get_order_status function"
+        )
+
+    def test_celery_config_settings(self):
+        """Verify Celery configuration has required settings"""
+        path = os.path.join(self.REPO_DIR, "examples/order_pipeline/config.py")
+        with open(path, "r") as f:
+            content = f.read()
+
+        assert "json" in content, "Task serializer should be 'json'"
+        assert "task_acks_late" in content, "Must set task_acks_late"
+        assert "task_reject_on_worker_lost" in content, "Must set task_reject_on_worker_lost"
+        assert "worker_prefetch_multiplier" in content, "Must set worker_prefetch_multiplier"
+        assert "task_time_limit" in content, "Must set task_time_limit"
+        assert "task_soft_time_limit" in content, "Must set task_soft_time_limit"
+
+    def test_celery_config_values(self):
+        """Verify Celery configuration values are correct"""
+        path = os.path.join(self.REPO_DIR, "examples/order_pipeline/config.py")
+        with open(path, "r") as f:
+            content = f.read()
+
+        # Check specific values
+        assert "300" in content, "task_time_limit should be 300 seconds"
+        assert "240" in content, "task_soft_time_limit should be 240 seconds"
+        assert re.search(r"worker_prefetch_multiplier.*=.*1\b", content), (
+            "worker_prefetch_multiplier should be 1"
+        )
+
+    # === Functional Checks ===
+
+    def test_all_python_files_parse(self):
+        """Verify all pipeline Python files parse without syntax errors"""
+        files = [
+            "examples/order_pipeline/tasks.py",
+            "examples/order_pipeline/models.py",
+            "examples/order_pipeline/pipeline.py",
+            "examples/order_pipeline/config.py",
+        ]
+        for filename in files:
+            path = os.path.join(self.REPO_DIR, filename)
+            with open(path, "r") as f:
+                source = f.read()
+            try:
+                ast.parse(source)
+            except SyntaxError as e:
+                pytest.fail(f"{filename} has syntax error: {e}")
+
+    def test_models_import(self):
+        """Verify models can be imported"""
+        result = subprocess.run(
+            ["python", "-c",
+             "import sys; sys.path.insert(0, 'examples'); "
+             "from order_pipeline.models import OrderStatus; "
+             "print(list(OrderStatus))"],
+            capture_output=True, text=True, timeout=30,
+            cwd=self.REPO_DIR,
+        )
         assert result.returncode == 0, (
-            f'test_validate_order_success failed (exit {result.returncode})\n' + result.stderr[:500]
+            f"Failed to import models:\nstdout: {result.stdout}\nstderr: {result.stderr}"
         )
 
-    def test_validate_order_missing_fields(self):
-        """Verify validate_order rejects order missing required fields"""
-        self._ensure_setup('test_validate_order_missing_fields', ['pip install celery pytest'], 'fail_if_missing')
-        result = self._run_cmd('python', args=['-m', 'pytest', 'tests/test_validate_order.py', '-v', '-k', 'test_missing_fields'], timeout=120)
-        assert result.returncode == 0, (
-            f'test_validate_order_missing_fields failed (exit {result.returncode})\n' + result.stderr[:500]
+    def test_validate_order_rejects_empty_items(self):
+        """Verify validate_order rejects orders with empty items list"""
+        path = os.path.join(self.REPO_DIR, "examples/order_pipeline/tasks.py")
+        with open(path, "r") as f:
+            content = f.read()
+
+        # Check for validation logic
+        assert "items" in content, "validate_order should check items"
+        has_empty_check = (
+            "not items" in content
+            or "len(items)" in content
+            or "empty" in content.lower()
+            or "at least one" in content.lower()
+        )
+        assert has_empty_check, (
+            "validate_order should reject empty items list"
         )
 
-    def test_process_payment_declined(self):
-        """Verify PaymentDeclinedError is not retried and sets FAILED"""
-        self._ensure_setup('test_process_payment_declined', ['pip install celery pytest'], 'fail_if_missing')
-        result = self._run_cmd('python', args=['-m', 'pytest', 'tests/test_process_payment.py', '-v', '-k', 'test_declined'], timeout=120)
-        assert result.returncode == 0, (
-            f'test_process_payment_declined failed (exit {result.returncode})\n' + result.stderr[:500]
-        )
+    def test_validate_order_checks_total_amount(self):
+        """Verify validate_order validates total_amount matches sum"""
+        path = os.path.join(self.REPO_DIR, "examples/order_pipeline/tasks.py")
+        with open(path, "r") as f:
+            content = f.read()
 
-    def test_reserve_inventory_idempotent(self):
-        """Verify calling reserve_inventory twice does not double-reserve"""
-        self._ensure_setup('test_reserve_inventory_idempotent', ['pip install celery pytest'], 'fail_if_missing')
-        result = self._run_cmd('python', args=['-m', 'pytest', 'tests/test_reserve_inventory.py', '-v', '-k', 'test_idempotent'], timeout=120)
-        assert result.returncode == 0, (
-            f'test_reserve_inventory_idempotent failed (exit {result.returncode})\n' + result.stderr[:500]
+        has_total_check = (
+            "total_amount" in content
+            and ("mismatch" in content.lower() or "sum" in content.lower() or "!=" in content)
         )
-
-    def test_notification_failure_does_not_fail_order(self):
-        """Verify send_notification failure does not set order to FAILED"""
-        self._ensure_setup('test_notification_failure_does_not_fail_order', ['pip install celery pytest'], 'fail_if_missing')
-        result = self._run_cmd('python', args=['-m', 'pytest', 'tests/test_notification.py', '-v', '-k', 'test_notification_fails_gracefully'], timeout=120)
-        assert result.returncode == 0, (
-            f'test_notification_failure_does_not_fail_order failed (exit {result.returncode})\n' + result.stderr[:500]
+        assert has_total_check, (
+            "validate_order should check total_amount matches sum of items"
         )
-
-    def test_full_pipeline_success(self):
-        """Run the full chain end-to-end with a valid order"""
-        self._ensure_setup('test_full_pipeline_success', ['pip install celery pytest'], 'fail_if_missing')
-        result = self._run_cmd('python', args=['-m', 'pytest', 'tests/test_order_pipeline.py', '-v', '-k', 'test_full_success'], timeout=120)
-        assert result.returncode == 0, (
-            f'test_full_pipeline_success failed (exit {result.returncode})\n' + result.stderr[:500]
-        )
-

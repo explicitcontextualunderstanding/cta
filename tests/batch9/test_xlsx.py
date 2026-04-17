@@ -1,211 +1,194 @@
 """
-Test for 'xlsx' skill — Excel & Spreadsheet Automation
-Validates XLSX reader/writer/formula/chart modules: file existence, class
-signatures, and functional round-trip tests using openpyxl and pandas.
+Test skill: xlsx
+Verify that the Agent creates a budget_model.py generating a multi-sheet Excel workbook
+with formulas, formatting, and data validation using openpyxl.
 """
 
 import os
-import sys
-import tempfile
-
+import subprocess
+import ast
+import re
 import pytest
 
 
 class TestXlsx:
-    """Verify XLSX reader, writer, formula evaluator, and chart builder."""
-
     REPO_DIR = "/workspace/openpyxl"
 
-    # ── helpers ──────────────────────────────────────────────────────────
-    @staticmethod
-    def _read_file(path: str) -> str:
-        try:
-            with open(path, "r", errors="ignore") as fh:
-                return fh.read()
-        except OSError:
-            return ""
+    # === File Path Checks ===
 
-    @classmethod
-    def _add_to_path(cls):
-        for d in (cls.REPO_DIR, os.path.join(cls.REPO_DIR, "examples")):
-            if d not in sys.path:
-                sys.path.insert(0, d)
+    def test_budget_model_script_exists(self):
+        """Verify budget_model.py exists"""
+        path = os.path.join(self.REPO_DIR, "budget_model.py")
+        assert os.path.exists(path), f"budget_model.py not found at {path}"
 
-    # ── file_path_check ──────────────────────────────────────────────────
-
-    def test_xlsx_module_files_exist(self):
-        """examples/xlsx/__init__.py, reader.py, writer.py must exist."""
-        base = os.path.join(self.REPO_DIR, "examples", "xlsx")
-        for name in ("__init__.py", "reader.py", "writer.py"):
-            path = os.path.join(base, name)
-            assert os.path.isfile(path), f"{path} does not exist"
-            assert os.path.getsize(path) > 0, f"{name} is empty"
-
-    def test_formula_and_chart_files_exist(self):
-        """examples/xlsx/formula.py and chart.py must exist."""
-        base = os.path.join(self.REPO_DIR, "examples", "xlsx")
-        for name in ("formula.py", "chart.py"):
-            path = os.path.join(base, name)
-            assert os.path.isfile(path), f"{path} does not exist"
-            assert os.path.getsize(path) > 0, f"{name} is empty"
-
-    def test_test_xlsx_py_exists(self):
-        """tests/test_xlsx.py must exist."""
-        path = os.path.join(self.REPO_DIR, "tests", "test_xlsx.py")
-        assert os.path.isfile(path), f"{path} does not exist"
-
-    # ── semantic_check ───────────────────────────────────────────────────
-
-    def test_xlsx_reader_read_method_signature(self):
-        """reader.py must define XLSXReader class with read method using openpyxl/pandas."""
-        content = self._read_file(
-            os.path.join(self.REPO_DIR, "examples", "xlsx", "reader.py")
-        )
-        assert "XLSXReader" in content or "class " in content, (
-            "XLSXReader class not defined in reader.py"
-        )
-        assert "def read" in content, "read method not defined"
-        assert "openpyxl" in content or "read_excel" in content, (
-            "Neither openpyxl nor pd.read_excel found in reader.py"
+    def test_output_directory_exists(self):
+        """Verify output directory exists or will be created"""
+        # Script should create the output dir or it exists already
+        path = os.path.join(self.REPO_DIR, "output")
+        script_path = os.path.join(self.REPO_DIR, "budget_model.py")
+        with open(script_path) as f:
+            content = f.read()
+        has_mkdir = "makedirs" in content or "mkdir" in content or "Path" in content
+        assert os.path.isdir(path) or has_mkdir, (
+            "output directory doesn't exist and script doesn't create it"
         )
 
-    def test_xlsx_writer_write_method_signature(self):
-        """writer.py must define XLSXWriter class with write method."""
-        content = self._read_file(
-            os.path.join(self.REPO_DIR, "examples", "xlsx", "writer.py")
+    # === Semantic Checks ===
+
+    def test_budget_model_imports_openpyxl(self):
+        """Verify budget_model.py imports openpyxl"""
+        path = os.path.join(self.REPO_DIR, "budget_model.py")
+        with open(path) as f:
+            source = f.read()
+        assert "openpyxl" in source, "budget_model.py does not import openpyxl"
+
+    def test_budget_model_creates_multiple_sheets(self):
+        """Verify script creates Assumptions, Revenue, Expenses, Summary sheets"""
+        path = os.path.join(self.REPO_DIR, "budget_model.py")
+        with open(path) as f:
+            source = f.read()
+        source_lower = source.lower()
+        expected_sheets = ["assumptions", "revenue", "expenses", "summary"]
+        found = [s for s in expected_sheets if s in source_lower]
+        assert len(found) >= 3, (
+            f"Expected sheets {expected_sheets}, found {found}"
         )
-        assert "XLSXWriter" in content or "class " in content, (
-            "XLSXWriter class not defined"
+
+    def test_budget_model_uses_excel_formulas(self):
+        """Verify script writes Excel formulas (=SUM, =IF, etc.) not just static values"""
+        path = os.path.join(self.REPO_DIR, "budget_model.py")
+        with open(path) as f:
+            source = f.read()
+        formula_pattern = re.compile(r"['\"]=[A-Z]+\(")
+        has_formulas = bool(formula_pattern.search(source))
+        assert has_formulas, "No Excel formulas (=SUM, =IF, etc.) found in budget_model.py"
+
+    def test_budget_model_applies_formatting(self):
+        """Verify script applies cell formatting (fonts, fills, number formats)"""
+        path = os.path.join(self.REPO_DIR, "budget_model.py")
+        with open(path) as f:
+            source = f.read()
+        formatting_indicators = ["Font", "PatternFill", "Alignment", "Border", "number_format"]
+        found = [fi for fi in formatting_indicators if fi in source]
+        assert len(found) >= 2, (
+            f"Insufficient formatting. Found: {found}, expected at least 2 of {formatting_indicators}"
         )
-        assert "def write" in content, "write method not defined"
-        assert "openpyxl" in content or "to_excel" in content, (
-            "Neither openpyxl nor to_excel found in writer.py"
+
+    def test_budget_model_uses_data_validation(self):
+        """Verify script includes data validation"""
+        path = os.path.join(self.REPO_DIR, "budget_model.py")
+        with open(path) as f:
+            source = f.read()
+        has_validation = (
+            "DataValidation" in source
+            or "data_validation" in source
+            or "validation" in source.lower()
+        )
+        assert has_validation, "No data validation found in budget_model.py"
+
+    # === Functional Checks ===
+
+    def test_budget_model_parses_without_errors(self):
+        """Verify budget_model.py is valid Python"""
+        path = os.path.join(self.REPO_DIR, "budget_model.py")
+        with open(path) as f:
+            source = f.read()
+        try:
+            ast.parse(source)
+        except SyntaxError as e:
+            pytest.fail(f"budget_model.py has syntax errors: {e}")
+
+    def test_budget_model_runs_successfully(self):
+        """Verify budget_model.py executes and produces output file"""
+        result = subprocess.run(
+            ["python", "budget_model.py"],
+            cwd=self.REPO_DIR,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        assert result.returncode == 0, (
+            f"budget_model.py execution failed:\n{result.stderr[:500]}"
         )
 
-    def test_formula_evaluator_raises_formula_error(self):
-        """formula.py must define FormulaError and raise it for unsupported functions."""
-        content = self._read_file(
-            os.path.join(self.REPO_DIR, "examples", "xlsx", "formula.py")
-        )
-        assert "FormulaError" in content, "FormulaError not defined in formula.py"
-        assert "raise" in content, "No raise statement for FormulaError"
-
-    def test_chart_builder_uses_openpyxl_chart(self):
-        """chart.py must use openpyxl chart objects (BarChart/LineChart/PieChart)."""
-        content = self._read_file(
-            os.path.join(self.REPO_DIR, "examples", "xlsx", "chart.py")
-        )
-        chart_types = ["BarChart", "LineChart", "PieChart"]
-        found = any(c in content for c in chart_types)
-        assert found, "No openpyxl chart type imported in chart.py"
-        assert "add_chart" in content, "add_chart not called in chart.py"
-
-    # ── functional_check (import) ────────────────────────────────────────
-
-    def test_write_then_read_preserves_data(self):
-        """Round-trip write/read must preserve DataFrame values."""
-        self._add_to_path()
-        try:
-            import pandas as pd
-            from xlsx.writer import XLSXWriter
-            from xlsx.reader import XLSXReader
-        except ImportError as exc:
-            pytest.skip(f"Import failed: {exc}")
-
-        df = pd.DataFrame({"a": [1, 2], "b": ["x", "y"]})
-        with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tmp:
-            tmp_path = tmp.name
-        try:
-            XLSXWriter().write(df, tmp_path)
-            df2 = XLSXReader().read(tmp_path)
-            assert list(df2.columns) == ["a", "b"]
-            assert df2["b"].tolist() == ["x", "y"]
-        finally:
-            os.unlink(tmp_path)
-
-    def test_file_created_on_write(self):
-        """XLSXWriter.write() must create the output file."""
-        self._add_to_path()
-        try:
-            import pandas as pd
-            from xlsx.writer import XLSXWriter
-        except ImportError as exc:
-            pytest.skip(f"Import failed: {exc}")
-
-        df = pd.DataFrame({"a": [1, 2]})
-        with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tmp:
-            tmp_path = tmp.name
-        try:
-            os.unlink(tmp_path)  # ensure it doesn't exist
-            XLSXWriter().write(df, tmp_path)
-            assert os.path.exists(tmp_path), "File was not created"
-        finally:
-            if os.path.exists(tmp_path):
-                os.unlink(tmp_path)
-
-    def test_formula_sum_evaluated_correctly(self):
-        """FormulaEvaluator.evaluate('SUM(1,2,3)') must return 6."""
-        self._add_to_path()
-        try:
-            from xlsx.formula import FormulaEvaluator
-        except ImportError as exc:
-            pytest.skip(f"Import failed: {exc}")
-
-        result = FormulaEvaluator().evaluate("SUM(1,2,3)")
-        assert result == 6, f"Expected 6, got {result}"
-
-    def test_empty_worksheet_read_returns_empty_dataframe(self):
-        """Reading an empty worksheet must return an empty DataFrame."""
-        self._add_to_path()
-        try:
-            import openpyxl
-            from xlsx.reader import XLSXReader
-        except ImportError as exc:
-            pytest.skip(f"Import failed: {exc}")
-
-        with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tmp:
-            tmp_path = tmp.name
-        try:
-            wb = openpyxl.Workbook()
-            wb.save(tmp_path)
-            df = XLSXReader().read(tmp_path)
-            assert df.empty, "Expected empty DataFrame for empty worksheet"
-        finally:
-            os.unlink(tmp_path)
-
-    def test_unsupported_formula_raises_formula_error(self):
-        """FormulaEvaluator.evaluate('UNSUPPORTED()') must raise FormulaError."""
-        self._add_to_path()
-        try:
-            from xlsx.formula import FormulaEvaluator, FormulaError
-        except ImportError as exc:
-            pytest.skip(f"Import failed: {exc}")
-
-        with pytest.raises(FormulaError):
-            FormulaEvaluator().evaluate("UNSUPPORTED()")
-
-    def test_nan_values_written_as_empty_cells(self):
-        """NaN values must be written as empty cells, not 'nan' strings."""
-        self._add_to_path()
-        try:
-            import numpy as np
-            import openpyxl
-            import pandas as pd
-            from xlsx.writer import XLSXWriter
-        except ImportError as exc:
-            pytest.skip(f"Import failed: {exc}")
-
-        df = pd.DataFrame({"a": [1, np.nan, 3]})
-        with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tmp:
-            tmp_path = tmp.name
-        try:
-            XLSXWriter().write(df, tmp_path)
-            wb = openpyxl.load_workbook(tmp_path)
-            ws = wb.active
-            # Row 3 (1-indexed: row 1=header, row 2=first data, row 3=NaN)
-            nan_cell = ws.cell(row=3, column=1).value
-            assert nan_cell is None or nan_cell != "nan", (
-                f"NaN written as string: {nan_cell}"
+    def test_output_xlsx_file_exists(self):
+        """Verify department_budget.xlsx is created in output directory"""
+        path = os.path.join(self.REPO_DIR, "output/department_budget.xlsx")
+        if not os.path.exists(path):
+            # Run the script first
+            subprocess.run(
+                ["python", "budget_model.py"],
+                cwd=self.REPO_DIR,
+                capture_output=True,
+                text=True,
+                timeout=60,
             )
-        finally:
-            os.unlink(tmp_path)
+        assert os.path.exists(path), f"department_budget.xlsx not found at {path}"
+
+    def test_output_xlsx_has_correct_sheets(self):
+        """Verify the generated xlsx has all required sheets"""
+        script = """
+import sys
+sys.path.insert(0, '.')
+import openpyxl
+wb = openpyxl.load_workbook('output/department_budget.xlsx')
+sheets = wb.sheetnames
+print('SHEETS:' + ','.join(sheets))
+expected = {'Assumptions', 'Revenue', 'Expenses', 'Summary'}
+found = set(sheets) & expected
+missing = expected - set(sheets)
+if len(found) >= 3:
+    print('PASS')
+else:
+    print(f'FAIL:missing {missing}')
+"""
+        # Ensure the file is generated first
+        subprocess.run(
+            ["python", "budget_model.py"],
+            cwd=self.REPO_DIR,
+            capture_output=True,
+            timeout=60,
+        )
+        result = subprocess.run(
+            ["python", "-c", script],
+            cwd=self.REPO_DIR,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        assert result.returncode == 0, f"Sheet check script failed: {result.stderr}"
+        assert "PASS" in result.stdout, f"Sheet check failed: {result.stdout}"
+
+    def test_output_xlsx_has_formulas(self):
+        """Verify the generated xlsx contains Excel formulas, not just values"""
+        script = """
+import sys
+sys.path.insert(0, '.')
+import openpyxl
+wb = openpyxl.load_workbook('output/department_budget.xlsx')
+formula_count = 0
+for ws in wb.worksheets:
+    for row in ws.iter_rows():
+        for cell in row:
+            if isinstance(cell.value, str) and cell.value.startswith('='):
+                formula_count += 1
+if formula_count > 0:
+    print(f'PASS:{formula_count}')
+else:
+    print('FAIL:no formulas found')
+"""
+        subprocess.run(
+            ["python", "budget_model.py"],
+            cwd=self.REPO_DIR,
+            capture_output=True,
+            timeout=60,
+        )
+        result = subprocess.run(
+            ["python", "-c", script],
+            cwd=self.REPO_DIR,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        assert result.returncode == 0, f"Formula check script failed: {result.stderr}"
+        assert "PASS" in result.stdout, f"No formulas in xlsx: {result.stdout}"

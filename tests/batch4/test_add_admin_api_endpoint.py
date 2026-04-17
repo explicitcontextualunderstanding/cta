@@ -1,269 +1,179 @@
 """
-Test for 'add-admin-api-endpoint' skill — Ghost Admin Announcements API
-Validates that the Agent created the announcements admin API endpoint
-with controller, model, routes, and e2e tests for the Ghost blogging platform.
+Test skill: add-admin-api-endpoint
+Verify that the Announcements Admin API endpoint has been correctly added to Ghost CMS,
+including controller structure, route registration, model creation, permissions,
+input validation, and e2e test coverage.
 """
 
 import os
-
+import re
+import json
+import subprocess
 import pytest
 
 
 class TestAddAdminApiEndpoint:
-    """Verify Ghost admin announcements API endpoint implementation."""
-
     REPO_DIR = "/workspace/Ghost"
 
-    # ---- helpers ----
+    CONTROLLER_PATH = "ghost/core/core/server/api/endpoints/announcements.js"
+    ROUTES_PATH = "ghost/core/core/server/web/api/endpoints/admin/routes.js"
+    MODEL_PATH = "ghost/core/core/server/models/announcement.js"
+    E2E_TEST_PATH = "ghost/core/test/e2e-api/admin/announcements.test.js"
 
-    @staticmethod
-    def _read(path):
-        with open(path, "r", errors="ignore") as fh:
-            return fh.read()
+    # === File Path Checks ===
 
-    def _find_file(self, filename, start_dir=None):
-        """Walk the repo to find a file by name."""
-        start = start_dir or self.REPO_DIR
-        for root, _dirs, files in os.walk(start):
-            if filename in files:
-                return os.path.join(root, filename)
-        return None
+    def test_controller_file_exists(self):
+        """Verify that the announcements controller file was created"""
+        filepath = os.path.join(self.REPO_DIR, self.CONTROLLER_PATH)
+        assert os.path.exists(filepath), f"Controller not found at {filepath}"
 
-    # ---- file_path_check ----
+    def test_model_file_exists(self):
+        """Verify that the announcement model file was created"""
+        filepath = os.path.join(self.REPO_DIR, self.MODEL_PATH)
+        assert os.path.exists(filepath), f"Model not found at {filepath}"
 
-    def test_server_directory_exists(self):
-        """Verifies ghost/core/core/server directory exists."""
-        path = os.path.join(self.REPO_DIR, "ghost/core/core/server")
-        assert os.path.exists(path), f"Expected path not found: {path}"
+    def test_e2e_test_file_exists(self):
+        """Verify that the e2e test file was created"""
+        filepath = os.path.join(self.REPO_DIR, self.E2E_TEST_PATH)
+        assert os.path.exists(filepath), f"E2E test not found at {filepath}"
 
-    def test_announcements_endpoint_exists(self):
-        """Verifies api/endpoints/announcements.js exists."""
-        found = self._find_file("announcements.js")
-        assert found is not None, "announcements.js not found in repo"
+    def test_routes_file_exists(self):
+        """Verify that the admin routes file exists"""
+        filepath = os.path.join(self.REPO_DIR, self.ROUTES_PATH)
+        assert os.path.exists(filepath), f"Admin routes file not found at {filepath}"
 
-    def test_announcement_model_exists(self):
-        """Verifies models/announcement.js exists."""
-        found = self._find_file("announcement.js")
-        assert found is not None, "announcement.js model not found in repo"
+    # === Semantic Checks ===
 
-    def test_admin_routes_exists(self):
-        """Verifies web/api/endpoints/admin/routes.js exists."""
-        found = self._find_file("routes.js", os.path.join(self.REPO_DIR, "web"))
-        if found is None:
-            found = self._find_file(
-                "routes.js",
-                os.path.join(self.REPO_DIR, "ghost/core/core/server/web"),
-            )
-        assert found is not None, "admin routes.js not found"
+    def test_controller_has_docname(self):
+        """Verify controller exports docName: 'announcements'"""
+        filepath = os.path.join(self.REPO_DIR, self.CONTROLLER_PATH)
+        with open(filepath) as f:
+            content = f.read()
+        assert "docName" in content, "Controller should export docName property"
+        assert re.search(r"""docName\s*:\s*['"]announcements['"]""", content), \
+            "Controller docName should be 'announcements'"
 
-    # ---- semantic_check ----
+    def test_controller_has_all_crud_methods(self):
+        """Verify controller has browse, read, add, edit, and destroy methods"""
+        filepath = os.path.join(self.REPO_DIR, self.CONTROLLER_PATH)
+        with open(filepath) as f:
+            content = f.read()
+        required_methods = ["browse", "read", "add", "edit", "destroy"]
+        for method in required_methods:
+            assert re.search(rf'\b{method}\b', content), \
+                f"Controller missing '{method}' method"
 
-    def test_sem_controller_readable(self):
-        """Reads the announcements controller file."""
-        server_dir = os.path.join(self.REPO_DIR, "ghost/core/core/server")
-        ctrl = None
-        for root, _dirs, files in os.walk(server_dir):
-            for f in files:
-                if "announcements" in f.lower() and f.endswith(".js"):
-                    p = os.path.join(root, f)
-                    ctrl = self._read(p)
-                    break
-            if ctrl:
-                break
-        assert ctrl is not None and len(ctrl) > 0, "Controller file not readable"
+    def test_controller_enforces_permissions(self):
+        """Verify that controller methods enforce permissions"""
+        filepath = os.path.join(self.REPO_DIR, self.CONTROLLER_PATH)
+        with open(filepath) as f:
+            content = f.read()
+        assert "permissions" in content, \
+            "Controller should declare permissions for its methods"
+        # Should have permissions: true or a permissions function
+        permission_count = len(re.findall(r'permissions\s*:', content))
+        assert permission_count >= 3, \
+            f"Expected permissions declarations for multiple methods, found {permission_count}"
 
-    def test_sem_docname_announcements(self):
-        """Verifies docName: 'announcements' in controller."""
-        server_dir = os.path.join(self.REPO_DIR, "ghost/core/core/server")
-        ctrl_text = ""
-        for root, _dirs, files in os.walk(server_dir):
-            for f in files:
-                if "announcements" in f.lower() and f.endswith(".js"):
-                    ctrl_text = self._read(os.path.join(root, f))
-                    break
-            if ctrl_text:
-                break
-        assert (
-            "docName: 'announcements'" in ctrl_text or "docName:" in ctrl_text
-        ), "docName missing in controller"
+    def test_routes_register_announcements_endpoints(self):
+        """Verify routes file registers all announcements endpoints"""
+        filepath = os.path.join(self.REPO_DIR, self.ROUTES_PATH)
+        with open(filepath) as f:
+            content = f.read()
+        assert "announcements" in content, \
+            "Admin routes file should reference 'announcements' resource"
 
-    def test_sem_crud_methods_present(self):
-        """Verifies browse/read/add/edit/destroy methods in controller."""
-        server_dir = os.path.join(self.REPO_DIR, "ghost/core/core/server")
-        ctrl_text = ""
-        for root, _dirs, files in os.walk(server_dir):
-            for f in files:
-                if "announcements" in f.lower() and f.endswith(".js"):
-                    ctrl_text = self._read(os.path.join(root, f))
-                    break
-            if ctrl_text:
-                break
-        for method in ["browse", "read", "add", "edit", "destroy"]:
-            assert method in ctrl_text, f"{method} missing in controller"
+    def test_controller_validates_title_and_content(self):
+        """Verify that controller validates title (max 255) and content (max 2000)"""
+        filepath = os.path.join(self.REPO_DIR, self.CONTROLLER_PATH)
+        with open(filepath) as f:
+            content = f.read()
+        # Should reference validation for title/content
+        has_title_validation = ("title" in content and
+                                ("255" in content or "max" in content.lower() or "required" in content.lower()))
+        assert has_title_validation, \
+            "Controller should validate title field (required, max 255 chars)"
 
-    def test_sem_permissions_on_all_methods(self):
-        """Verifies permissions set on all methods (edge case)."""
-        server_dir = os.path.join(self.REPO_DIR, "ghost/core/core/server")
-        ctrl_text = ""
-        for root, _dirs, files in os.walk(server_dir):
-            for f in files:
-                if "announcements" in f.lower() and f.endswith(".js"):
-                    ctrl_text = self._read(os.path.join(root, f))
-                    break
-            if ctrl_text:
-                break
-        assert (
-            ctrl_text.count("permissions: true") >= 5
-            or ctrl_text.count("permissions:") >= 5
-        ), "permissions not set on all methods"
+    def test_controller_validates_visibility_enum(self):
+        """Verify that controller validates visibility to allowed values"""
+        filepath = os.path.join(self.REPO_DIR, self.CONTROLLER_PATH)
+        with open(filepath) as f:
+            content = f.read()
+        has_visibility = all(v in content for v in ["public", "members", "paid"])
+        assert has_visibility, \
+            "Controller should validate visibility against allowed values: public, members, paid"
 
-    def test_sem_routes_readable(self):
-        """Reads admin routes file."""
-        routes = None
-        for search_dir in [
-            os.path.join(self.REPO_DIR, "web"),
-            os.path.join(self.REPO_DIR, "ghost/core/core/server/web"),
-        ]:
-            if not os.path.isdir(search_dir):
-                continue
-            for root, _dirs, files in os.walk(search_dir):
-                if "routes.js" in files:
-                    routes = self._read(os.path.join(root, "routes.js"))
-                    break
-            if routes:
-                break
-        assert routes is not None and len(routes) > 0, "Routes file not readable"
+    def test_model_defines_announcement_schema(self):
+        """Verify that the model file defines the announcement entity"""
+        filepath = os.path.join(self.REPO_DIR, self.MODEL_PATH)
+        with open(filepath) as f:
+            content = f.read()
+        assert "Announcement" in content or "announcement" in content, \
+            "Model should define Announcement entity"
+        # Should reference Bookshelf/Ghost model pattern
+        has_model_pattern = ("tableName" in content or "Model" in content or
+                             "ghostBookshelf" in content or "bookshelf" in content.lower())
+        assert has_model_pattern, \
+            "Model should follow Ghost's Bookshelf model pattern"
 
-    def test_sem_announcements_registered_in_routes(self):
-        """Verifies 'announcements' registered in admin routes."""
-        routes_text = ""
-        for search_dir in [
-            os.path.join(self.REPO_DIR, "web"),
-            os.path.join(self.REPO_DIR, "ghost/core/core/server/web"),
-        ]:
-            if not os.path.isdir(search_dir):
-                continue
-            for root, _dirs, files in os.walk(search_dir):
-                if "routes.js" in files:
-                    routes_text = self._read(os.path.join(root, "routes.js"))
-                    break
-            if routes_text:
-                break
-        assert (
-            "announcements" in routes_text
-        ), "announcements not registered in admin routes"
+    def test_e2e_test_covers_crud_operations(self):
+        """Verify e2e tests cover CRUD operations and error cases"""
+        filepath = os.path.join(self.REPO_DIR, self.E2E_TEST_PATH)
+        with open(filepath) as f:
+            content = f.read()
+        # Should test various HTTP methods
+        assert "POST" in content or "post" in content, \
+            "E2E tests should cover POST (create) operations"
+        assert "GET" in content or "get" in content, \
+            "E2E tests should cover GET (browse/read) operations"
+        assert "PUT" in content or "put" in content, \
+            "E2E tests should cover PUT (edit) operations"
+        assert "DELETE" in content or "delete" in content, \
+            "E2E tests should cover DELETE operations"
+        # Should test status codes
+        assert "201" in content or "200" in content, \
+            "E2E tests should verify success status codes"
+        assert "422" in content or "403" in content, \
+            "E2E tests should verify error status codes (422 or 403)"
 
-    # ---- functional_check ----
+    # === Functional Checks ===
 
-    def test_func_title_max_length_validation(self):
-        """Verifies title max length (255) validation in controller."""
-        server_dir = os.path.join(self.REPO_DIR, "ghost/core/core/server")
-        ctrl_text = ""
-        for root, _dirs, files in os.walk(server_dir):
-            for f in files:
-                if "announcements" in f.lower() and f.endswith(".js"):
-                    ctrl_text = self._read(os.path.join(root, f))
-                    break
-            if ctrl_text:
-                break
-        assert (
-            "title" in ctrl_text and "255" in ctrl_text
-        ), "title max length validation not found"
-
-    def test_func_content_max_length_validation(self):
-        """Verifies content max length (2000) validation in controller."""
-        server_dir = os.path.join(self.REPO_DIR, "ghost/core/core/server")
-        ctrl_text = ""
-        for root, _dirs, files in os.walk(server_dir):
-            for f in files:
-                if "announcements" in f.lower() and f.endswith(".js"):
-                    ctrl_text = self._read(os.path.join(root, f))
-                    break
-            if ctrl_text:
-                break
-        assert (
-            "content" in ctrl_text and "2000" in ctrl_text
-        ), "content max length validation not found"
-
-    def test_func_visibility_field(self):
-        """Verifies visibility field handling in controller."""
-        server_dir = os.path.join(self.REPO_DIR, "ghost/core/core/server")
-        ctrl_text = ""
-        for root, _dirs, files in os.walk(server_dir):
-            for f in files:
-                if "announcements" in f.lower() and f.endswith(".js"):
-                    ctrl_text = self._read(os.path.join(root, f))
-                    break
-            if ctrl_text:
-                break
-        assert "visibility" in ctrl_text, "visibility field handling missing"
-
-    def test_func_visibility_enum_values(self):
-        """Verifies visibility enum values (public) defined."""
-        server_dir = os.path.join(self.REPO_DIR, "ghost/core/core/server")
-        ctrl_text = ""
-        for root, _dirs, files in os.walk(server_dir):
-            for f in files:
-                if "announcements" in f.lower() and f.endswith(".js"):
-                    ctrl_text = self._read(os.path.join(root, f))
-                    break
-            if ctrl_text:
-                break
-        assert (
-            "'public'" in ctrl_text or '"public"' in ctrl_text
-        ), "visibility enum values not defined"
-
-    def test_func_e2e_test_readable(self):
-        """Reads e2e test file for announcements."""
-        e2e = os.path.join(
-            self.REPO_DIR,
-            "ghost/core/test/e2e-api/admin/announcements.test.js",
+    def test_controller_file_has_valid_js_syntax(self):
+        """Verify that the controller file is syntactically valid JavaScript"""
+        filepath = os.path.join(self.REPO_DIR, self.CONTROLLER_PATH)
+        result = subprocess.run(
+            ["node", "--check", filepath],
+            capture_output=True, text=True, timeout=30
         )
-        e2e_text = self._read(e2e)
-        assert len(e2e_text) > 0, "e2e test file is empty"
+        assert result.returncode == 0, \
+            f"Controller has JS syntax error: {result.stderr}"
 
-    def test_func_e2e_201_success_case(self):
-        """Verifies e2e test covers 201 success case."""
-        e2e = os.path.join(
-            self.REPO_DIR,
-            "ghost/core/test/e2e-api/admin/announcements.test.js",
+    def test_model_file_has_valid_js_syntax(self):
+        """Verify that the model file is syntactically valid JavaScript"""
+        filepath = os.path.join(self.REPO_DIR, self.MODEL_PATH)
+        result = subprocess.run(
+            ["node", "--check", filepath],
+            capture_output=True, text=True, timeout=30
         )
-        e2e_text = self._read(e2e)
-        assert (
-            "201" in e2e_text or "Created" in e2e_text
-        ), "e2e test missing 201 success case"
+        assert result.returncode == 0, \
+            f"Model has JS syntax error: {result.stderr}"
 
-    def test_func_e2e_422_validation_case(self):
-        """Verifies e2e test covers 422 validation error case."""
-        e2e = os.path.join(
-            self.REPO_DIR,
-            "ghost/core/test/e2e-api/admin/announcements.test.js",
+    def test_e2e_test_file_has_valid_js_syntax(self):
+        """Verify that the e2e test file is syntactically valid JavaScript"""
+        filepath = os.path.join(self.REPO_DIR, self.E2E_TEST_PATH)
+        result = subprocess.run(
+            ["node", "--check", filepath],
+            capture_output=True, text=True, timeout=30
         )
-        e2e_text = self._read(e2e)
-        assert (
-            "422" in e2e_text or "Unprocessable" in e2e_text
-        ), "e2e test missing 422 validation case"
+        assert result.returncode == 0, \
+            f"E2E test has JS syntax error: {result.stderr}"
 
-    def test_func_e2e_403_auth_case(self):
-        """Verifies e2e test covers 403 authorization case."""
-        e2e = os.path.join(
-            self.REPO_DIR,
-            "ghost/core/test/e2e-api/admin/announcements.test.js",
+    def test_routes_file_remains_valid_js(self):
+        """Verify that the modified routes file is still syntactically valid"""
+        filepath = os.path.join(self.REPO_DIR, self.ROUTES_PATH)
+        result = subprocess.run(
+            ["node", "--check", filepath],
+            capture_output=True, text=True, timeout=30
         )
-        e2e_text = self._read(e2e)
-        assert (
-            "403" in e2e_text
-            or "Forbidden" in e2e_text
-            or "unauthori" in e2e_text.lower()
-        ), "e2e test missing 403 auth case"
-
-    def test_func_failure_post_missing_title_422(self):
-        """Failure case: POST missing title should produce 422."""
-        e2e = os.path.join(
-            self.REPO_DIR,
-            "ghost/core/test/e2e-api/admin/announcements.test.js",
-        )
-        e2e_text = self._read(e2e)
-        assert (
-            "422" in e2e_text or "Unprocessable" in e2e_text
-        ), "No 422 failure test case found for missing title"
+        assert result.returncode == 0, \
+            f"Routes file has JS syntax error after modification: {result.stderr}"

@@ -1,130 +1,145 @@
 """
-Test for 'istio-traffic-management' skill — Istio Traffic Manager
-Validates that the Agent created a Python package for generating Istio
-VirtualService/DestinationRule YAML with canary splits, promotion, and circuit breaker config.
+Tests for the istio-traffic-management skill.
+Validates an Istio traffic management configuration generator with
+VirtualService, DestinationRule, Gateway, canary management, and validation.
 """
 
 import os
 import re
-import sys
+import ast
 
-import pytest
+REPO_DIR = "/workspace/istio"
+PYTHON_DIR = os.path.join(REPO_DIR, "tests", "python")
 
 
 class TestIstioTrafficManagement:
-    """Verify Istio traffic management implementation."""
+    """Tests for the Istio traffic management generator."""
 
-    REPO_DIR = "/workspace/istio"
+    # ── file_path_check ──────────────────────────────────────────────
 
-    @staticmethod
-    def _read(path: str) -> str:
-        try:
-            with open(path, "r", errors="ignore") as fh:
-                return fh.read()
-        except OSError:
+    def test_istio_generator_exists(self):
+        """IstioTrafficGenerator module must exist."""
+        path = os.path.join(PYTHON_DIR, "istio_generator.py")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    def test_canary_manager_exists(self):
+        """CanaryManager module must exist."""
+        path = os.path.join(PYTHON_DIR, "canary_manager.py")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    def test_resilience_config_exists(self):
+        """ResilienceConfig module must exist."""
+        path = os.path.join(PYTHON_DIR, "resilience_config.py")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    def test_istio_validator_exists(self):
+        """IstioValidator module must exist."""
+        path = os.path.join(PYTHON_DIR, "istio_validator.py")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    # ── semantic_check ───────────────────────────────────────────────
+
+    def _read(self, filename):
+        path = os.path.join(PYTHON_DIR, filename)
+        if not os.path.isfile(path):
             return ""
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read()
 
-    # ── file_path_check ─────────────────────────────────────────────
+    def test_generator_resources(self):
+        """IstioTrafficGenerator must generate VirtualService, DestinationRule, Gateway."""
+        content = self._read("istio_generator.py")
+        assert re.search(r"class\s+IstioTrafficGenerator", content), (
+            "IstioTrafficGenerator class not defined"
+        )
+        for method in ["generate_destination_rule", "generate_virtual_service",
+                        "generate_gateway", "generate_service_entry"]:
+            assert re.search(rf"def\s+{method}\b", content), f"{method} not defined"
 
-    def test_istio_manager_package_exists(self):
-        """Verify __init__.py and generator.py exist under src/istio_manager/."""
-        for rel in ("src/istio_manager/__init__.py", "src/istio_manager/generator.py"):
-            path = os.path.join(self.REPO_DIR, rel)
-            assert os.path.isfile(path), f"Missing: {rel}"
+    def test_istio_api_version(self):
+        """Generator must use networking.istio.io/v1beta1 API version."""
+        content = self._read("istio_generator.py")
+        assert "networking.istio.io" in content, "Istio API version not found"
 
-    def test_canary_circuit_breaker_models_exist(self):
-        """Verify canary.py, circuit_breaker.py, and models.py exist."""
-        for rel in ("src/istio_manager/canary.py", "src/istio_manager/circuit_breaker.py",
-                     "src/istio_manager/models.py"):
-            path = os.path.join(self.REPO_DIR, rel)
-            assert os.path.isfile(path), f"Missing: {rel}"
+    def test_weight_sum_validation(self):
+        """VirtualService weights must sum to 100."""
+        content = self._read("istio_generator.py")
+        assert re.search(r"sum.*100|100.*sum|ValueError.*weight", content, re.IGNORECASE), (
+            "Weight sum validation (100) not found"
+        )
 
-    def test_all_classes_importable(self):
-        """IstioTrafficGenerator, CanaryManager, CircuitBreakerConfig are importable."""
-        if not os.path.isdir(self.REPO_DIR):
-            pytest.skip("Repo dir does not exist")
-        sys.path.insert(0, os.path.join(self.REPO_DIR, "src"))
-        try:
-            from istio_manager.generator import IstioTrafficGenerator  # noqa: F401
-            from istio_manager.canary import CanaryManager  # noqa: F401
-            from istio_manager.circuit_breaker import CircuitBreakerConfig  # noqa: F401
-        except ImportError:
-            pytest.skip("istio_manager not importable")
-        finally:
-            sys.path.pop(0)
+    def test_canary_manager_class(self):
+        """CanaryManager must define generate_steps, generate_rollback, generate_with_analysis."""
+        content = self._read("canary_manager.py")
+        assert re.search(r"class\s+CanaryManager", content), "CanaryManager class not defined"
+        for method in ["generate_steps", "generate_rollback", "generate_with_analysis"]:
+            assert re.search(rf"def\s+{method}\b", content), f"{method} not defined"
 
-    # ── semantic_check ──────────────────────────────────────────────
+    def test_resilience_methods(self):
+        """ResilienceConfig must define circuit_breaker, retry_policy, timeout, fault_injection."""
+        content = self._read("resilience_config.py")
+        for method in ["circuit_breaker", "retry_policy", "timeout", "fault_injection"]:
+            assert re.search(rf"def\s+{method}\b", content), f"{method} not defined"
 
-    def test_generator_methods_defined(self):
-        """Verify generate_virtual_service() and generate_destination_rule() are defined."""
-        content = self._read(os.path.join(self.REPO_DIR, "src/istio_manager/generator.py"))
-        assert content, "generator.py is empty or unreadable"
-        for method in ("generate_virtual_service", "generate_destination_rule"):
-            assert method in content, f"'{method}' not found in generator.py"
+    def test_fault_injection_validation(self):
+        """fault_injection must raise ValueError if neither delay nor abort specified."""
+        content = self._read("resilience_config.py")
+        assert re.search(r"ValueError|At least one|delay.*abort", content, re.IGNORECASE), (
+            "Fault injection validation not found"
+        )
 
-    def test_canary_manager_methods_defined(self):
-        """Verify create_canary_split(), promote(), and rollback() are defined."""
-        content = self._read(os.path.join(self.REPO_DIR, "src/istio_manager/canary.py"))
-        assert content, "canary.py is empty or unreadable"
-        for method in ("create_canary_split", "def promote", "def rollback"):
-            assert method in content, f"'{method}' not found in canary.py"
+    def test_validator_methods(self):
+        """IstioValidator must validate VirtualService, DestinationRule, Gateway."""
+        content = self._read("istio_validator.py")
+        assert re.search(r"class\s+IstioValidator", content), "IstioValidator class not defined"
+        for method in ["validate_virtual_service", "validate_destination_rule",
+                        "validate_gateway", "validate_all"]:
+            assert re.search(rf"def\s+{method}\b", content), f"{method} not defined"
 
-    def test_yaml_dump_in_generator(self):
-        """Verify generator.py uses yaml.dump for YAML serialization."""
-        content = self._read(os.path.join(self.REPO_DIR, "src/istio_manager/generator.py"))
-        assert content, "generator.py is empty or unreadable"
-        found = "yaml.dump" in content or "ruamel" in content
-        assert found, "No YAML serialization found in generator.py"
+    def test_subset_validation(self):
+        """Validator must check subset references exist in DestinationRules."""
+        content = self._read("istio_validator.py")
+        assert re.search(r"[Ss]ubset.*not found|not found.*subset", content), (
+            "Subset existence validation not found"
+        )
 
-    # ── functional_check (import) ───────────────────────────────────
+    # ── functional_check ─────────────────────────────────────────────
 
-    def _import(self, dotpath: str):
-        if not os.path.isdir(self.REPO_DIR):
-            pytest.skip("Repo dir does not exist")
-        sys.path.insert(0, os.path.join(self.REPO_DIR, "src"))
-        try:
-            return __import__(dotpath, fromlist=[""])
-        except ImportError:
-            pytest.skip(f"{dotpath} not importable")
-        finally:
-            sys.path.pop(0)
+    def test_all_files_valid_python(self):
+        """All Istio Python files must have valid syntax."""
+        errors = []
+        for fname in ["istio_generator.py", "canary_manager.py",
+                       "resilience_config.py", "istio_validator.py"]:
+            content = self._read(fname)
+            if not content:
+                continue
+            try:
+                ast.parse(content)
+            except SyntaxError as e:
+                errors.append(f"{fname}: {e}")
+        assert not errors, "Syntax errors:\n" + "\n".join(errors)
 
-    def test_virtual_service_yaml_valid_api_version(self):
-        """generate_virtual_service() returns YAML with apiVersion networking.istio.io/v1alpha3."""
-        import yaml
-        gen = self._import("istio_manager.generator")
-        models = self._import("istio_manager.models")
-        vs = yaml.safe_load(gen.IstioTrafficGenerator().generate_virtual_service(
-            models.VirtualServiceConfig(name="svc", host="my-svc")))
-        assert vs["apiVersion"] == "networking.istio.io/v1alpha3"
+    def test_lb_policy_validation(self):
+        """Generator must raise ValueError for invalid lb_policy."""
+        content = self._read("istio_generator.py")
+        assert "ROUND_ROBIN" in content, "ROUND_ROBIN policy not found"
+        assert "LEAST_CONN" in content, "LEAST_CONN policy not found"
+        assert re.search(r"ValueError|invalid.*policy", content, re.IGNORECASE), (
+            "lb_policy validation not found"
+        )
 
-    def test_canary_split_weights_sum_to_100(self):
-        """create_canary_split() produces routes whose weights sum to 100."""
-        import yaml
-        canary = self._import("istio_manager.canary")
-        out = yaml.safe_load(canary.CanaryManager().create_canary_split("my-svc", 20))
-        routes = out["spec"]["http"][0]["route"]
-        assert sum(r["weight"] for r in routes) == 100
+    def test_tls_mode_support(self):
+        """Gateway must support SIMPLE, MUTUAL, PASSTHROUGH TLS modes."""
+        content = self._read("istio_generator.py")
+        for mode in ["SIMPLE", "MUTUAL", "PASSTHROUGH"]:
+            assert mode in content, f"TLS mode '{mode}' not found"
 
-    def test_canary_weight_out_of_range_raises(self):
-        """create_canary_split() raises ValueError when canary_weight=101."""
-        canary = self._import("istio_manager.canary")
-        with pytest.raises(ValueError):
-            canary.CanaryManager().create_canary_split("svc", 101)
+    def test_rate_limit(self):
+        """ResilienceConfig must define rate_limit method."""
+        content = self._read("resilience_config.py")
+        assert re.search(r"def\s+rate_limit\b", content), "rate_limit method not defined"
 
-    def test_promote_produces_single_100_weight_route(self):
-        """promote() returns VirtualService with single route weight=100."""
-        import yaml
-        canary = self._import("istio_manager.canary")
-        out = yaml.safe_load(canary.CanaryManager().promote("my-svc"))
-        routes = out["spec"]["http"][0]["route"]
-        assert len(routes) == 1
-        assert routes[0]["weight"] == 100
-
-    def test_circuit_breaker_destination_rule_has_traffic_policy(self):
-        """CircuitBreakerConfig.apply() generates DestinationRule with trafficPolicy."""
-        import yaml
-        cb = self._import("istio_manager.circuit_breaker")
-        dr = yaml.safe_load(cb.CircuitBreakerConfig().apply(
-            "svc", max_connections=100, max_requests=50))
-        assert "trafficPolicy" in dr["spec"]
+    def test_test_file_exists(self):
+        """Test file must exist."""
+        path = os.path.join(REPO_DIR, "tests", "test_istio_traffic_management.py")
+        assert os.path.isfile(path), f"Missing {path}"

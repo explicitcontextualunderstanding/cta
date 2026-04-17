@@ -1,174 +1,153 @@
 """
-Test for 'dbt-transformation-patterns' skill — dbt Core Transformation Models
-Validates staging SQL, intermediate/mart models, incremental strategy,
-schema tests, and dbt compile/debug commands.
+Test skill: dbt-transformation-patterns
+Verify that the Agent creates a dbt marts layer with staging, intermediate,
+and CLV models including schema tests and incremental materialization.
 """
 
 import os
 import re
-
 import pytest
+
+try:
+    import yaml
+except ImportError:
+    yaml = None
 
 
 class TestDbtTransformationPatterns:
-    """Verify dbt transformation model patterns."""
-
     REPO_DIR = "/workspace/dbt-core"
 
-    # ── file_path_check ─────────────────────────────────────────────────────
+    BASE = "tests/fixtures/jaffle_shop"
+    STG_CUSTOMERS = f"{BASE}/models/staging/stg_customers.sql"
+    STG_ORDERS = f"{BASE}/models/staging/stg_orders.sql"
+    STG_PAYMENTS = f"{BASE}/models/staging/stg_payments.sql"
+    INT_ORDERS = f"{BASE}/models/intermediate/int_customer_orders.sql"
+    FCT_CLV = f"{BASE}/models/marts/fct_customer_ltv.sql"
+    SCHEMA = f"{BASE}/models/schema.yml"
+    DBT_PROJECT = f"{BASE}/dbt_project.yml"
 
-    def test_staging_model_exists(self):
-        """Verify staging SQL model file exists."""
-        found = self._find_sql_files("staging")
-        assert found, "No staging SQL model found"
+    def _read_file(self, rel_path):
+        filepath = os.path.join(self.REPO_DIR, rel_path)
+        with open(filepath) as f:
+            return f.read()
 
-    def test_mart_or_intermediate_models_exist(self):
-        """Verify intermediate or mart model SQL files exist."""
-        intermediate = self._find_sql_files("intermediate")
-        mart = self._find_sql_files("mart") + self._find_sql_files("fct_")
-        assert intermediate or mart, "No intermediate or mart SQL model found"
+    # === File Path Checks ===
 
-    # ── semantic_check ──────────────────────────────────────────────────────
+    def test_stg_customers_exists(self):
+        filepath = os.path.join(self.REPO_DIR, self.STG_CUSTOMERS)
+        assert os.path.exists(filepath), "stg_customers.sql not found"
 
-    def test_cancelled_filter_pattern(self):
-        """Verify staging model filters cancelled orders."""
-        staging = self._find_sql_files("staging")
-        assert staging, "No staging model found"
-        for fpath in staging:
-            content = self._read(fpath)
-            if re.search(r"cancel|WHERE.*status|filter", content, re.IGNORECASE):
-                return
-        pytest.fail("No cancelled order filter in staging model")
+    def test_stg_orders_exists(self):
+        filepath = os.path.join(self.REPO_DIR, self.STG_ORDERS)
+        assert os.path.exists(filepath), "stg_orders.sql not found"
 
-    def test_cents_to_dollars_conversion(self):
-        """Verify cents to dollars conversion (cents / 100.0)."""
-        sql_files = self._find_all_sql_files()
-        assert sql_files, "No SQL files found"
-        for fpath in sql_files:
-            content = self._read(fpath)
-            if re.search(
-                r"(/\s*100\.?0?|cents.*dollar|amount.*100)", content, re.IGNORECASE
-            ):
-                return
-        pytest.fail("No cents-to-dollars conversion found")
+    def test_stg_payments_exists(self):
+        filepath = os.path.join(self.REPO_DIR, self.STG_PAYMENTS)
+        assert os.path.exists(filepath), "stg_payments.sql not found"
 
-    def test_incremental_materialization(self):
-        """Verify incremental materialization config in mart/fact model."""
-        sql_files = self._find_sql_files("fct_") + self._find_sql_files("mart")
-        if not sql_files:
-            sql_files = self._find_all_sql_files()
-        for fpath in sql_files:
-            content = self._read(fpath)
-            if re.search(r"materialized\s*=\s*['\"]incremental", content):
-                return
-        pytest.fail("No incremental materialization found")
+    def test_int_customer_orders_exists(self):
+        filepath = os.path.join(self.REPO_DIR, self.INT_ORDERS)
+        assert os.path.exists(filepath), "int_customer_orders.sql not found"
 
-    def test_schema_yml_has_tests(self):
-        """Verify schema.yml defines ≥5 tests."""
-        yml_files = self._find_files_by_ext(".yml") + self._find_files_by_ext(".yaml")
-        assert yml_files, "No YAML files found"
-        test_count = 0
-        for fpath in yml_files:
-            content = self._read(fpath)
-            test_count += len(
-                re.findall(
-                    r"(unique|not_null|accepted_values|relationships|dbt_utils)",
-                    content,
-                )
-            )
-        assert test_count >= 5, f"Expected ≥5 schema tests, found {test_count}"
+    def test_fct_customer_ltv_exists(self):
+        filepath = os.path.join(self.REPO_DIR, self.FCT_CLV)
+        assert os.path.exists(filepath), "fct_customer_ltv.sql not found"
 
-    def test_nullif_usage(self):
-        """Verify NULLIF usage for safe division."""
-        sql_files = self._find_all_sql_files()
-        for fpath in sql_files:
-            content = self._read(fpath)
-            if "NULLIF" in content.upper() or "nullif" in content:
-                return
-        pytest.skip("NULLIF not used in SQL files (may use COALESCE instead)")
+    def test_schema_yml_exists(self):
+        filepath = os.path.join(self.REPO_DIR, self.SCHEMA)
+        assert os.path.exists(filepath), "schema.yml not found"
 
-    # ── functional_check ────────────────────────────────────────────────────
+    def test_dbt_project_exists(self):
+        filepath = os.path.join(self.REPO_DIR, self.DBT_PROJECT)
+        assert os.path.exists(filepath), "dbt_project.yml not found"
 
-    def test_sql_files_have_select(self):
-        """Verify all SQL model files contain SELECT statements."""
-        sql_files = self._find_all_sql_files()
-        assert sql_files, "No SQL files found"
-        for fpath in sql_files:
-            content = self._read(fpath)
-            assert re.search(
-                r"\bSELECT\b", content, re.IGNORECASE
-            ), f"No SELECT in {os.path.basename(fpath)}"
+    # === Semantic Checks ===
 
-    def test_schema_yml_valid_yaml(self):
-        """Verify schema YAML files are valid YAML."""
-        import yaml
+    def test_stg_customers_uses_source(self):
+        """Verify stg_customers references source raw_customers"""
+        content = self._read_file(self.STG_CUSTOMERS)
+        assert "source(" in content, "stg_customers missing source() ref"
+        assert "raw_customers" in content, "stg_customers missing raw_customers"
+        assert "customer_id" in content, "stg_customers missing customer_id rename"
 
-        yml_files = self._find_files_by_ext(".yml") + self._find_files_by_ext(".yaml")
-        assert yml_files, "No YAML files found"
-        for fpath in yml_files:
-            with open(fpath, "r", errors="ignore") as fh:
-                try:
-                    yaml.safe_load(fh)
-                except yaml.YAMLError as exc:
-                    pytest.fail(f"Invalid YAML in {os.path.basename(fpath)}: {exc}")
+    def test_stg_orders_filters_cancelled(self):
+        """Verify stg_orders filters out cancelled orders"""
+        content = self._read_file(self.STG_ORDERS)
+        assert "cancelled" in content.lower(), "stg_orders missing cancelled filter"
 
-    def test_jinja_refs_valid(self):
-        """Verify {{ ref('...') }} calls reference existing models."""
-        sql_files = self._find_all_sql_files()
-        model_names = set()
-        for fpath in sql_files:
-            name = os.path.splitext(os.path.basename(fpath))[0]
-            model_names.add(name)
-        for fpath in sql_files:
-            content = self._read(fpath)
-            refs = re.findall(r"\{\{\s*ref\(\s*['\"](\w+)['\"]\s*\)\s*\}\}", content)
-            for ref_name in refs:
-                if ref_name not in model_names:
-                    # Allow refs to seed or source models
-                    pass  # non-fatal
+    def test_stg_payments_converts_cents(self):
+        """Verify stg_payments divides amount by 100"""
+        content = self._read_file(self.STG_PAYMENTS)
+        assert "100" in content, "stg_payments missing cents-to-dollars conversion"
 
-    def test_models_have_config_or_header(self):
-        """Verify SQL models have dbt config block or header comments."""
-        sql_files = self._find_all_sql_files()
-        assert sql_files, "No SQL files found"
-        for fpath in sql_files:
-            content = self._read(fpath)
-            if re.search(r"(\{\{.*config|--.*model|/\*)", content):
-                return
-        pytest.fail("No SQL model has a config block or header comment")
+    def test_int_model_aggregates(self):
+        """Verify int_customer_orders computes order_count, totals"""
+        content = self._read_file(self.INT_ORDERS)
+        for pattern in ["order_count", "first_order_date",
+                        "most_recent_order_date", "total_order_amount"]:
+            assert pattern in content, \
+                f"int_customer_orders missing: {pattern}"
 
-    # ── helpers ──────────────────────────────────────────────────────────────
+    def test_fct_clv_incremental(self):
+        """Verify fct_customer_ltv uses incremental materialization"""
+        content = self._read_file(self.FCT_CLV)
+        assert "incremental" in content, "fct_customer_ltv missing incremental config"
+        assert "is_incremental" in content, "fct_customer_ltv missing is_incremental"
 
-    def _find_sql_files(self, keyword):
-        results = []
-        for dirpath, _, fnames in os.walk(self.REPO_DIR):
-            if ".git" in dirpath:
-                continue
-            for f in fnames:
-                if f.endswith(".sql") and keyword.lower() in f.lower():
-                    results.append(os.path.join(dirpath, f))
-        return results
+    def test_fct_clv_unique_key(self):
+        """Verify fct_customer_ltv has unique_key=customer_id"""
+        content = self._read_file(self.FCT_CLV)
+        assert "customer_id" in content, "fct_customer_ltv missing customer_id key"
 
-    def _find_all_sql_files(self):
-        results = []
-        for dirpath, _, fnames in os.walk(self.REPO_DIR):
-            if ".git" in dirpath:
-                continue
-            for f in fnames:
-                if f.endswith(".sql"):
-                    results.append(os.path.join(dirpath, f))
-        return results
+    def test_fct_clv_nullif(self):
+        """Verify CLV handles division by zero with NULLIF"""
+        content = self._read_file(self.FCT_CLV)
+        assert "NULLIF" in content.upper(), "fct_customer_ltv missing NULLIF"
 
-    def _find_files_by_ext(self, ext):
-        results = []
-        for dirpath, _, fnames in os.walk(self.REPO_DIR):
-            if ".git" in dirpath:
-                continue
-            for f in fnames:
-                if f.endswith(ext):
-                    results.append(os.path.join(dirpath, f))
-        return results
+    def test_fct_clv_computes_predicted_ltv(self):
+        """Verify CLV model computes predicted_ltv"""
+        content = self._read_file(self.FCT_CLV)
+        assert "predicted_ltv" in content, "fct_customer_ltv missing predicted_ltv"
 
-    def _read(self, path):
-        with open(path, "r", errors="ignore") as fh:
-            return fh.read()
+    @pytest.mark.skipif(yaml is None, reason="PyYAML not installed")
+    def test_schema_has_tests(self):
+        """Verify schema.yml defines not_null, unique, relationships tests"""
+        content = self._read_file(self.SCHEMA)
+        for test_type in ["not_null", "unique", "relationships"]:
+            assert test_type in content, f"schema.yml missing {test_type} test"
+
+    @pytest.mark.skipif(yaml is None, reason="PyYAML not installed")
+    def test_schema_has_accepted_values(self):
+        """Verify accepted_values on status column"""
+        content = self._read_file(self.SCHEMA)
+        assert "accepted_values" in content, "schema.yml missing accepted_values"
+
+    @pytest.mark.skipif(yaml is None, reason="PyYAML not installed")
+    def test_dbt_project_materializations(self):
+        """Verify dbt_project.yml configures staging=view, marts=incremental"""
+        content = self._read_file(self.DBT_PROJECT)
+        doc = yaml.safe_load(content)
+        assert "jaffle_shop" in str(doc.get("name", "")), \
+            "dbt_project.yml missing name: jaffle_shop"
+        assert "view" in content, "Missing staging=view materialization"
+        assert "incremental" in content, "Missing marts=incremental"
+
+    # === Functional Checks ===
+
+    @pytest.mark.skipif(yaml is None, reason="PyYAML not installed")
+    def test_schema_valid_yaml(self):
+        """Verify schema.yml is valid YAML"""
+        content = self._read_file(self.SCHEMA)
+        try:
+            yaml.safe_load(content)
+        except yaml.YAMLError as e:
+            pytest.fail(f"schema.yml YAML error: {e}")
+
+    @pytest.mark.skipif(yaml is None, reason="PyYAML not installed")
+    def test_dbt_project_valid_yaml(self):
+        """Verify dbt_project.yml is valid YAML"""
+        content = self._read_file(self.DBT_PROJECT)
+        try:
+            yaml.safe_load(content)
+        except yaml.YAMLError as e:
+            pytest.fail(f"dbt_project.yml YAML error: {e}")

@@ -1,174 +1,202 @@
-"""Test file for the llm-evaluation skill.
-
-This suite validates the BERTScoreMetric, SemanticSimilarityMetric,
-and AnswerRelevanceMetric in the HELM benchmark metrics package.
+"""
+Test skill: llm-evaluation
+Verify that the Agent adds BERTScore, Semantic Similarity, and Answer Relevance
+metrics to the HELM evaluation framework — metric classes, registration, and
+test coverage.
 """
 
-from __future__ import annotations
-
-import ast
-import pathlib
+import os
 import re
-
+import ast
+import subprocess
 import pytest
 
 
 class TestLlmEvaluation:
-    """Verify LLM evaluation metric classes in HELM."""
-
     REPO_DIR = "/workspace/helm"
+    METRICS = "src/helm/benchmark/metrics"
 
-    BERTSCORE_PY = "src/helm/benchmark/metrics/bertscore_metric.py"
-    SEMANTIC_SIM_PY = "src/helm/benchmark/metrics/semantic_similarity_metric.py"
-    ANSWER_REL_PY = "src/helm/benchmark/metrics/answer_relevance_metric.py"
+    # ────────────────── helpers ──────────────────
 
-    # ------------------------------------------------------------------
-    # Helpers
-    # ------------------------------------------------------------------
+    def _read(self, rel_path):
+        fpath = os.path.join(self.REPO_DIR, rel_path)
+        with open(fpath, "r") as f:
+            return f.read()
 
-    def _repo_path(self, relative: str) -> pathlib.Path:
-        return pathlib.Path(self.REPO_DIR, *relative.split("/"))
+    def _exists(self, rel_path):
+        return os.path.isfile(os.path.join(self.REPO_DIR, rel_path))
 
-    def _read_text(self, relative: str) -> str:
-        path = self._repo_path(relative)
-        assert path.exists(), f"Expected path to exist: {path}"
-        return path.read_text(encoding="utf-8", errors="ignore")
+    def _parse(self, rel_path):
+        fpath = os.path.join(self.REPO_DIR, rel_path)
+        with open(fpath, "r") as f:
+            return ast.parse(f.read())
 
-    def _assert_non_empty_file(self, relative: str) -> pathlib.Path:
-        path = self._repo_path(relative)
-        assert path.is_file(), f"Expected file to exist: {path}"
-        assert path.stat().st_size > 0, f"Expected non-empty file: {path}"
-        return path
+    # === File Path Checks ===
 
-    def _class_source(self, source: str, class_name: str) -> str | None:
-        tree = ast.parse(source)
-        for node in ast.walk(tree):
-            if isinstance(node, ast.ClassDef) and node.name == class_name:
-                start = node.lineno - 1
-                end = node.end_lineno or start + 1
-                lines = source.splitlines()
-                return "\n".join(lines[start:end])
-        return None
+    def test_bertscore_metric_exists(self):
+        """bertscore_metric.py must exist"""
+        assert self._exists(f"{self.METRICS}/bertscore_metric.py")
 
-    def _all_metric_sources(self) -> str:
-        parts = []
-        for rel in (self.BERTSCORE_PY, self.SEMANTIC_SIM_PY, self.ANSWER_REL_PY):
-            p = self._repo_path(rel)
-            if p.is_file():
-                parts.append(p.read_text(encoding="utf-8", errors="ignore"))
-        return "\n".join(parts)
+    def test_semantic_similarity_metric_exists(self):
+        """semantic_similarity_metric.py must exist"""
+        assert self._exists(f"{self.METRICS}/semantic_similarity_metric.py")
 
-    # ------------------------------------------------------------------
-    # Layer 1 – file_path_check (3 cases)
-    # ------------------------------------------------------------------
+    def test_answer_relevance_metric_exists(self):
+        """answer_relevance_metric.py must exist"""
+        assert self._exists(f"{self.METRICS}/answer_relevance_metric.py")
 
-    def test_file_path_src_helm_benchmark_metrics_bertscore_metric_py_exists(self):
-        """Verify bertscore_metric.py exists and is non-empty."""
-        self._assert_non_empty_file(self.BERTSCORE_PY)
+    def test_bertscore_test_exists(self):
+        """test_bertscore_metric.py must exist"""
+        assert self._exists("tests/benchmark/metrics/test_bertscore_metric.py")
 
-    def test_file_path_src_helm_benchmark_metrics_semantic_similarity_metric_py_exi(
-        self,
-    ):
-        """Verify semantic_similarity_metric.py exists and is non-empty."""
-        self._assert_non_empty_file(self.SEMANTIC_SIM_PY)
+    def test_semantic_similarity_test_exists(self):
+        """test_semantic_similarity_metric.py must exist"""
+        assert self._exists("tests/benchmark/metrics/test_semantic_similarity_metric.py")
 
-    def test_file_path_src_helm_benchmark_metrics_answer_relevance_metric_py_exists(
-        self,
-    ):
-        """Verify answer_relevance_metric.py exists and is non-empty."""
-        self._assert_non_empty_file(self.ANSWER_REL_PY)
+    def test_answer_relevance_test_exists(self):
+        """test_answer_relevance_metric.py must exist"""
+        assert self._exists("tests/benchmark/metrics/test_answer_relevance_metric.py")
 
-    # ------------------------------------------------------------------
-    # Layer 2 – semantic_check (5 cases)
-    # ------------------------------------------------------------------
+    # === Semantic Checks — BERTScoreMetric ===
 
-    def test_semantic_bertscoremetric_inherits_from_metric_base_class(self):
-        """BERTScoreMetric inherits from Metric base class."""
-        src = self._read_text(self.BERTSCORE_PY)
-        tree = ast.parse(src)
-        for node in ast.walk(tree):
-            if isinstance(node, ast.ClassDef) and node.name == "BERTScoreMetric":
-                bases = [getattr(b, "id", getattr(b, "attr", "")) for b in node.bases]
-                assert any(
-                    "Metric" in b for b in bases
-                ), "BERTScoreMetric should inherit from a Metric base class"
-                return
-        pytest.fail("BERTScoreMetric class not found")
+    def test_bertscore_class_defined(self):
+        """BERTScoreMetric class must be defined"""
+        src = self._read(f"{self.METRICS}/bertscore_metric.py")
+        assert re.search(r'class\s+BERTScoreMetric\b', src), (
+            "BERTScoreMetric class not found"
+        )
 
-    def test_semantic_bertscoremetric_constructor_accepts_model_name_batch_size_de(
-        self,
-    ):
-        """BERTScoreMetric constructor accepts model_name, batch_size, device."""
-        src = self._read_text(self.BERTSCORE_PY)
-        body = self._class_source(src, "BERTScoreMetric")
-        assert body is not None, "BERTScoreMetric class not found"
-        assert re.search(r"def\s+__init__\s*\(", body), "__init__ required"
-        for param in ("model_name", "batch_size", "device"):
-            assert param in body, f"BERTScoreMetric.__init__ missing param: {param}"
+    def test_bertscore_evaluate_method(self):
+        """BERTScoreMetric must have evaluate() method"""
+        src = self._read(f"{self.METRICS}/bertscore_metric.py")
+        assert re.search(r'def\s+evaluate\s*\(\s*self', src), (
+            "evaluate() method not found in BERTScoreMetric"
+        )
 
-    def test_semantic_evaluate_method_returns_list_of_stat_objects(self):
-        """evaluate method returns list of Stat objects."""
-        src = self._read_text(self.BERTSCORE_PY)
-        assert re.search(r"def\s+evaluate\s*\(", src), "evaluate method not found"
-        assert re.search(
-            r"Stat|List\[Stat\]|list\[Stat\]", src
-        ), "evaluate should return Stat objects"
+    def test_bertscore_returns_three_stats(self):
+        """BERTScore must return precision, recall, and F1 stats"""
+        src = self._read(f"{self.METRICS}/bertscore_metric.py")
+        for stat in ["precision", "recall", "f1"]:
+            assert stat in src, f"BERTScore missing {stat} stat"
 
-    def test_semantic_semanticsimilaritymetric_uses_sentence_transformers_model(self):
-        """SemanticSimilarityMetric uses sentence-transformers model."""
-        src = self._read_text(self.SEMANTIC_SIM_PY)
-        assert re.search(
-            r"sentence.transformers|SentenceTransformer", src
-        ), "SemanticSimilarityMetric should use sentence-transformers"
+    def test_bertscore_batch_size_param(self):
+        """BERTScoreMetric must support batch_size parameter"""
+        src = self._read(f"{self.METRICS}/bertscore_metric.py")
+        assert "batch_size" in src, "batch_size parameter not found"
 
-    def test_semantic_answerrelevancemetric_constructs_judge_prompt_with_question_(
-        self,
-    ):
-        """AnswerRelevanceMetric constructs judge prompt with question, reference, generated answer."""
-        src = self._read_text(self.ANSWER_REL_PY)
-        body = self._class_source(src, "AnswerRelevanceMetric")
-        assert body is not None, "AnswerRelevanceMetric class not found"
-        assert re.search(
-            r"question|prompt|judge", body, re.IGNORECASE
-        ), "AnswerRelevanceMetric should construct a judge prompt"
+    def test_bertscore_idf_option(self):
+        """BERTScoreMetric should support use_idf option"""
+        src = self._read(f"{self.METRICS}/bertscore_metric.py")
+        assert "idf" in src.lower(), "IDF weighting option not found"
 
-    # ------------------------------------------------------------------
-    # Layer 3 – functional_check (5 cases, source analysis)
-    # ------------------------------------------------------------------
+    # === Semantic Checks — SemanticSimilarityMetric ===
 
-    def test_functional_bertscore_of_identical_texts_returns_f1_close_to_1_0(self):
-        """BERTScore of identical texts returns F1 close to 1.0."""
-        src = self._read_text(self.BERTSCORE_PY)
-        assert re.search(
-            r"[Ff]1|precision|recall|bert_score|score", src
-        ), "BERTScoreMetric should compute F1/precision/recall"
+    def test_semantic_similarity_class_defined(self):
+        """SemanticSimilarityMetric class must be defined"""
+        src = self._read(f"{self.METRICS}/semantic_similarity_metric.py")
+        assert re.search(r'class\s+SemanticSimilarityMetric\b', src), (
+            "SemanticSimilarityMetric class not found"
+        )
 
-    def test_functional_bertscore_of_unrelated_texts_returns_f1_below_0_5(self):
-        """BERTScore of unrelated texts returns F1 below 0.5."""
-        src = self._read_text(self.BERTSCORE_PY)
-        assert re.search(
-            r"evaluate|compute|score", src
-        ), "BERTScoreMetric should have evaluation logic"
+    def test_semantic_similarity_cosine(self):
+        """Must compute cosine similarity between embeddings"""
+        src = self._read(f"{self.METRICS}/semantic_similarity_metric.py")
+        assert "cosine" in src.lower(), (
+            "Cosine similarity computation not found"
+        )
 
-    def test_functional_semanticsimilarity_of_similar_sentences_returns_0_85(self):
-        """SemanticSimilarity of similar sentences returns > 0.85."""
-        src = self._read_text(self.SEMANTIC_SIM_PY)
-        assert re.search(
-            r"cosine|similarity|encode|embed", src, re.IGNORECASE
-        ), "SemanticSimilarityMetric should compute cosine similarity"
+    def test_semantic_similarity_sentence_transformer(self):
+        """Must reference sentence-transformers model"""
+        src = self._read(f"{self.METRICS}/semantic_similarity_metric.py")
+        assert "sentence" in src.lower() or "MiniLM" in src, (
+            "Sentence transformer model not referenced"
+        )
 
-    def test_functional_semanticsimilarity_of_unrelated_sentences_returns_0_3(self):
-        """SemanticSimilarity of unrelated sentences returns < 0.3."""
-        src = self._read_text(self.SEMANTIC_SIM_PY)
-        assert re.search(
-            r"evaluate|compute|score", src
-        ), "SemanticSimilarityMetric should have evaluation logic"
+    # === Semantic Checks — AnswerRelevanceMetric ===
 
-    def test_functional_answerrelevance_returns_parsed_integer_1_5_from_judge_respon(
-        self,
-    ):
-        """AnswerRelevance returns parsed integer 1-5 from judge response."""
-        src = self._read_text(self.ANSWER_REL_PY)
-        assert re.search(
-            r"int|parse|extract|\d|score", src
-        ), "AnswerRelevanceMetric should parse integer scores from judge"
+    def test_answer_relevance_class_defined(self):
+        """AnswerRelevanceMetric class must be defined"""
+        src = self._read(f"{self.METRICS}/answer_relevance_metric.py")
+        assert re.search(r'class\s+AnswerRelevanceMetric\b', src), (
+            "AnswerRelevanceMetric class not found"
+        )
+
+    def test_answer_relevance_judge_prompt(self):
+        """Must construct a judge prompt with rating criteria"""
+        src = self._read(f"{self.METRICS}/answer_relevance_metric.py")
+        assert "1" in src and "5" in src and ("rating" in src.lower() or "score" in src.lower()), (
+            "Judge prompt with 1-5 rating criteria not found"
+        )
+
+    def test_answer_relevance_parses_rating(self):
+        """Must parse numeric rating from LLM response"""
+        src = self._read(f"{self.METRICS}/answer_relevance_metric.py")
+        # Should have digit extraction logic
+        assert re.search(r'int\(|digit|re\.|findall|search', src), (
+            "Numeric rating parsing logic not found"
+        )
+
+    # === Semantic Checks — Metric Registration ===
+
+    def test_metric_names_registered(self):
+        """New metric names must be registered in metric_name.py"""
+        src = self._read(f"{self.METRICS}/metric_name.py")
+        for name in ["bertscore", "semantic_similarity", "answer_relevance"]:
+            assert name in src, f"Metric name '{name}' not registered"
+
+    # === Semantic Checks — __init__.py exports ===
+
+    def test_init_exports_new_metrics(self):
+        """__init__.py must export new metric classes"""
+        src = self._read(f"{self.METRICS}/__init__.py")
+        assert "BERTScoreMetric" in src, "BERTScoreMetric not exported"
+
+    # === Functional Checks ===
+
+    def test_bertscore_importable(self):
+        """BERTScoreMetric must be importable"""
+        result = subprocess.run(
+            ["python", "-c",
+             "from helm.benchmark.metrics.bertscore_metric import BERTScoreMetric; "
+             "print('OK')"],
+            capture_output=True, text=True, cwd=self.REPO_DIR, timeout=30,
+        )
+        assert "OK" in result.stdout, (
+            f"Import failed:\n{result.stdout}\n{result.stderr}"
+        )
+
+    def test_semantic_similarity_importable(self):
+        """SemanticSimilarityMetric must be importable"""
+        result = subprocess.run(
+            ["python", "-c",
+             "from helm.benchmark.metrics.semantic_similarity_metric import "
+             "SemanticSimilarityMetric; print('OK')"],
+            capture_output=True, text=True, cwd=self.REPO_DIR, timeout=30,
+        )
+        assert "OK" in result.stdout, (
+            f"Import failed:\n{result.stdout}\n{result.stderr}"
+        )
+
+    def test_answer_relevance_importable(self):
+        """AnswerRelevanceMetric must be importable"""
+        result = subprocess.run(
+            ["python", "-c",
+             "from helm.benchmark.metrics.answer_relevance_metric import "
+             "AnswerRelevanceMetric; print('OK')"],
+            capture_output=True, text=True, cwd=self.REPO_DIR, timeout=30,
+        )
+        assert "OK" in result.stdout, (
+            f"Import failed:\n{result.stdout}\n{result.stderr}"
+        )
+
+    def test_bertscore_tests_pass(self):
+        """BERTScore unit tests must pass"""
+        result = subprocess.run(
+            ["python", "-m", "pytest",
+             "tests/benchmark/metrics/test_bertscore_metric.py",
+             "-v", "--tb=short"],
+            capture_output=True, text=True, cwd=self.REPO_DIR, timeout=120,
+        )
+        assert result.returncode == 0, (
+            f"Tests failed:\n{result.stdout}\n{result.stderr}"
+        )

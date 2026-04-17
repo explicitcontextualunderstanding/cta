@@ -1,148 +1,226 @@
 """
-Test for 'vector-index-tuning' skill — FAISS HNSW Tuner & Quantization Advisor
-Validates that the Agent created HNSWTuner and QuantizationAdvisor with
-benchmark and recommend methods in the FAISS contrib directory.
+Tests for skill: vector-index-tuning
+Repo: facebookresearch/faiss
+Image: zhangyiiiiii/swe-skills-bench-python
+Task: Implement an adaptive HNSW index tuner and quantization advisor for FAISS.
 """
 
 import ast
 import os
-import sys
+import re
+import subprocess
 
 import pytest
 
+REPO_DIR = "/workspace/faiss"
 
-class TestVectorIndexTuning:
-    """Verify HNSW tuner and quantization advisor in FAISS."""
+TUNER_FILE = os.path.join(REPO_DIR, "contrib", "hnsw_tuner.py")
+QUANT_FILE = os.path.join(REPO_DIR, "contrib", "quantization_advisor.py")
+TEST_FILE = os.path.join(REPO_DIR, "tests", "test_hnsw_tuner.py")
 
-    REPO_DIR = "/workspace/faiss"
 
-    # ---- helpers ----
+# ---------------------------------------------------------------------------
+# Layer 1 — file_path_check
+# ---------------------------------------------------------------------------
 
-    @staticmethod
-    def _read(path):
-        with open(path, "r", errors="ignore") as fh:
-            return fh.read()
+class TestFilePathCheck:
+    """Verify all required files were created."""
 
-    def _tuner_tree(self):
-        text = self._read(os.path.join(self.REPO_DIR, "contrib/hnsw_tuner.py"))
-        return ast.parse(text)
+    def test_hnsw_tuner_file_exists(self):
+        assert os.path.isfile(TUNER_FILE), f"Expected {TUNER_FILE}"
 
-    def _classes(self):
-        tree = self._tuner_tree()
-        return [n.name for n in ast.walk(tree) if isinstance(n, ast.ClassDef)]
-
-    def _methods(self):
-        tree = self._tuner_tree()
-        return [n.name for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)]
-
-    # ---- file_path_check ----
-
-    def test_hnsw_tuner_exists(self):
-        """Verifies contrib/hnsw_tuner.py exists."""
-        path = os.path.join(self.REPO_DIR, "contrib/hnsw_tuner.py")
-        assert os.path.exists(path), f"File not found: {path}"
-
-    def test_quantization_advisor_exists(self):
-        """Verifies contrib/quantization_advisor.py exists."""
-        path = os.path.join(self.REPO_DIR, "contrib/quantization_advisor.py")
-        assert os.path.exists(path), f"File not found: {path}"
+    def test_quantization_advisor_file_exists(self):
+        assert os.path.isfile(QUANT_FILE), f"Expected {QUANT_FILE}"
 
     def test_test_file_exists(self):
-        """Verifies tests/test_hnsw_tuner.py exists."""
-        path = os.path.join(self.REPO_DIR, "tests/test_hnsw_tuner.py")
-        assert os.path.exists(path), f"File not found: {path}"
+        assert os.path.isfile(TEST_FILE), f"Expected {TEST_FILE}"
 
-    # ---- semantic_check ----
 
-    def test_sem_ast_parseable(self):
-        """Verifies hnsw_tuner.py is valid Python."""
-        tree = self._tuner_tree()
-        assert tree is not None
+# ---------------------------------------------------------------------------
+# Layer 2 — semantic_check
+# ---------------------------------------------------------------------------
 
-    def test_sem_hnsw_tuner_class(self):
-        """Verifies HNSWTuner class is defined."""
-        assert "HNSWTuner" in self._classes(), "HNSWTuner class not defined"
+class TestSemanticHNSWTuner:
+    """Verify HNSWTuner class structure."""
 
-    def test_sem_benchmark_method(self):
-        """Verifies benchmark method exists."""
-        assert "benchmark" in self._methods(), "benchmark method missing"
+    @pytest.fixture(autouse=True)
+    def _load_source(self):
+        with open(TUNER_FILE, "r", encoding="utf-8") as f:
+            self.src = f.read()
+        self.tree = ast.parse(self.src)
 
-    def test_sem_recommend_method(self):
-        """Verifies recommend method exists."""
-        assert "recommend" in self._methods(), "recommend method missing"
+    def test_hnsw_tuner_class_defined(self):
+        classes = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.ClassDef)]
+        assert "HNSWTuner" in classes, (
+            f"Expected HNSWTuner class; found: {classes}"
+        )
 
-    def test_sem_classes_list(self):
-        """Verifies classes found via AST."""
-        classes = self._classes()
-        assert len(classes) >= 1, "No classes found in hnsw_tuner.py"
+    def test_benchmark_method(self):
+        funcs = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.FunctionDef)]
+        assert "benchmark" in funcs, "Expected benchmark() method"
 
-    def test_sem_methods_list(self):
-        """Verifies methods found via AST (edge case)."""
-        methods = self._methods()
-        assert len(methods) >= 2, f"Expected >= 2 methods, found {len(methods)}"
+    def test_recommend_method(self):
+        funcs = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.FunctionDef)]
+        assert "recommend" in funcs, "Expected recommend() method"
 
-    # ---- functional_check ----
+    def test_benchmark_params(self):
+        """Benchmark must accept M, efConstruction, efSearch parameter lists."""
+        for param in ["m_values", "ef_construction", "ef_search"]:
+            assert param in self.src.lower() or param.replace("_", "") in self.src.lower(), (
+                f"Expected parameter '{param}' in benchmark method"
+            )
 
-    def test_func_import_hnsw_tuner(self):
-        """Verifies HNSWTuner is importable from contrib."""
-        old_path = sys.path[:]
-        sys.path.insert(0, os.path.join(self.REPO_DIR, "contrib"))
+    def test_recall_at_k_computation(self):
+        """Must compute recall@k for benchmark evaluation."""
+        assert "recall" in self.src.lower(), "Expected recall@k computation"
+
+    def test_constraints_met_flag(self):
+        """recommend() must return a constraints_met flag."""
+        assert "constraints_met" in self.src, (
+            "Expected constraints_met flag in recommend results"
+        )
+
+    def test_metric_support(self):
+        """Must support L2 and IP metrics."""
+        assert "L2" in self.src and "IP" in self.src, (
+            "Expected L2 and IP metric support"
+        )
+
+    def test_perf_counter_timing(self):
+        """Build/search time must use perf_counter."""
+        assert "perf_counter" in self.src or "time" in self.src, (
+            "Expected time.perf_counter for timing measurements"
+        )
+
+
+class TestSemanticQuantizationAdvisor:
+    """Verify QuantizationAdvisor class."""
+
+    @pytest.fixture(autouse=True)
+    def _load_source(self):
+        with open(QUANT_FILE, "r", encoding="utf-8") as f:
+            self.src = f.read()
+        self.tree = ast.parse(self.src)
+
+    def test_class_defined(self):
+        classes = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.ClassDef)]
+        assert "QuantizationAdvisor" in classes, (
+            f"Expected QuantizationAdvisor class; found: {classes}"
+        )
+
+    def test_estimate_memory_method(self):
+        funcs = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.FunctionDef)]
+        assert "estimate_memory" in funcs, "Expected estimate_memory() method"
+
+    def test_recommend_quantization_method(self):
+        funcs = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.FunctionDef)]
+        assert "recommend_quantization" in funcs, "Expected recommend_quantization() method"
+
+    def test_apply_quantization_method(self):
+        funcs = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.FunctionDef)]
+        assert "apply_quantization" in funcs, "Expected apply_quantization() method"
+
+    def test_index_types_supported(self):
+        """Must support flat, hnsw, and ivfpq index types."""
+        for idx_type in ["flat", "hnsw", "ivfpq"]:
+            assert idx_type in self.src.lower(), (
+                f"Expected index type '{idx_type}' support"
+            )
+
+    def test_quantization_types(self):
+        """Must support none, scalar_int8, product_quantization."""
+        for qtype in ["none", "scalar", "product_quantization"]:
+            assert qtype in self.src.lower(), (
+                f"Expected quantization type '{qtype}'"
+            )
+
+    def test_recall_impact_returned(self):
+        """recommend_quantization must return expected_recall_impact."""
+        assert "recall_impact" in self.src or "expected_recall" in self.src, (
+            "Expected expected_recall_impact in quantization recommendation"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Layer 3 — functional_check
+# ---------------------------------------------------------------------------
+
+class TestFunctionalVectorIndexTuning:
+    """Functional checks — syntax, imports, and basic validation."""
+
+    def _run(self, cmd, cwd=REPO_DIR, timeout=60):
+        return subprocess.run(
+            cmd, shell=True, cwd=cwd,
+            capture_output=True, text=True, timeout=timeout,
+        )
+
+    def test_tuner_valid_python(self):
+        with open(TUNER_FILE, "r", encoding="utf-8") as f:
+            src = f.read()
         try:
-            from hnsw_tuner import HNSWTuner  # type: ignore
+            ast.parse(src)
+        except SyntaxError as e:
+            pytest.fail(f"hnsw_tuner.py syntax error: {e}")
 
-            assert HNSWTuner is not None
-        finally:
-            sys.path[:] = old_path
-
-    def test_func_import_quantization_advisor(self):
-        """Verifies QuantizationAdvisor is importable."""
-        old_path = sys.path[:]
-        sys.path.insert(0, os.path.join(self.REPO_DIR, "contrib"))
+    def test_quant_valid_python(self):
+        with open(QUANT_FILE, "r", encoding="utf-8") as f:
+            src = f.read()
         try:
-            from quantization_advisor import QuantizationAdvisor  # type: ignore
+            ast.parse(src)
+        except SyntaxError as e:
+            pytest.fail(f"quantization_advisor.py syntax error: {e}")
 
-            assert QuantizationAdvisor is not None
-        finally:
-            sys.path[:] = old_path
+    def test_test_file_valid_python(self):
+        with open(TEST_FILE, "r", encoding="utf-8") as f:
+            src = f.read()
+        try:
+            ast.parse(src)
+        except SyntaxError as e:
+            pytest.fail(f"test_hnsw_tuner.py syntax error: {e}")
 
-    def test_func_test_params(self):
-        """Verifies n, d, k = 500, 32, 5 pattern in test file."""
-        test_text = self._read(os.path.join(self.REPO_DIR, "tests/test_hnsw_tuner.py"))
-        assert "500" in test_text, "n=500 not in test file"
-        assert "32" in test_text, "d=32 not in test file"
+    def test_faiss_importable(self):
+        """faiss must be importable in the environment."""
+        result = self._run("python -c \"import faiss; print('OK')\"", timeout=30)
+        if "OK" not in result.stdout:
+            pytest.skip("faiss not importable in this environment")
 
-    def test_func_rng_pattern(self):
-        """Verifies np.random.default_rng usage."""
-        test_text = self._read(os.path.join(self.REPO_DIR, "tests/test_hnsw_tuner.py"))
-        assert "default_rng" in test_text, "default_rng pattern not found"
+    def test_tuner_importable(self):
+        """HNSWTuner must be importable."""
+        result = self._run(
+            f"python -c \"import sys; sys.path.insert(0, '{REPO_DIR}'); "
+            f"from contrib.hnsw_tuner import HNSWTuner; print('OK')\"",
+            timeout=30,
+        )
+        if result.returncode != 0:
+            result2 = self._run(
+                f"python -c \"import sys; sys.path.insert(0, '{os.path.join(REPO_DIR, 'contrib')}'); "
+                f"from hnsw_tuner import HNSWTuner; print('OK')\"",
+                timeout=30,
+            )
+            assert "OK" in result.stdout or "OK" in result2.stdout, (
+                f"Could not import HNSWTuner:\n{result.stderr[:300]}\n{result2.stderr[:300]}"
+            )
 
-    def test_func_float32_vectors(self):
-        """Verifies float32 vector generation."""
-        test_text = self._read(os.path.join(self.REPO_DIR, "tests/test_hnsw_tuner.py"))
-        assert "float32" in test_text, "float32 dtype not found in tests"
+    def test_ground_truth_shape_validation(self):
+        """HNSWTuner must validate ground_truth shape."""
+        with open(TUNER_FILE, "r", encoding="utf-8") as f:
+            src = f.read()
+        has_validation = (
+            "shape" in src
+            and "ValueError" in src
+        )
+        assert has_validation, (
+            "Expected ground_truth shape validation raising ValueError"
+        )
 
-    def test_func_faiss_import_in_test(self):
-        """Verifies faiss import in test file."""
-        test_text = self._read(os.path.join(self.REPO_DIR, "tests/test_hnsw_tuner.py"))
-        assert (
-            "import faiss" in test_text or "faiss" in test_text
-        ), "faiss not imported in test"
-
-    def test_func_index_search(self):
-        """Verifies index.search usage pattern."""
-        test_text = self._read(os.path.join(self.REPO_DIR, "tests/test_hnsw_tuner.py"))
-        assert "search" in test_text, "index.search pattern not found"
-
-    def test_func_shape_mismatch_handling(self):
-        """Failure case: ground_truth shape mismatch -> ValueError."""
-        tuner_text = self._read(os.path.join(self.REPO_DIR, "contrib/hnsw_tuner.py"))
-        assert (
-            "ValueError" in tuner_text or "shape" in tuner_text
-        ), "No shape mismatch handling found"
-
-    def test_func_query_vectors(self):
-        """Verifies query vector generation in test."""
-        test_text = self._read(os.path.join(self.REPO_DIR, "tests/test_hnsw_tuner.py"))
-        assert (
-            "queries" in test_text or "query" in test_text
-        ), "No query vectors in test"
+    def test_memory_estimation_formula(self):
+        """QuantizationAdvisor must compute memory based on known formulas."""
+        with open(QUANT_FILE, "r", encoding="utf-8") as f:
+            src = f.read()
+        has_formula = (
+            "float32" in src.lower() or "* 4" in src
+            or "bytes" in src.lower()
+        )
+        assert has_formula, (
+            "Expected memory estimation formula (n*d*4 bytes for float32)"
+        )

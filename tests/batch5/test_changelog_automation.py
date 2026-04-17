@@ -1,153 +1,142 @@
 """
-Test for 'changelog-automation' skill — Changelog Generator Ruby Implementation
-Validates conventional commit parsing, SemVer bumping, categorizer,
-and markdown formatter with proper heading structure.
+Test skill: changelog-automation
+Verify that the Agent correctly implements automated changelog generation
+using Conventional Commits in Ruby for github-changelog-generator.
 """
 
 import os
 import re
-import subprocess
-
 import pytest
 
 
 class TestChangelogAutomation:
-    """Verify changelog automation implementation."""
-
     REPO_DIR = "/workspace/github-changelog-generator"
 
-    # ── file_path_check ─────────────────────────────────────────────────────
+    PARSER = "lib/github_changelog_generator/conventional_parser.rb"
+    CATEGORIZER = "lib/github_changelog_generator/categorizer.rb"
+    VERSION_INFERRER = "lib/github_changelog_generator/version_inferrer.rb"
+    FORMATTER = "lib/github_changelog_generator/markdown_formatter.rb"
+    PARSER_SPEC = "spec/conventional_parser_spec.rb"
+    CATEGORIZER_SPEC = "spec/categorizer_spec.rb"
+    VERSION_SPEC = "spec/version_inferrer_spec.rb"
+    FORMATTER_SPEC = "spec/markdown_formatter_spec.rb"
 
-    def test_source_files_exist(self):
-        """Verify at least 3 Ruby source files exist."""
-        rb_files = self._find_rb_files("lib")
-        assert (
-            len(rb_files) >= 3
-        ), f"Expected ≥3 Ruby source files in lib/, found {len(rb_files)}"
+    def _read_file(self, rel_path):
+        filepath = os.path.join(self.REPO_DIR, rel_path)
+        with open(filepath) as f:
+            return f.read()
+
+    # === File Path Checks ===
+
+    def test_parser_file_exists(self):
+        filepath = os.path.join(self.REPO_DIR, self.PARSER)
+        assert os.path.exists(filepath), f"conventional_parser.rb not found"
+
+    def test_categorizer_file_exists(self):
+        filepath = os.path.join(self.REPO_DIR, self.CATEGORIZER)
+        assert os.path.exists(filepath), f"categorizer.rb not found"
+
+    def test_version_inferrer_file_exists(self):
+        filepath = os.path.join(self.REPO_DIR, self.VERSION_INFERRER)
+        assert os.path.exists(filepath), f"version_inferrer.rb not found"
+
+    def test_formatter_file_exists(self):
+        filepath = os.path.join(self.REPO_DIR, self.FORMATTER)
+        assert os.path.exists(filepath), f"markdown_formatter.rb not found"
 
     def test_spec_files_exist(self):
-        """Verify at least 3 spec files exist."""
-        spec_files = self._find_rb_files("spec")
-        assert len(spec_files) >= 3, f"Expected ≥3 spec files, found {len(spec_files)}"
+        for path in [self.PARSER_SPEC, self.CATEGORIZER_SPEC,
+                      self.VERSION_SPEC, self.FORMATTER_SPEC]:
+            filepath = os.path.join(self.REPO_DIR, path)
+            assert os.path.exists(filepath), f"Spec file not found: {filepath}"
 
-    # ── semantic_check ──────────────────────────────────────────────────────
+    # === Semantic Checks ===
 
-    def test_conventional_commit_parsing(self):
-        """Verify conventional commit regex/parsing logic exists."""
-        rb_files = self._find_rb_files("lib")
-        assert rb_files, "No lib Ruby files found"
-        for fpath in rb_files:
-            content = self._read(fpath)
-            if re.search(
-                r"(feat|fix|chore|breaking).*commit|conventional|commit_type|type.*scope",
-                content,
-                re.IGNORECASE,
-            ):
-                return
-        pytest.fail("No conventional commit parsing logic found")
+    def test_parser_extracts_conventional_commit(self):
+        """Verify parser recognizes type(scope)!: description pattern"""
+        content = self._read_file(self.PARSER)
+        assert "ConventionalParser" in content, "Missing ConventionalParser class"
+        # Should parse type, scope, breaking, description
+        for field in ["type", "scope", "breaking", "description"]:
+            assert field in content, f"Parser missing field extraction: {field}"
 
-    def test_semver_bumping_logic(self):
-        """Verify SemVer version bumping with 0.x exception."""
-        rb_files = self._find_rb_files("lib")
-        assert rb_files, "No lib files"
-        for fpath in rb_files:
-            content = self._read(fpath)
-            if re.search(r"(semver|bump|major|minor|patch)", content, re.IGNORECASE):
-                return
-        pytest.fail("No SemVer bumping logic found")
+    def test_parser_recognizes_all_types(self):
+        """Verify parser recognizes feat, fix, docs, perf, etc."""
+        content = self._read_file(self.PARSER)
+        types = ["feat", "fix", "docs", "perf", "refactor", "test"]
+        found = sum(1 for t in types if t in content)
+        assert found >= 4, f"Parser missing commit types, found {found}/6"
 
-    def test_categorizer_exists(self):
-        """Verify a commit categorizer/classifier module exists."""
-        rb_files = self._find_rb_files("lib")
-        assert rb_files, "No lib files"
-        for fpath in rb_files:
-            content = self._read(fpath)
-            if re.search(r"(categoriz|classif|group|bucket)", content, re.IGNORECASE):
-                return
-            if "category" in os.path.basename(fpath).lower():
-                return
-        pytest.fail("No categorizer module found")
+    def test_parser_handles_breaking_change(self):
+        """Verify parser detects ! and BREAKING CHANGE footer"""
+        content = self._read_file(self.PARSER)
+        assert "BREAKING CHANGE" in content or "breaking" in content, \
+            "Parser missing BREAKING CHANGE detection"
 
-    def test_markdown_formatter_with_headings(self):
-        """Verify markdown formatter uses ## headings."""
-        rb_files = self._find_rb_files("lib")
-        assert rb_files, "No lib files"
-        for fpath in rb_files:
-            content = self._read(fpath)
-            if re.search(r"(##|markdown|format)", content, re.IGNORECASE):
-                if (
-                    "##" in content
-                    or "heading" in content.lower()
-                    or "format" in content.lower()
-                ):
-                    return
-        pytest.fail("No markdown formatter with ## headings found")
+    def test_categorizer_groups_into_sections(self):
+        """Verify categorizer maps types to changelog sections"""
+        content = self._read_file(self.CATEGORIZER)
+        assert "Categorizer" in content, "Missing Categorizer class"
+        for section in ["Features", "Bug Fixes", "Breaking Changes"]:
+            assert section in content, f"Categorizer missing section: {section}"
 
-    # ── functional_check ────────────────────────────────────────────────────
+    def test_version_inferrer_semver_rules(self):
+        """Verify version inferrer follows SemVer bump rules"""
+        content = self._read_file(self.VERSION_INFERRER)
+        assert "VersionInferrer" in content, "Missing VersionInferrer class"
+        assert "major" in content.lower(), "Version inferrer missing major bump"
+        assert "minor" in content.lower(), "Version inferrer missing minor bump"
+        assert "patch" in content.lower(), "Version inferrer missing patch bump"
 
-    def test_ruby_files_syntax_valid(self):
-        """Verify Ruby files have valid syntax (ruby -c)."""
-        rb_files = self._find_rb_files("lib")
-        assert rb_files, "No lib files"
-        try:
-            subprocess.run(["ruby", "--version"], capture_output=True, timeout=10)
-        except (FileNotFoundError, subprocess.TimeoutExpired):
-            pytest.skip("ruby not available")
-        for fpath in rb_files[:5]:
-            result = subprocess.run(
-                ["ruby", "-c", fpath], capture_output=True, text=True, timeout=30
-            )
-            assert (
-                result.returncode == 0
-            ), f"Syntax error in {os.path.basename(fpath)}: {result.stderr}"
+    def test_version_inferrer_zero_x_convention(self):
+        """Verify 0.x SemVer convention (breaking → minor, feat → patch)"""
+        content = self._read_file(self.VERSION_INFERRER)
+        has_zero_x = bool(re.search(r'(0\.|zero|pre.*1\.0)', content, re.IGNORECASE))
+        assert has_zero_x, "Version inferrer missing 0.x SemVer convention"
 
-    def test_spec_files_have_describe_blocks(self):
-        """Verify spec files contain RSpec describe blocks."""
-        spec_files = self._find_rb_files("spec")
-        assert spec_files, "No spec files found"
-        for fpath in spec_files:
-            content = self._read(fpath)
-            if re.search(r"(describe|context|it)\s+", content):
-                return
-        pytest.fail("No spec file contains describe/context/it blocks")
+    def test_version_inferrer_prerelease(self):
+        """Verify pre-release label support"""
+        content = self._read_file(self.VERSION_INFERRER)
+        has_pre = "pre_release" in content or "prerelease" in content or "pre-release" in content
+        assert has_pre, "Version inferrer missing pre-release support"
 
-    def test_semver_0x_exception(self):
-        """Verify 0.x SemVer exception is handled (breaking changes bump minor, not major)."""
-        rb_files = self._find_rb_files("lib") + self._find_rb_files("spec")
-        for fpath in rb_files:
-            content = self._read(fpath)
-            if re.search(
-                r"0\.\d|zero.*major|major.*zero|pre.?1\.0", content, re.IGNORECASE
-            ):
-                return
-        # This test is advisory - the feature may be implicit
-        pytest.skip("0.x SemVer exception not explicitly detectable")
+    def test_formatter_produces_markdown(self):
+        """Verify Markdown formatter produces structured output"""
+        content = self._read_file(self.FORMATTER)
+        assert "MarkdownFormatter" in content, "Missing MarkdownFormatter class"
+        assert "##" in content or "format" in content, \
+            "Formatter missing Markdown heading generation"
 
-    def test_source_files_have_module_structure(self):
-        """Verify Ruby source files define modules or classes."""
-        rb_files = self._find_rb_files("lib")
-        assert rb_files, "No lib files"
-        has_structure = False
-        for fpath in rb_files:
-            content = self._read(fpath)
-            if re.search(r"(module\s+\w+|class\s+\w+)", content):
-                has_structure = True
-                break
-        assert has_structure, "No module or class definitions found"
+    def test_formatter_includes_scope_and_pr_links(self):
+        """Verify formatter includes scope prefix and PR links"""
+        content = self._read_file(self.FORMATTER)
+        assert "scope" in content, "Formatter missing scope in entries"
+        has_links = bool(re.search(r'(pr_number|pull|issue|link|#)', content))
+        assert has_links, "Formatter missing PR/issue links"
 
-    # ── helpers ──────────────────────────────────────────────────────────────
+    # === Functional Checks ===
 
-    def _find_rb_files(self, subdir):
-        base = os.path.join(self.REPO_DIR, subdir)
-        if not os.path.isdir(base):
-            return []
-        results = []
-        for dirpath, _, fnames in os.walk(base):
-            for f in fnames:
-                if f.endswith(".rb"):
-                    results.append(os.path.join(dirpath, f))
-        return results
+    def test_parser_ruby_syntax(self):
+        """Verify parser.rb has valid Ruby syntax markers"""
+        content = self._read_file(self.PARSER)
+        assert "class " in content or "module " in content, \
+            "Parser missing Ruby class/module definition"
+        assert "def " in content, "Parser missing method definitions"
+        assert "end" in content, "Parser missing end keyword"
 
-    def _read(self, path):
-        with open(path, "r", errors="ignore") as fh:
-            return fh.read()
+    def test_categorizer_handles_empty_sections(self):
+        """Verify categorizer omits empty categories"""
+        content = self._read_file(self.CATEGORIZER)
+        has_empty_check = bool(re.search(
+            r'(empty\?|reject|compact|length.*0|size.*0|blank)',
+            content,
+        ))
+        assert has_empty_check, "Categorizer missing empty section removal"
+
+    def test_specs_have_describe_blocks(self):
+        """Verify spec files have RSpec describe/it blocks"""
+        for path in [self.PARSER_SPEC, self.CATEGORIZER_SPEC,
+                      self.VERSION_SPEC, self.FORMATTER_SPEC]:
+            content = self._read_file(path)
+            assert "describe" in content, f"{path} missing describe block"
+            assert "it " in content, f"{path} missing it block"

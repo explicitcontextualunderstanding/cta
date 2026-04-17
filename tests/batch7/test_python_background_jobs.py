@@ -1,161 +1,222 @@
-"""Test file for the python-background-jobs skill.
-
-This suite validates the ResultAggregator, AggregationResult,
-FailedTask, and MaxFailuresExceeded in celery/contrib.
+"""
+Test skill: python-background-jobs
+Verify that the Agent adds a ResultAggregator utility to Celery's contrib
+module — collecting grouped task results, handling partial failures,
+max-failures thresholds, timeouts, reduce/filter, and progress callbacks.
 """
 
-from __future__ import annotations
-
-import ast
-import pathlib
+import os
 import re
-
+import ast
+import subprocess
 import pytest
 
 
 class TestPythonBackgroundJobs:
-    """Verify Celery result aggregator patterns."""
-
     REPO_DIR = "/workspace/celery"
 
-    RESULT_AGGREGATOR_PY = "celery/contrib/result_aggregator.py"
-    CONTRIB_INIT_PY = "celery/contrib/__init__.py"
-    TEST_PY = "t/unit/contrib/test_result_aggregator.py"
+    # ────────────────── helpers ──────────────────
 
-    # ------------------------------------------------------------------
-    # Helpers
-    # ------------------------------------------------------------------
+    def _read(self, rel_path):
+        fpath = os.path.join(self.REPO_DIR, rel_path)
+        with open(fpath, "r") as f:
+            return f.read()
 
-    def _repo_path(self, relative: str) -> pathlib.Path:
-        return pathlib.Path(self.REPO_DIR, *relative.split("/"))
+    def _exists(self, rel_path):
+        return os.path.isfile(os.path.join(self.REPO_DIR, rel_path))
 
-    def _read_text(self, relative: str) -> str:
-        path = self._repo_path(relative)
-        assert path.exists(), f"Expected path to exist: {path}"
-        return path.read_text(encoding="utf-8", errors="ignore")
+    def _parse(self, rel_path):
+        fpath = os.path.join(self.REPO_DIR, rel_path)
+        with open(fpath, "r") as f:
+            return ast.parse(f.read())
 
-    def _assert_non_empty_file(self, relative: str) -> pathlib.Path:
-        path = self._repo_path(relative)
-        assert path.is_file(), f"Expected file to exist: {path}"
-        assert path.stat().st_size > 0, f"Expected non-empty file: {path}"
-        return path
+    # === File Path Checks ===
 
-    def _class_source(self, source: str, class_name: str) -> str | None:
-        tree = ast.parse(source)
-        for node in ast.walk(tree):
-            if isinstance(node, ast.ClassDef) and node.name == class_name:
-                start = node.lineno - 1
-                end = node.end_lineno or start + 1
-                lines = source.splitlines()
-                return "\n".join(lines[start:end])
-        return None
+    def test_result_aggregator_module_exists(self):
+        """celery/contrib/result_aggregator.py must exist"""
+        assert self._exists("celery/contrib/result_aggregator.py")
 
-    # ------------------------------------------------------------------
-    # Layer 1 – file_path_check (3 cases)
-    # ------------------------------------------------------------------
+    def test_contrib_init_exists(self):
+        """celery/contrib/__init__.py must exist"""
+        assert self._exists("celery/contrib/__init__.py")
 
-    def test_file_path_celery_contrib_result_aggregator_py_exists(self):
-        """Verify result_aggregator.py exists and is non-empty."""
-        self._assert_non_empty_file(self.RESULT_AGGREGATOR_PY)
+    def test_unit_test_file_exists(self):
+        """t/unit/contrib/test_result_aggregator.py must exist"""
+        assert self._exists("t/unit/contrib/test_result_aggregator.py")
 
-    def test_file_path_celery_contrib___init___py_exports_resultaggregator(self):
-        """Verify __init__.py exports ResultAggregator."""
-        self._assert_non_empty_file(self.CONTRIB_INIT_PY)
-        src = self._read_text(self.CONTRIB_INIT_PY)
-        assert "ResultAggregator" in src, "__init__.py should export ResultAggregator"
+    # === Semantic Checks — Class Definitions ===
 
-    def test_file_path_t_unit_contrib_test_result_aggregator_py_exists(self):
-        """Verify test_result_aggregator.py exists and is non-empty."""
-        self._assert_non_empty_file(self.TEST_PY)
+    def test_result_aggregator_class_defined(self):
+        """ResultAggregator class must be defined"""
+        tree = self._parse("celery/contrib/result_aggregator.py")
+        classes = [n.name for n in ast.walk(tree) if isinstance(n, ast.ClassDef)]
+        assert "ResultAggregator" in classes, "ResultAggregator class not found"
 
-    # ------------------------------------------------------------------
-    # Layer 2 – semantic_check (5 cases)
-    # ------------------------------------------------------------------
+    def test_aggregation_result_class_defined(self):
+        """AggregationResult class must be defined"""
+        tree = self._parse("celery/contrib/result_aggregator.py")
+        classes = [n.name for n in ast.walk(tree) if isinstance(n, ast.ClassDef)]
+        assert "AggregationResult" in classes, "AggregationResult class not found"
 
-    def test_semantic_resultaggregator_class_has___init___collect_reduce_filter_me(
-        self,
-    ):
-        """ResultAggregator class has __init__, collect, reduce, filter methods."""
-        src = self._read_text(self.RESULT_AGGREGATOR_PY)
-        body = self._class_source(src, "ResultAggregator")
-        assert body is not None, "ResultAggregator class not found"
-        for method in ("__init__", "collect", "reduce", "filter"):
-            assert re.search(
-                rf"def\s+{method}\s*\(", body
-            ), f"ResultAggregator missing method: {method}"
+    def test_failed_task_class_defined(self):
+        """FailedTask class must be defined"""
+        tree = self._parse("celery/contrib/result_aggregator.py")
+        classes = [n.name for n in ast.walk(tree) if isinstance(n, ast.ClassDef)]
+        assert "FailedTask" in classes, "FailedTask class not found"
 
-    def test_semantic_aggregationresult_is_a_dataclass_with_succeeded_failed_total(
-        self,
-    ):
-        """AggregationResult is a dataclass with succeeded, failed, total, etc."""
-        src = self._read_text(self.RESULT_AGGREGATOR_PY)
-        body = self._class_source(src, "AggregationResult")
-        assert body is not None, "AggregationResult class not found"
-        for field in ("succeeded", "failed", "total"):
-            assert field in body, f"AggregationResult missing field: {field}"
+    def test_max_failures_exceeded_exception_defined(self):
+        """MaxFailuresExceeded exception must be defined"""
+        tree = self._parse("celery/contrib/result_aggregator.py")
+        classes = [n.name for n in ast.walk(tree) if isinstance(n, ast.ClassDef)]
+        assert "MaxFailuresExceeded" in classes, "MaxFailuresExceeded exception not found"
 
-    def test_semantic_aggregationresult_has_success_rate_and_is_complete_propertie(
-        self,
-    ):
-        """AggregationResult has success_rate and is_complete properties."""
-        src = self._read_text(self.RESULT_AGGREGATOR_PY)
-        body = self._class_source(src, "AggregationResult")
-        assert body is not None, "AggregationResult class not found"
-        assert re.search(r"success_rate", body), "Missing success_rate"
-        assert re.search(r"is_complete", body), "Missing is_complete"
+    # === Semantic Checks — ResultAggregator Methods ===
 
-    def test_semantic_failedtask_is_a_dataclass_with_index_task_id_exception_field(
-        self,
-    ):
-        """FailedTask is a dataclass with index, task_id, exception fields."""
-        src = self._read_text(self.RESULT_AGGREGATOR_PY)
-        body = self._class_source(src, "FailedTask")
-        assert body is not None, "FailedTask class not found"
-        for field in ("index", "task_id", "exception"):
-            assert field in body, f"FailedTask missing field: {field}"
+    def test_collect_method(self):
+        """ResultAggregator must have a collect() method"""
+        src = self._read("celery/contrib/result_aggregator.py")
+        assert re.search(r'def\s+collect\s*\(\s*self', src), (
+            "collect() method not found"
+        )
 
-    def test_semantic_maxfailuresexceeded_has_partial_result_attribute(self):
-        """MaxFailuresExceeded has partial_result attribute."""
-        src = self._read_text(self.RESULT_AGGREGATOR_PY)
-        assert re.search(
-            r"class\s+MaxFailuresExceeded", src
-        ), "MaxFailuresExceeded class not found"
-        assert (
-            "partial_result" in src
-        ), "MaxFailuresExceeded should have partial_result attribute"
+    def test_reduce_method(self):
+        """ResultAggregator must have a reduce() method"""
+        src = self._read("celery/contrib/result_aggregator.py")
+        assert re.search(r'def\s+reduce\s*\(\s*self', src), (
+            "reduce() method not found"
+        )
 
-    # ------------------------------------------------------------------
-    # Layer 3 – functional_check (5 cases, source analysis)
-    # ------------------------------------------------------------------
+    def test_filter_method(self):
+        """ResultAggregator must have a filter() method"""
+        src = self._read("celery/contrib/result_aggregator.py")
+        assert re.search(r'def\s+filter\s*\(\s*self', src), (
+            "filter() method not found"
+        )
 
-    def test_functional_5_tasks_with_4_success_1_failure_success_count_4_failure_cou(
-        self,
-    ):
-        """5 tasks with 4 success + 1 failure -> success_count=4, failure_count=1."""
-        src = self._read_text(self.RESULT_AGGREGATOR_PY)
-        assert re.search(r"def\s+collect\s*\(", src), "collect method required"
-        assert re.search(
-            r"success_count|succeeded|success", src
-        ), "collect should track success count"
+    # === Semantic Checks — Constructor Parameters ===
 
-    def test_functional_reduce_operator_add_returns_sum_of_4_successful_results(self):
-        """reduce(operator.add) returns sum of 4 successful results."""
-        src = self._read_text(self.RESULT_AGGREGATOR_PY)
-        assert re.search(r"def\s+reduce\s*\(", src), "reduce method required"
+    def test_constructor_parameters(self):
+        """__init__ must accept group_result, on_result, on_error, timeout, max_failures"""
+        src = self._read("celery/contrib/result_aggregator.py")
+        init_match = re.search(r'def\s+__init__\s*\(self.*?\)', src, re.DOTALL)
+        assert init_match, "__init__ not found"
+        init_sig = init_match.group(0)
+        for param in ["group_result", "on_result", "on_error", "timeout", "max_failures"]:
+            assert param in init_sig, f"Constructor missing parameter: {param}"
 
-    def test_functional_filter_lambda_x_x_10_returns_only_qualifying_results(self):
-        """filter(lambda x: x > 10) returns only qualifying results."""
-        src = self._read_text(self.RESULT_AGGREGATOR_PY)
-        assert re.search(r"def\s+filter\s*\(", src), "filter method required"
+    # === Semantic Checks — AggregationResult Attributes ===
 
-    def test_functional_max_failures_2_with_3_failures_raises_maxfailuresexceeded(self):
-        """max_failures=2 with 3 failures raises MaxFailuresExceeded."""
-        src = self._read_text(self.RESULT_AGGREGATOR_PY)
-        assert re.search(
-            r"max_failures|MaxFailuresExceeded", src
-        ), "max_failures support required"
+    def test_aggregation_result_fields(self):
+        """AggregationResult must have succeeded, failed, total, success_count,
+        failure_count, elapsed attributes"""
+        src = self._read("celery/contrib/result_aggregator.py")
+        for field in ["succeeded", "failed", "total", "success_count",
+                       "failure_count", "elapsed"]:
+            assert field in src, f"AggregationResult missing field: {field}"
 
-    def test_functional_timeout_scenario_raises_timeouterror_with_partial_results(self):
-        """timeout scenario raises TimeoutError with partial results."""
-        src = self._read_text(self.RESULT_AGGREGATOR_PY)
-        assert re.search(r"timeout|TimeoutError", src), "Timeout handling required"
+    def test_success_rate_property(self):
+        """AggregationResult must have a success_rate property"""
+        src = self._read("celery/contrib/result_aggregator.py")
+        assert "success_rate" in src, "success_rate property not found"
+
+    def test_is_complete_property(self):
+        """AggregationResult must have an is_complete property"""
+        src = self._read("celery/contrib/result_aggregator.py")
+        assert "is_complete" in src, "is_complete property not found"
+
+    # === Semantic Checks — FailedTask Attributes ===
+
+    def test_failed_task_fields(self):
+        """FailedTask must have index, task_id, exception attributes"""
+        src = self._read("celery/contrib/result_aggregator.py")
+        for field in ["index", "task_id", "exception"]:
+            assert field in src, f"FailedTask missing field: {field}"
+
+    # === Semantic Checks — MaxFailuresExceeded ===
+
+    def test_max_failures_has_partial_result(self):
+        """MaxFailuresExceeded must expose partial_result attribute"""
+        src = self._read("celery/contrib/result_aggregator.py")
+        assert "partial_result" in src, (
+            "MaxFailuresExceeded missing partial_result attribute"
+        )
+
+    # === Semantic Checks — Behavioural Requirements ===
+
+    def test_uses_functools_reduce(self):
+        """reduce() method should use functools.reduce"""
+        src = self._read("celery/contrib/result_aggregator.py")
+        assert "functools" in src, "functools not imported — needed for reduce()"
+
+    def test_propagate_false(self):
+        """collect() must call .get(propagate=False) to avoid exception propagation"""
+        src = self._read("celery/contrib/result_aggregator.py")
+        assert "propagate=False" in src or "propagate = False" in src, (
+            "collect() should use propagate=False"
+        )
+
+    # === Semantic Checks — Export ===
+
+    def test_contrib_init_exports_result_aggregator(self):
+        """celery/contrib/__init__.py must export ResultAggregator"""
+        src = self._read("celery/contrib/__init__.py")
+        assert "ResultAggregator" in src, (
+            "ResultAggregator not exported from celery.contrib"
+        )
+
+    # === Functional Checks ===
+
+    def test_module_importable(self):
+        """ResultAggregator must be importable"""
+        result = subprocess.run(
+            ["python", "-c",
+             "from celery.contrib.result_aggregator import "
+             "ResultAggregator, AggregationResult, FailedTask, MaxFailuresExceeded; "
+             "print('OK')"],
+            capture_output=True, text=True, cwd=self.REPO_DIR, timeout=60,
+        )
+        assert "OK" in result.stdout, (
+            f"Import failed:\n{result.stdout}\n{result.stderr}"
+        )
+
+    def test_unit_tests_pass(self):
+        """Unit tests for result_aggregator must pass"""
+        result = subprocess.run(
+            ["python", "-m", "pytest",
+             "t/unit/contrib/test_result_aggregator.py",
+             "-v", "--tb=short"],
+            capture_output=True, text=True, cwd=self.REPO_DIR, timeout=120,
+        )
+        assert result.returncode == 0, (
+            f"Unit tests failed:\n{result.stdout}\n{result.stderr}"
+        )
+
+    def test_aggregation_result_success_rate_zero_division(self):
+        """AggregationResult.success_rate must handle total=0 without ZeroDivisionError"""
+        result = subprocess.run(
+            ["python", "-c",
+             "from celery.contrib.result_aggregator import AggregationResult; "
+             "r = AggregationResult(succeeded=[], failed=[], total=0, "
+             "success_count=0, failure_count=0, elapsed=0.0); "
+             "assert r.success_rate == 0.0; "
+             "print('OK')"],
+            capture_output=True, text=True, cwd=self.REPO_DIR, timeout=30,
+        )
+        assert "OK" in result.stdout, (
+            f"success_rate zero-division check failed:\n{result.stdout}\n{result.stderr}"
+        )
+
+    def test_aggregation_result_is_complete_true(self):
+        """is_complete should be True when all tasks are accounted for"""
+        result = subprocess.run(
+            ["python", "-c",
+             "from celery.contrib.result_aggregator import AggregationResult; "
+             "r = AggregationResult(succeeded=[1,2], failed=[], total=2, "
+             "success_count=2, failure_count=0, elapsed=1.0); "
+             "assert r.is_complete is True; "
+             "print('OK')"],
+            capture_output=True, text=True, cwd=self.REPO_DIR, timeout=30,
+        )
+        assert "OK" in result.stdout, (
+            f"is_complete check failed:\n{result.stdout}\n{result.stderr}"
+        )

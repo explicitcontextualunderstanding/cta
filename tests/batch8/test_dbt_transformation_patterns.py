@@ -1,111 +1,165 @@
 """
-Test for 'dbt-transformation-patterns' skill — dbt Staging + Marts Models
-Validates that the Agent created dbt SQL models with ROW_NUMBER deduplication,
-incremental strategy, ref() dependencies, schema tests, and source freshness.
+Tests for the dbt-transformation-patterns skill.
+Validates dbt models for e-commerce order analytics with staging,
+intermediate, and marts layers plus tests and documentation.
 """
 
 import os
 import re
-import subprocess
 
-import pytest
+REPO_DIR = "/workspace/dbt-core"
+MODELS_DIR = os.path.join(REPO_DIR, "models")
+STAGING_DIR = os.path.join(MODELS_DIR, "staging", "ecommerce")
+INTERMEDIATE_DIR = os.path.join(MODELS_DIR, "intermediate")
+MARTS_DIR = os.path.join(MODELS_DIR, "marts")
 
 
 class TestDbtTransformationPatterns:
-    """Verify dbt transformation pattern implementation."""
+    """Tests for the dbt e-commerce transformation models."""
 
-    REPO_DIR = "/workspace/dbt-core"
-
-    @staticmethod
-    def _read(path: str) -> str:
-        try:
-            with open(path, "r", errors="ignore") as fh:
-                return fh.read()
-        except OSError:
-            return ""
-
-    # ── file_path_check ─────────────────────────────────────────────
-
-    def test_staging_models_exist(self):
-        """Verify stg_orders.sql and stg_customers.sql staging model files exist."""
-        for rel in ("models/staging/stg_orders.sql",
-                     "models/staging/stg_customers.sql"):
-            path = os.path.join(self.REPO_DIR, rel)
-            assert os.path.isfile(path), f"Missing: {rel}"
-
-    def test_marts_and_schema_files_exist(self):
-        """Verify fct_revenue.sql and schema YAML files exist."""
-        for rel in ("models/marts/fct_revenue.sql",
-                     "models/staging/schema.yml",
-                     "models/marts/schema.yml"):
-            path = os.path.join(self.REPO_DIR, rel)
-            assert os.path.isfile(path), f"Missing: {rel}"
+    # ── file_path_check ──────────────────────────────────────────────
 
     def test_sources_yml_exists(self):
-        """Verify models/sources.yml exists for raw source definitions."""
-        path = os.path.join(self.REPO_DIR, "models/sources.yml")
-        assert os.path.isfile(path), "models/sources.yml missing"
+        """Source definitions YAML must exist."""
+        path = os.path.join(STAGING_DIR, "_ecommerce__sources.yml")
+        assert os.path.isfile(path), f"Missing {path}"
 
-    # ── semantic_check ──────────────────────────────────────────────
+    def test_staging_orders_exists(self):
+        """Staging orders model must exist."""
+        path = os.path.join(STAGING_DIR, "stg_ecommerce__orders.sql")
+        assert os.path.isfile(path), f"Missing {path}"
 
-    def test_row_number_deduplication_in_stg_orders(self):
-        """Verify stg_orders.sql uses ROW_NUMBER() OVER (PARTITION BY order_id) for deduplication."""
-        content = self._read(os.path.join(self.REPO_DIR, "models/staging/stg_orders.sql"))
-        assert content, "stg_orders.sql is empty or unreadable"
-        found = any(p in content for p in ("ROW_NUMBER()", "QUALIFY", "PARTITION BY order_id"))
-        assert found, "No ROW_NUMBER deduplication pattern found in stg_orders.sql"
+    def test_staging_order_items_exists(self):
+        """Staging order items model must exist."""
+        path = os.path.join(STAGING_DIR, "stg_ecommerce__order_items.sql")
+        assert os.path.isfile(path), f"Missing {path}"
 
-    def test_is_incremental_in_fct_revenue(self):
-        """Verify fct_revenue.sql contains is_incremental() macro block."""
-        content = self._read(os.path.join(self.REPO_DIR, "models/marts/fct_revenue.sql"))
-        assert content, "fct_revenue.sql is empty or unreadable"
-        assert "is_incremental()" in content, "is_incremental() macro not found"
+    def test_staging_customers_exists(self):
+        """Staging customers model must exist."""
+        path = os.path.join(STAGING_DIR, "stg_ecommerce__customers.sql")
+        assert os.path.isfile(path), f"Missing {path}"
 
-    def test_ref_dependencies_in_fct_revenue(self):
-        """Verify fct_revenue.sql uses ref('stg_orders') and ref('stg_customers')."""
-        content = self._read(os.path.join(self.REPO_DIR, "models/marts/fct_revenue.sql"))
-        assert content, "fct_revenue.sql is empty or unreadable"
-        assert "ref('stg_orders')" in content, "ref('stg_orders') not found"
-        assert "ref('stg_customers')" in content, "ref('stg_customers') not found"
+    def test_staging_products_exists(self):
+        """Staging products model must exist."""
+        path = os.path.join(STAGING_DIR, "stg_ecommerce__products.sql")
+        assert os.path.isfile(path), f"Missing {path}"
 
-    def test_not_null_unique_tests_in_schema_yml(self):
-        """Verify schema.yml defines not_null and unique tests on order_id column."""
-        content = self._read(os.path.join(self.REPO_DIR, "models/staging/schema.yml"))
-        assert content, "schema.yml is empty or unreadable"
-        for kw in ("not_null", "unique", "order_id"):
-            assert kw in content, f"'{kw}' not found in staging schema.yml"
+    def test_intermediate_enriched_exists(self):
+        """Intermediate enriched order items model must exist."""
+        path = os.path.join(INTERMEDIATE_DIR, "int_order_items_enriched.sql")
+        assert os.path.isfile(path), f"Missing {path}"
 
-    def test_freshness_config_in_sources_yml(self):
-        """Verify sources.yml contains warn_after and error_after freshness configuration."""
-        content = self._read(os.path.join(self.REPO_DIR, "models/sources.yml"))
-        assert content, "sources.yml is empty or unreadable"
-        assert "warn_after" in content, "warn_after not found in sources.yml"
-        assert "error_after" in content, "error_after not found in sources.yml"
+    def test_fct_orders_exists(self):
+        """Fact orders mart model must exist."""
+        path = os.path.join(MARTS_DIR, "fct_orders.sql")
+        assert os.path.isfile(path), f"Missing {path}"
 
-    # ── functional_check (command) ──────────────────────────────────
+    def test_dim_customers_exists(self):
+        """Customer dimension mart model must exist."""
+        path = os.path.join(MARTS_DIR, "dim_customers.sql")
+        assert os.path.isfile(path), f"Missing {path}"
 
-    def _skip_unless_dbt(self):
-        if not os.path.isdir(self.REPO_DIR):
-            pytest.skip("Repo dir does not exist")
-        result = subprocess.run(
-            ["dbt", "--version"], capture_output=True, text=True, timeout=15)
-        if result.returncode != 0:
-            pytest.skip("dbt CLI not available")
+    # ── semantic_check ───────────────────────────────────────────────
 
-    def test_dbt_compile_stg_orders(self):
-        """dbt compile --select stg_orders exits 0 (valid SQL syntax and references)."""
-        self._skip_unless_dbt()
-        result = subprocess.run(
-            ["dbt", "compile", "--select", "stg_orders"],
-            capture_output=True, text=True, cwd=self.REPO_DIR, timeout=120,
+    def _read(self, path):
+        if not os.path.isfile(path):
+            return ""
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read()
+
+    def test_status_mapping(self):
+        """Staging orders must map status codes to labels."""
+        content = self._read(os.path.join(STAGING_DIR, "stg_ecommerce__orders.sql"))
+        for mapping in ["pending", "shipped", "delivered", "cancelled", "refunded"]:
+            assert mapping in content.lower(), f"Status mapping '{mapping}' not found"
+
+    def test_filter_test_orders(self):
+        """Staging orders must filter out test orders."""
+        content = self._read(os.path.join(STAGING_DIR, "stg_ecommerce__orders.sql"))
+        assert re.search(r"is_test|test.*false|is_test\s*=\s*false", content, re.IGNORECASE), (
+            "Test order filtering not found"
         )
-        assert result.returncode == 0, f"dbt compile failed: {result.stderr}"
 
-    def test_dbt_compile_fct_revenue(self):
-        """dbt compile --select fct_revenue exits 0."""
-        self._skip_unless_dbt()
-        result = subprocess.run(
-            ["dbt", "compile", "--select", "fct_revenue"],
-            capture_output=True, text=True, cwd=self.REPO_DIR, timeout=120,
+    def test_line_total_computation(self):
+        """Staging order items must compute line_total = quantity * unit_price."""
+        content = self._read(os.path.join(STAGING_DIR, "stg_ecommerce__order_items.sql"))
+        assert re.search(r"quantity\s*\*\s*unit_price|line_total", content, re.IGNORECASE), (
+            "line_total computation not found"
         )
-        assert result.returncode == 0, f"dbt compile failed: {result.stderr}"
+
+    def test_null_price_handling(self):
+        """Staging products must replace null price with 0."""
+        content = self._read(os.path.join(STAGING_DIR, "stg_ecommerce__products.sql"))
+        assert re.search(r"coalesce|COALESCE|ifnull|IFNULL|0\.00|0", content), (
+            "Null price handling not found"
+        )
+
+    def test_customer_segment(self):
+        """dim_customers must classify segments: vip, regular, new."""
+        content = self._read(os.path.join(MARTS_DIR, "dim_customers.sql"))
+        for segment in ["vip", "regular", "new"]:
+            assert segment in content.lower(), f"Segment '{segment}' not found"
+
+    def test_discount_calculation(self):
+        """fct_orders must compute discount_amount and net_revenue."""
+        content = self._read(os.path.join(MARTS_DIR, "fct_orders.sql"))
+        assert re.search(r"discount|net_revenue", content, re.IGNORECASE), (
+            "Discount/net_revenue computation not found"
+        )
+
+    def test_excluded_cancelled_refunded(self):
+        """Intermediate enriched model must exclude cancelled/refunded orders."""
+        content = self._read(os.path.join(INTERMEDIATE_DIR, "int_order_items_enriched.sql"))
+        assert re.search(r"cancelled|refunded|cancel|refund", content, re.IGNORECASE), (
+            "Cancelled/refunded exclusion not found"
+        )
+
+    def test_marts_yml_exists(self):
+        """Marts documentation YAML must exist."""
+        path = os.path.join(MARTS_DIR, "_marts__models.yml")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    def test_staging_yml_exists(self):
+        """Staging models documentation YAML must exist."""
+        path = os.path.join(STAGING_DIR, "_ecommerce__models.yml")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    # ── functional_check ─────────────────────────────────────────────
+
+    def test_sources_define_tables(self):
+        """Sources must define raw_orders, raw_customers, raw_products, raw_order_items."""
+        content = self._read(os.path.join(STAGING_DIR, "_ecommerce__sources.yml"))
+        for table in ["raw_orders", "raw_customers", "raw_products", "raw_order_items"]:
+            assert table in content, f"Source table '{table}' not defined"
+
+    def test_freshness_check(self):
+        """Sources must define freshness checks."""
+        content = self._read(os.path.join(STAGING_DIR, "_ecommerce__sources.yml"))
+        assert re.search(r"freshness|loaded_at", content, re.IGNORECASE), (
+            "Freshness check not found in sources"
+        )
+
+    def test_unique_not_null_tests(self):
+        """Model YAMLs must define unique and not_null tests."""
+        staging_yml = self._read(os.path.join(STAGING_DIR, "_ecommerce__models.yml"))
+        marts_yml = self._read(os.path.join(MARTS_DIR, "_marts__models.yml"))
+        combined = staging_yml + marts_yml
+        assert "unique" in combined, "unique test not found in model YAML"
+        assert "not_null" in combined, "not_null test not found in model YAML"
+
+    def test_relationships_test(self):
+        """Marts YAML must define relationships test for fct_orders -> dim_customers."""
+        content = self._read(os.path.join(MARTS_DIR, "_marts__models.yml"))
+        assert re.search(r"relationships|customer_id", content, re.IGNORECASE), (
+            "Relationships test not found"
+        )
+
+    def test_dim_products_exists(self):
+        """Product dimension must exist."""
+        path = os.path.join(MARTS_DIR, "dim_products.sql")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    def test_int_customer_orders_exists(self):
+        """Intermediate customer orders model must exist."""
+        path = os.path.join(INTERMEDIATE_DIR, "int_customer_orders.sql")
+        assert os.path.isfile(path), f"Missing {path}"

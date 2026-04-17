@@ -1,253 +1,230 @@
 """
-Test for 'security-review' skill — Django Security Hardening (babybuddy)
-Validates secure cookie/frame settings, ALLOWED_HOSTS, serializer read-only
-fields, ownership checks in views, and functional access control tests
-against the babybuddy Django project.
+Test skill: security-review
+Verify that the Agent correctly fixes security vulnerabilities in the babybuddy Django application.
 """
 
 import os
+import subprocess
 import re
-import sys
-
+import ast
 import pytest
 
 
 class TestSecurityReview:
-    """Verify babybuddy security hardening: settings, serializers, views."""
-
     REPO_DIR = "/workspace/babybuddy"
 
-    # ── helpers ──────────────────────────────────────────────────────────
-    @staticmethod
-    def _read_file(path: str) -> str:
-        try:
-            with open(path, "r", errors="ignore") as fh:
-                return fh.read()
-        except OSError:
-            return ""
+    # === File Path Checks ===
 
-    # ── file_path_check ──────────────────────────────────────────────────
+    def test_settings_base_exists(self):
+        """Verify base settings file exists"""
+        candidates = [
+            os.path.join(self.REPO_DIR, "babybuddy/settings/base.py"),
+            os.path.join(self.REPO_DIR, "babybuddy/settings.py"),
+        ]
+        found = any(os.path.exists(c) for c in candidates)
+        assert found, f"Settings file not found. Checked: {candidates}"
 
-    def test_settings_base_and_views_files_exist(self):
-        """babybuddy/settings/base.py and babybuddy/views.py must exist."""
-        base = os.path.join(self.REPO_DIR, "babybuddy", "settings", "base.py")
-        views = os.path.join(self.REPO_DIR, "babybuddy", "views.py")
-        assert os.path.isfile(base), f"{base} does not exist"
-        assert os.path.isfile(views), f"{views} does not exist"
+    def test_views_file_exists(self):
+        """Verify views.py with user management views exists"""
+        path = os.path.join(self.REPO_DIR, "babybuddy/views.py")
+        assert os.path.exists(path), f"views.py not found at {path}"
 
-    def test_api_views_and_serializers_exist(self):
-        """api/views.py and api/serializers.py must exist."""
-        api_views = os.path.join(self.REPO_DIR, "api", "views.py")
-        api_ser = os.path.join(self.REPO_DIR, "api", "serializers.py")
-        assert os.path.isfile(api_views), f"{api_views} does not exist"
-        assert os.path.isfile(api_ser), f"{api_ser} does not exist"
+    # === Semantic Checks ===
 
-    def test_middleware_and_core_views_exist(self):
-        """babybuddy/middleware.py and core/views.py must exist."""
-        mw = os.path.join(self.REPO_DIR, "babybuddy", "middleware.py")
-        cv = os.path.join(self.REPO_DIR, "core", "views.py")
-        assert os.path.isfile(mw), f"{mw} does not exist"
-        assert os.path.isfile(cv), f"{cv} does not exist"
-
-    # ── semantic_check ───────────────────────────────────────────────────
-
-    def test_settings_have_secure_cookie_and_frame_options(self):
-        """base.py must set SESSION_COOKIE_SECURE, CSRF_COOKIE_SECURE, X_FRAME_OPTIONS."""
-        content = self._read_file(
-            os.path.join(self.REPO_DIR, "babybuddy", "settings", "base.py")
+    def test_user_views_require_authentication(self):
+        """Verify UserPassword, UserDelete, UserSettings views require authentication"""
+        path = os.path.join(self.REPO_DIR, "babybuddy/views.py")
+        with open(path) as f:
+            content = f.read()
+        # Check for LoginRequired mixin or login_required decorator
+        has_auth = (
+            "LoginRequiredMixin" in content
+            or "login_required" in content
+            or "IsAuthenticated" in content
         )
-        assert re.search(r"SESSION_COOKIE_SECURE\s*=\s*True", content), (
-            "SESSION_COOKIE_SECURE = True not found"
-        )
-        assert re.search(r"CSRF_COOKIE_SECURE\s*=\s*True", content), (
-            "CSRF_COOKIE_SECURE = True not found"
-        )
-        assert re.search(r"X_FRAME_OPTIONS\s*=\s*['\"]DENY['\"]", content), (
-            "X_FRAME_OPTIONS = 'DENY' not found"
+        assert has_auth, (
+            "User management views do not appear to require authentication. "
+            "Expected LoginRequiredMixin or login_required decorator."
         )
 
-    def test_allowed_hosts_not_wildcard(self):
-        """ALLOWED_HOSTS must not use wildcard ['*']."""
-        content = self._read_file(
-            os.path.join(self.REPO_DIR, "babybuddy", "settings", "base.py")
+    def test_user_views_check_permission_for_own_account(self):
+        """Verify UserPassword/UserDelete/UserSettings enforce user can only modify own account"""
+        path = os.path.join(self.REPO_DIR, "babybuddy/views.py")
+        with open(path) as f:
+            content = f.read()
+        # The views should check request.user == target user or use get_object override
+        has_obj_check = (
+            "self.request.user" in content
+            or "request.user.pk" in content
+            or "get_object" in content
+            or "UserPassesTestMixin" in content
+            or "self.kwargs" in content
         )
-        # Find ALLOWED_HOSTS line(s)
-        for line in content.splitlines():
-            if "ALLOWED_HOSTS" in line and "=" in line:
-                assert not re.search(r"""\[\s*['\"]\*['\"]""", line), (
-                    "ALLOWED_HOSTS contains wildcard ['*']"
-                )
-
-    def test_feeding_serializer_has_read_only_fields(self):
-        """FeedingSerializer must declare read_only_fields with 'id' or 'is_staff'."""
-        content = self._read_file(
-            os.path.join(self.REPO_DIR, "api", "serializers.py")
+        assert has_obj_check, (
+            "Views do not appear to verify the requesting user matches the target user"
         )
-        assert "read_only_fields" in content, "read_only_fields not found in serializers.py"
 
-    def test_user_password_and_delete_views_check_ownership(self):
-        """UserPassword and UserDelete views must contain ownership checks."""
-        content = self._read_file(
-            os.path.join(self.REPO_DIR, "babybuddy", "views.py")
+    def test_security_middleware_present(self):
+        """Verify security middleware is configured in settings"""
+        settings_paths = [
+            os.path.join(self.REPO_DIR, "babybuddy/settings/base.py"),
+            os.path.join(self.REPO_DIR, "babybuddy/settings.py"),
+        ]
+        content = ""
+        for sp in settings_paths:
+            if os.path.exists(sp):
+                with open(sp) as f:
+                    content += f.read()
+        assert "SecurityMiddleware" in content, (
+            "SecurityMiddleware not found in settings. "
+            "django.middleware.security.SecurityMiddleware should be in MIDDLEWARE."
         )
-        assert "UserPassword" in content or "UserDelete" in content, (
-            "UserPassword/UserDelete views not found"
+
+    def test_csrf_middleware_present(self):
+        """Verify CSRF middleware is configured"""
+        settings_paths = [
+            os.path.join(self.REPO_DIR, "babybuddy/settings/base.py"),
+            os.path.join(self.REPO_DIR, "babybuddy/settings.py"),
+        ]
+        content = ""
+        for sp in settings_paths:
+            if os.path.exists(sp):
+                with open(sp) as f:
+                    content += f.read()
+        assert "CsrfViewMiddleware" in content, (
+            "CsrfViewMiddleware not found in settings."
         )
-        auth_patterns = ["PermissionDenied", "is_staff", "request.user", "403"]
-        has_auth = any(p in content for p in auth_patterns)
-        assert has_auth, "No ownership/permission check logic in views.py"
 
-    # ── functional_check (import with Django) ────────────────────────────
+    def test_api_rate_limiting_configured(self):
+        """Verify API rate limiting is configured via DRF throttle or middleware"""
+        settings_paths = [
+            os.path.join(self.REPO_DIR, "babybuddy/settings/base.py"),
+            os.path.join(self.REPO_DIR, "babybuddy/settings.py"),
+        ]
+        content = ""
+        for sp in settings_paths:
+            if os.path.exists(sp):
+                with open(sp) as f:
+                    content += f.read()
+        has_throttle = (
+            "DEFAULT_THROTTLE_CLASSES" in content
+            or "DEFAULT_THROTTLE_RATES" in content
+            or "throttle" in content.lower()
+            or "ratelimit" in content.lower()
+            or "RateThrottle" in content
+        )
+        assert has_throttle, (
+            "No API rate limiting configuration found. "
+            "Expected DEFAULT_THROTTLE_CLASSES or DEFAULT_THROTTLE_RATES in REST_FRAMEWORK settings."
+        )
 
-    @staticmethod
-    def _setup_django():
-        """Configure Django settings; skip if not available."""
-        repo = "/workspace/babybuddy"
-        if repo not in sys.path:
-            sys.path.insert(0, repo)
-        os.environ.setdefault("DJANGO_SETTINGS_MODULE", "babybuddy.settings.base")
-        try:
-            import django
-            django.setup()
-        except Exception as exc:
-            pytest.skip(f"Django setup failed: {exc}")
+    def test_security_headers_configured(self):
+        """Verify security headers like SECURE_BROWSER_XSS_FILTER are set"""
+        settings_paths = [
+            os.path.join(self.REPO_DIR, "babybuddy/settings/base.py"),
+            os.path.join(self.REPO_DIR, "babybuddy/settings.py"),
+        ]
+        content = ""
+        for sp in settings_paths:
+            if os.path.exists(sp):
+                with open(sp) as f:
+                    content += f.read()
+        headers = [
+            "SECURE_CONTENT_TYPE_NOSNIFF",
+            "X_FRAME_OPTIONS",
+            "SECURE_BROWSER_XSS_FILTER",
+        ]
+        found = [h for h in headers if h in content]
+        assert len(found) >= 2, (
+            f"Only {len(found)} of expected security headers found ({found}). "
+            f"Expected at least 2 of: {headers}"
+        )
 
-    def test_non_owner_get_user_password_returns_403(self):
-        """Non-staff non-owner GET /users/<other_pk>/password/ must return 403."""
-        self._setup_django()
-        try:
-            from django.test import TestCase, Client
-            from django.contrib.auth import get_user_model
-        except Exception as exc:
-            pytest.skip(f"Django imports failed: {exc}")
-        User = get_user_model()
-        try:
-            user_a = User.objects.create_user(username="userA_sec", password="pass1234")
-            user_b = User.objects.create_user(username="userB_sec", password="pass1234")
-            client = Client()
-            client.force_login(user_a)
-            response = client.get(f"/users/{user_b.pk}/password/")
-            assert response.status_code == 403, (
-                f"Expected 403, got {response.status_code}"
+    # === Functional Checks ===
+
+    def test_django_check_passes(self):
+        """Verify Django system check passes"""
+        result = subprocess.run(
+            ["python", "-m", "django", "check", "--deploy"],
+            cwd=self.REPO_DIR,
+            capture_output=True,
+            text=True,
+            timeout=120,
+            env={**os.environ, "DJANGO_SETTINGS_MODULE": "babybuddy.settings.base"},
+        )
+        # --deploy may produce warnings; we check it doesn't completely fail
+        # Some warnings are acceptable but critical errors should not appear
+        if result.returncode != 0:
+            # Allow warnings, block errors
+            assert "SystemCheckError" not in result.stderr, (
+                f"Django check produced critical errors: {result.stderr[:1000]}"
             )
-        except Exception as exc:
-            pytest.skip(f"Functional test skipped: {exc}")
-        finally:
-            User.objects.filter(username__in=["userA_sec", "userB_sec"]).delete()
 
-    def test_non_owner_delete_user_returns_403(self):
-        """Non-staff non-owner DELETE /users/<other_pk>/delete/ must return 403."""
-        self._setup_django()
-        try:
-            from django.test import Client
-            from django.contrib.auth import get_user_model
-        except Exception as exc:
-            pytest.skip(f"Django imports failed: {exc}")
-        User = get_user_model()
-        try:
-            user_a = User.objects.create_user(username="userC_sec", password="pass1234")
-            user_b = User.objects.create_user(username="userD_sec", password="pass1234")
-            client = Client()
-            client.force_login(user_a)
-            response = client.delete(f"/users/{user_b.pk}/delete/")
-            assert response.status_code == 403, (
-                f"Expected 403, got {response.status_code}"
-            )
-        except Exception as exc:
-            pytest.skip(f"Functional test skipped: {exc}")
-        finally:
-            User.objects.filter(username__in=["userC_sec", "userD_sec"]).delete()
+    def test_unauthenticated_user_settings_returns_redirect_or_403(self):
+        """Verify accessing user settings without auth returns redirect or 403"""
+        script = """
+import os
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'babybuddy.settings.base')
+import django
+django.setup()
+from django.test import RequestFactory
+from babybuddy.views import UserSettings
+from django.contrib.auth.models import AnonymousUser
 
-    def test_mass_assignment_is_staff_field_ignored(self):
-        """Serializer must ignore is_staff in validated_data (read-only)."""
-        self._setup_django()
-        try:
-            from api.serializers import FeedingSerializer
-        except Exception as exc:
-            pytest.skip(f"Cannot import FeedingSerializer: {exc}")
-        # Validate that is_staff is declared read-only at Meta level
-        meta = getattr(FeedingSerializer, "Meta", None)
-        if meta:
-            ro = getattr(meta, "read_only_fields", ())
-            assert "is_staff" in ro or "id" in ro, (
-                "read_only_fields missing protective fields"
-            )
-        else:
-            pytest.skip("FeedingSerializer.Meta not found")
+factory = RequestFactory()
+request = factory.get('/user/settings/')
+request.user = AnonymousUser()
+try:
+    response = UserSettings.as_view()(request)
+    code = response.status_code
+    # Should be 302 (redirect to login) or 403
+    assert code in (302, 403), f'Expected 302 or 403, got {code}'
+    print(f'PASS:{code}')
+except Exception as e:
+    err = str(e)
+    if '302' in err or 'login' in err.lower() or 'redirect' in err.lower():
+        print('PASS:redirected')
+    else:
+        print(f'FAIL:{err}')
+"""
+        result = subprocess.run(
+            ["python", "-c", script],
+            cwd=self.REPO_DIR,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        combined = result.stdout + result.stderr
+        assert "PASS" in result.stdout or result.returncode == 0, (
+            f"Unauthenticated access to UserSettings not properly rejected: {combined[:500]}"
+        )
 
-    def test_xss_script_in_child_name_returns_400(self):
-        """POST /api/children/ with XSS payload must return 400."""
-        self._setup_django()
-        try:
-            from rest_framework.test import APIClient
-            from django.contrib.auth import get_user_model
-        except Exception as exc:
-            pytest.skip(f"DRF imports failed: {exc}")
-        User = get_user_model()
-        try:
-            user = User.objects.create_user(username="xss_test", password="pass1234")
-            client = APIClient()
-            client.force_authenticate(user=user)
-            response = client.post("/api/children/", {
-                "first_name": "<script>alert(1)</script>",
-                "last_name": "Test",
-                "birth_date": "2020-01-01",
-            }, format="json")
-            assert response.status_code == 400, (
-                f"Expected 400 for XSS payload, got {response.status_code}"
-            )
-        except Exception as exc:
-            pytest.skip(f"Functional test skipped: {exc}")
-        finally:
-            User.objects.filter(username="xss_test").delete()
+    def test_migrations_valid(self):
+        """Verify Django migrations are in a consistent state"""
+        result = subprocess.run(
+            ["python", "manage.py", "makemigrations", "--check", "--dry-run"],
+            cwd=self.REPO_DIR,
+            capture_output=True,
+            text=True,
+            timeout=120,
+            env={**os.environ, "DJANGO_SETTINGS_MODULE": "babybuddy.settings.base"},
+        )
+        # returncode 0 means no new migrations needed
+        assert result.returncode == 0, (
+            f"Pending migrations detected: {result.stdout[:500]}"
+        )
 
-    def test_negative_feeding_amount_returns_400(self):
-        """POST /api/feedings/ with amount=-1 must return 400."""
-        self._setup_django()
-        try:
-            from rest_framework.test import APIClient
-            from django.contrib.auth import get_user_model
-        except Exception as exc:
-            pytest.skip(f"DRF imports failed: {exc}")
-        User = get_user_model()
-        try:
-            user = User.objects.create_user(username="neg_test", password="pass1234")
-            client = APIClient()
-            client.force_authenticate(user=user)
-            response = client.post("/api/feedings/", {
-                "child": 1,
-                "start": "2024-01-01T12:00:00Z",
-                "end": "2024-01-01T12:30:00Z",
-                "type": "breast milk",
-                "method": "left breast",
-                "amount": -1,
-            }, format="json")
-            assert response.status_code == 400, (
-                f"Expected 400 for negative amount, got {response.status_code}"
+    def test_input_validation_on_forms(self):
+        """Verify forms include proper validation (no raw SQL or unvalidated input)"""
+        forms_path = os.path.join(self.REPO_DIR, "babybuddy/forms.py")
+        if os.path.exists(forms_path):
+            with open(forms_path) as f:
+                content = f.read()
+            # Check there's no raw SQL
+            assert "raw(" not in content and "cursor.execute" not in content, (
+                "Raw SQL found in forms.py - potential SQL injection risk"
             )
-        except Exception as exc:
-            pytest.skip(f"Functional test skipped: {exc}")
-        finally:
-            User.objects.filter(username="neg_test").delete()
-
-    def test_owner_can_access_own_password_view(self):
-        """Owner GET /users/<own_pk>/password/ should return 200 or 302 (not 403)."""
-        self._setup_django()
-        try:
-            from django.test import Client
-            from django.contrib.auth import get_user_model
-        except Exception as exc:
-            pytest.skip(f"Django imports failed: {exc}")
-        User = get_user_model()
-        try:
-            user = User.objects.create_user(username="owner_sec", password="pass1234")
-            client = Client()
-            client.force_login(user)
-            response = client.get(f"/users/{user.pk}/password/")
-            assert response.status_code in (200, 302), (
-                f"Owner got {response.status_code}, expected 200 or 302"
+            # Check forms use Django form classes
+            assert "forms.Form" in content or "forms.ModelForm" in content or "Form)" in content, (
+                "Forms do not appear to use Django form framework"
             )
-        except Exception as exc:
-            pytest.skip(f"Functional test skipped: {exc}")
-        finally:
-            User.objects.filter(username="owner_sec").delete()

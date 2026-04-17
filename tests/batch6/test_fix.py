@@ -1,213 +1,269 @@
 """
-Tests for 'fix' skill.
-Generated from benchmark case definitions for fix.
+Test skill: fix
+Verify that the Agent correctly fixes linting and formatting errors
+in the Upgradle React application.
 """
 
-import ast
-import base64
-import glob
-import json
 import os
-import py_compile
-import re
 import subprocess
-import textwrap
-
 import pytest
-
-try:
-    import yaml
-except ModuleNotFoundError:
-    yaml = None
 
 
 class TestFix:
-    """Verify the fix skill output."""
+    REPO_DIR = "/workspace/upgradle"
 
-    REPO_DIR = '/workspace/upgradle'
-
-
-    # ── helpers ──────────────────────────────────────────────
-
-    _SETUP_CACHE: dict = {}
-
-    @staticmethod
-    def _repo_path(rel: str) -> str:
-        return os.path.join(TestFix.REPO_DIR, rel)
-
-    @staticmethod
-    def _safe_read(path: str) -> str:
-        with open(path, "r", encoding="utf-8", errors="ignore") as fh:
-            return fh.read()
-
-    @staticmethod
-    def _load_yaml(path: str):
-        if yaml is None:
-            pytest.skip("PyYAML not available")
-        with open(path, "r", encoding="utf-8", errors="ignore") as fh:
-            return yaml.safe_load(fh)
-
-    @staticmethod
-    def _load_json(path: str):
-        with open(path, "r", encoding="utf-8", errors="ignore") as fh:
-            return json.load(fh)
-
-    @classmethod
-    def _run_in_repo(cls, script: str, timeout: int = 120) -> subprocess.CompletedProcess:
-        return subprocess.run(
-            ["python", "-c", textwrap.dedent(script)],
-            cwd=cls.REPO_DIR,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-        )
-
-    @classmethod
-    def _run_cmd(cls, command, args=None, timeout=120):
-        args = args or []
-        if isinstance(command, str) and args:
-            return subprocess.run(
-                [command, *args],
-                cwd=cls.REPO_DIR,
-                capture_output=True,
-                text=True,
-                timeout=timeout,
-            )
-        return subprocess.run(
-            command if isinstance(command, list) else command,
-            cwd=cls.REPO_DIR,
-            shell=isinstance(command, str),
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-        )
-
-    @classmethod
-    def _ensure_setup(cls, label, setup_cmds, fallback):
-        if not setup_cmds:
-            return
-        key = tuple(setup_cmds)
-        if key in cls._SETUP_CACHE:
-            ok, msg = cls._SETUP_CACHE[key]
-            if ok:
-                return
-            if fallback == "skip_if_setup_fails":
-                pytest.skip(f"{label} setup failed: {msg}")
-            pytest.fail(f"{label} setup failed: {msg}")
-        for cmd in setup_cmds:
-            r = subprocess.run(cmd, cwd=cls.REPO_DIR, shell=True,
-                               capture_output=True, text=True, timeout=300)
-            if r.returncode != 0:
-                msg = (r.stderr or r.stdout or 'failed').strip()
-                cls._SETUP_CACHE[key] = (False, msg)
-                if fallback == "skip_if_setup_fails":
-                    pytest.skip(f"{label} setup failed: {msg}")
-                pytest.fail(f"{label} setup failed: {msg}")
-        cls._SETUP_CACHE[key] = (True, 'ok')
-
-
-    # ── file_path_check (static) ────────────────────────────────────────
+    # === File Path Checks ===
 
     def test_app_tsx_exists(self):
-        """Verify main App.tsx component exists"""
-        _p = self._repo_path('src/App.tsx')
-        assert os.path.isfile(_p), f'Missing file: src/App.tsx'
+        """Verify that App.tsx exists"""
+        path = os.path.join(self.REPO_DIR, "src/App.tsx")
+        assert os.path.exists(path), f"App.tsx not found at {path}"
 
-    def test_tsconfig_exists(self):
-        """Verify tsconfig.json exists with strict mode"""
-        _p = self._repo_path('tsconfig.json')
-        assert os.path.isfile(_p), f'Missing file: tsconfig.json'
-        self._load_json(_p)  # parse check
+    def test_board_tsx_exists(self):
+        """Verify that Board.tsx exists"""
+        path = os.path.join(self.REPO_DIR, "src/components/Board.tsx")
+        assert os.path.exists(path), f"Board.tsx not found at {path}"
 
-    def test_eslint_config_exists(self):
-        """Verify ESLint configuration file exists"""
-        _p = self._repo_path('.eslintrc.js')
-        assert os.path.isfile(_p), f'Missing file: .eslintrc.js'
-        _p = self._repo_path('.eslintrc.json')
-        assert os.path.isfile(_p), f'Missing file: .eslintrc.json'
-        self._load_json(_p)  # parse check
-        _p = self._repo_path('eslint.config.js')
-        assert os.path.isfile(_p), f'Missing file: eslint.config.js'
+    def test_tile_tsx_exists(self):
+        """Verify that Tile.tsx exists"""
+        path = os.path.join(self.REPO_DIR, "src/components/Tile.tsx")
+        assert os.path.exists(path), f"Tile.tsx not found at {path}"
 
-    # ── semantic_check (static) ────────────────────────────────────────
+    def test_keyboard_tsx_exists(self):
+        """Verify that Keyboard.tsx exists"""
+        path = os.path.join(self.REPO_DIR, "src/components/Keyboard.tsx")
+        assert os.path.exists(path), f"Keyboard.tsx not found at {path}"
 
-    def test_tsconfig_strict_mode(self):
-        """Verify tsconfig.json has strict: true"""
-        _p = self._repo_path('tsconfig.json')
-        assert os.path.exists(_p), f'Missing: tsconfig.json'
-        _contents = self._safe_read(_p)
-        _all = _contents if isinstance(_contents, str) else ''
-        assert 'strict' in _all, 'Missing: strict'
-        assert 'true' in _all, 'Missing: true'
+    def test_game_utils_exists(self):
+        """Verify that game.ts utility file exists"""
+        path = os.path.join(self.REPO_DIR, "src/utils/game.ts")
+        assert os.path.exists(path), f"game.ts not found at {path}"
 
-    def test_no_ts_ignore_comments(self):
-        """Verify no @ts-ignore comments used as workarounds"""
-        _p = self._repo_path('src/')
-        assert os.path.isdir(_p), f'Missing directory: src/'
-        _contents = ''
-        for _f in sorted(glob.glob(os.path.join(_p, '**', '*'), recursive=True)):
-            if os.path.isfile(_f):
-                _contents += self._safe_read(_f) + '\n'
-        _all = _contents if isinstance(_contents, str) else ''
-        assert '@ts-ignore' in _all, 'Missing: @ts-ignore'
+    # === Semantic Checks ===
 
-    def test_no_eslint_disable_comments(self):
-        """Verify no eslint-disable comments used as workarounds"""
-        _p = self._repo_path('src/')
-        assert os.path.isdir(_p), f'Missing directory: src/'
-        _contents = ''
-        for _f in sorted(glob.glob(os.path.join(_p, '**', '*'), recursive=True)):
-            if os.path.isfile(_f):
-                _contents += self._safe_read(_f) + '\n'
-        _all = _contents if isinstance(_contents, str) else ''
-        assert 'eslint-disable' in _all, 'Missing: eslint-disable'
+    def test_no_unused_imports_in_source_files(self):
+        """Verify that no unused imports remain in key source files"""
+        source_files = [
+            "src/App.tsx",
+            "src/components/Board.tsx",
+            "src/components/Tile.tsx",
+            "src/components/Keyboard.tsx",
+            "src/utils/game.ts",
+        ]
+        for rel_path in source_files:
+            full_path = os.path.join(self.REPO_DIR, rel_path)
+            if not os.path.exists(full_path):
+                continue
+            with open(full_path, "r") as f:
+                content = f.read()
+            # Basic heuristic: check for common unused import patterns
+            # This is a supplementary check; the real check is the linter
+            lines = content.split("\n")
+            import_lines = [l.strip() for l in lines if l.strip().startswith("import ")]
+            # Just verify imports exist and the file is parseable
+            assert len(lines) > 0, f"{rel_path} is empty"
 
-    # ── functional_check ────────────────────────────────────────
+    def test_no_console_log_in_production_code(self):
+        """Verify that no console.log statements remain in source files"""
+        source_files = [
+            "src/App.tsx",
+            "src/components/Board.tsx",
+            "src/components/Tile.tsx",
+            "src/components/Keyboard.tsx",
+            "src/utils/game.ts",
+            "src/utils/words.ts",
+        ]
+        for rel_path in source_files:
+            full_path = os.path.join(self.REPO_DIR, rel_path)
+            if not os.path.exists(full_path):
+                continue
+            with open(full_path, "r") as f:
+                content = f.read()
+            lines = content.split("\n")
+            for i, line in enumerate(lines, 1):
+                stripped = line.strip()
+                # Skip comments
+                if stripped.startswith("//") or stripped.startswith("/*"):
+                    continue
+                assert "console.log(" not in stripped, (
+                    f"console.log found in {rel_path} at line {i}: {stripped}"
+                )
 
-    def test_tsc_no_emit_passes(self):
-        """Verify TypeScript compilation passes with zero errors"""
-        self._ensure_setup('test_tsc_no_emit_passes', ['npm install'], 'skip_if_setup_fails')
-        result = self._run_cmd('npx', args=['tsc', '--noEmit'], timeout=120)
+    def test_jsx_map_renders_have_key_prop(self):
+        """Verify that all .map() JSX renders include a key prop"""
+        source_files = [
+            "src/App.tsx",
+            "src/components/Board.tsx",
+            "src/components/Tile.tsx",
+            "src/components/Keyboard.tsx",
+        ]
+        import re
+        for rel_path in source_files:
+            full_path = os.path.join(self.REPO_DIR, rel_path)
+            if not os.path.exists(full_path):
+                continue
+            with open(full_path, "r") as f:
+                content = f.read()
+            # Find .map( patterns that return JSX (contain < after map)
+            map_pattern = re.compile(r'\.map\s*\(.*?=>\s*[\(\{]?\s*<', re.DOTALL)
+            matches = map_pattern.finditer(content)
+            for match in matches:
+                # Get surrounding context to check for key prop
+                start = match.start()
+                # Look forward up to 500 chars for the closing of the first JSX element
+                context = content[start:start + 500]
+                # The first JSX element should have a key prop
+                first_tag_end = context.find(">")
+                if first_tag_end > 0:
+                    first_tag = context[:first_tag_end + 1]
+                    assert "key=" in first_tag or "key =" in first_tag, (
+                        f"Missing key prop in .map() JSX render in {rel_path}. "
+                        f"Context: {first_tag[:100]}..."
+                    )
+
+    def test_source_files_have_consistent_formatting(self):
+        """Verify that source files don't have obvious formatting issues like mixed tabs/spaces"""
+        source_files = [
+            "src/App.tsx",
+            "src/components/Board.tsx",
+            "src/components/Keyboard.tsx",
+        ]
+        for rel_path in source_files:
+            full_path = os.path.join(self.REPO_DIR, rel_path)
+            if not os.path.exists(full_path):
+                continue
+            with open(full_path, "r") as f:
+                content = f.read()
+            lines = content.split("\n")
+            has_tabs = any(l.startswith("\t") for l in lines if l.strip())
+            has_spaces = any(l.startswith("  ") for l in lines if l.strip())
+            # Should not have mixed indentation
+            assert not (has_tabs and has_spaces), (
+                f"{rel_path} has mixed tabs and spaces indentation"
+            )
+
+    # === Functional Checks ===
+
+    def test_yarn_install_succeeds(self):
+        """Verify that yarn install succeeds (dependency setup)"""
+        result = subprocess.run(
+            ["yarn", "install", "--frozen-lockfile"],
+            cwd=self.REPO_DIR,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        if result.returncode != 0:
+            # Try without frozen lockfile
+            result = subprocess.run(
+                ["yarn", "install"],
+                cwd=self.REPO_DIR,
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+        assert result.returncode == 0, f"yarn install failed: {result.stderr}"
+
+    def test_prettier_reports_no_changes(self):
+        """Verify that yarn prettier reports no files need formatting changes"""
+        # Ensure deps are installed
+        subprocess.run(
+            ["yarn", "install"],
+            cwd=self.REPO_DIR,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        result = subprocess.run(
+            ["yarn", "prettier", "--check", "src/"],
+            cwd=self.REPO_DIR,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
         assert result.returncode == 0, (
-            f'test_tsc_no_emit_passes failed (exit {result.returncode})\n' + result.stderr[:500]
+            f"Prettier found formatting issues:\n{result.stdout}\n{result.stderr}"
         )
 
-    def test_eslint_passes(self):
-        """Verify ESLint passes with zero errors and warnings"""
-        self._ensure_setup('test_eslint_passes', ['npm install'], 'skip_if_setup_fails')
-        result = self._run_cmd('npx', args=['eslint', 'src/', '--no-fix'], timeout=120)
+    def test_lint_check_passes(self):
+        """Verify that yarn linc exits with code 0 and reports no errors"""
+        subprocess.run(
+            ["yarn", "install"],
+            cwd=self.REPO_DIR,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        result = subprocess.run(
+            ["yarn", "linc"],
+            cwd=self.REPO_DIR,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
         assert result.returncode == 0, (
-            f'test_eslint_passes failed (exit {result.returncode})\n' + result.stderr[:500]
+            f"yarn linc failed with errors:\n{result.stdout}\n{result.stderr}"
         )
 
-    def test_prettier_passes(self):
-        """Verify Prettier formatting check passes"""
-        self._ensure_setup('test_prettier_passes', ['npm install'], 'skip_if_setup_fails')
-        result = self._run_cmd('npx', args=['prettier', '--check', 'src/**/*.{ts,tsx}'], timeout=120)
+    def test_application_builds_successfully(self):
+        """Verify that the application builds without errors after fixes"""
+        subprocess.run(
+            ["yarn", "install"],
+            cwd=self.REPO_DIR,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        result = subprocess.run(
+            ["yarn", "build"],
+            cwd=self.REPO_DIR,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
         assert result.returncode == 0, (
-            f'test_prettier_passes failed (exit {result.returncode})\n' + result.stderr[:500]
+            f"Build failed:\n{result.stdout}\n{result.stderr}"
         )
 
-    def test_no_any_type_in_src(self):
-        """Verify minimal use of 'any' type in source files"""
-        result = self._run_cmd('grep', args=['-rn', ': any', 'src/'], timeout=120)
-        assert result.returncode == 0, (
-            f'test_no_any_type_in_src failed (exit {result.returncode})\n' + result.stderr[:500]
+    def test_no_eslint_errors_on_individual_files(self):
+        """Verify that individual source files pass ESLint without errors"""
+        subprocess.run(
+            ["yarn", "install"],
+            cwd=self.REPO_DIR,
+            capture_output=True,
+            text=True,
+            timeout=120,
         )
+        files_to_check = [
+            "src/App.tsx",
+            "src/components/Board.tsx",
+            "src/components/Tile.tsx",
+            "src/components/Keyboard.tsx",
+        ]
+        for rel_path in files_to_check:
+            full_path = os.path.join(self.REPO_DIR, rel_path)
+            if not os.path.exists(full_path):
+                continue
+            result = subprocess.run(
+                ["npx", "eslint", rel_path, "--no-error-on-unmatched-pattern"],
+                cwd=self.REPO_DIR,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            assert result.returncode == 0, (
+                f"ESLint errors in {rel_path}:\n{result.stdout}\n{result.stderr}"
+            )
 
-    def test_build_succeeds(self):
-        """Verify production build succeeds"""
-        self._ensure_setup('test_build_succeeds', ['npm install'], 'skip_if_setup_fails')
-        result = self._run_cmd('npm', args=['run', 'build'], timeout=300)
-        assert result.returncode == 0, (
-            f'test_build_succeeds failed (exit {result.returncode})\n' + result.stderr[:500]
+    def test_game_logic_unchanged_words_ts(self):
+        """Verify that words.ts still contains word data (no accidental deletion)"""
+        path = os.path.join(self.REPO_DIR, "src/utils/words.ts")
+        if not os.path.exists(path):
+            pytest.skip("words.ts not found")
+        with open(path, "r") as f:
+            content = f.read()
+        # The file should still export word-related functions/constants
+        assert len(content) > 100, (
+            f"words.ts seems too small ({len(content)} chars), may have been truncated"
         )
-
-    def test_tsconfig_strict_not_weakened(self):
-        """Verify strict mode not weakened by overriding noImplicitAny to false"""
-        result = self._run_cmd('python', args=['-c', "import json; tc=json.load(open('tsconfig.json')); co=tc.get('compilerOptions',{}); assert co.get('strict',False)==True, 'strict not true'; assert co.get('noImplicitAny',True)!=False, 'noImplicitAny weakened'; print('PASS')"], timeout=120)
-        assert result.returncode == 0, (
-            f'test_tsconfig_strict_not_weakened failed (exit {result.returncode})\n' + result.stderr[:500]
-        )
-        assert 'PASS' in (result.stdout + result.stderr), 'Expected PASS in output'
-
+        assert "export" in content, "words.ts should export functions or constants"

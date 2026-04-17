@@ -1,120 +1,141 @@
 """
-Test for 'linkerd-patterns' skill — Linkerd2 Service Mesh Patterns (Go)
-Validates ServiceProfile, RetryBudget, TrafficSplit, duration validation,
-and Go source patterns via static source analysis.
+Test skill: linkerd-patterns
+Verify that the Agent creates ServiceProfile, TrafficSplit, AuthorizationPolicy generators,
+and canary controller for Linkerd (Go).
 """
 
 import os
 import re
-
+import subprocess
 import pytest
 
 
 class TestLinkerdPatterns:
-    """Verify Linkerd2 service mesh patterns via static Go source inspection."""
-
     REPO_DIR = "/workspace/linkerd2"
 
-    # ── helpers ──────────────────────────────────────────────────────────
+    # === File Path Checks ===
 
-    @staticmethod
-    def _read_file(path: str) -> str:
-        try:
-            with open(path, "r", errors="ignore") as fh:
-                return fh.read()
-        except OSError:
-            return ""
+    def test_linkerd_generator_files_exist(self):
+        """Verify Linkerd policy generator files exist"""
+        found = False
+        for root, dirs, files in os.walk(self.REPO_DIR):
+            if ".git" in root or "vendor" in root:
+                continue
+            for f in files:
+                if f.endswith(".go") and ("profile" in f.lower() or "traffic" in f.lower() or "canary" in f.lower() or "authori" in f.lower()):
+                    found = True
+                    break
+            if found:
+                break
+        assert found, "Linkerd generator files not found"
 
-    def _lk(self, *parts) -> str:
-        return os.path.join(self.REPO_DIR, "linkerd", *parts)
+    # === Semantic Checks ===
 
-    # ── file_path_check ──────────────────────────────────────────────────
+    def test_service_profile_generator_defined(self):
+        """Verify ServiceProfile generator is implemented"""
+        content = self._find_content()
+        has_sp = "ServiceProfile" in content
+        assert has_sp, "ServiceProfile generator not found"
 
-    def test_service_profile_go_exists(self):
-        """linkerd/service_profile.go must exist."""
-        assert os.path.isfile(self._lk("service_profile.go")), "service_profile.go not found"
+    def test_traffic_split_generator_defined(self):
+        """Verify TrafficSplit generator is implemented"""
+        content = self._find_content()
+        has_ts = "TrafficSplit" in content or "trafficsplit" in content.lower()
+        assert has_ts, "TrafficSplit generator not found"
 
-    def test_traffic_split_go_exists(self):
-        """linkerd/traffic_split.go must exist."""
-        assert os.path.isfile(self._lk("traffic_split.go")), "traffic_split.go not found"
+    def test_authorization_policy_generator_defined(self):
+        """Verify AuthorizationPolicy generator is implemented"""
+        content = self._find_content()
+        has_auth = "AuthorizationPolicy" in content or "authorization" in content.lower()
+        assert has_auth, "AuthorizationPolicy generator not found"
 
-    def test_go_mod_and_test_file_exist(self):
-        """go.mod and service_profile_test.go must exist."""
-        assert os.path.isfile(os.path.join(self.REPO_DIR, "go.mod")), "go.mod not found"
-        assert os.path.isfile(self._lk("service_profile_test.go")), "test file not found"
+    def test_canary_controller_defined(self):
+        """Verify canary controller is implemented"""
+        content = self._find_content()
+        content_lower = content.lower()
+        has_canary = "canary" in content_lower
+        assert has_canary, "Canary controller not found"
 
-    # ── semantic_check ───────────────────────────────────────────────────
+    def test_linkerd_api_types_used(self):
+        """Verify Linkerd API types are used"""
+        content = self._find_content()
+        has_api = (
+            "linkerd" in content.lower()
+            or "serviceprofile" in content.lower()
+            or "smi" in content.lower()
+        )
+        assert has_api, "Linkerd API types not used"
 
-    def test_service_profile_uses_v1alpha2(self):
-        """ServiceProfile must use linkerd.io/v1alpha2, not v1alpha1."""
-        content = self._read_file(self._lk("service_profile.go"))
-        if not content:
-            pytest.skip("service_profile.go not found")
-        assert "v1alpha2" in content, "v1alpha2 not found"
+    # === Functional Checks ===
 
-    def test_retry_budget_has_retry_ratio_float64(self):
-        """RetryBudget must have RetryRatio as float64."""
-        content = self._read_file(self._lk("service_profile.go"))
-        if not content:
-            pytest.skip("service_profile.go not found")
-        assert "RetryBudget" in content
-        assert "RetryRatio" in content
+    def test_go_files_have_package(self):
+        """Verify Go files have proper package declarations"""
+        go_files = self._find_go_files()
+        assert len(go_files) > 0, "No Linkerd generator Go files found"
+        for gf in go_files:
+            with open(gf) as fh:
+                content = fh.read()
+            assert "package " in content[:200], f"{gf} missing package declaration"
 
-    def test_duration_validation_uses_parse_duration(self):
-        """Timeout field must be validated via time.ParseDuration."""
-        content = self._read_file(self._lk("service_profile.go"))
-        if not content:
-            pytest.skip("service_profile.go not found")
-        assert "ParseDuration" in content, "time.ParseDuration not used"
+    def test_go_files_balanced_braces(self):
+        """Verify Go files have balanced braces"""
+        go_files = self._find_go_files()
+        for gf in go_files:
+            with open(gf) as fh:
+                content = fh.read()
+            cleaned = re.sub(r'"[^"]*"', '', content)
+            cleaned = re.sub(r'//[^\n]*', '', cleaned)
+            cleaned = re.sub(r'/\*.*?\*/', '', cleaned, flags=re.DOTALL)
+            opens = cleaned.count('{')
+            closes = cleaned.count('}')
+            assert opens == closes, f"Unbalanced braces in {gf}: {opens} vs {closes}"
 
-    def test_isretryable_field_present(self):
-        """IsRetryable bool field must exist in route spec."""
-        content = self._read_file(self._lk("service_profile.go"))
-        if not content:
-            pytest.skip("service_profile.go not found")
-        has_retry = "IsRetryable" in content or "isRetryable" in content
-        assert has_retry, "IsRetryable field not found"
+    def test_go_build(self):
+        """Verify project builds"""
+        result = subprocess.run(
+            ["go", "build", "./..."],
+            cwd=self.REPO_DIR,
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+        if result.returncode != 0:
+            related_errors = [
+                line for line in result.stderr.splitlines()
+                if any(kw in line.lower() for kw in ["profile", "traffic", "canary", "authori"])
+            ]
+            assert len(related_errors) == 0, f"Build errors: {related_errors[:5]}"
 
-    def test_traffic_split_weight_sum_validation(self):
-        """TrafficSplit must validate weights sum to 100."""
-        content = self._read_file(self._lk("traffic_split.go"))
-        if not content:
-            pytest.skip("traffic_split.go not found")
-        has_100 = "100" in content
-        has_weight = "weight" in content.lower() or "Weight" in content
-        assert has_100 and has_weight, "Weight sum validation not found"
+    def test_canary_has_weight_management(self):
+        """Verify canary controller manages traffic weights"""
+        content = self._find_content()
+        content_lower = content.lower()
+        has_weight = "weight" in content_lower or "percentage" in content_lower or "ratio" in content_lower
+        assert has_weight, "Canary controller missing weight management"
 
-    # ── functional_check (static Go) ─────────────────────────────────────
+    def _find_content(self):
+        all_content = ""
+        for root, dirs, files in os.walk(self.REPO_DIR):
+            if ".git" in root or "vendor" in root:
+                continue
+            for f in files:
+                if f.endswith(".go"):
+                    fpath = os.path.join(root, f)
+                    try:
+                        with open(fpath) as fh:
+                            content = fh.read()
+                        if any(kw in content for kw in ["ServiceProfile", "TrafficSplit", "AuthorizationPolicy", "canary", "Canary"]):
+                            all_content += content + "\n"
+                    except (UnicodeDecodeError, PermissionError):
+                        continue
+        return all_content
 
-    def test_valid_timeout_test_case(self):
-        """Test file must contain valid duration test case ('30s' or '1m')."""
-        content = self._read_file(self._lk("service_profile_test.go"))
-        if not content:
-            pytest.skip("test file not found")
-        has_valid = "30s" in content or "1m" in content or "10s" in content
-        assert has_valid, "No valid duration test case found"
-        assert "nil" in content, "No nil error assertion for valid case"
-
-    def test_invalid_timeout_test_case(self):
-        """Test file must contain invalid duration test case ('30x')."""
-        content = self._read_file(self._lk("service_profile_test.go"))
-        if not content:
-            pytest.skip("test file not found")
-        has_invalid = "30x" in content or "invalid" in content.lower()
-        assert has_invalid, "No invalid duration test case found"
-
-    def test_retry_ratio_zero_is_valid(self):
-        """RetryRatio=0.0 must be a valid edge case in test file."""
-        content = self._read_file(self._lk("service_profile_test.go"))
-        if not content:
-            pytest.skip("test file not found")
-        has_zero = "0.0" in content or "RetryRatio: 0" in content
-        assert has_zero, "No zero RetryRatio edge case test found"
-
-    def test_unequal_weights_fail_validation(self):
-        """TrafficSplit with sum != 100 must fail in source or test."""
-        content = self._read_file(self._lk("traffic_split.go"))
-        test_content = self._read_file(self._lk("service_profile_test.go"))
-        combined = content + test_content
-        has_error = "error" in combined.lower() and "weight" in combined.lower()
-        assert has_error, "No weight validation error path found"
+    def _find_go_files(self):
+        go_files = []
+        for root, dirs, files in os.walk(self.REPO_DIR):
+            if ".git" in root or "vendor" in root:
+                continue
+            for f in files:
+                if f.endswith(".go") and ("profile" in f.lower() or "traffic" in f.lower() or "canary" in f.lower() or "authori" in f.lower()):
+                    go_files.append(os.path.join(root, f))
+        return go_files

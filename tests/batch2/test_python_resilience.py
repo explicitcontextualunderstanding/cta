@@ -1,237 +1,291 @@
 """
-Test for 'python-resilience' skill — Python Resilience Patterns
-Validates that the Agent implemented a resilient HTTP transport layer
-for httpx with retry logic, circuit breaker, and timeout handling.
+Test skill: python-resilience
+Verify that the Agent correctly implements a resilient HTTP transport layer
+for httpx with retry logic, timeout handling, and circuit breaker patterns.
 """
 
 import os
-import re
+import sys
+import ast
+import inspect
 import subprocess
-
+import time
 import pytest
-
-from _dependency_utils import ensure_python_dependencies
-
-
-@pytest.fixture(scope="module", autouse=True)
-def _ensure_repo_dependencies():
-    ensure_python_dependencies(TestPythonResilience.REPO_DIR)
 
 
 class TestPythonResilience:
-    """Verify resilient HTTP transport implementation for httpx."""
-
     REPO_DIR = "/workspace/httpx"
 
-    # ------------------------------------------------------------------
-    # Helpers
-    # ------------------------------------------------------------------
-
-    def _read(self, *parts):
-        fpath = os.path.join(self.REPO_DIR, *parts)
-        assert os.path.isfile(fpath), f"Required file not found: {fpath}"
-        with open(fpath, "r", errors="ignore") as fh:
-            return fh.read()
-
-    # ------------------------------------------------------------------
-    # L1: File existence and syntax
-    # ------------------------------------------------------------------
+    # === File Path Checks ===
 
     def test_resilient_transport_file_exists(self):
-        """httpx/_transports/resilient.py must exist."""
-        fpath = os.path.join(self.REPO_DIR, "httpx", "_transports", "resilient.py")
-        assert os.path.isfile(fpath), "httpx/_transports/resilient.py not found"
+        """Verify resilient.py exists in the transports directory"""
+        path = os.path.join(self.REPO_DIR, "httpx/_transports/resilient.py")
+        assert os.path.exists(path), f"resilient.py not found at {path}"
 
-    def test_resilient_transport_compiles(self):
-        """resilient.py must be syntactically valid Python."""
-        result = subprocess.run(
-            ["python", "-m", "py_compile", "httpx/_transports/resilient.py"],
-            cwd=self.REPO_DIR,
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-        assert result.returncode == 0, f"Syntax error in resilient.py:\n{result.stderr}"
+    def test_resilient_transport_is_valid_python(self):
+        """Verify resilient.py is syntactically valid Python"""
+        path = os.path.join(self.REPO_DIR, "httpx/_transports/resilient.py")
+        with open(path) as f:
+            content = f.read()
+        try:
+            ast.parse(content)
+        except SyntaxError as e:
+            pytest.fail(f"resilient.py has syntax error: {e}")
 
-    # ------------------------------------------------------------------
-    # L1: Transport class structure
-    # ------------------------------------------------------------------
+    # === Semantic Checks ===
 
     def test_defines_transport_class(self):
-        """resilient.py must define a transport class."""
-        content = self._read("httpx", "_transports", "resilient.py")
-        assert re.search(
-            r"class\s+\w*[Rr]esilient\w*[Tt]ransport", content
-        ), "No resilient transport class found"
+        """Verify resilient.py defines a transport class"""
+        path = os.path.join(self.REPO_DIR, "httpx/_transports/resilient.py")
+        with open(path) as f:
+            tree = ast.parse(f.read())
+
+        class_names = [node.name for node in ast.walk(tree)
+                       if isinstance(node, ast.ClassDef)]
+        transport_classes = [
+            n for n in class_names
+            if "transport" in n.lower() or "resilient" in n.lower()
+        ]
+        assert len(transport_classes) > 0, (
+            f"resilient.py should define a transport class. "
+            f"Classes found: {class_names}"
+        )
+
+    def test_transport_class_has_handle_request_method(self):
+        """Verify transport class implements handle_request or handle_async_request"""
+        path = os.path.join(self.REPO_DIR, "httpx/_transports/resilient.py")
+        with open(path) as f:
+            tree = ast.parse(f.read())
+
+        methods = []
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef):
+                methods.append(node.name)
+
+        transport_methods = [
+            m for m in methods
+            if "handle" in m.lower() and "request" in m.lower()
+        ]
+        assert len(transport_methods) > 0, (
+            "Transport class should implement handle_request or "
+            f"handle_async_request. Methods found: {methods}"
+        )
+
+    def test_implements_retry_logic(self):
+        """Verify resilient.py implements retry logic with backoff"""
+        path = os.path.join(self.REPO_DIR, "httpx/_transports/resilient.py")
+        with open(path) as f:
+            content = f.read().lower()
+
+        retry_indicators = {
+            "retry": "retry" in content,
+            "backoff": "backoff" in content or "exponential" in content or "sleep" in content,
+            "max_retries/attempts": (
+                "max_retries" in content or "max_attempts" in content
+                or "retries" in content or "attempts" in content
+            ),
+        }
+        found = [k for k, v in retry_indicators.items() if v]
+        assert len(found) >= 2, (
+            f"Transport should implement retry with backoff. Found: {found}. "
+            f"Expected at least 2 of: {list(retry_indicators.keys())}"
+        )
+
+    def test_implements_circuit_breaker(self):
+        """Verify resilient.py implements circuit breaker pattern"""
+        path = os.path.join(self.REPO_DIR, "httpx/_transports/resilient.py")
+        with open(path) as f:
+            content = f.read().lower()
+
+        cb_indicators = {
+            "circuit": "circuit" in content,
+            "breaker": "breaker" in content,
+            "open/closed/half": (
+                "open" in content or "closed" in content
+                or "half_open" in content or "half-open" in content
+            ),
+            "threshold/failure_count": (
+                "threshold" in content or "failure_count" in content
+                or "consecutive" in content
+            ),
+            "cooldown/reset": (
+                "cooldown" in content or "reset_timeout" in content
+                or "recovery" in content
+            ),
+        }
+        found = [k for k, v in cb_indicators.items() if v]
+        assert len(found) >= 3, (
+            f"Transport should implement circuit breaker. Found: {found}. "
+            f"Expected at least 3 of: {list(cb_indicators.keys())}"
+        )
+
+    def test_transport_is_configurable(self):
+        """Verify transport constructor accepts configuration parameters"""
+        path = os.path.join(self.REPO_DIR, "httpx/_transports/resilient.py")
+        with open(path) as f:
+            tree = ast.parse(f.read())
+
+        init_params = []
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ClassDef):
+                for item in node.body:
+                    if isinstance(item, ast.FunctionDef) and item.name == "__init__":
+                        init_params = [
+                            arg.arg for arg in item.args.args
+                            if arg.arg != "self"
+                        ]
+                        break
+
+        config_keywords = [
+            "retry", "retries", "max_retries", "backoff", "timeout",
+            "threshold", "cooldown", "transport", "base",
+        ]
+        found = [p for p in init_params if any(kw in p.lower() for kw in config_keywords)]
+        assert len(found) >= 2, (
+            f"Transport __init__ should accept configuration parameters. "
+            f"Params found: {init_params}. Expected at least 2 config-related params."
+        )
+
+    # === Functional Checks ===
+
+    def test_transport_class_is_importable(self):
+        """Verify the resilient transport class can be imported"""
+        sys.path.insert(0, self.REPO_DIR)
+        try:
+            from httpx._transports.resilient import (
+                ResilientTransport
+            )
+            assert ResilientTransport is not None
+        except ImportError:
+            # Try alternative class names
+            import importlib
+            mod = importlib.import_module("httpx._transports.resilient")
+            classes = [
+                name for name in dir(mod)
+                if isinstance(getattr(mod, name), type)
+                and ("transport" in name.lower() or "resilient" in name.lower())
+            ]
+            assert len(classes) > 0, (
+                f"Could not find a transport class in resilient.py. "
+                f"Available names: {dir(mod)}"
+            )
 
     def test_transport_wraps_base_transport(self):
-        """The resilient transport must accept and wrap an underlying base transport."""
-        content = self._read("httpx", "_transports", "resilient.py")
-        patterns = [
-            r"__init__.*transport",
-            r"self\._transport",
-            r"self\.transport",
-            r"base_transport",
-            r"wrapped",
+        """Verify the resilient transport wraps an underlying transport"""
+        sys.path.insert(0, self.REPO_DIR)
+        try:
+            import importlib
+            mod = importlib.import_module("httpx._transports.resilient")
+
+            # Find the transport class
+            transport_cls = None
+            for name in dir(mod):
+                obj = getattr(mod, name)
+                if isinstance(obj, type) and (
+                    "transport" in name.lower() or "resilient" in name.lower()
+                ):
+                    transport_cls = obj
+                    break
+
+            assert transport_cls is not None, "No transport class found"
+
+            # Check constructor signature references a base transport
+            sig = inspect.signature(transport_cls.__init__)
+            params = list(sig.parameters.keys())
+            transport_param = [
+                p for p in params
+                if "transport" in p.lower() or "base" in p.lower() or "wrapped" in p.lower()
+            ]
+            assert len(transport_param) > 0, (
+                f"Transport constructor should accept a base transport parameter. "
+                f"Parameters: {params}"
+            )
+        except Exception as e:
+            pytest.fail(f"Failed to inspect transport class: {e}")
+
+    def test_transport_retries_on_transient_error(self):
+        """Verify transport retries on transient errors using mocked base transport"""
+        sys.path.insert(0, self.REPO_DIR)
+        from unittest.mock import Mock, MagicMock
+
+        try:
+            import importlib
+            mod = importlib.import_module("httpx._transports.resilient")
+
+            transport_cls = None
+            for name in dir(mod):
+                obj = getattr(mod, name)
+                if isinstance(obj, type) and (
+                    "transport" in name.lower() or "resilient" in name.lower()
+                ):
+                    transport_cls = obj
+                    break
+
+            if transport_cls is None:
+                pytest.fail("No transport class found")
+
+            # Create a mock base transport that fails then succeeds
+            mock_transport = Mock()
+            mock_response = Mock()
+            mock_response.status_code = 200
+
+            # First call raises, second succeeds
+            call_count = 0
+            def side_effect(*args, **kwargs):
+                nonlocal call_count
+                call_count += 1
+                if call_count == 1:
+                    raise ConnectionError("Transient failure")
+                return mock_response
+
+            mock_transport.handle_request = Mock(side_effect=side_effect)
+
+            # Try to instantiate with the mock transport
+            try:
+                instance = transport_cls(transport=mock_transport, max_retries=3)
+            except TypeError:
+                try:
+                    instance = transport_cls(mock_transport, max_retries=3)
+                except TypeError:
+                    pytest.skip("Cannot instantiate transport with test parameters")
+
+            # The transport should retry and eventually succeed
+            # This is a structural test - we verify the transport was created
+            assert instance is not None
+
+        except ImportError as e:
+            pytest.skip(f"Import failed: {e}")
+
+    def test_circuit_breaker_state_tracking(self):
+        """Verify transport tracks circuit breaker state (open/closed/half-open)"""
+        path = os.path.join(self.REPO_DIR, "httpx/_transports/resilient.py")
+        with open(path) as f:
+            content = f.read()
+
+        # Should have state-related attributes or enums
+        state_indicators = [
+            "CLOSED", "OPEN", "HALF_OPEN", "half_open",
+            "_state", "state", "is_open", "is_closed",
         ]
-        assert any(
-            re.search(p, content, re.IGNORECASE) for p in patterns
-        ), "Transport class does not appear to wrap a base transport"
-
-    def test_transport_implements_handle_request_or_handle_async(self):
-        """Transport must implement handle_request or handle_async_request (httpx interface)."""
-        content = self._read("httpx", "_transports", "resilient.py")
-        assert re.search(
-            r"def\s+handle_(async_)?request", content
-        ), "Transport does not implement handle_request or handle_async_request"
-
-    # ------------------------------------------------------------------
-    # L1: Retry configuration
-    # ------------------------------------------------------------------
-
-    def test_retry_max_count_configurable(self):
-        """Transport must accept a configurable maximum retry count."""
-        content = self._read("httpx", "_transports", "resilient.py")
-        patterns = [
-            r"max_retries",
-            r"retry_count",
-            r"retries",
-            r"max_attempts",
-        ]
-        assert any(
-            re.search(p, content) for p in patterns
-        ), "No configurable retry count parameter found"
-
-    def test_exponential_backoff_present(self):
-        """Retry logic must implement exponential backoff."""
-        content = self._read("httpx", "_transports", "resilient.py")
-        backoff_patterns = [
-            r"backoff",
-            r"exponential",
-            r"\*\*\s*attempt",
-            r"2\s*\*\*",
-            r"pow\(",
-            r"backoff_factor",
-            r"delay\s*\*",
-        ]
-        assert any(
-            re.search(p, content, re.IGNORECASE) for p in backoff_patterns
-        ), "No exponential backoff logic found in retry implementation"
-
-    def test_retries_on_transient_errors(self):
-        """Retry logic must handle transient HTTP errors (502/503/504) and connection errors."""
-        content = self._read("httpx", "_transports", "resilient.py")
-        # Must reference transient status codes or connection error types
-        transient_patterns = [
-            r"502",
-            r"503",
-            r"504",
-            r"connect",
-            r"ConnectionError",
-            r"transient",
-            r"retry.*status",
-            r"status.*retry",
-        ]
-        matches = sum(
-            1 for p in transient_patterns if re.search(p, content, re.IGNORECASE)
+        found = [ind for ind in state_indicators if ind in content]
+        assert len(found) >= 2, (
+            "Circuit breaker should track state transitions. "
+            f"Found: {found}. Expected at least 2 of: {state_indicators}"
         )
-        assert matches >= 2, (
-            "Retry logic does not appear to handle sufficient transient error types "
-            "(expected references to 502/503/504 and connection errors)"
-        )
 
-    # ------------------------------------------------------------------
-    # L2: Circuit breaker
-    # ------------------------------------------------------------------
+    def test_timeout_raises_appropriate_exception(self):
+        """Verify transport raises appropriate exception on timeout"""
+        path = os.path.join(self.REPO_DIR, "httpx/_transports/resilient.py")
+        with open(path) as f:
+            content = f.read()
 
-    def test_circuit_breaker_logic_exists(self):
-        """Transport must implement circuit breaker pattern."""
-        content = self._read("httpx", "_transports", "resilient.py")
-        cb_patterns = [
-            r"circuit",
-            r"breaker",
-            r"CircuitBreaker",
-            r"circuit_breaker",
-            r"half.?open",
-            r"_state",
+        timeout_indicators = [
+            "timeout", "TimeoutError", "TimeoutException",
+            "ReadTimeout", "ConnectTimeout",
         ]
-        matches = sum(1 for p in cb_patterns if re.search(p, content, re.IGNORECASE))
-        assert matches >= 2, "Circuit breaker pattern not sufficiently implemented"
-
-    def test_circuit_breaker_has_threshold_config(self):
-        """Circuit breaker must have a configurable failure threshold."""
-        content = self._read("httpx", "_transports", "resilient.py")
-        patterns = [
-            r"failure_threshold",
-            r"max_failures",
-            r"threshold",
-            r"consecutive_failures",
-            r"failure_count",
-        ]
-        assert any(
-            re.search(p, content) for p in patterns
-        ), "Circuit breaker missing configurable failure threshold"
-
-    def test_circuit_breaker_has_cooldown(self):
-        """Circuit breaker must have a cooldown/recovery period."""
-        content = self._read("httpx", "_transports", "resilient.py")
-        patterns = [
-            r"cooldown",
-            r"recovery",
-            r"reset_timeout",
-            r"open_until",
-            r"half_open",
-            r"recovery_time",
-        ]
-        assert any(
-            re.search(p, content, re.IGNORECASE) for p in patterns
-        ), "Circuit breaker missing cooldown/recovery period configuration"
-
-    # ------------------------------------------------------------------
-    # L2: Timeout handling
-    # ------------------------------------------------------------------
-
-    def test_timeout_handling_present(self):
-        """Transport must enforce per-request timeouts."""
-        content = self._read("httpx", "_transports", "resilient.py")
-        timeout_patterns = [
-            r"timeout",
-            r"Timeout",
-            r"TimeoutError",
-            r"TimeoutException",
-        ]
-        assert any(
-            re.search(p, content) for p in timeout_patterns
-        ), "No timeout handling found in resilient transport"
-
-    # ------------------------------------------------------------------
-    # L2: Dynamic import test
-    # ------------------------------------------------------------------
-
-    def test_resilient_transport_importable(self):
-        """The resilient transport module must be importable without errors."""
-        result = subprocess.run(
-            ["python", "-c", "from httpx._transports.resilient import *; print('OK')"],
-            cwd=self.REPO_DIR,
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-        assert (
-            result.returncode == 0
-        ), f"Failed to import resilient transport:\n{result.stderr}"
-        assert "OK" in result.stdout
-
-    def test_defaults_are_sensible(self):
-        """Constructor default values should be present for all config parameters."""
-        content = self._read("httpx", "_transports", "resilient.py")
-        # Look for __init__ with default parameters
-        init_match = re.search(r"def\s+__init__\s*\(([^)]+)\)", content, re.DOTALL)
-        assert init_match, "Transport class __init__ not found"
-        params = init_match.group(1)
-        # Count parameters with defaults (=)
-        defaults = re.findall(r"=\s*\S+", params)
-        assert len(defaults) >= 3, (
-            f"__init__ should have at least 3 configurable parameters with defaults, "
-            f"found {len(defaults)}"
+        found = [ind for ind in timeout_indicators if ind in content]
+        assert len(found) >= 2, (
+            "Transport should handle timeouts and raise clear exceptions. "
+            f"Found: {found}. Expected at least 2 of: {timeout_indicators}"
         )

@@ -1,173 +1,165 @@
-"""Test file for the spark-optimization skill.
-
-This suite validates Spark AQE (Adaptive Query Execution) optimisations:
-skew splitting, partition coalescing, and the adaptive strategy optimizer.
+"""
+Test skill: spark-optimization
+Verify that the Agent implements an Adaptive Query Execution Strategy Optimizer
+for Spark SQL — SkewedPartitionSplitter, PartitionCoalescer, and
+AdaptiveStrategyOptimizer Catalyst rules.
 """
 
-from __future__ import annotations
-
-import pathlib
+import os
 import re
-
+import subprocess
 import pytest
 
 
 class TestSparkOptimization:
-    """Verify Spark AQE optimisation rules in the spark repo."""
-
     REPO_DIR = "/workspace/spark"
+    BASE = "sql/core/src/main/scala/org/apache/spark/sql/execution/adaptive"
+    TEST = "sql/core/src/test/scala/org/apache/spark/sql/execution/adaptive"
 
-    SKEW_SPLITTER = (
-        "sql/core/src/main/scala/org/apache/spark/sql/execution/"
-        "adaptive/SkewedPartitionSplitter.scala"
-    )
-    PARTITION_COALESCER = (
-        "sql/core/src/main/scala/org/apache/spark/sql/execution/"
-        "adaptive/PartitionCoalescer.scala"
-    )
-    ADAPTIVE_OPTIMIZER = (
-        "sql/core/src/main/scala/org/apache/spark/sql/execution/"
-        "adaptive/AdaptiveStrategyOptimizer.scala"
-    )
+    # ────────────────── helpers ──────────────────
 
-    # ------------------------------------------------------------------
-    # Helpers
-    # ------------------------------------------------------------------
+    def _read(self, rel_path):
+        fpath = os.path.join(self.REPO_DIR, rel_path)
+        with open(fpath, "r") as f:
+            return f.read()
 
-    def _repo_path(self, relative: str) -> pathlib.Path:
-        return pathlib.Path(self.REPO_DIR, *relative.split("/"))
+    def _exists(self, rel_path):
+        return os.path.isfile(os.path.join(self.REPO_DIR, rel_path))
 
-    def _read_text(self, relative: str) -> str:
-        path = self._repo_path(relative)
-        assert path.exists(), f"Expected path to exist: {path}"
-        return path.read_text(encoding="utf-8", errors="ignore")
+    # === File Path Checks ===
 
-    def _assert_non_empty_file(self, relative: str) -> pathlib.Path:
-        path = self._repo_path(relative)
-        assert path.is_file(), f"Expected file to exist: {path}"
-        assert path.stat().st_size > 0, f"Expected non-empty file: {path}"
-        return path
+    def test_skewed_splitter_exists(self):
+        """SkewedPartitionSplitter.scala must exist"""
+        assert self._exists(f"{self.BASE}/SkewedPartitionSplitter.scala")
 
-    def _all_scala_sources(self, directory: str) -> str:
-        """Read all .scala files under a directory."""
-        result = []
-        root = self._repo_path(directory)
-        if root.is_dir():
-            for f in root.rglob("*.scala"):
-                result.append(f.read_text(encoding="utf-8", errors="ignore"))
-        return "\n".join(result)
+    def test_partition_coalescer_exists(self):
+        """PartitionCoalescer.scala must exist"""
+        assert self._exists(f"{self.BASE}/PartitionCoalescer.scala")
 
-    # ------------------------------------------------------------------
-    # Layer 1 – file_path_check (3 cases)
-    # ------------------------------------------------------------------
+    def test_strategy_optimizer_exists(self):
+        """AdaptiveStrategyOptimizer.scala must exist"""
+        assert self._exists(f"{self.BASE}/AdaptiveStrategyOptimizer.scala")
 
-    def test_file_path_skewed_partition_splitter_scala_exists(self):
-        """Verify SkewedPartitionSplitter.scala exists."""
-        self._assert_non_empty_file(self.SKEW_SPLITTER)
+    def test_splitter_suite_exists(self):
+        """SkewedPartitionSplitterSuite.scala test must exist"""
+        assert self._exists(f"{self.TEST}/SkewedPartitionSplitterSuite.scala")
 
-    def test_file_path_partition_coalescer_scala_exists(self):
-        """Verify PartitionCoalescer.scala exists."""
-        self._assert_non_empty_file(self.PARTITION_COALESCER)
+    def test_coalescer_suite_exists(self):
+        """PartitionCoalescerSuite.scala test must exist"""
+        assert self._exists(f"{self.TEST}/PartitionCoalescerSuite.scala")
 
-    def test_file_path_adaptive_strategy_optimizer_scala_exists(self):
-        """Verify AdaptiveStrategyOptimizer.scala exists."""
-        self._assert_non_empty_file(self.ADAPTIVE_OPTIMIZER)
+    # === Semantic Checks — SkewedPartitionSplitter ===
 
-    # ------------------------------------------------------------------
-    # Layer 2 – semantic_check (5 cases)
-    # ------------------------------------------------------------------
-
-    def test_semantic_skewedpartitionsplitter_extends_rule_sparkplan(self):
-        """SkewedPartitionSplitter extends Rule[SparkPlan]."""
-        src = self._read_text(self.SKEW_SPLITTER)
-        assert re.search(
-            r"class\s+SkewedPartitionSplitter.*extends.*Rule", src
-        ), "SkewedPartitionSplitter should extend Rule[SparkPlan]"
-
-    def test_semantic_partitioncoalescer_extends_rule_sparkplan(self):
-        """PartitionCoalescer extends Rule[SparkPlan]."""
-        src = self._read_text(self.PARTITION_COALESCER)
-        assert re.search(
-            r"class\s+PartitionCoalescer.*extends.*Rule", src
-        ), "PartitionCoalescer should extend Rule[SparkPlan]"
-
-    def test_semantic_skewreport_case_class_with_shuffleid_totalpartitions(self):
-        """SkewReport case class with shuffleId, totalPartitions, skewedPartitions, medianSizeBytes, maxSizeBytes."""
-        src = self._read_text(self.SKEW_SPLITTER)
-        all_src = src + "\n" + self._read_text(self.ADAPTIVE_OPTIMIZER)
-        assert re.search(
-            r"case\s+class\s+SkewReport", all_src
-        ), "SkewReport should be a case class"
-        for field in [
-            "shuffleId",
-            "totalPartitions",
-            "skewedPartitions",
-            "medianSizeBytes",
-            "maxSizeBytes",
-        ]:
-            assert field in all_src, f"SkewReport should contain {field}"
-
-    def test_semantic_skewedpartitioninfo_case_class(self):
-        """SkewedPartitionInfo case class with partitionId, sizeBytes, numSplits."""
-        src = self._read_text(self.SKEW_SPLITTER)
-        assert re.search(
-            r"case\s+class\s+SkewedPartitionInfo", src
-        ), "SkewedPartitionInfo should be a case class"
-        for field in ["partitionId", "sizeBytes", "numSplits"]:
-            assert field in src, f"SkewedPartitionInfo should contain {field}"
-
-    def test_semantic_config_keys_spark_sql_adaptive_skewjoin(self):
-        """Config keys: spark.sql.adaptive.skewJoin.skewedPartitionThresholdInBytes, etc."""
-        src = self._all_scala_sources(
-            "sql/core/src/main/scala/org/apache/spark/sql/execution/adaptive"
+    def test_splitter_extends_rule(self):
+        """SkewedPartitionSplitter must extend Rule[SparkPlan]"""
+        src = self._read(f"{self.BASE}/SkewedPartitionSplitter.scala")
+        assert "Rule" in src and "SparkPlan" in src, (
+            "SkewedPartitionSplitter should extend Rule[SparkPlan]"
         )
-        assert re.search(
-            r"skewedPartitionThreshold|skewJoin", src
-        ), "Config keys for skew join should be defined"
 
-    # ------------------------------------------------------------------
-    # Layer 3 – functional_check (4 cases)
-    # ------------------------------------------------------------------
+    def test_splitter_config_skew_threshold(self):
+        """Must reference skewedPartitionThresholdInBytes config key"""
+        src = self._read(f"{self.BASE}/SkewedPartitionSplitter.scala")
+        assert "skewedPartitionThreshold" in src or "skewThresholdBytes" in src, (
+            "Skew threshold configuration not found"
+        )
 
-    def test_functional_2gb_partition_among_200_detected_split_into_16(self):
-        """200 partitions, partition 42 at 2GB, median 50MB → detected, split into ~16."""
-        src = self._read_text(self.SKEW_SPLITTER)
-        assert re.search(
-            r"def\s+apply|def\s+detectSkew|def\s+split", src
-        ), "Splitter should have apply/detectSkew/split method"
-        assert re.search(
-            r"median|threshold", src, re.IGNORECASE
-        ), "Should use median-based threshold detection"
+    def test_splitter_config_skew_factor(self):
+        """Must reference skewedPartitionFactor config or skewFactor"""
+        src = self._read(f"{self.BASE}/SkewedPartitionSplitter.scala")
+        assert "skewFactor" in src or "skewedPartitionFactor" in src, (
+            "Skew factor configuration not found"
+        )
 
-    def test_functional_1000_partitions_coalesce_to_target_64mb(self):
-        """1000 partitions at 5MB, target 64MB → ~77-84 coalesced partitions."""
-        src = self._read_text(self.PARTITION_COALESCER)
-        assert re.search(
-            r"def\s+apply|def\s+coalesce", src
-        ), "Coalescer should have apply/coalesce method"
-        assert re.search(
-            r"target|advisory", src, re.IGNORECASE
-        ), "Should use target size for coalescing"
+    def test_splitter_max_splits(self):
+        """Must have maxSplits parameter"""
+        src = self._read(f"{self.BASE}/SkewedPartitionSplitter.scala")
+        assert "maxSplits" in src, "maxSplits parameter not found"
 
-    def test_functional_optimizer_applies_split_then_coalesce_in_sequence(self):
-        """AdaptiveStrategyOptimizer applies split then coalesce in sequence."""
-        src = self._read_text(self.ADAPTIVE_OPTIMIZER)
-        assert re.search(
-            r"class\s+AdaptiveStrategyOptimizer", src
-        ), "AdaptiveStrategyOptimizer class should exist"
-        # Should reference both splitter and coalescer
-        assert re.search(r"[Ss]plit|[Ss]kew", src), "Should reference splitting"
-        assert re.search(r"[Cc]oalesce", src), "Should reference coalescing"
+    def test_splitter_median_calculation(self):
+        """Must compute median partition size"""
+        src = self._read(f"{self.BASE}/SkewedPartitionSplitter.scala")
+        assert "median" in src.lower(), "Median partition size calculation not found"
 
-    def test_functional_build_mvn_dskiptests_package_succeeds(self):
-        """Build check: ./build/mvn -DskipTests package (source analysis)."""
-        # Verify the Scala sources compile — check for proper package declarations
-        for f in [
-            self.SKEW_SPLITTER,
-            self.PARTITION_COALESCER,
-            self.ADAPTIVE_OPTIMIZER,
-        ]:
-            src = self._read_text(f)
-            assert re.search(
-                r"^package\s+org\.apache\.spark", src, re.MULTILINE
-            ), f"{f} should have proper package declaration"
+    def test_skew_report_case_class(self):
+        """SkewReport case class must be defined"""
+        src = self._read(f"{self.BASE}/SkewedPartitionSplitter.scala")
+        assert re.search(r'case\s+class\s+SkewReport', src), (
+            "SkewReport case class not found"
+        )
+
+    def test_skewed_partition_info_case_class(self):
+        """SkewedPartitionInfo case class must be defined"""
+        src = self._read(f"{self.BASE}/SkewedPartitionSplitter.scala")
+        assert re.search(r'case\s+class\s+SkewedPartitionInfo', src), (
+            "SkewedPartitionInfo case class not found"
+        )
+
+    # === Semantic Checks — PartitionCoalescer ===
+
+    def test_coalescer_extends_rule(self):
+        """PartitionCoalescer must extend Rule[SparkPlan]"""
+        src = self._read(f"{self.BASE}/PartitionCoalescer.scala")
+        assert "Rule" in src and "SparkPlan" in src, (
+            "PartitionCoalescer should extend Rule[SparkPlan]"
+        )
+
+    def test_coalescer_target_size(self):
+        """Must reference targetSizeInBytes or targetPartitionSizeBytes"""
+        src = self._read(f"{self.BASE}/PartitionCoalescer.scala")
+        assert "targetPartitionSizeBytes" in src or "targetSizeInBytes" in src, (
+            "Target partition size configuration not found"
+        )
+
+    def test_coalescer_min_partitions(self):
+        """Must support minPartitions constraint"""
+        src = self._read(f"{self.BASE}/PartitionCoalescer.scala")
+        assert "minPartitions" in src or "minPartitionNum" in src, (
+            "minPartitions parameter not found"
+        )
+
+    # === Semantic Checks — AdaptiveStrategyOptimizer ===
+
+    def test_optimizer_applies_both_rules(self):
+        """AdaptiveStrategyOptimizer must reference both Splitter and Coalescer"""
+        src = self._read(f"{self.BASE}/AdaptiveStrategyOptimizer.scala")
+        assert "SkewedPartitionSplitter" in src, (
+            "Does not reference SkewedPartitionSplitter"
+        )
+        assert "PartitionCoalescer" in src, (
+            "Does not reference PartitionCoalescer"
+        )
+
+    # === Functional Checks ===
+
+    def test_sbt_compile(self):
+        """Project must compile with sbt"""
+        result = subprocess.run(
+            ["build/sbt", "sql/compile"],
+            capture_output=True, text=True, cwd=self.REPO_DIR, timeout=600,
+        )
+        assert result.returncode == 0, (
+            f"sbt compile failed:\n{result.stdout[-2000:]}\n{result.stderr[-2000:]}"
+        )
+
+    def test_splitter_tests_pass(self):
+        """SkewedPartitionSplitter tests must pass"""
+        result = subprocess.run(
+            ["build/sbt",
+             "sql/testOnly *SkewedPartitionSplitterSuite"],
+            capture_output=True, text=True, cwd=self.REPO_DIR, timeout=600,
+        )
+        assert result.returncode == 0, (
+            f"Tests failed:\n{result.stdout[-2000:]}\n{result.stderr[-2000:]}"
+        )
+
+    def test_coalescer_tests_pass(self):
+        """PartitionCoalescer tests must pass"""
+        result = subprocess.run(
+            ["build/sbt",
+             "sql/testOnly *PartitionCoalescerSuite"],
+            capture_output=True, text=True, cwd=self.REPO_DIR, timeout=600,
+        )
+        assert result.returncode == 0, (
+            f"Tests failed:\n{result.stdout[-2000:]}\n{result.stderr[-2000:]}"
+        )

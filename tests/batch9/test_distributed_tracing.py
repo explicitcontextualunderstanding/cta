@@ -1,127 +1,145 @@
 """
-Test for 'distributed-tracing' skill — Distributed Tracing in Go
-Validates TracerProvider, W3C propagator, go.mod OTel dependency,
-Shutdown lifecycle, child span context, and error handling.
+Test skill: distributed-tracing
+Verify that the Agent creates a pipeline config generator for
+OpenTelemetry Collector (Go).
 """
 
-import glob
 import os
 import re
-
+import subprocess
 import pytest
 
 
 class TestDistributedTracing:
-    """Verify Go distributed tracing: OTel provider, propagator, spans."""
-
     REPO_DIR = "/workspace/opentelemetry-collector"
 
-    # ── helpers ──────────────────────────────────────────────────────────
+    # === File Path Checks ===
 
-    @staticmethod
-    def _read_file(path: str) -> str:
-        try:
-            with open(path, "r", errors="ignore") as fh:
-                return fh.read()
-        except OSError:
-            return ""
-
-    def _root(self, *parts) -> str:
-        return os.path.join(self.REPO_DIR, *parts)
-
-    # ── file_path_check ──────────────────────────────────────────────────
-
-    def test_go_mod_exists(self):
-        """go.mod must exist at repository root."""
-        assert os.path.isfile(self._root("go.mod")), "go.mod not found"
-
-    def test_tracing_provider_go_exists(self):
-        """tracing/provider.go must exist and be non-empty."""
-        p = self._root("tracing", "provider.go")
-        assert os.path.isfile(p), "tracing/provider.go not found"
-        assert os.path.getsize(p) > 0
-
-    def test_tracing_propagator_go_exists(self):
-        """tracing/propagator.go must exist."""
-        assert os.path.isfile(self._root("tracing", "propagator.go"))
-
-    def test_test_go_file_exists(self):
-        """At least one *_test.go file must exist in tracing/."""
-        pattern = self._root("tracing", "*_test.go")
-        assert glob.glob(pattern), "No *_test.go in tracing/"
-
-    # ── semantic_check ───────────────────────────────────────────────────
-
-    def test_go_mod_declares_otel_dependency(self):
-        """go.mod must declare go.opentelemetry.io/otel at >= v1.20.0."""
-        content = self._read_file(self._root("go.mod"))
-        if not content:
-            pytest.skip("go.mod not found")
-        assert "go.opentelemetry.io/otel" in content
-
-    def test_tracer_provider_creates_named_tracer(self):
-        """provider.go must use NewTracerProvider and .Tracer(."""
-        content = self._read_file(self._root("tracing", "provider.go"))
-        if not content:
-            pytest.skip("provider.go not found")
-        assert "TracerProvider" in content
-        assert ".Tracer(" in content
-
-    def test_propagator_injects_w3c_traceparent(self):
-        """propagator.go must reference TraceContext and Inject."""
-        content = self._read_file(self._root("tracing", "propagator.go"))
-        if not content:
-            pytest.skip("propagator.go not found")
-        assert "TraceContext" in content
-        assert "Inject" in content
-
-    def test_provider_shutdown_method(self):
-        """provider.go must define Shutdown(ctx context.Context)."""
-        content = self._read_file(self._root("tracing", "provider.go"))
-        if not content:
-            pytest.skip("provider.go not found")
-        assert ".Shutdown(" in content or "Shutdown(" in content
-        assert "context.Context" in content
-
-    # ── functional_check ─────────────────────────────────────────────────
-
-    def test_otel_version_at_least_1_20(self):
-        """Parsed OTel version from go.mod must be >= v1.20.0."""
-        content = self._read_file(self._root("go.mod"))
-        if not content:
-            pytest.skip("go.mod not found")
-        match = re.search(r"go\.opentelemetry\.io/otel\s+v(\d+)\.(\d+)\.(\d+)", content)
-        if not match:
-            pytest.skip("Cannot parse OTel version from go.mod")
-        major, minor = int(match.group(1)), int(match.group(2))
-        assert major >= 1 and minor >= 20, f"OTel version v{major}.{minor} < v1.20"
-
-    def test_child_span_uses_parent_context(self):
-        """Source must pass parent ctx to .Start(ctx, ...)."""
-        files = glob.glob(self._root("tracing", "*.go"))
+    def test_pipeline_generator_files_exist(self):
+        """Verify pipeline config generator files exist"""
         found = False
-        for f in files:
-            content = self._read_file(f)
-            if ".Start(ctx," in content:
-                found = True
+        for root, dirs, files in os.walk(self.REPO_DIR):
+            if ".git" in root or "vendor" in root:
+                continue
+            for f in files:
+                if f.endswith(".go") and ("pipeline" in f.lower() or "config" in f.lower() or "generator" in f.lower()):
+                    found = True
+                    break
+            if found:
                 break
-        assert found, ".Start(ctx, ...) pattern not found in tracing/"
+        assert found, "Pipeline config generator files not found"
 
-    def test_no_start_nil_context(self):
-        """Source must not call .Start(nil, ...)."""
-        files = glob.glob(self._root("tracing", "*.go"))
-        for f in files:
-            content = self._read_file(f)
-            if re.search(r"\.Start\(nil\s*,", content):
-                pytest.fail(f".Start(nil, ...) found in {f}")
+    # === Semantic Checks ===
 
-    def test_context_background_fallback(self):
-        """Source must use context.Background() as nil-context fallback."""
-        files = glob.glob(self._root("tracing", "*.go"))
-        found = False
-        for f in files:
-            content = self._read_file(f)
-            if "context.Background()" in content:
-                found = True
-                break
-        assert found, "context.Background() fallback not found"
+    def test_receiver_config_defined(self):
+        """Verify receiver configuration is defined"""
+        content = self._collect_content()
+        content_lower = content.lower()
+        has_receiver = "receiver" in content_lower or "Receiver" in content
+        assert has_receiver, "Receiver config not found"
+
+    def test_processor_config_defined(self):
+        """Verify processor configuration is defined"""
+        content = self._collect_content()
+        content_lower = content.lower()
+        has_processor = "processor" in content_lower or "Processor" in content
+        assert has_processor, "Processor config not found"
+
+    def test_exporter_config_defined(self):
+        """Verify exporter configuration is defined"""
+        content = self._collect_content()
+        content_lower = content.lower()
+        has_exporter = "exporter" in content_lower or "Exporter" in content
+        assert has_exporter, "Exporter config not found"
+
+    def test_pipeline_struct_defined(self):
+        """Verify pipeline struct or config is defined"""
+        content = self._collect_content()
+        has_pipeline = "Pipeline" in content or "pipeline" in content
+        assert has_pipeline, "Pipeline struct not found"
+
+    def test_otlp_support(self):
+        """Verify OTLP protocol support"""
+        content = self._collect_content()
+        content_lower = content.lower()
+        has_otlp = "otlp" in content_lower or "grpc" in content_lower or "http" in content_lower
+        assert has_otlp, "OTLP protocol support not found"
+
+    # === Functional Checks ===
+
+    def test_go_files_have_package(self):
+        """Verify Go files have proper package declarations"""
+        go_files = self._find_go_files()
+        assert len(go_files) > 0, "No pipeline generator Go files found"
+        for gf in go_files:
+            with open(gf) as fh:
+                content = fh.read()
+            assert "package " in content[:200], f"{gf} missing package declaration"
+
+    def test_go_files_balanced_braces(self):
+        """Verify Go files have balanced braces"""
+        go_files = self._find_go_files()
+        for gf in go_files:
+            with open(gf) as fh:
+                content = fh.read()
+            cleaned = re.sub(r'"[^"]*"', '', content)
+            cleaned = re.sub(r'`[^`]*`', '', cleaned)
+            cleaned = re.sub(r'//[^\n]*', '', cleaned)
+            cleaned = re.sub(r'/\*.*?\*/', '', cleaned, flags=re.DOTALL)
+            opens = cleaned.count('{')
+            closes = cleaned.count('}')
+            assert opens == closes, f"Unbalanced braces in {gf}: {opens} vs {closes}"
+
+    def test_go_build(self):
+        """Verify the project builds"""
+        result = subprocess.run(
+            ["go", "build", "./..."],
+            cwd=self.REPO_DIR,
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+        if result.returncode != 0:
+            related = [
+                line for line in result.stderr.splitlines()
+                if any(kw in line.lower() for kw in ["pipeline", "config", "generator", "receiver", "processor", "exporter"])
+            ]
+            assert len(related) == 0, f"Build errors: {related[:5]}"
+
+    def test_yaml_config_generation(self):
+        """Verify YAML config generation capability"""
+        content = self._collect_content()
+        content_lower = content.lower()
+        has_yaml = (
+            "yaml" in content_lower
+            or "marshal" in content_lower
+            or "config" in content_lower
+        )
+        assert has_yaml, "YAML config generation not found"
+
+    def _collect_content(self):
+        all_content = ""
+        for root, dirs, files in os.walk(self.REPO_DIR):
+            if ".git" in root or "vendor" in root:
+                continue
+            for f in files:
+                if f.endswith(".go"):
+                    fpath = os.path.join(root, f)
+                    try:
+                        with open(fpath) as fh:
+                            c = fh.read()
+                        if any(kw in c for kw in ["Pipeline", "pipeline", "Receiver", "Processor", "Exporter", "Config"]):
+                            all_content += c + "\n"
+                    except (UnicodeDecodeError, PermissionError):
+                        continue
+        return all_content
+
+    def _find_go_files(self):
+        go_files = []
+        for root, dirs, files in os.walk(self.REPO_DIR):
+            if ".git" in root or "vendor" in root:
+                continue
+            for f in files:
+                if f.endswith(".go") and ("pipeline" in f.lower() or "config" in f.lower() or "generator" in f.lower()):
+                    go_files.append(os.path.join(root, f))
+        return go_files

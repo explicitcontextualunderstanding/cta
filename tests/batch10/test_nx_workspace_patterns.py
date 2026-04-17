@@ -1,137 +1,365 @@
 """
-Test for 'nx-workspace-patterns' skill — Nx monorepo workspace patterns
-Validates that the Agent created Nx workspace configuration, project structure,
-and build/test targets in the nx project.
+Test skill: nx-workspace-patterns
+Verify that the Agent correctly implements a project dependency graph
+analyzer with module boundary enforcement for Nx workspace.
 """
 
 import os
 import re
-
+import subprocess
 import pytest
 
 
 class TestNxWorkspacePatterns:
-    """Verify Nx workspace configuration patterns."""
-
     REPO_DIR = "/workspace/nx"
 
-    def test_nx_json_exists(self):
-        """nx.json must exist."""
-        found = False
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            if "nx.json" in files:
-                found = True
-                break
-        assert found, "nx.json not found"
+    # === File Path Checks ===
 
-    def test_workspace_json_or_project_json(self):
-        """workspace.json or at least one project.json must exist."""
-        found = False
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            for f in files:
-                if f in ("workspace.json", "project.json"):
-                    found = True
-                    break
-            if found:
-                break
-        assert found, "No workspace.json or project.json found"
+    def test_dependency_analyzer_exists(self):
+        """Verify dependency-analyzer.ts was created"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "packages/nx/src/graph/dependency-analyzer.ts",
+        )
+        assert os.path.exists(path), "dependency-analyzer.ts not found"
 
-    def test_package_json_exists(self):
-        """Root package.json must exist."""
-        assert os.path.isfile(os.path.join(self.REPO_DIR, "package.json")), \
-            "Root package.json not found"
+    def test_dependency_analyzer_spec_exists(self):
+        """Verify dependency-analyzer.spec.ts was created"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "packages/nx/src/graph/dependency-analyzer.spec.ts",
+        )
+        assert os.path.exists(path), "dependency-analyzer.spec.ts not found"
 
-    def test_apps_or_packages_directory(self):
-        """apps/ or packages/ directory must exist."""
-        found = False
-        for d in ("apps", "packages", "libs"):
-            if os.path.isdir(os.path.join(self.REPO_DIR, d)):
-                found = True
-                break
-        assert found, "No apps/, packages/, or libs/ directory found"
+    def test_boundary_enforcer_exists(self):
+        """Verify boundary-enforcer.ts was created"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "packages/nx/src/graph/boundary-enforcer.ts",
+        )
+        assert os.path.exists(path), "boundary-enforcer.ts not found"
 
-    def test_build_target_configured(self):
-        """At least one project must have a build target."""
-        found = False
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            for f in files:
-                if f == "project.json":
-                    path = os.path.join(root, f)
-                    with open(path, "r", errors="ignore") as fh:
-                        content = fh.read()
-                    if re.search(r"\"build\"", content):
-                        found = True
-                        break
-            if found:
-                break
-        assert found, "No build target configured"
+    def test_boundary_enforcer_spec_exists(self):
+        """Verify boundary-enforcer.spec.ts was created"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "packages/nx/src/graph/boundary-enforcer.spec.ts",
+        )
+        assert os.path.exists(path), "boundary-enforcer.spec.ts not found"
 
-    def test_test_target_configured(self):
-        """At least one project must have a test target."""
-        found = False
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            for f in files:
-                if f == "project.json":
-                    path = os.path.join(root, f)
-                    with open(path, "r", errors="ignore") as fh:
-                        content = fh.read()
-                    if re.search(r"\"test\"", content):
-                        found = True
-                        break
-            if found:
-                break
-        assert found, "No test target configured"
+    def test_affected_calculator_exists(self):
+        """Verify affected-calculator.ts was created"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "packages/nx/src/graph/affected-calculator.ts",
+        )
+        assert os.path.exists(path), "affected-calculator.ts not found"
 
-    def test_tsconfig_base_exists(self):
-        """tsconfig.base.json or tsconfig.json must exist."""
-        found = False
-        for f in ("tsconfig.base.json", "tsconfig.json"):
-            if os.path.isfile(os.path.join(self.REPO_DIR, f)):
-                found = True
-                break
-        assert found, "No tsconfig found"
+    def test_affected_calculator_spec_exists(self):
+        """Verify affected-calculator.spec.ts was created"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "packages/nx/src/graph/affected-calculator.spec.ts",
+        )
+        assert os.path.exists(path), "affected-calculator.spec.ts not found"
 
-    def test_nx_affected_or_cache_config(self):
-        """nx.json should configure affected or cache settings."""
-        nx_path = None
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            if "nx.json" in files:
-                nx_path = os.path.join(root, "nx.json")
-                break
-        assert nx_path is not None
-        with open(nx_path, "r", errors="ignore") as fh:
-            content = fh.read()
-        assert re.search(r"affected|cacheableOperations|targetDefaults|namedInputs|tasksRunnerOptions", content), \
-            "nx.json does not configure affected or cache"
+    def test_cache_manager_exists(self):
+        """Verify cache-manager.ts was created"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "packages/nx/src/graph/cache-manager.ts",
+        )
+        assert os.path.exists(path), "cache-manager.ts not found"
 
-    def test_dependency_graph_or_implicit(self):
-        """Projects should define dependencies or implicit dependencies."""
-        found = False
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            for f in files:
-                if f in ("project.json", "nx.json"):
-                    path = os.path.join(root, f)
-                    with open(path, "r", errors="ignore") as fh:
-                        content = fh.read()
-                    if re.search(r"implicitDependencies|dependsOn|dependencies", content):
-                        found = True
-                        break
-            if found:
-                break
-        assert found, "No dependency configuration found"
+    def test_cache_manager_spec_exists(self):
+        """Verify cache-manager.spec.ts was created"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "packages/nx/src/graph/cache-manager.spec.ts",
+        )
+        assert os.path.exists(path), "cache-manager.spec.ts not found"
 
-    def test_generator_or_executor(self):
-        """Custom generator or executor should exist."""
-        found = False
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            for f in files:
-                if f.endswith((".ts", ".js", ".json")):
-                    path = os.path.join(root, f)
-                    with open(path, "r", errors="ignore") as fh:
-                        content = fh.read()
-                    if re.search(r"generator|executor|@nrwl|@nx/|createNodes|createDependencies", content):
-                        found = True
-                        break
-            if found:
-                break
-        assert found, "No generator or executor found"
+    # === Semantic Checks: DependencyAnalyzer ===
+
+    def test_dependency_analyzer_class(self):
+        """Verify DependencyAnalyzer class is exported"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "packages/nx/src/graph/dependency-analyzer.ts",
+        )
+        with open(path) as f:
+            content = f.read()
+        assert "class DependencyAnalyzer" in content, (
+            "DependencyAnalyzer class should be defined"
+        )
+
+    def test_build_graph_method(self):
+        """Verify buildGraph method is defined"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "packages/nx/src/graph/dependency-analyzer.ts",
+        )
+        with open(path) as f:
+            content = f.read()
+        assert "buildGraph" in content, "Should have buildGraph method"
+
+    def test_topological_order_method(self):
+        """Verify getTopologicalOrder method is defined"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "packages/nx/src/graph/dependency-analyzer.ts",
+        )
+        with open(path) as f:
+            content = f.read()
+        assert "getTopologicalOrder" in content, (
+            "Should have getTopologicalOrder method"
+        )
+
+    def test_circular_dependency_error(self):
+        """Verify CircularDependencyError is defined"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "packages/nx/src/graph/dependency-analyzer.ts",
+        )
+        with open(path) as f:
+            content = f.read()
+        assert "CircularDependencyError" in content, (
+            "CircularDependencyError should be defined"
+        )
+
+    def test_project_graph_type(self):
+        """Verify ProjectGraph type with nodes and dependencies"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "packages/nx/src/graph/dependency-analyzer.ts",
+        )
+        with open(path) as f:
+            content = f.read()
+        assert "ProjectGraph" in content, "ProjectGraph type should be defined"
+        assert "nodes" in content, "ProjectGraph should have nodes"
+        assert "dependencies" in content, "ProjectGraph should have dependencies"
+
+    # === Semantic Checks: BoundaryEnforcer ===
+
+    def test_boundary_enforcer_class(self):
+        """Verify BoundaryEnforcer class is exported"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "packages/nx/src/graph/boundary-enforcer.ts",
+        )
+        with open(path) as f:
+            content = f.read()
+        assert "class BoundaryEnforcer" in content, (
+            "BoundaryEnforcer class should be defined"
+        )
+
+    def test_enforce_method(self):
+        """Verify enforce method is defined"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "packages/nx/src/graph/boundary-enforcer.ts",
+        )
+        with open(path) as f:
+            content = f.read()
+        assert "enforce" in content, "Should have enforce method"
+
+    def test_dep_constraint_type(self):
+        """Verify DepConstraint type with sourceTag and onlyDependOnLibsWithTags"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "packages/nx/src/graph/boundary-enforcer.ts",
+        )
+        with open(path) as f:
+            content = f.read()
+        assert "DepConstraint" in content, "DepConstraint type should be defined"
+        assert "sourceTag" in content, "Should have sourceTag field"
+        assert "onlyDependOnLibsWithTags" in content, (
+            "Should have onlyDependOnLibsWithTags field"
+        )
+
+    def test_boundary_violation_type(self):
+        """Verify BoundaryViolation type is defined"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "packages/nx/src/graph/boundary-enforcer.ts",
+        )
+        with open(path) as f:
+            content = f.read()
+        assert "BoundaryViolation" in content, (
+            "BoundaryViolation type should be defined"
+        )
+
+    def test_type_tag_rules(self):
+        """Verify type:app, type:feature, type:ui, type:util rules"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "packages/nx/src/graph/boundary-enforcer.ts",
+        )
+        with open(path) as f:
+            content = f.read()
+        for tag in ["type:app", "type:feature", "type:ui", "type:util"]:
+            assert tag in content, f"Should have rule for {tag}"
+
+    # === Semantic Checks: AffectedCalculator ===
+
+    def test_affected_calculator_class(self):
+        """Verify AffectedCalculator class is exported"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "packages/nx/src/graph/affected-calculator.ts",
+        )
+        with open(path) as f:
+            content = f.read()
+        assert "class AffectedCalculator" in content, (
+            "AffectedCalculator class should be defined"
+        )
+
+    def test_get_affected_projects_method(self):
+        """Verify getAffectedProjects method is defined"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "packages/nx/src/graph/affected-calculator.ts",
+        )
+        with open(path) as f:
+            content = f.read()
+        assert "getAffectedProjects" in content, (
+            "Should have getAffectedProjects method"
+        )
+
+    def test_affected_handles_global_files(self):
+        """Verify nx.json or package.json change marks all affected"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "packages/nx/src/graph/affected-calculator.ts",
+        )
+        with open(path) as f:
+            content = f.read()
+        assert "nx.json" in content or "package.json" in content, (
+            "Should treat global config changes as all-affected"
+        )
+
+    # === Semantic Checks: CacheManager ===
+
+    def test_cache_manager_class(self):
+        """Verify CacheManager class is exported"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "packages/nx/src/graph/cache-manager.ts",
+        )
+        with open(path) as f:
+            content = f.read()
+        assert "class CacheManager" in content, (
+            "CacheManager class should be defined"
+        )
+
+    def test_compute_hash_method(self):
+        """Verify computeHash method uses SHA-256"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "packages/nx/src/graph/cache-manager.ts",
+        )
+        with open(path) as f:
+            content = f.read()
+        assert "computeHash" in content, "Should have computeHash method"
+        assert "sha256" in content.lower() or "SHA-256" in content, (
+            "Should use SHA-256"
+        )
+
+    def test_store_and_retrieve(self):
+        """Verify store and retrieve methods"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "packages/nx/src/graph/cache-manager.ts",
+        )
+        with open(path) as f:
+            content = f.read()
+        assert "store" in content, "Should have store method"
+        assert "retrieve" in content, "Should have retrieve method"
+
+    def test_invalidate_method(self):
+        """Verify invalidate method"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "packages/nx/src/graph/cache-manager.ts",
+        )
+        with open(path) as f:
+            content = f.read()
+        assert "invalidate" in content, "Should have invalidate method"
+
+    def test_get_stats_method(self):
+        """Verify getStats method with hits/misses"""
+        path = os.path.join(
+            self.REPO_DIR,
+            "packages/nx/src/graph/cache-manager.ts",
+        )
+        with open(path) as f:
+            content = f.read()
+        assert "getStats" in content, "Should have getStats method"
+        assert "hits" in content, "Should track hits"
+        assert "misses" in content, "Should track misses"
+
+    # === Functional Checks ===
+
+    def test_dependency_analyzer_tests_pass(self):
+        """Verify dependency analyzer tests pass"""
+        result = subprocess.run(
+            [
+                "pnpm", "jest",
+                "packages/nx/src/graph/dependency-analyzer.spec.ts",
+            ],
+            cwd=self.REPO_DIR,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        assert result.returncode == 0, (
+            f"Tests failed:\n{result.stdout}\n{result.stderr}"
+        )
+
+    def test_boundary_enforcer_tests_pass(self):
+        """Verify boundary enforcer tests pass"""
+        result = subprocess.run(
+            [
+                "pnpm", "jest",
+                "packages/nx/src/graph/boundary-enforcer.spec.ts",
+            ],
+            cwd=self.REPO_DIR,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        assert result.returncode == 0, (
+            f"Tests failed:\n{result.stdout}\n{result.stderr}"
+        )
+
+    def test_affected_calculator_tests_pass(self):
+        """Verify affected calculator tests pass"""
+        result = subprocess.run(
+            [
+                "pnpm", "jest",
+                "packages/nx/src/graph/affected-calculator.spec.ts",
+            ],
+            cwd=self.REPO_DIR,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        assert result.returncode == 0, (
+            f"Tests failed:\n{result.stdout}\n{result.stderr}"
+        )
+
+    def test_cache_manager_tests_pass(self):
+        """Verify cache manager tests pass"""
+        result = subprocess.run(
+            [
+                "pnpm", "jest",
+                "packages/nx/src/graph/cache-manager.spec.ts",
+            ],
+            cwd=self.REPO_DIR,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        assert result.returncode == 0, (
+            f"Tests failed:\n{result.stdout}\n{result.stderr}"
+        )

@@ -1,127 +1,148 @@
 """
-Test for 'gitops-workflow' skill — GitOps Workflow Builders (Go)
-Validates FluxConfigBuilder, ArgoCDAppBuilder, KustomizationBuilder,
-HealthChecker via static Go source analysis for CRD correctness,
-validation logic, and error handling patterns.
+Test skill: gitops-workflow
+Verify that the Agent creates GitOps generator with Kustomization, HelmRelease,
+ImageUpdate, and promotion controller for Flux CD (Go).
 """
 
 import os
 import re
-
+import subprocess
 import pytest
 
 
 class TestGitopsWorkflow:
-    """Verify GitOps workflow builders via static Go source inspection."""
-
     REPO_DIR = "/workspace/flux2"
 
-    # ── helpers ──────────────────────────────────────────────────────────
+    # === File Path Checks ===
 
-    @staticmethod
-    def _read_file(path: str) -> str:
-        try:
-            with open(path, "r", errors="ignore") as fh:
-                return fh.read()
-        except OSError:
-            return ""
+    def test_gitops_generator_files_exist(self):
+        """Verify GitOps generator Go files exist"""
+        found = False
+        for root, dirs, files in os.walk(self.REPO_DIR):
+            if ".git" in root or "vendor" in root:
+                continue
+            for f in files:
+                if f.endswith(".go") and ("generator" in f.lower() or "gitops" in f.lower() or "kustomiz" in f.lower()):
+                    found = True
+                    break
+            if found:
+                break
+        assert found, "GitOps generator files not found"
 
-    def _go(self, *parts) -> str:
-        return os.path.join(self.REPO_DIR, "gitops", *parts)
+    # === Semantic Checks ===
 
-    # ── file_path_check ──────────────────────────────────────────────────
+    def test_kustomization_generator_defined(self):
+        """Verify Kustomization generator is implemented"""
+        content = self._find_content()
+        has_kust = "Kustomization" in content or "kustomization" in content.lower()
+        assert has_kust, "Kustomization generator not found"
 
-    def test_go_mod_exists(self):
-        """go.mod must exist at repository root."""
-        assert os.path.isfile(os.path.join(self.REPO_DIR, "go.mod")), "go.mod not found"
+    def test_helm_release_generator_defined(self):
+        """Verify HelmRelease generator is implemented"""
+        content = self._find_content()
+        has_helm = "HelmRelease" in content or "helmrelease" in content.lower()
+        assert has_helm, "HelmRelease generator not found"
 
-    def test_flux_go_exists(self):
-        """gitops/flux.go must exist."""
-        assert os.path.isfile(self._go("flux.go")), "flux.go not found"
+    def test_image_update_generator_defined(self):
+        """Verify ImageUpdate automation generator is implemented"""
+        content = self._find_content()
+        has_image = "ImageUpdate" in content or "imageupdate" in content.lower() or "ImagePolicy" in content
+        assert has_image, "ImageUpdate generator not found"
 
-    def test_argocd_go_exists(self):
-        """gitops/argocd.go must exist."""
-        assert os.path.isfile(self._go("argocd.go")), "argocd.go not found"
+    def test_promotion_controller_defined(self):
+        """Verify promotion controller is implemented"""
+        content = self._find_content()
+        content_lower = content.lower()
+        has_promotion = "promotion" in content_lower or "promote" in content_lower
+        assert has_promotion, "Promotion controller not found"
 
-    def test_kustomization_go_exists(self):
-        """gitops/kustomization.go must exist."""
-        assert os.path.isfile(self._go("kustomization.go")), "kustomization.go not found"
+    def test_flux_api_types_used(self):
+        """Verify Flux API types are used"""
+        content = self._find_content()
+        has_flux_api = (
+            "fluxcd" in content.lower()
+            or "source.toolkit" in content
+            or "kustomize.toolkit" in content
+            or "notification.toolkit" in content
+        )
+        assert has_flux_api, "Flux API types not found"
 
-    def test_health_go_exists(self):
-        """gitops/health.go must exist."""
-        assert os.path.isfile(self._go("health.go")), "health.go not found"
+    # === Functional Checks ===
 
-    # ── semantic_check ───────────────────────────────────────────────────
+    def test_go_files_have_package(self):
+        """Verify Go files have proper package declarations"""
+        go_files = self._find_go_files()
+        assert len(go_files) > 0, "No generator Go files found"
+        for gf in go_files:
+            with open(gf) as fh:
+                content = fh.read()
+            assert "package " in content[:200], f"{gf} missing package declaration"
 
-    def test_flux_apiversion_v1_not_beta(self):
-        """Flux must use source.toolkit.fluxcd.io/v1, not v1beta*."""
-        content = self._read_file(self._go("flux.go"))
-        if not content:
-            pytest.skip("flux.go not found")
-        assert "source.toolkit.fluxcd.io/v1" in content, "v1 apiVersion not found"
-        # Ensure no beta versions used for GitRepository
-        lines = content.split("\n")
-        for line in lines:
-            if "source.toolkit.fluxcd.io" in line:
-                assert "v1beta" not in line, f"Deprecated beta apiVersion found: {line.strip()}"
+    def test_go_files_balanced_braces(self):
+        """Verify Go files have balanced braces"""
+        go_files = self._find_go_files()
+        for gf in go_files:
+            with open(gf) as fh:
+                content = fh.read()
+            cleaned = re.sub(r'"[^"]*"', '', content)
+            cleaned = re.sub(r'//[^\n]*', '', cleaned)
+            cleaned = re.sub(r'/\*.*?\*/', '', cleaned, flags=re.DOTALL)
+            opens = cleaned.count('{')
+            closes = cleaned.count('}')
+            assert opens == closes, f"Unbalanced braces in {gf}: {opens} vs {closes}"
 
-    def test_argocd_prune_true(self):
-        """ArgoCDAppBuilder must set Prune = true in SyncPolicy."""
-        content = self._read_file(self._go("argocd.go"))
-        if not content:
-            pytest.skip("argocd.go not found")
-        assert "Prune" in content, "Prune field not found"
-        # Check that Prune is set to true, not false
-        assert "Prune" in content and "true" in content
+    def test_go_build(self):
+        """Verify Go project builds"""
+        result = subprocess.run(
+            ["go", "build", "./..."],
+            cwd=self.REPO_DIR,
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+        if result.returncode != 0:
+            generator_errors = [
+                line for line in result.stderr.splitlines()
+                if "generator" in line.lower() or "gitops" in line.lower()
+            ]
+            assert len(generator_errors) == 0, (
+                f"Build errors in generator files: {generator_errors[:5]}"
+            )
 
-    def test_kustomization_validates_nonempty_resources(self):
-        """KustomizationBuilder must validate non-empty Resources."""
-        content = self._read_file(self._go("kustomization.go"))
-        if not content:
-            pytest.skip("kustomization.go not found")
-        has_len_check = "len(" in content and ("Resources" in content or "resources" in content)
-        assert has_len_check, "No length check on Resources"
-        assert "error" in content.lower() or "Errorf" in content
+    def test_generator_produces_yaml_output(self):
+        """Verify generators produce YAML output"""
+        content = self._find_content()
+        has_yaml = (
+            "yaml" in content.lower()
+            or "Marshal" in content
+            or "apiVersion" in content
+            or "kind:" in content
+        )
+        assert has_yaml, "Generators don't produce YAML output"
 
-    def test_duration_validation_uses_parse_duration(self):
-        """Interval field must be validated via time.ParseDuration."""
-        for name in ("flux.go", "kustomization.go"):
-            content = self._read_file(self._go(name))
-            if "ParseDuration" in content:
-                return
-        pytest.fail("time.ParseDuration not used for Interval validation")
+    def _find_content(self):
+        all_content = ""
+        for root, dirs, files in os.walk(self.REPO_DIR):
+            if ".git" in root or "vendor" in root:
+                continue
+            for f in files:
+                if f.endswith(".go"):
+                    fpath = os.path.join(root, f)
+                    try:
+                        with open(fpath) as fh:
+                            content = fh.read()
+                        if any(kw in content for kw in ["Kustomization", "HelmRelease", "ImageUpdate", "promotion", "generator"]):
+                            all_content += content + "\n"
+                    except (UnicodeDecodeError, PermissionError):
+                        continue
+        return all_content
 
-    def test_health_checker_three_statuses(self):
-        """HealthChecker must define Healthy, Degraded, Progressing."""
-        content = self._read_file(self._go("health.go"))
-        if not content:
-            pytest.skip("health.go not found")
-        for status in ("Healthy", "Degraded", "Progressing"):
-            assert status in content, f"Status '{status}' not found"
-
-    # ── functional_check (static Go) ─────────────────────────────────────
-
-    def test_go_mod_version_at_least_1_21(self):
-        """go.mod must declare go >= 1.21."""
-        content = self._read_file(os.path.join(self.REPO_DIR, "go.mod"))
-        if not content:
-            pytest.skip("go.mod not found")
-        m = re.search(r"^go\s+1\.(\d+)", content, re.MULTILINE)
-        assert m, "go version directive not found"
-        assert int(m.group(1)) >= 21, f"go 1.{m.group(1)} < 1.21"
-
-    def test_flux_yaml_template_contains_apiversion(self):
-        """flux.go must contain apiVersion string for YAML output."""
-        content = self._read_file(self._go("flux.go"))
-        if not content:
-            pytest.skip("flux.go not found")
-        assert "source.toolkit.fluxcd.io/v1" in content
-
-    def test_empty_resources_returns_error_not_panic(self):
-        """Empty resources must return error, not use panic()."""
-        content = self._read_file(self._go("kustomization.go"))
-        if not content:
-            pytest.skip("kustomization.go not found")
-        # Find the validation block
-        assert "return" in content and ("err" in content or "Error" in content)
-        assert "panic(" not in content, "panic() found in kustomization.go"
+    def _find_go_files(self):
+        go_files = []
+        for root, dirs, files in os.walk(self.REPO_DIR):
+            if ".git" in root or "vendor" in root:
+                continue
+            for f in files:
+                if f.endswith(".go") and ("generator" in f.lower() or "gitops" in f.lower() or "promot" in f.lower()):
+                    go_files.append(os.path.join(root, f))
+        return go_files

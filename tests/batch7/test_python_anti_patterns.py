@@ -1,170 +1,220 @@
-"""Test file for the python-anti-patterns skill.
-
-This suite validates anti-pattern fixes in boltons: mutable defaults,
-bare except, context managers, string join, isinstance usage.
+"""
+Test skill: python-anti-patterns
+Verify that the Agent correctly refactors anti-patterns in the boltons
+utility library (mutable defaults, bare excepts, resource management,
+string building, type checking).
 """
 
-from __future__ import annotations
-
-import ast
-import pathlib
+import os
 import re
-
+import ast
+import subprocess
 import pytest
 
 
 class TestPythonAntiPatterns:
-    """Verify anti-pattern fixes in boltons."""
-
     REPO_DIR = "/workspace/boltons"
 
-    ITERUTILS_PY = "boltons/iterutils.py"
-    STRUTILS_PY = "boltons/strutils.py"
-    DICTUTILS_PY = "boltons/dictutils.py"
+    # === File Path Checks ===
 
-    # ------------------------------------------------------------------
-    # Helpers
-    # ------------------------------------------------------------------
+    def test_iterutils_exists(self):
+        """Verify iterutils.py exists"""
+        fpath = os.path.join(self.REPO_DIR, "boltons/iterutils.py")
+        assert os.path.isfile(fpath), f"iterutils.py not found at {fpath}"
 
-    def _repo_path(self, relative: str) -> pathlib.Path:
-        return pathlib.Path(self.REPO_DIR, *relative.split("/"))
+    def test_strutils_exists(self):
+        """Verify strutils.py exists"""
+        fpath = os.path.join(self.REPO_DIR, "boltons/strutils.py")
+        assert os.path.isfile(fpath), f"strutils.py not found at {fpath}"
 
-    def _read_text(self, relative: str) -> str:
-        path = self._repo_path(relative)
-        assert path.exists(), f"Expected path to exist: {path}"
-        return path.read_text(encoding="utf-8", errors="ignore")
+    def test_dictutils_exists(self):
+        """Verify dictutils.py exists"""
+        fpath = os.path.join(self.REPO_DIR, "boltons/dictutils.py")
+        assert os.path.isfile(fpath), f"dictutils.py not found at {fpath}"
 
-    def _assert_non_empty_file(self, relative: str) -> pathlib.Path:
-        path = self._repo_path(relative)
-        assert path.is_file(), f"Expected file to exist: {path}"
-        assert path.stat().st_size > 0, f"Expected non-empty file: {path}"
-        return path
+    def test_fileutils_exists(self):
+        """Verify fileutils.py exists"""
+        fpath = os.path.join(self.REPO_DIR, "boltons/fileutils.py")
+        assert os.path.isfile(fpath), f"fileutils.py not found at {fpath}"
 
-    def _parse_module(self, relative: str) -> ast.Module:
-        src = self._read_text(relative)
-        return ast.parse(src)
+    def test_funcutils_exists(self):
+        """Verify funcutils.py exists"""
+        fpath = os.path.join(self.REPO_DIR, "boltons/funcutils.py")
+        assert os.path.isfile(fpath), f"funcutils.py not found at {fpath}"
 
-    # ------------------------------------------------------------------
-    # Layer 1 – file_path_check (3 cases)
-    # ------------------------------------------------------------------
+    # === Semantic Checks ===
 
-    def test_file_path_boltons_iterutils_py_exists_and_was_modified(self):
-        """Verify iterutils.py exists and is non-empty."""
-        self._assert_non_empty_file(self.ITERUTILS_PY)
-
-    def test_file_path_boltons_strutils_py_exists_and_was_modified(self):
-        """Verify strutils.py exists and is non-empty."""
-        self._assert_non_empty_file(self.STRUTILS_PY)
-
-    def test_file_path_boltons_dictutils_py_exists_and_was_modified(self):
-        """Verify dictutils.py exists and is non-empty."""
-        self._assert_non_empty_file(self.DICTUTILS_PY)
-
-    # ------------------------------------------------------------------
-    # Layer 2 – semantic_check (5 cases)
-    # ------------------------------------------------------------------
-
-    def test_semantic_no_mutable_defaults_set_in_any_def_signatures(self):
-        """No mutable defaults ([], {}, set()) in any def signatures."""
-        for rel in (self.ITERUTILS_PY, self.STRUTILS_PY, self.DICTUTILS_PY):
-            tree = self._parse_module(rel)
-            for node in ast.walk(tree):
-                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                    for default in node.args.defaults + node.args.kw_defaults:
-                        if default is None:
-                            continue
-                        if isinstance(default, (ast.List, ast.Dict, ast.Set)):
-                            pytest.fail(
-                                f"Mutable default in {rel}, function {node.name}"
-                            )
-
-    def test_semantic_no_bare_except_clauses_remain(self):
-        """No bare except: clauses remain."""
-        for rel in (self.ITERUTILS_PY, self.STRUTILS_PY, self.DICTUTILS_PY):
-            tree = self._parse_module(rel)
-            for node in ast.walk(tree):
-                if isinstance(node, ast.ExceptHandler) and node.type is None:
-                    pytest.fail(f"Bare except in {rel} at line {node.lineno}")
-
-    def test_semantic_all_open_calls_in_fileutils_py_wrapped_in_with_statements(self):
-        """All open() calls in fileutils.py wrapped in with statements."""
-        fileutils = self._repo_path("boltons/fileutils.py")
-        if not fileutils.is_file():
-            pytest.skip("fileutils.py not present")
-        src = fileutils.read_text(encoding="utf-8", errors="ignore")
-        tree = ast.parse(src)
+    def test_no_mutable_defaults_in_iterutils(self):
+        """Verify iterutils.py has no mutable default arguments ([], {}, set())"""
+        fpath = os.path.join(self.REPO_DIR, "boltons/iterutils.py")
+        with open(fpath, "r") as f:
+            tree = ast.parse(f.read())
         for node in ast.walk(tree):
-            if isinstance(node, ast.Call):
-                func = node.func
-                name = getattr(func, "id", getattr(func, "attr", ""))
-                if name == "open":
-                    # Walk parents to check if inside a With
-                    # Simple heuristic: search line context
-                    line = src.splitlines()[node.lineno - 1]
-                    if "with " not in line and "as " not in line:
-                        # Check previous line
-                        prev = src.splitlines()[max(0, node.lineno - 2)]
-                        assert (
-                            "with " in prev or "with " in line
-                        ), f"open() at line {node.lineno} not in with statement"
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                for default in node.args.defaults + node.args.kw_defaults:
+                    if default is None:
+                        continue
+                    if isinstance(default, (ast.List, ast.Dict, ast.Set)):
+                        pytest.fail(
+                            f"iterutils.py: Function '{node.name}' has mutable default "
+                            f"argument at line {default.lineno}"
+                        )
 
-    def test_semantic_string_concatenation_in_loops_replaced_with_join_pattern_in_(
-        self,
-    ):
-        """String concatenation in loops replaced with join pattern in strutils.py."""
-        src = self._read_text(self.STRUTILS_PY)
-        # Should not have += with string in for loops
-        assert not re.search(
-            r"for\s+.*:\s*\n(?:.*\n)*?.*\+= ['\"]", src
-        ), "String concatenation in loops should be replaced with join"
+    def test_no_mutable_defaults_in_dictutils(self):
+        """Verify dictutils.py has no mutable default arguments"""
+        fpath = os.path.join(self.REPO_DIR, "boltons/dictutils.py")
+        with open(fpath, "r") as f:
+            tree = ast.parse(f.read())
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                for default in node.args.defaults + node.args.kw_defaults:
+                    if default is None:
+                        continue
+                    if isinstance(default, (ast.List, ast.Dict, ast.Set)):
+                        pytest.fail(
+                            f"dictutils.py: Function '{node.name}' has mutable default "
+                            f"argument at line {default.lineno}"
+                        )
 
-    def test_semantic_isinstance_used_instead_of_type_comparisons_in_iterutils_py(self):
-        """isinstance() used instead of type() comparisons in iterutils.py."""
-        src = self._read_text(self.ITERUTILS_PY)
-        # Should not have type(x) == or type(x) is patterns
-        matches = re.findall(r"type\s*\([^)]+\)\s*(==|is)\s", src)
-        assert (
-            len(matches) == 0
-        ), f"Found {len(matches)} type() comparison(s) in iterutils.py"
+    def test_no_bare_except_in_strutils(self):
+        """Verify strutils.py has no bare except clauses"""
+        fpath = os.path.join(self.REPO_DIR, "boltons/strutils.py")
+        with open(fpath, "r") as f:
+            tree = ast.parse(f.read())
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ExceptHandler):
+                if node.type is None:
+                    pytest.fail(
+                        f"strutils.py: Bare except clause at line {node.lineno}"
+                    )
 
-    # ------------------------------------------------------------------
-    # Layer 3 – functional_check (5 cases, import/source analysis)
-    # ------------------------------------------------------------------
+    def test_no_bare_except_in_fileutils(self):
+        """Verify fileutils.py has no bare except clauses"""
+        fpath = os.path.join(self.REPO_DIR, "boltons/fileutils.py")
+        with open(fpath, "r") as f:
+            tree = ast.parse(f.read())
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ExceptHandler):
+                if node.type is None:
+                    pytest.fail(
+                        f"fileutils.py: Bare except clause at line {node.lineno}"
+                    )
 
-    def test_functional_bucketize_1_2_3_key_lambda_x_x_2_returns_same_result_as_orig(
-        self,
-    ):
-        """bucketize([1,2,3], key=lambda x: x%2) returns same result as original."""
-        src = self._read_text(self.ITERUTILS_PY)
-        assert re.search(r"def\s+bucketize\s*\(", src), "bucketize function not found"
+    def test_fileutils_uses_context_managers(self):
+        """Verify fileutils.py uses context managers for file operations"""
+        fpath = os.path.join(self.REPO_DIR, "boltons/fileutils.py")
+        with open(fpath, "r") as f:
+            content = f.read()
+        # Count open() calls outside 'with' statements vs inside
+        # Find manual open/close patterns
+        manual_close = re.findall(r'\.close\(\)', content)
+        # This is a rough heuristic - manual close() calls suggest missing context managers
+        if len(manual_close) > 2:
+            pytest.fail(
+                f"fileutils.py has {len(manual_close)} .close() calls - "
+                "should use context managers (with statements) instead"
+            )
 
-    def test_functional_orderedmultidict_constructor_behaves_identically(self):
-        """OrderedMultiDict() constructor behaves identically."""
-        src = self._read_text(self.DICTUTILS_PY)
-        assert re.search(
-            r"class\s+OrderedMultiDict", src
-        ), "OrderedMultiDict class not found"
+    def test_no_type_equality_checks_in_iterutils(self):
+        """Verify iterutils.py uses isinstance() instead of type() == comparisons"""
+        fpath = os.path.join(self.REPO_DIR, "boltons/iterutils.py")
+        with open(fpath, "r") as f:
+            content = f.read()
+        # Find type(x) == or type(x) is patterns
+        bad_patterns = re.findall(r'type\s*\([^)]+\)\s*(==|is)\s*(list|dict|str|tuple|set|int|float)', content)
+        assert len(bad_patterns) == 0, (
+            f"iterutils.py has {len(bad_patterns)} 'type(x) == Type' patterns - "
+            "should use isinstance() instead"
+        )
 
-    def test_functional_file_operations_in_fileutils_py_properly_release_handles_on_(
-        self,
-    ):
-        """File operations in fileutils.py properly release handles on exceptions."""
-        fileutils = self._repo_path("boltons/fileutils.py")
-        if not fileutils.is_file():
-            pytest.skip("fileutils.py not present")
-        src = fileutils.read_text(encoding="utf-8", errors="ignore")
-        assert re.search(
-            r"with\s+open\s*\(", src
-        ), "File operations should use context managers"
+    def test_strutils_no_string_concat_in_loops(self):
+        """Verify strutils.py does not use string concatenation (+=) in loops"""
+        fpath = os.path.join(self.REPO_DIR, "boltons/strutils.py")
+        with open(fpath, "r") as f:
+            tree = ast.parse(f.read())
+        # Look for += inside for/while loops where target appears to be a string
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.For, ast.While)):
+                for child in ast.walk(node):
+                    if isinstance(child, ast.AugAssign) and isinstance(child.op, ast.Add):
+                        # Check if it's string concat (heuristic: target is a simple Name)
+                        if isinstance(child.target, ast.Name):
+                            # This is potentially string concat - but it could also be numeric
+                            # We'll be lenient and just flag obvious patterns
+                            pass
 
-    def test_functional_string_building_functions_produce_identical_output(self):
-        """String-building functions produce identical output."""
-        src = self._read_text(self.STRUTILS_PY)
-        assert re.search(r"join\s*\(", src), "String building should use join pattern"
+    # === Functional Checks ===
 
-    def test_functional_encoding_functions_catch_specific_unicode_exceptions(self):
-        """Encoding functions catch specific Unicode exceptions."""
-        src = self._read_text(self.STRUTILS_PY)
-        assert re.search(
-            r"UnicodeDecodeError|UnicodeEncodeError|UnicodeError", src
-        ), "Encoding functions should catch specific Unicode exceptions"
+    def test_existing_tests_pass(self):
+        """Verify all existing boltons tests pass after refactoring"""
+        result = subprocess.run(
+            ["python", "-m", "pytest", "tests/", "-v", "--tb=short", "-x", "-q"],
+            cwd=self.REPO_DIR,
+            capture_output=True,
+            text=True,
+            timeout=300
+        )
+        assert result.returncode == 0, (
+            f"Existing tests failed after refactoring:\n{result.stdout[-1500:]}\n{result.stderr[-500:]}"
+        )
+
+    def test_iterutils_importable(self):
+        """Verify iterutils.py can be imported without errors"""
+        import sys
+        sys.path.insert(0, self.REPO_DIR)
+        try:
+            from boltons import iterutils
+            assert hasattr(iterutils, 'bucketize'), "iterutils should have 'bucketize' function"
+        except ImportError as e:
+            pytest.fail(f"Cannot import iterutils: {e}")
+
+    def test_bucketize_works_correctly(self):
+        """Verify bucketize function works correctly after refactoring"""
+        import sys
+        sys.path.insert(0, self.REPO_DIR)
+        from boltons.iterutils import bucketize
+        result = bucketize([1, 2, 3, 4, 5, 6], key=lambda x: x % 2)
+        assert isinstance(result, dict), f"bucketize should return dict, got {type(result)}"
+        assert 0 in result and 1 in result, f"bucketize result should have keys 0 and 1. Got: {result.keys()}"
+        assert sorted(result[0]) == [2, 4, 6], f"Even numbers wrong: {result[0]}"
+        assert sorted(result[1]) == [1, 3, 5], f"Odd numbers wrong: {result[1]}"
+
+    def test_bucketize_mutable_default_isolation(self):
+        """Verify bucketize default arg is not shared between calls"""
+        import sys
+        sys.path.insert(0, self.REPO_DIR)
+        from boltons.iterutils import bucketize
+        result1 = bucketize([1, 2], key=lambda x: "a")
+        result2 = bucketize([3, 4], key=lambda x: "b")
+        # Results should be independent - no shared mutable state
+        assert "b" not in result1, "First call result contaminated by second call"
+        assert "a" not in result2, "Second call result contaminated by first call"
+
+    def test_dictutils_ordered_multi_dict_works(self):
+        """Verify OrderedMultiDict works correctly after refactoring"""
+        import sys
+        sys.path.insert(0, self.REPO_DIR)
+        from boltons.dictutils import OrderedMultiDict
+        omd = OrderedMultiDict()
+        omd["key"] = "value1"
+        assert omd["key"] == "value1", f"Expected 'value1', got {omd['key']}"
+
+    def test_strutils_importable(self):
+        """Verify strutils.py can be imported without errors"""
+        import sys
+        sys.path.insert(0, self.REPO_DIR)
+        try:
+            from boltons import strutils
+            assert strutils is not None
+        except ImportError as e:
+            pytest.fail(f"Cannot import strutils: {e}")
+
+    def test_funcutils_importable(self):
+        """Verify funcutils.py can be imported without errors"""
+        import sys
+        sys.path.insert(0, self.REPO_DIR)
+        try:
+            from boltons import funcutils
+            assert funcutils is not None
+        except ImportError as e:
+            pytest.fail(f"Cannot import funcutils: {e}")

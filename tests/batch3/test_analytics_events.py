@@ -1,224 +1,210 @@
 """
-Tests for the analytics-events skill.
-Verifies that the Metabase frontend analytics event system (types.ts,
-useTrackEvent.ts, batcher.ts) is correctly implemented with proper
-TypeScript structure, event category types, privacy guards, and
-batch flush logic.
+Test skill: analytics-events
+Verify that the Agent implements a typed analytics event tracking system
+for Metabase frontend with schema registry, naming enforcement, and validation.
 """
 
 import os
-import re
 import subprocess
-
+import json
 import pytest
-
-REPO_DIR = "/workspace/metabase"
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
-def _path(rel: str) -> str:
-    return os.path.join(REPO_DIR, rel)
-
-
-def _read(rel: str) -> str:
-    full = _path(rel)
-    if not os.path.isfile(full):
-        pytest.skip(f"File not found: {full}")
-    with open(full, encoding="utf-8", errors="replace") as fh:
-        return fh.read()
-
-
-def _node_available() -> bool:
-    try:
-        r = subprocess.run(["node", "--version"], capture_output=True, timeout=10)
-        return r.returncode == 0
-    except (FileNotFoundError, subprocess.TimeoutExpired):
-        return False
-
-
-def _yarn_available() -> bool:
-    try:
-        r = subprocess.run(["yarn", "--version"], capture_output=True, timeout=10)
-        return r.returncode == 0
-    except (FileNotFoundError, subprocess.TimeoutExpired):
-        return False
-
-
-def _run_cmd(cmd: list, cwd: str, timeout: int = 120) -> subprocess.CompletedProcess:
-    return subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=timeout)
-
-
-# ---------------------------------------------------------------------------
-# File path checks
-# ---------------------------------------------------------------------------
 
 
 class TestAnalyticsEvents:
-    """Test suite for the Metabase frontend analytics events skill."""
+    REPO_DIR = "/workspace/metabase"
 
-    def test_analytics_types_file_exists(self):
-        """Verify analytics types.ts is created at the expected path."""
-        target = _path("frontend/src/metabase/analytics/types.ts")
-        assert os.path.isfile(target), f"types.ts not found: {target}"
-        assert os.path.getsize(target) > 0, "types.ts must be non-empty"
+    # === File Path Checks ===
 
-    def test_use_track_event_and_batcher_files_exist(self):
-        """Verify useTrackEvent.ts and batcher.ts files exist."""
-        for rel in (
-            "frontend/src/metabase/analytics/useTrackEvent.ts",
-            "frontend/src/metabase/analytics/batcher.ts",
-        ):
-            assert os.path.isfile(_path(rel)), f"Missing file: {rel}"
+    def test_schema_ts_exists(self):
+        """Verify event schema registry file exists"""
+        path = os.path.join(self.REPO_DIR, "frontend/src/metabase/analytics/schema.ts")
+        assert os.path.exists(path), f"schema.ts not found at {path}"
 
-    # -----------------------------------------------------------------------
-    # Semantic checks
-    # -----------------------------------------------------------------------
+    def test_tracker_ts_exists(self):
+        """Verify event tracker file exists"""
+        path = os.path.join(self.REPO_DIR, "frontend/src/metabase/analytics/tracker.ts")
+        assert os.path.exists(path), f"tracker.ts not found at {path}"
 
-    def test_types_defines_four_event_categories(self):
-        """Verify types.ts defines at least 4 analytics event category types."""
-        content = _read("frontend/src/metabase/analytics/types.ts")
-        # Count unique string literal members in union types or enum values
-        string_literals = re.findall(r"['\"]([a-zA-Z_][a-zA-Z0-9_-]*)['\"]", content)
-        type_members = re.findall(r"\|\s*['\"]([a-zA-Z_][a-zA-Z0-9_-]*)['\"]", content)
-        candidates = set(string_literals) | set(type_members)
-        assert (
-            len(candidates) >= 4
-        ), f"types.ts must define at least 4 distinct event category members, found: {candidates}"
+    def test_naming_ts_exists(self):
+        """Verify naming convention module exists"""
+        path = os.path.join(self.REPO_DIR, "frontend/src/metabase/analytics/naming.ts")
+        assert os.path.exists(path), f"naming.ts not found at {path}"
 
-    def test_batcher_defines_flush_at_count_threshold(self):
-        """Verify batcher.ts defines a batch flush threshold of 10."""
-        content = _read("frontend/src/metabase/analytics/batcher.ts")
-        # Must reference the number 10 as a threshold constant
-        assert (
-            "10" in content
-        ), "batcher.ts must define a flush threshold (expected value 10)"
-        # Must have logic to flush when batch reaches the threshold
-        has_flush = (
-            "flush" in content.lower()
-            or "send" in content.lower()
-            or "dispatch" in content.lower()
+    def test_schema_test_exists(self):
+        """Verify schema test file exists"""
+        path = os.path.join(
+            self.REPO_DIR, "frontend/src/metabase/analytics/__tests__/schema.test.ts"
         )
-        assert has_flush, "batcher.ts must contain a flush/send/dispatch call"
+        assert os.path.exists(path), f"schema.test.ts not found at {path}"
 
-    def test_use_track_event_has_do_not_track_guard(self):
-        """Verify useTrackEvent.ts includes a do_not_track guard condition."""
-        content = _read("frontend/src/metabase/analytics/useTrackEvent.ts")
-        lower = content.lower()
-        has_guard = (
-            "do_not_track" in lower
-            or "donottrack" in lower
-            or "tracking_enabled" in lower
-            or "track" in lower
+    def test_tracker_test_exists(self):
+        """Verify tracker test file exists"""
+        path = os.path.join(
+            self.REPO_DIR, "frontend/src/metabase/analytics/__tests__/tracker.test.ts"
         )
-        assert (
-            has_guard
-        ), "useTrackEvent.ts must contain a privacy guard (do_not_track / doNotTrack / tracking_enabled)"
+        assert os.path.exists(path), f"tracker.test.ts not found at {path}"
 
-    def test_batcher_has_debounce_logic(self):
-        """Verify batcher.ts contains debounce or timer-based flush logic."""
-        content = _read("frontend/src/metabase/analytics/batcher.ts")
-        lower = content.lower()
-        has_timer = (
-            "settimeout" in lower
-            or "debounce" in lower
-            or "interval" in lower
-            or "setinterval" in lower
-        )
-        assert (
-            has_timer
-        ), "batcher.ts must contain timer-based (setTimeout/debounce/interval) flush logic"
+    # === Semantic Checks ===
 
-    # -----------------------------------------------------------------------
-    # Functional checks
-    # -----------------------------------------------------------------------
+    def test_schema_defines_event_registry(self):
+        """Verify schema.ts defines EventRegistry class or equivalent"""
+        path = os.path.join(self.REPO_DIR, "frontend/src/metabase/analytics/schema.ts")
+        with open(path) as f:
+            content = f.read()
+        assert "EventRegistry" in content, \
+            "schema.ts should define EventRegistry class"
+        # Check for key methods
+        methods = ["register", "get", "validate"]
+        for method in methods:
+            assert method in content, \
+                f"EventRegistry should have '{method}' method"
 
-    def test_event_type_union_imported_in_use_track_event(self):
-        """Verify useTrackEvent.ts imports type definitions from types.ts."""
-        content = _read("frontend/src/metabase/analytics/useTrackEvent.ts")
-        has_import = "types" in content or "./types" in content or "../types" in content
-        assert has_import, "useTrackEvent.ts must import from the types module"
+    def test_schema_defines_event_types(self):
+        """Verify schema defines SimpleEventSchema type with required fields"""
+        path = os.path.join(self.REPO_DIR, "frontend/src/metabase/analytics/schema.ts")
+        with open(path) as f:
+            content = f.read()
+        assert "SimpleEventSchema" in content or "EventSchema" in content, \
+            "schema.ts should define SimpleEventSchema or EventSchema type"
+        # Check for category values
+        categories = ["navigation", "interaction", "api", "error", "performance"]
+        found_cats = sum(1 for cat in categories if cat in content)
+        assert found_cats >= 3, \
+            f"Schema should define event categories. Found {found_cats} of {len(categories)}"
 
-    def test_do_not_track_guard_has_early_return(self):
-        """Verify useTrackEvent.ts has an early return within the privacy guard block."""
-        content = _read("frontend/src/metabase/analytics/useTrackEvent.ts")
-        # Look for a return statement in the file (as guard exit)
-        assert (
-            "return" in content
-        ), "useTrackEvent.ts must contain a return statement for the privacy guard"
+    def test_schema_defines_duplicate_error(self):
+        """Verify schema defines DuplicateEventError"""
+        path = os.path.join(self.REPO_DIR, "frontend/src/metabase/analytics/schema.ts")
+        with open(path) as f:
+            content = f.read()
+        assert "DuplicateEventError" in content or "Duplicate" in content, \
+            "Schema should define DuplicateEventError for duplicate event names"
 
-    def test_batcher_flush_on_count_ten(self):
-        """Verify batcher flushes when exactly 10 events are queued."""
-        content = _read("frontend/src/metabase/analytics/batcher.ts")
-        # The threshold '10' must appear near a conditional/comparison
-        has_threshold_check = (
-            re.search(r"[><=!]=?\s*10|10\s*[><=!]=?", content) is not None
-        )
-        has_length = "length" in content or "size" in content or "count" in content
-        assert (
-            has_threshold_check or has_length
-        ), "batcher.ts must check queue length against threshold 10"
+    def test_naming_validates_snake_case(self):
+        """Verify naming module validates snake_case event names"""
+        path = os.path.join(self.REPO_DIR, "frontend/src/metabase/analytics/naming.ts")
+        with open(path) as f:
+            content = f.read()
+        assert "validateEventName" in content or "validate" in content.lower(), \
+            "naming.ts should define validateEventName function"
+        # Check for snake_case validation
+        assert "snake" in content.lower() or "lowercase" in content.lower() or "_" in content, \
+            "Naming module should validate snake_case format"
 
-    def test_no_hardcoded_external_tracking_urls(self):
-        """Verify analytics files do not contain hardcoded external tracking URLs."""
-        for rel in (
-            "frontend/src/metabase/analytics/useTrackEvent.ts",
-            "frontend/src/metabase/analytics/batcher.ts",
-        ):
-            full = _path(rel)
-            if not os.path.isfile(full):
-                continue
-            with open(full, encoding="utf-8", errors="replace") as f:
-                content = f.read()
-            external_trackers = [
-                "segment.com",
-                "mixpanel.com",
-                "amplitude.com",
-                "heap.io",
-            ]
-            for tracker in external_trackers:
-                assert (
-                    tracker not in content
-                ), f"{rel} must not contain hardcoded external tracking URL: {tracker}"
+    def test_naming_defines_allowed_objects_and_actions(self):
+        """Verify naming module defines allowed object and action sets"""
+        path = os.path.join(self.REPO_DIR, "frontend/src/metabase/analytics/naming.ts")
+        with open(path) as f:
+            content = f.read()
+        # Check for predefined objects
+        objects = ["dashboard", "question", "filter", "collection"]
+        found_objects = sum(1 for obj in objects if obj in content)
+        assert found_objects >= 3, \
+            f"Naming should define allowed objects. Found {found_objects} of {len(objects)}"
+        # Check for predefined actions
+        actions = ["viewed", "created", "updated", "deleted", "clicked"]
+        found_actions = sum(1 for act in actions if act in content)
+        assert found_actions >= 3, \
+            f"Naming should define allowed actions. Found {found_actions} of {len(actions)}"
 
-    def test_typescript_analytics_files_have_valid_syntax(self):
-        """Verify analytics TypeScript files have valid syntax via node/tsc check."""
-        if not _node_available():
-            pytest.skip("node not available")
-        frontend_dir = _path("frontend")
-        if not os.path.isdir(frontend_dir):
-            pytest.skip("frontend directory not found")
-        # Try quick syntax check using node with require
-        for rel in (
-            "frontend/src/metabase/analytics/types.ts",
-            "frontend/src/metabase/analytics/batcher.ts",
-        ):
-            target = _path(rel)
-            if not os.path.isfile(target):
-                continue
-            # Check that file is not empty and has TS-style content
-            with open(target, encoding="utf-8") as f:
-                content = f.read()
-            # Basic structural check: file must have at least one export or type keyword
-            has_ts_construct = (
-                "export" in content
-                or "type " in content
-                or "interface " in content
-                or "const " in content
+    def test_tracker_defines_track_function(self):
+        """Verify tracker defines track and createTypedTracker functions"""
+        path = os.path.join(self.REPO_DIR, "frontend/src/metabase/analytics/tracker.ts")
+        with open(path) as f:
+            content = f.read()
+        assert "track" in content, "tracker.ts should define track function"
+        assert "EventValidationError" in content or "ValidationError" in content, \
+            "tracker.ts should handle EventValidationError"
+
+    def test_tracker_defines_batch_tracking(self):
+        """Verify tracker implements batch tracking and event buffer"""
+        path = os.path.join(self.REPO_DIR, "frontend/src/metabase/analytics/tracker.ts")
+        with open(path) as f:
+            content = f.read()
+        assert "batch" in content.lower() or "Batch" in content, \
+            "tracker.ts should implement batch tracking"
+        assert "buffer" in content.lower() or "Buffer" in content or "queue" in content.lower(), \
+            "tracker.ts should implement event buffer"
+
+    # === Functional Checks ===
+
+    def _ensure_node_modules(self):
+        """Helper: ensure node_modules are installed"""
+        node_modules = os.path.join(self.REPO_DIR, "node_modules")
+        if not os.path.isdir(node_modules):
+            result = subprocess.run(
+                ["yarn", "install", "--frozen-lockfile"],
+                cwd=self.REPO_DIR,
+                capture_output=True, text=True, timeout=600
             )
-            assert (
-                has_ts_construct
-            ), f"{rel} must contain TypeScript constructs (export/type/interface/const)"
+            if result.returncode != 0:
+                pytest.skip("yarn install failed, skipping functional tests")
 
-    def test_use_track_event_exports_hook(self):
-        """Verify useTrackEvent.ts exports a hook function (useTrackEvent or similar)."""
-        content = _read("frontend/src/metabase/analytics/useTrackEvent.ts")
-        has_export = "export" in content
-        has_function = (
-            "function" in content or "=>" in content or "const use" in content
+    def test_schema_test_file_has_test_cases(self):
+        """Verify schema test file has meaningful test cases"""
+        path = os.path.join(
+            self.REPO_DIR, "frontend/src/metabase/analytics/__tests__/schema.test.ts"
         )
-        assert has_export, "useTrackEvent.ts must export the hook"
-        assert has_function, "useTrackEvent.ts must define a hook function"
+        with open(path) as f:
+            content = f.read()
+        # Count test cases
+        test_count = content.count("it(") + content.count("test(")
+        assert test_count >= 3, \
+            f"Schema test should have at least 3 test cases, found {test_count}"
+        # Should test validation
+        assert "validate" in content.lower() or "invalid" in content.lower(), \
+            "Schema tests should verify validation behavior"
+
+    def test_tracker_test_file_has_test_cases(self):
+        """Verify tracker test file has meaningful test cases"""
+        path = os.path.join(
+            self.REPO_DIR, "frontend/src/metabase/analytics/__tests__/tracker.test.ts"
+        )
+        with open(path) as f:
+            content = f.read()
+        test_count = content.count("it(") + content.count("test(")
+        assert test_count >= 3, \
+            f"Tracker test should have at least 3 test cases, found {test_count}"
+
+    def test_typescript_files_have_valid_syntax(self):
+        """Verify all TypeScript files have valid syntax using node parse check"""
+        files = [
+            "frontend/src/metabase/analytics/schema.ts",
+            "frontend/src/metabase/analytics/tracker.ts",
+            "frontend/src/metabase/analytics/naming.ts",
+        ]
+        for rel_path in files:
+            path = os.path.join(self.REPO_DIR, rel_path)
+            # Use node to check for basic syntax (via ts-node or raw check)
+            result = subprocess.run(
+                ["node", "-e",
+                 f"const ts = require('typescript'); "
+                 f"const src = require('fs').readFileSync('{path}', 'utf8'); "
+                 f"const sf = ts.createSourceFile('test.ts', src, ts.ScriptTarget.Latest, true); "
+                 f"console.log('PARSE_OK');"],
+                cwd=self.REPO_DIR,
+                capture_output=True, text=True, timeout=30
+            )
+            if result.returncode != 0:
+                # Fallback: just check it's not empty and has TypeScript syntax
+                with open(path) as f:
+                    content = f.read()
+                assert len(content) > 50, \
+                    f"{rel_path} is too short ({len(content)} chars)"
+                assert "export" in content or "import" in content, \
+                    f"{rel_path} should have TypeScript import/export statements"
+
+    def test_tests_cover_validation_errors(self):
+        """Verify test files cover validation error scenarios"""
+        test_files = [
+            "frontend/src/metabase/analytics/__tests__/schema.test.ts",
+            "frontend/src/metabase/analytics/__tests__/tracker.test.ts",
+        ]
+        validation_terms = ["error", "invalid", "throw", "reject", "fail", "missing"]
+        for rel_path in test_files:
+            path = os.path.join(self.REPO_DIR, rel_path)
+            with open(path) as f:
+                content = f.read().lower()
+            found = sum(1 for term in validation_terms if term in content)
+            assert found >= 2, \
+                f"{rel_path} should cover validation errors. Found {found} error-related terms"

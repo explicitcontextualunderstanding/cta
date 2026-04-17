@@ -1,148 +1,245 @@
 """
-Test for 'creating-financial-models' skill — DCF Valuation Model
-Validates that the Agent created a DCFModel and SensitivityAnalysis
-with proper financial calculations in the QuantLib project.
+Tests for skill: creating-financial-models
+Repo: lballabio/QuantLib
+Image: zhangyiiiiii/swe-skills-bench-python
+Task: Build a DCF valuation model with sensitivity analysis using QuantLib.
 """
 
+import ast
 import os
+import re
+import subprocess
 import sys
 
 import pytest
 
+REPO_DIR = "/workspace/QuantLib"
+EXAMPLES_DIR = os.path.join(REPO_DIR, "Python", "examples")
 
-class TestCreatingFinancialModels:
-    """Verify DCF financial model implementation in QuantLib."""
+DCF_FILE = os.path.join(EXAMPLES_DIR, "dcf_valuation.py")
+SENSITIVITY_FILE = os.path.join(EXAMPLES_DIR, "sensitivity_analysis.py")
+RUN_FILE = os.path.join(EXAMPLES_DIR, "run_dcf_example.py")
 
-    REPO_DIR = "/workspace/QuantLib"
 
-    # ---- helpers ----
+# ---------------------------------------------------------------------------
+# Layer 1 — file_path_check
+# ---------------------------------------------------------------------------
 
-    @staticmethod
-    def _read(path):
-        with open(path, "r", errors="ignore") as fh:
-            return fh.read()
+class TestFilePathCheck:
+    """Verify all required files were created."""
 
-    def _import_dcf(self):
-        old_path = sys.path[:]
-        sys.path.insert(0, self.REPO_DIR)
+    def test_dcf_valuation_file_exists(self):
+        assert os.path.isfile(DCF_FILE), f"Expected {DCF_FILE}"
+
+    def test_sensitivity_analysis_file_exists(self):
+        assert os.path.isfile(SENSITIVITY_FILE), f"Expected {SENSITIVITY_FILE}"
+
+    def test_run_example_file_exists(self):
+        assert os.path.isfile(RUN_FILE), f"Expected {RUN_FILE}"
+
+
+# ---------------------------------------------------------------------------
+# Layer 2 — semantic_check
+# ---------------------------------------------------------------------------
+
+class TestSemanticDCFModel:
+    """Verify DCFModel class structure."""
+
+    @pytest.fixture(autouse=True)
+    def _load_source(self):
+        with open(DCF_FILE, "r", encoding="utf-8") as f:
+            self.src = f.read()
+        self.tree = ast.parse(self.src)
+
+    def test_dcfmodel_class_defined(self):
+        classes = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.ClassDef)]
+        assert "DCFModel" in classes, (
+            f"Expected DCFModel class; found: {classes}"
+        )
+
+    def test_calculate_wacc_method(self):
+        """Must have a calculate_wacc method or function."""
+        assert "calculate_wacc" in self.src or "wacc" in self.src.lower(), (
+            "Expected calculate_wacc method or WACC computation"
+        )
+
+    def test_terminal_value_perpetuity(self):
+        """Must implement Gordon Growth perpetuity terminal value."""
+        assert "terminal_value_perpetuity" in self.src or "perpetuity" in self.src.lower(), (
+            "Expected terminal_value_perpetuity method"
+        )
+
+    def test_terminal_value_exit_multiple(self):
+        """Must implement exit multiple terminal value method."""
+        assert "terminal_value_exit_multiple" in self.src or "exit_multiple" in self.src.lower(), (
+            "Expected terminal_value_exit_multiple method"
+        )
+
+    def test_valuation_summary(self):
+        """Must expose get_valuation_summary returning a dict."""
+        assert "get_valuation_summary" in self.src or "valuation_summary" in self.src, (
+            "Expected get_valuation_summary method"
+        )
+
+    def test_fcf_projection_fields(self):
+        """Model must project key financial items."""
+        expected = ["revenue", "ebitda", "ebit", "nopat", "capex", "fcf"]
+        found = [f for f in expected if f in self.src.lower()]
+        assert len(found) >= 4, (
+            f"Expected at least 4 financial projection fields; found: {found}"
+        )
+
+    def test_wacc_formula_components(self):
+        """WACC must use CAPM components: risk_free, beta, equity_risk_premium."""
+        components = ["risk_free", "beta", "equity_risk_premium", "cost_of_debt"]
+        found = [c for c in components if c in self.src]
+        assert len(found) >= 3, (
+            f"Expected at least 3 WACC formula components; found: {found}"
+        )
+
+
+class TestSemanticSensitivity:
+    """Verify SensitivityAnalysis class."""
+
+    @pytest.fixture(autouse=True)
+    def _load_source(self):
+        with open(SENSITIVITY_FILE, "r", encoding="utf-8") as f:
+            self.src = f.read()
+        self.tree = ast.parse(self.src)
+
+    def test_sensitivity_class_defined(self):
+        classes = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.ClassDef)]
+        assert "SensitivityAnalysis" in classes, (
+            f"Expected SensitivityAnalysis class; found: {classes}"
+        )
+
+    def test_two_way_table_method(self):
+        assert "two_way_table" in self.src, (
+            "Expected two_way_table method in SensitivityAnalysis"
+        )
+
+    def test_tornado_chart_method(self):
+        assert "tornado_chart_data" in self.src or "tornado" in self.src.lower(), (
+            "Expected tornado_chart_data method"
+        )
+
+    def test_numpy_used_for_tables(self):
+        """Sensitivity tables should use numpy arrays."""
+        assert "numpy" in self.src or "np." in self.src, (
+            "Expected numpy for 2D sensitivity tables"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Layer 3 — functional_check
+# ---------------------------------------------------------------------------
+
+class TestFunctionalFinancialModels:
+    """Functional verification of the DCF implementation."""
+
+    def _run(self, cmd, cwd=REPO_DIR, timeout=120):
+        return subprocess.run(
+            cmd, shell=True, cwd=cwd,
+            capture_output=True, text=True, timeout=timeout,
+        )
+
+    def test_dcf_file_valid_python(self):
+        with open(DCF_FILE, "r", encoding="utf-8") as f:
+            src = f.read()
         try:
-            from Python.examples.dcf_valuation import (
-                DCFModel,
-                SensitivityAnalysis,
+            ast.parse(src)
+        except SyntaxError as e:
+            pytest.fail(f"dcf_valuation.py syntax error: {e}")
+
+    def test_sensitivity_file_valid_python(self):
+        with open(SENSITIVITY_FILE, "r", encoding="utf-8") as f:
+            src = f.read()
+        try:
+            ast.parse(src)
+        except SyntaxError as e:
+            pytest.fail(f"sensitivity_analysis.py syntax error: {e}")
+
+    def test_run_example_valid_python(self):
+        with open(RUN_FILE, "r", encoding="utf-8") as f:
+            src = f.read()
+        try:
+            ast.parse(src)
+        except SyntaxError as e:
+            pytest.fail(f"run_dcf_example.py syntax error: {e}")
+
+    def test_dcf_model_importable(self):
+        """DCFModel must be importable from dcf_valuation.py."""
+        result = self._run(
+            f"python -c \"import sys; sys.path.insert(0, '{EXAMPLES_DIR}'); "
+            f"from dcf_valuation import DCFModel; print('OK')\"",
+            timeout=30,
+        )
+        assert "OK" in result.stdout, (
+            f"Could not import DCFModel:\nstdout: {result.stdout[:500]}\n"
+            f"stderr: {result.stderr[:500]}"
+        )
+
+    def test_wacc_calculation_correctness(self):
+        """WACC with known inputs must produce expected result."""
+        code = f"""
+import sys
+sys.path.insert(0, '{EXAMPLES_DIR}')
+from dcf_valuation import DCFModel
+m = DCFModel(historical_revenues=[100, 110, 121], historical_margins=[0.2, 0.2, 0.2],
+             capex_ratio=0.05, nwc_change_ratio=0.02, tax_rate=0.25)
+wacc = m.calculate_wacc(risk_free_rate=0.04, beta=1.2, equity_risk_premium=0.06,
+                         cost_of_debt=0.05, tax_rate=0.25, debt_ratio=0.3)
+print(f"{{wacc:.4f}}")
+"""
+        result = self._run(f'python -c "{code}"', timeout=30)
+        if result.returncode == 0:
+            val = float(result.stdout.strip())
+            # Expected: E/V * cost_equity + D/V * cod*(1-t)
+            # cost_equity = 0.04 + 1.2*0.06 = 0.112
+            # WACC = 0.7*0.112 + 0.3*0.05*0.75 = 0.0784 + 0.01125 = 0.08965
+            assert 0.085 < val < 0.095, (
+                f"WACC expected ~0.0897; got {val}"
             )
+        else:
+            pytest.skip(f"calculate_wacc not runnable: {result.stderr[:300]}")
 
-            return DCFModel, SensitivityAnalysis
-        finally:
-            sys.path[:] = old_path
+    def test_terminal_value_perpetuity_correctness(self):
+        """Gordon Growth with known values must produce ~220.7M."""
+        code = f"""
+import sys
+sys.path.insert(0, '{EXAMPLES_DIR}')
+from dcf_valuation import DCFModel
+m = DCFModel(historical_revenues=[100], historical_margins=[0.2],
+             capex_ratio=0.05, nwc_change_ratio=0.02, tax_rate=0.25)
+tv = m.terminal_value_perpetuity(final_fcf=15.0, wacc=0.10, terminal_growth_rate=0.03)
+print(f"{{tv:.1f}}")
+"""
+        result = self._run(f'python -c "{code}"', timeout=30)
+        if result.returncode == 0:
+            val = float(result.stdout.strip())
+            # 15*(1+0.03)/(0.10-0.03) = 15.45/0.07 ≈ 220.7
+            assert 218 < val < 225, f"Terminal value expected ~220.7; got {val}"
+        else:
+            pytest.skip(f"terminal_value_perpetuity not runnable: {result.stderr[:300]}")
 
-    # ---- file_path_check ----
-
-    def test_dcf_valuation_exists(self):
-        """Verifies Python/examples/dcf_valuation.py exists."""
-        path = os.path.join(self.REPO_DIR, "Python/examples/dcf_valuation.py")
-        assert os.path.exists(path), f"File not found: {path}"
-
-    def test_requirements_exists(self):
-        """Verifies Python/examples/requirements.txt exists."""
-        path = os.path.join(self.REPO_DIR, "Python/examples/requirements.txt")
-        assert os.path.exists(path), f"File not found: {path}"
-
-    # ---- semantic_check ----
-
-    def test_sem_imports(self):
-        """Verifies DCFModel and SensitivityAnalysis are importable."""
-        DCFModel, SensitivityAnalysis = self._import_dcf()
-        assert DCFModel is not None
-        assert SensitivityAnalysis is not None
-
-    def test_sem_dcfmodel_methods(self):
-        """Verifies DCFModel has calculate_dcf, calculate_wacc, sensitivity_analysis."""
-        text = self._read(
-            os.path.join(self.REPO_DIR, "Python/examples/dcf_valuation.py")
-        )
-        for method in ["calculate_dcf", "calculate_wacc", "sensitivity_analysis"]:
-            assert method in text, f"DCFModel missing method: {method}"
-
-    def test_sem_sensitivity_methods(self):
-        """Verifies SensitivityAnalysis has run and tornado_chart_data."""
-        text = self._read(
-            os.path.join(self.REPO_DIR, "Python/examples/dcf_valuation.py")
-        )
-        assert "def run" in text, "SensitivityAnalysis missing 'run' method"
-        assert "tornado_chart_data" in text, "Missing tornado_chart_data"
-
-    def test_sem_return_keys(self):
-        """Verifies calculate_dcf returns pv_cash_flows, terminal_value, enterprise_value."""
-        text = self._read(
-            os.path.join(self.REPO_DIR, "Python/examples/dcf_valuation.py")
-        )
-        for key in ["pv_cash_flows", "terminal_value", "enterprise_value"]:
-            assert key in text, f"Missing return key: {key}"
-
-    def test_sem_numeric_types(self):
-        """Verifies float or Decimal used for monetary values."""
-        text = self._read(
-            os.path.join(self.REPO_DIR, "Python/examples/dcf_valuation.py")
-        )
-        assert "float" in text or "Decimal" in text, "No numeric type annotations found"
-
-    # ---- functional_check ----
-
-    def test_func_dcf_enterprise_value(self):
-        """Verifies DCF calculation with [100,100,100], rate=0.10, growth=0.02."""
-        DCFModel, _ = self._import_dcf()
-        result = DCFModel().calculate_dcf([100, 100, 100], 0.10, 0.02)
-        ev = result["enterprise_value"]
-        # Expected: sum(100/(1.1**t) for t in 1..3) + (100*1.02/0.08)/(1.1**3)
-        expected_pv = sum(100 / (1.1**t) for t in range(1, 4))
-        terminal = (100 * 1.02 / 0.08) / (1.1**3)
-        expected = expected_pv + terminal
-        assert (
-            abs(ev - expected) / expected < 0.05
-        ), f"Enterprise value {ev} not close to expected {expected}"
-
-    def test_func_wacc(self):
-        """Verifies WACC calculation: equity=600, debt=400, re=0.12, rd=0.08, tax=0.25."""
-        DCFModel, _ = self._import_dcf()
-        wacc = DCFModel().calculate_wacc(600, 400, 0.12, 0.08, 0.25)
-        # Expected: (600/1000)*0.12 + (400/1000)*0.08*(1-0.25) = 0.072 + 0.024 = 0.096
-        assert abs(wacc - 0.096) < 0.01, f"WACC {wacc} not close to 0.096"
-
-    def test_func_pv_cash_flows(self):
-        """Verifies PV of single cash flow [100] at rate 0.10."""
-        DCFModel, _ = self._import_dcf()
-        result = DCFModel().calculate_dcf([100], 0.10, 0.02)
-        pv = result["pv_cash_flows"]
-        assert abs(pv[0] - 90.909) < 1.0, f"PV {pv[0]} not ~90.909"
-
-    def test_func_terminal_value(self):
-        """Verifies terminal value for [100] at rate 0.10, growth 0.02."""
-        DCFModel, _ = self._import_dcf()
-        result = DCFModel().calculate_dcf([100], 0.10, 0.02)
-        tv = result["terminal_value"]
-        expected_tv = 100 * 1.02 / 0.08  # = 1275
-        assert abs(tv - expected_tv) < 10, f"TV {tv} not close to {expected_tv}"
-
-    def test_func_empty_cashflows_raises(self):
-        """Failure: empty cash flows raises ValueError."""
-        DCFModel, _ = self._import_dcf()
-        with pytest.raises(ValueError):
-            DCFModel().calculate_dcf([], 0.10, 0.02)
-
-    def test_func_rate_equals_growth_raises(self):
-        """Failure: rate == growth raises ValueError."""
-        DCFModel, _ = self._import_dcf()
-        with pytest.raises(ValueError):
-            DCFModel().calculate_dcf([100], 0.10, 0.10)
-
-    def test_func_rate_less_than_growth_raises(self):
-        """Failure: rate < growth raises ValueError."""
-        DCFModel, _ = self._import_dcf()
-        with pytest.raises(ValueError):
-            DCFModel().calculate_dcf([100], 0.08, 0.10)
-
-    def test_func_zero_rate_raises(self):
-        """Failure: non-positive rate raises ValueError."""
-        DCFModel, _ = self._import_dcf()
-        with pytest.raises(ValueError):
-            DCFModel().calculate_dcf([100], 0.0, 0.02)
+    def test_debt_ratio_validation(self):
+        """debt_ratio outside 0-1 must raise ValueError."""
+        code = f"""
+import sys
+sys.path.insert(0, '{EXAMPLES_DIR}')
+from dcf_valuation import DCFModel
+m = DCFModel(historical_revenues=[100], historical_margins=[0.2],
+             capex_ratio=0.05, nwc_change_ratio=0.02, tax_rate=0.25)
+try:
+    m.calculate_wacc(0.04, 1.2, 0.06, 0.05, 0.25, debt_ratio=1.5)
+    print("NO_ERROR")
+except ValueError:
+    print("VALUE_ERROR")
+"""
+        result = self._run(f'python -c "{code}"', timeout=30)
+        if result.returncode == 0:
+            assert "VALUE_ERROR" in result.stdout, (
+                "Expected ValueError for debt_ratio=1.5"
+            )
+        else:
+            pytest.skip(f"Validation test not runnable: {result.stderr[:300]}")

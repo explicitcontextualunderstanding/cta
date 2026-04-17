@@ -1,152 +1,323 @@
 """
-Test for 'implementing-agent-modes' skill — Implementing Agent Modes
-Validates agent Python files in the PostHog repo for tool registration,
-agent loop functions, max iterations, step records, and agent types.
+Tests for skill: implementing-agent-modes
+Repo: PostHog/posthog
+Image: zhangyiiiiii/swe-skills-bench-python
+Task: Implement a new Error Tracking agent mode for PostHog with
+      toolkit, mode definition, tools, and feature flag gating.
 """
 
+import ast
 import os
 import re
-import ast
-import glob
+
 import pytest
 
+REPO_DIR = "/workspace/posthog"
+MODE_DIR = os.path.join(
+    REPO_DIR, "ee", "hogai", "core", "agent_modes", "presets", "error_tracking"
+)
+TOOLS_FILE = os.path.join(REPO_DIR, "ee", "hogai", "tools", "error_tracking_tools.py")
+MODE_MANAGER_FILE = os.path.join(REPO_DIR, "ee", "hogai", "chat_agent", "mode_manager.py")
+SCHEMA_FILE = os.path.join(
+    REPO_DIR, "frontend", "src", "queries", "schema", "schema-assistant-messages.ts"
+)
 
-class TestImplementingAgentModes:
-    """Tests for agent mode implementations in the posthog repo."""
+INIT_FILE = os.path.join(MODE_DIR, "__init__.py")
+TOOLKIT_FILE = os.path.join(MODE_DIR, "toolkit.py")
+MODE_DEF_FILE = os.path.join(MODE_DIR, "mode_definition.py")
 
-    REPO_DIR = "/workspace/posthog"
 
-    def _find_agent_files(self):
-        """Find all agent-related Python files."""
-        files = glob.glob(
-            os.path.join(self.REPO_DIR, "**/agents/**/*.py"), recursive=True
-        ) + glob.glob(os.path.join(self.REPO_DIR, "**/*agent*.py"), recursive=True)
-        return list(set(files))
+# ---------------------------------------------------------------------------
+# Layer 1 — file_path_check
+# ---------------------------------------------------------------------------
 
-    def _read_agent_text(self):
-        """Read and concatenate all agent files."""
-        files = self._find_agent_files()
-        return "\n".join(open(f, errors="ignore").read() for f in files)
+class TestFilePathCheck:
+    """Verify all required agent mode files exist."""
 
-    def _get_func_defs(self):
-        """Get all function names from agent files via AST."""
-        func_defs = []
-        for f in self._find_agent_files():
-            try:
-                tree = ast.parse(open(f, errors="ignore").read())
-                for n in ast.walk(tree):
-                    if isinstance(n, ast.FunctionDef):
-                        func_defs.append(n.name)
-            except SyntaxError:
-                continue
-        return func_defs
+    def test_mode_init_exists(self):
+        assert os.path.isfile(INIT_FILE), f"Missing {INIT_FILE}"
 
-    # --- File Path Checks ---
+    def test_toolkit_exists(self):
+        assert os.path.isfile(TOOLKIT_FILE), f"Missing {TOOLKIT_FILE}"
 
-    def test_agents_py_exists(self):
-        """Verifies that agent Python files exist under agents/ directory."""
-        files = glob.glob(
-            os.path.join(self.REPO_DIR, "**/agents/**/*.py"), recursive=True
+    def test_mode_definition_exists(self):
+        assert os.path.isfile(MODE_DEF_FILE), f"Missing {MODE_DEF_FILE}"
+
+    def test_tools_file_exists(self):
+        assert os.path.isfile(TOOLS_FILE), f"Missing {TOOLS_FILE}"
+
+    def test_mode_manager_exists(self):
+        assert os.path.isfile(MODE_MANAGER_FILE), f"Missing {MODE_MANAGER_FILE}"
+
+    def test_schema_file_exists(self):
+        assert os.path.isfile(SCHEMA_FILE), f"Missing {SCHEMA_FILE}"
+
+
+# ---------------------------------------------------------------------------
+# Layer 2 — semantic_check
+# ---------------------------------------------------------------------------
+
+class TestSemanticSchema:
+    """Verify AgentMode enum includes ERROR_TRACKING."""
+
+    @pytest.fixture(autouse=True)
+    def _load(self):
+        with open(SCHEMA_FILE, "r", encoding="utf-8") as f:
+            self.src = f.read()
+
+    def test_error_tracking_in_enum(self):
+        assert "ERROR_TRACKING" in self.src or "error_tracking" in self.src, (
+            "AgentMode enum must include ERROR_TRACKING"
         )
-        assert len(files) > 0, "No Python files found under agents/"
 
-    def test_agent_modes_py_exists(self):
-        """Verifies that agent_modes*.py file exists."""
-        files = glob.glob(
-            os.path.join(self.REPO_DIR, "**/*agent_modes*.py"), recursive=True
-        ) + glob.glob(os.path.join(self.REPO_DIR, "**/*agent*.py"), recursive=True)
-        assert len(files) > 0, "No agent_modes*.py or *agent*.py files found"
 
-    def test_py_exists(self):
-        """Verifies that .py files exist in the repo."""
-        files = glob.glob(os.path.join(self.REPO_DIR, "**/*.py"), recursive=True)
-        assert len(files) > 0, "No Python files found"
+class TestSemanticToolkit:
+    """Verify ErrorTrackingToolkit structure."""
 
-    # --- Semantic Checks ---
+    @pytest.fixture(autouse=True)
+    def _load(self):
+        with open(TOOLKIT_FILE, "r", encoding="utf-8") as f:
+            self.src = f.read()
+        self.tree = ast.parse(self.src)
 
-    def test_sem_agent_files_found(self):
-        """Agent files can be collected and read."""
-        files = self._find_agent_files()
-        assert len(files) > 0, "No agent files found"
+    def test_toolkit_class(self):
+        classes = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.ClassDef)]
+        assert "ErrorTrackingToolkit" in classes, (
+            f"Expected ErrorTrackingToolkit class; found {classes}"
+        )
 
-    def test_sem_agent_text_readable(self):
-        """Agent code text can be concatenated."""
-        agent_text = self._read_agent_text()
-        assert len(agent_text) > 0, "Agent text is empty"
+    def test_list_issues_method(self):
+        funcs = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.FunctionDef)]
+        assert "list_issues" in funcs, f"Expected list_issues; found {funcs}"
 
-    def test_sem_has_register_tool(self):
-        """Agent code has 'register_tool' or 'tool_registry'."""
-        agent_text = self._read_agent_text()
-        assert (
-            "register_tool" in agent_text or "tool_registry" in agent_text
-        ), "No tool registration pattern found"
+    def test_search_issues_method(self):
+        funcs = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.FunctionDef)]
+        assert "search_issues" in funcs, f"Expected search_issues; found {funcs}"
 
-    def test_sem_has_max_iterations(self):
-        """Agent code references 'max_iterations' or 'MAX_ITERATIONS'."""
-        agent_text = self._read_agent_text()
-        assert (
-            "max_iterations" in agent_text or "MAX_ITERATIONS" in agent_text
-        ), "No max_iterations pattern found"
+    def test_get_issue_details_method(self):
+        funcs = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.FunctionDef)]
+        assert "get_issue_details" in funcs, f"Expected get_issue_details; found {funcs}"
 
-    def test_sem_has_step_record(self):
-        """Agent code has StepRecord, AgentResult, or steps tracking."""
-        agent_text = self._read_agent_text()
-        assert (
-            "StepRecord" in agent_text
-            or "AgentResult" in agent_text
-            or "steps" in agent_text
-        ), "No step record / result tracking found"
+    def test_analyze_issue_method(self):
+        funcs = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.FunctionDef)]
+        assert "analyze_issue" in funcs, f"Expected analyze_issue; found {funcs}"
 
-    # --- Functional Checks ---
+    def test_status_filtering(self):
+        assert "active" in self.src and "resolved" in self.src, (
+            "list_issues should support active/resolved status filtering"
+        )
 
-    def test_func_ast_parse_agent_files(self):
-        """Agent files can be parsed by AST."""
-        func_defs = self._get_func_defs()
-        assert len(func_defs) > 0, "No functions found in agent files"
+    def test_trajectory_examples(self):
+        assert "trajectory" in self.src.lower() or "example" in self.src.lower(), (
+            "Toolkit should include trajectory examples"
+        )
 
-    def test_func_has_register_function(self):
-        """Agent code defines 'register_tool' or 'register' function."""
-        func_defs = self._get_func_defs()
-        assert (
-            "register_tool" in func_defs or "register" in func_defs
-        ), "No register_tool or register function found"
 
-    def test_func_has_run_function(self):
-        """Agent code defines 'run' function."""
-        func_defs = self._get_func_defs()
-        assert "run" in func_defs, "No 'run' function found"
+class TestSemanticModeDefinition:
+    """Verify mode definition structure."""
 
-    def test_func_has_available_tools_or_get_tools(self):
-        """Agent code defines 'available_tools' or 'get_tools' function."""
-        func_defs = self._get_func_defs()
-        assert (
-            "available_tools" in func_defs or "get_tools" in func_defs
-        ), "No available_tools or get_tools function found"
+    @pytest.fixture(autouse=True)
+    def _load(self):
+        with open(MODE_DEF_FILE, "r", encoding="utf-8") as f:
+            self.src = f.read()
+        self.tree = ast.parse(self.src)
 
-    def test_func_max_iterations_error_handling(self):
-        """Agent code handles MaxIterationsError or max_iterations."""
-        agent_text = self._read_agent_text()
-        assert (
-            "MaxIterationsError" in agent_text or "max_iterations" in agent_text
-        ), "No max iterations error handling"
+    def test_agent_mode_reference(self):
+        assert "ERROR_TRACKING" in self.src, (
+            "Mode definition must reference AgentMode.ERROR_TRACKING"
+        )
 
-    def test_func_thought_pattern(self):
-        """Agent code has Thought or thought pattern."""
-        agent_text = self._read_agent_text()
-        assert (
-            "Thought" in agent_text or "thought" in agent_text
-        ), "No thought pattern found"
+    def test_mode_definition_class_or_instance(self):
+        assert "AgentModeDefinition" in self.src or "ModeDefinition" in self.src, (
+            "Mode definition should use AgentModeDefinition"
+        )
 
-    def test_func_observation_pattern(self):
-        """Agent code has observation or Observation pattern."""
-        agent_text = self._read_agent_text()
-        assert (
-            "observation" in agent_text or "Observation" in agent_text
-        ), "No observation pattern found"
+    def test_description_provided(self):
+        assert "description" in self.src, (
+            "Mode definition must include a description"
+        )
 
-    def test_func_specific_agent_type(self):
-        """Agent code has InsightAgent or DataQueryAgent."""
-        agent_text = self._read_agent_text()
-        assert (
-            "InsightAgent" in agent_text or "DataQueryAgent" in agent_text
-        ), "No InsightAgent or DataQueryAgent found"
+    def test_toolkit_class_binding(self):
+        assert "ErrorTrackingToolkit" in self.src, (
+            "Mode definition should bind ErrorTrackingToolkit"
+        )
+
+
+class TestSemanticTools:
+    """Verify backend tool implementations."""
+
+    @pytest.fixture(autouse=True)
+    def _load(self):
+        with open(TOOLS_FILE, "r", encoding="utf-8") as f:
+            self.src = f.read()
+        self.tree = ast.parse(self.src)
+
+    def test_list_function(self):
+        funcs = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.FunctionDef)]
+        assert any("list" in f.lower() and "error" in f.lower() for f in funcs) or \
+               "list_error_tracking_issues" in funcs, (
+            f"Expected list_error_tracking_issues tool; found {funcs}"
+        )
+
+    def test_search_function(self):
+        funcs = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.FunctionDef)]
+        assert any("search" in f.lower() and "error" in f.lower() for f in funcs) or \
+               "search_error_tracking_issues" in funcs, (
+            f"Expected search_error_tracking_issues tool; found {funcs}"
+        )
+
+    def test_get_details_function(self):
+        funcs = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.FunctionDef)]
+        assert any("get" in f.lower() and "detail" in f.lower() for f in funcs), (
+            f"Expected get_error_tracking_issue_details tool; found {funcs}"
+        )
+
+    def test_team_id_validation(self):
+        assert "team_id" in self.src, "Tools must accept team_id parameter"
+
+    def test_query_model(self):
+        assert "ErrorTrackingIssue" in self.src or "error_tracking" in self.src.lower(), (
+            "Tools should query the ErrorTrackingIssue model"
+        )
+
+
+class TestSemanticModeManager:
+    """Verify mode manager registers error tracking mode."""
+
+    @pytest.fixture(autouse=True)
+    def _load(self):
+        with open(MODE_MANAGER_FILE, "r", encoding="utf-8") as f:
+            self.src = f.read()
+
+    def test_error_tracking_registered(self):
+        assert "error_tracking" in self.src.lower() or "ERROR_TRACKING" in self.src, (
+            "Mode manager must register the ERROR_TRACKING mode"
+        )
+
+    def test_feature_flag_check(self):
+        assert "feature_flag" in self.src.lower() or "feature" in self.src.lower(), (
+            "Mode registration must check a feature flag"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Layer 3 — functional_check
+# ---------------------------------------------------------------------------
+
+class TestFunctionalToolkitFields:
+    """Verify toolkit issue dict fields via source analysis."""
+
+    @pytest.fixture(autouse=True)
+    def _load(self):
+        with open(TOOLKIT_FILE, "r", encoding="utf-8") as f:
+            self.src = f.read()
+
+    def test_issue_dict_has_id(self):
+        assert '"id"' in self.src or "'id'" in self.src, (
+            "Issue dict must include 'id' field"
+        )
+
+    def test_issue_dict_has_title(self):
+        assert '"title"' in self.src or "'title'" in self.src, (
+            "Issue dict must include 'title' field"
+        )
+
+    def test_issue_dict_has_status(self):
+        assert '"status"' in self.src or "'status'" in self.src, (
+            "Issue dict must include 'status' field"
+        )
+
+    def test_issue_dict_has_event_count(self):
+        assert "event_count" in self.src, "Issue dict must include 'event_count' field"
+
+    def test_issue_dict_has_first_seen(self):
+        assert "first_seen" in self.src, "Issue dict must include 'first_seen' field"
+
+    def test_issue_dict_has_last_seen(self):
+        assert "last_seen" in self.src, "Issue dict must include 'last_seen' field"
+
+
+class TestFunctionalFeatureFlagGating:
+    """Verify feature flag gating behavior via source analysis."""
+
+    @pytest.fixture(autouse=True)
+    def _load(self):
+        with open(MODE_MANAGER_FILE, "r", encoding="utf-8") as f:
+            self.src = f.read()
+
+    def test_conditional_registration(self):
+        """Mode registration should be conditional on feature flag."""
+        has_if = re.search(
+            r"if\s+.*(?:feature_flag|has_error_tracking)",
+            self.src,
+            re.IGNORECASE,
+        )
+        assert has_if, (
+            "Mode manager should conditionally register error tracking based on flag"
+        )
+
+    def test_flag_function_or_check(self):
+        """There should be a dedicated function or check for the flag."""
+        assert "has_error_tracking" in self.src or "error_tracking" in self.src.lower(), (
+            "Expected a feature flag check for error tracking mode"
+        )
+
+
+class TestFunctionalTrajectoryExamples:
+    """Verify trajectory examples cover the three main journeys."""
+
+    @pytest.fixture(autouse=True)
+    def _load(self):
+        with open(TOOLKIT_FILE, "r", encoding="utf-8") as f:
+            self.src = f.read().lower()
+
+    def test_list_trajectory(self):
+        assert "list" in self.src and "active" in self.src, (
+            "Should have trajectory example for listing active errors"
+        )
+
+    def test_search_trajectory(self):
+        assert "search" in self.src and "query" in self.src, (
+            "Should have trajectory example for searching issues"
+        )
+
+    def test_analyze_trajectory(self):
+        assert "analyze" in self.src and "issue" in self.src, (
+            "Should have trajectory example for analyzing an issue"
+        )
+
+
+class TestFunctionalToolsValidation:
+    """Verify tool implementations validate input."""
+
+    @pytest.fixture(autouse=True)
+    def _load(self):
+        with open(TOOLS_FILE, "r", encoding="utf-8") as f:
+            self.src = f.read()
+
+    def test_team_id_required(self):
+        """Tools must validate team_id is provided."""
+        assert "team_id" in self.src, "Tools must require team_id"
+        # Check for some form of validation
+        has_validation = (
+            "if not team_id" in self.src or
+            "team_id is None" in self.src or
+            "raise" in self.src or
+            "ValueError" in self.src
+        )
+        assert has_validation, "Tools should validate team_id input"
+
+    def test_empty_result_handling(self):
+        """Tools should handle not-found cases gracefully."""
+        assert "[]" in self.src or "None" in self.src or "{}" in self.src, (
+            "Tools should return empty list or None for not-found cases"
+        )
+
+    def test_ordering_by_last_seen(self):
+        """list_issues should order by last_seen."""
+        assert "last_seen" in self.src, (
+            "list_error_tracking_issues should order by last_seen"
+        )
+        assert "desc" in self.src.lower() or "order_by" in self.src or "-last_seen" in self.src, (
+            "list_issues should sort by last_seen descending"
+        )

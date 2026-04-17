@@ -1,194 +1,196 @@
 """
-Test for 'creating-financial-models' skill — DCF Valuation Engine
-Validates that the Agent created a DCF valuation class for QuantLib
-with NPV computation, term-structure discounting, and sensitivity analysis.
+Test skill: creating-financial-models
+Verify that the Agent correctly implements a DCF valuation engine
+in QuantLib including C++ header/impl files, NPV computation,
+sensitivity analysis, term-structure discounting, and CMake integration.
 """
 
 import os
 import re
-
+import subprocess
 import pytest
 
 
 class TestCreatingFinancialModels:
-    """Verify QuantLib DCF valuation engine."""
-
     REPO_DIR = "/workspace/QuantLib"
 
-    def _read(self, *parts):
-        fpath = os.path.join(self.REPO_DIR, *parts)
-        assert os.path.isfile(fpath), f"Required file not found: {fpath}"
-        with open(fpath, "r", errors="ignore") as fh:
-            return fh.read()
+    # === File Path Checks ===
 
-    # ------------------------------------------------------------------
-    # L1: File existence
-    # ------------------------------------------------------------------
+    def test_header_file_exists(self):
+        """Verify dcfvaluation.hpp header exists"""
+        path = os.path.join(self.REPO_DIR, "ql/instruments/dcfvaluation.hpp")
+        assert os.path.exists(path), f"dcfvaluation.hpp not found at {path}"
 
-    def test_header_exists(self):
-        """ql/instruments/dcfvaluation.hpp must exist."""
-        assert os.path.isfile(
-            os.path.join(self.REPO_DIR, "ql/instruments/dcfvaluation.hpp")
-        )
+    def test_impl_file_exists(self):
+        """Verify dcfvaluation.cpp implementation exists"""
+        path = os.path.join(self.REPO_DIR, "ql/instruments/dcfvaluation.cpp")
+        assert os.path.exists(path), f"dcfvaluation.cpp not found at {path}"
 
-    def test_implementation_exists(self):
-        """ql/instruments/dcfvaluation.cpp must exist."""
-        assert os.path.isfile(
-            os.path.join(self.REPO_DIR, "ql/instruments/dcfvaluation.cpp")
-        )
+    def test_cmake_lists_exists(self):
+        """Verify ql/CMakeLists.txt exists"""
+        path = os.path.join(self.REPO_DIR, "ql/CMakeLists.txt")
+        assert os.path.exists(path), f"CMakeLists.txt not found at {path}"
 
-    # ------------------------------------------------------------------
-    # L1: C++ structure
-    # ------------------------------------------------------------------
-
-    def test_header_has_include_guard(self):
-        """Header must have include guard or pragma once."""
-        content = self._read("ql/instruments/dcfvaluation.hpp")
-        patterns = [r"#ifndef", r"#pragma\s+once"]
-        assert any(
-            re.search(p, content) for p in patterns
-        ), "Header missing include guard"
+    # === Semantic Checks ===
 
     def test_header_declares_class(self):
-        """Header must declare a DCF valuation class."""
-        content = self._read("ql/instruments/dcfvaluation.hpp")
-        patterns = [
-            r"class\s+\w*[Dd][Cc][Ff]\w*",
-            r"class\s+\w*Valuation\w*",
-            r"class\s+\w*DCF\w*",
-        ]
-        assert any(
-            re.search(p, content) for p in patterns
-        ), "No DCF valuation class declared"
+        """Verify header declares a DCF valuation class"""
+        path = os.path.join(self.REPO_DIR, "ql/instruments/dcfvaluation.hpp")
+        with open(path) as f:
+            content = f.read()
 
-    def test_implementation_includes_header(self):
-        """Implementation must include the header."""
-        content = self._read("ql/instruments/dcfvaluation.cpp")
-        patterns = [r"#include.*dcfvaluation\.hpp", r"#include.*dcfvaluation\.h"]
-        assert any(
-            re.search(p, content) for p in patterns
-        ), "Implementation does not include header"
-
-    # ------------------------------------------------------------------
-    # L2: NPV computation
-    # ------------------------------------------------------------------
-
-    def test_computes_npv(self):
-        """Class must compute NPV (Net Present Value)."""
-        content = self._read("ql/instruments/dcfvaluation.cpp")
-        patterns = [
-            r"[Nn][Pp][Vv]",
-            r"net.*present.*value",
-            r"presentValue",
-            r"present_value",
-            r"NPV\(",
-        ]
-        assert any(
-            re.search(p, content) for p in patterns
-        ), "Class does not compute NPV"
-
-    def test_accepts_cash_flows(self):
-        """Class must accept a series of cash flows."""
-        combined = self._read("ql/instruments/dcfvaluation.hpp") + self._read(
-            "ql/instruments/dcfvaluation.cpp"
+        assert re.search(r"class\s+\w*[Dd][Cc][Ff]\w*", content), (
+            "Header should declare a DCF valuation class"
         )
-        patterns = [
-            r"[Cc]ash[Ff]low",
-            r"cashflow",
-            r"vector.*flow",
-            r"Leg",
-            r"std::vector",
-        ]
-        assert any(
-            re.search(p, combined) for p in patterns
-        ), "Class does not accept cash flows"
 
-    def test_supports_discount_rate(self):
-        """Class must support flat discount rate."""
-        combined = self._read("ql/instruments/dcfvaluation.hpp") + self._read(
-            "ql/instruments/dcfvaluation.cpp"
-        )
-        patterns = [r"discount.*rate", r"rate", r"Rate", r"discountRate"]
-        assert any(
-            re.search(p, combined, re.IGNORECASE) for p in patterns
-        ), "Class does not support discount rate"
+    def test_header_has_include_guard(self):
+        """Verify header has proper include guard or pragma once"""
+        path = os.path.join(self.REPO_DIR, "ql/instruments/dcfvaluation.hpp")
+        with open(path) as f:
+            content = f.read()
 
-    def test_supports_term_structure(self):
-        """Class must support term-structure-based discounting."""
-        combined = self._read("ql/instruments/dcfvaluation.hpp") + self._read(
-            "ql/instruments/dcfvaluation.cpp"
+        has_guard = "#ifndef" in content or "#pragma once" in content
+        assert has_guard, "Header should have include guard or #pragma once"
+
+    def test_npv_method_declared(self):
+        """Verify NPV computation method is declared"""
+        path = os.path.join(self.REPO_DIR, "ql/instruments/dcfvaluation.hpp")
+        with open(path) as f:
+            content = f.read().lower()
+
+        npv_indicators = ["npv", "net_present_value", "netpresentvalue", "presentvalue"]
+        found = [ind for ind in npv_indicators if ind in content]
+        assert len(found) >= 1, (
+            f"Header should declare an NPV method. Found: {found}"
         )
-        patterns = [
-            r"[Tt]erm[Ss]tructure",
-            r"YieldTermStructure",
-            r"term_structure",
-            r"yield.*curve",
-            r"Handle.*YieldTermStructure",
+
+    def test_supports_flat_and_term_structure_discounting(self):
+        """Verify both flat rate and term structure discounting are supported"""
+        combined = ""
+        for fname in ["dcfvaluation.hpp", "dcfvaluation.cpp"]:
+            path = os.path.join(self.REPO_DIR, f"ql/instruments/{fname}")
+            if os.path.exists(path):
+                with open(path) as f:
+                    combined += f.read()
+
+        flat_indicators = ["flat", "rate", "discount_rate", "discountRate"]
+        term_indicators = [
+            "term_structure", "TermStructure", "YieldTermStructure",
+            "term_struct", "yield_curve", "yieldCurve",
         ]
-        assert any(
-            re.search(p, combined) for p in patterns
-        ), "Class does not support term structure discounting"
+
+        flat_found = [ind for ind in flat_indicators if ind in combined]
+        term_found = [ind for ind in term_indicators if ind in combined]
+
+        assert len(flat_found) >= 1, (
+            f"Should support flat rate discounting. Found: {flat_found}"
+        )
+        assert len(term_found) >= 1, (
+            f"Should support term structure discounting. Found: {term_found}"
+        )
 
     def test_sensitivity_analysis(self):
-        """Class must support sensitivity analysis across discount rates."""
-        combined = self._read("ql/instruments/dcfvaluation.hpp") + self._read(
-            "ql/instruments/dcfvaluation.cpp"
-        )
-        patterns = [
-            r"sensitiv",
-            r"scenario",
-            r"range.*rate",
-            r"for.*rate",
-            r"stress",
-            r"sweep",
+        """Verify sensitivity analysis across discount rate scenarios"""
+        combined = ""
+        for fname in ["dcfvaluation.hpp", "dcfvaluation.cpp"]:
+            path = os.path.join(self.REPO_DIR, f"ql/instruments/{fname}")
+            if os.path.exists(path):
+                with open(path) as f:
+                    combined += f.read()
+
+        sensitivity_indicators = [
+            "sensitivity", "scenario", "range", "sweep",
+            "sensitivityAnalysis", "sensitivity_analysis",
+            "vector", "std::vector",
         ]
-        assert any(
-            re.search(p, combined, re.IGNORECASE) for p in patterns
-        ), "Class does not support sensitivity analysis"
-
-    # ------------------------------------------------------------------
-    # L2: Terminal value
-    # ------------------------------------------------------------------
-
-    def test_terminal_value(self):
-        """Class should support terminal value for perpetuity models."""
-        combined = self._read("ql/instruments/dcfvaluation.hpp") + self._read(
-            "ql/instruments/dcfvaluation.cpp"
+        found = [ind for ind in sensitivity_indicators if ind in combined]
+        assert len(found) >= 2, (
+            f"Should support sensitivity analysis. Found: {found}"
         )
-        patterns = [r"terminal", r"Terminal", r"perpetuity", r"growth.*rate"]
-        assert any(
-            re.search(p, combined, re.IGNORECASE) for p in patterns
-        ), "Class does not support terminal value"
 
-    # ------------------------------------------------------------------
-    # L2: Input validation
-    # ------------------------------------------------------------------
+    def test_input_validation(self):
+        """Verify input validation for negative rates, empty series, past dates"""
+        combined = ""
+        for fname in ["dcfvaluation.hpp", "dcfvaluation.cpp"]:
+            path = os.path.join(self.REPO_DIR, f"ql/instruments/{fname}")
+            if os.path.exists(path):
+                with open(path) as f:
+                    combined += f.read()
 
-    def test_validates_inputs(self):
-        """Class must validate inputs (negative rates, empty flows)."""
-        content = self._read("ql/instruments/dcfvaluation.cpp")
-        patterns = [
-            r"throw",
-            r"error",
-            r"assert",
-            r"require",
-            r"invalid",
-            r"empty",
-            r"negative",
+        validation_indicators = [
+            "throw", "QL_REQUIRE", "QL_ENSURE", "invalid",
+            "empty", "negative", "error", "exception",
         ]
-        found = sum(1 for p in patterns if re.search(p, content, re.IGNORECASE))
-        assert found >= 2, "Implementation lacks input validation"
+        found = [ind for ind in validation_indicators if ind in combined]
+        assert len(found) >= 2, (
+            f"Should validate inputs (negative rates, empty series). "
+            f"Found: {found}"
+        )
 
-    # ------------------------------------------------------------------
-    # L2: CMakeLists integration
-    # ------------------------------------------------------------------
+    def test_cash_flow_timing_support(self):
+        """Verify support for irregular cash flow timing"""
+        combined = ""
+        for fname in ["dcfvaluation.hpp", "dcfvaluation.cpp"]:
+            path = os.path.join(self.REPO_DIR, f"ql/instruments/{fname}")
+            if os.path.exists(path):
+                with open(path) as f:
+                    combined += f.read()
 
-    def test_cmake_includes_new_files(self):
-        """CMakeLists.txt must include the new source file."""
-        cmake_path = os.path.join(self.REPO_DIR, "ql/CMakeLists.txt")
-        assert os.path.isfile(cmake_path), "ql/CMakeLists.txt not found"
-        with open(cmake_path, "r", errors="ignore") as fh:
-            content = fh.read()
-        assert re.search(
-            r"dcfvaluation", content, re.IGNORECASE
-        ), "CMakeLists.txt does not include dcfvaluation"
+        timing_indicators = [
+            "Date", "date", "schedule", "CashFlow",
+            "cashflow", "Leg", "time", "dayCounter",
+        ]
+        found = [ind for ind in timing_indicators if ind in combined]
+        assert len(found) >= 2, (
+            f"Should support cash flow timing. Found: {found}"
+        )
+
+    def test_terminal_value_support(self):
+        """Verify terminal value estimation for perpetuity models"""
+        combined = ""
+        for fname in ["dcfvaluation.hpp", "dcfvaluation.cpp"]:
+            path = os.path.join(self.REPO_DIR, f"ql/instruments/{fname}")
+            if os.path.exists(path):
+                with open(path) as f:
+                    combined += f.read()
+
+        terminal_indicators = [
+            "terminal", "perpetuity", "growth", "terminal_value",
+            "terminalValue", "gordon",
+        ]
+        found = [ind for ind in terminal_indicators if ind in combined]
+        assert len(found) >= 1, (
+            f"Should support terminal value estimation. Found: {found}"
+        )
+
+    # === Functional Checks ===
+
+    def test_cmake_references_new_files(self):
+        """Verify CMakeLists.txt references the new source files"""
+        path = os.path.join(self.REPO_DIR, "ql/CMakeLists.txt")
+        with open(path) as f:
+            content = f.read()
+
+        assert "dcfvaluation" in content.lower(), (
+            "CMakeLists.txt should reference dcfvaluation files"
+        )
+
+    def test_impl_includes_header(self):
+        """Verify implementation includes its own header"""
+        path = os.path.join(self.REPO_DIR, "ql/instruments/dcfvaluation.cpp")
+        with open(path) as f:
+            content = f.read()
+
+        assert "dcfvaluation.hpp" in content or "dcfvaluation.h" in content, (
+            "Implementation should include its own header"
+        )
+
+    def test_follows_quantlib_namespace(self):
+        """Verify code uses QuantLib namespace"""
+        path = os.path.join(self.REPO_DIR, "ql/instruments/dcfvaluation.hpp")
+        with open(path) as f:
+            content = f.read()
+
+        assert "QuantLib" in content or "quantlib" in content.lower(), (
+            "Code should use QuantLib namespace"
+        )

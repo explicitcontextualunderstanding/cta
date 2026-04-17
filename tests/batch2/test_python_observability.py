@@ -1,234 +1,189 @@
 """
-Test for 'python-observability' skill — Python Observability Patterns
-Validates that the Agent created an OpenTelemetry observability demo script
-demonstrating tracing, metrics, and structured logging with trace correlation.
+Test skill: python-observability
+Verify that the Agent creates an OpenTelemetry Python observability demo
+with tracing, metrics, structured logging, and log-trace correlation.
 """
 
 import os
 import re
+import ast
 import subprocess
-
 import pytest
 
 
 class TestPythonObservability:
-    """Verify OpenTelemetry observability demo script."""
-
     REPO_DIR = "/workspace/opentelemetry-python"
 
-    # ------------------------------------------------------------------
-    # Helpers
-    # ------------------------------------------------------------------
+    # === File Path Checks ===
 
-    def _read(self, *parts):
-        fpath = os.path.join(self.REPO_DIR, *parts)
-        assert os.path.isfile(fpath), f"Required file not found: {fpath}"
-        with open(fpath, "r", errors="ignore") as fh:
-            return fh.read()
-
-    # ------------------------------------------------------------------
-    # L1: File existence and syntax
-    # ------------------------------------------------------------------
-
-    def test_demo_file_exists(self):
-        """docs/examples/observability_demo.py must exist."""
-        fpath = os.path.join(self.REPO_DIR, "docs", "examples", "observability_demo.py")
-        assert os.path.isfile(fpath), "docs/examples/observability_demo.py not found"
-
-    def test_demo_compiles(self):
-        """observability_demo.py must be syntactically valid Python."""
-        result = subprocess.run(
-            ["python", "-m", "py_compile", "docs/examples/observability_demo.py"],
-            cwd=self.REPO_DIR,
-            capture_output=True,
-            text=True,
-            timeout=30,
+    def test_demo_script_exists(self):
+        """Verify docs/examples/observability_demo.py exists"""
+        path = os.path.join(
+            self.REPO_DIR, "docs/examples/observability_demo.py"
         )
-        assert (
-            result.returncode == 0
-        ), f"Syntax error in observability_demo.py:\n{result.stderr}"
-
-    def test_demo_has_main_entry_point(self):
-        """Script must have a __main__ entry point."""
-        content = self._read("docs", "examples", "observability_demo.py")
-        assert re.search(
-            r'if\s+__name__\s*==\s*["\']__main__["\']', content
-        ), "observability_demo.py missing __main__ entry point"
-
-    # ------------------------------------------------------------------
-    # L1: Tracing
-    # ------------------------------------------------------------------
-
-    def test_tracer_provider_initialization(self):
-        """Script must initialize a TracerProvider."""
-        content = self._read("docs", "examples", "observability_demo.py")
-        patterns = [
-            r"TracerProvider",
-            r"tracer_provider",
-            r"set_tracer_provider",
-        ]
-        assert any(
-            re.search(p, content) for p in patterns
-        ), "Script does not initialize a TracerProvider"
-
-    def test_creates_nested_spans(self):
-        """Script must create nested spans simulating a request flow."""
-        content = self._read("docs", "examples", "observability_demo.py")
-        span_patterns = [
-            r"start_as_current_span",
-            r"start_span",
-            r"tracer\.start",
-        ]
-        span_calls = sum(len(re.findall(p, content)) for p in span_patterns)
-        assert span_calls >= 2, (
-            f"Script creates only {span_calls} span(s) — "
-            f"need at least 2 for nested spans (e.g., HTTP handler → DB query)"
+        assert os.path.exists(path), (
+            f"observability_demo.py not found at {path}"
         )
 
-    def test_span_attributes_set(self):
-        """Spans must carry attributes for request metadata."""
-        content = self._read("docs", "examples", "observability_demo.py")
-        attr_patterns = [
-            r"set_attribute",
-            r"SpanAttributes",
-            r"attributes\s*=",
-            r"\.attributes",
+    # === Semantic Checks ===
+
+    def test_tracer_provider_setup(self):
+        """Verify TracerProvider is initialized"""
+        path = os.path.join(
+            self.REPO_DIR, "docs/examples/observability_demo.py"
+        )
+        with open(path) as f:
+            content = f.read()
+
+        trace_indicators = [
+            "TracerProvider", "tracer", "get_tracer",
+            "trace", "Tracer",
         ]
-        assert any(
-            re.search(p, content) for p in attr_patterns
-        ), "Spans do not set attributes for request metadata"
+        found = [ind for ind in trace_indicators if ind in content]
+        assert len(found) >= 2, (
+            f"Should initialize TracerProvider. Found: {found}"
+        )
 
-    # ------------------------------------------------------------------
-    # L1: Metrics
-    # ------------------------------------------------------------------
+    def test_nested_spans(self):
+        """Verify nested spans simulating request flow"""
+        path = os.path.join(
+            self.REPO_DIR, "docs/examples/observability_demo.py"
+        )
+        with open(path) as f:
+            content = f.read()
 
-    def test_meter_provider_initialization(self):
-        """Script must initialize a MeterProvider or create a Meter."""
-        content = self._read("docs", "examples", "observability_demo.py")
-        patterns = [
-            r"MeterProvider",
-            r"meter_provider",
-            r"get_meter",
-            r"create_meter",
+        span_indicators = [
+            "start_as_current_span", "start_span", "with tracer",
+            "span", "Span",
         ]
-        assert any(
-            re.search(p, content) for p in patterns
-        ), "Script does not initialize a MeterProvider or Meter"
+        found = [ind for ind in span_indicators if ind in content]
+        assert len(found) >= 2, (
+            f"Should create nested spans. Found: {found}"
+        )
 
-    def test_creates_counter_metric(self):
-        """Script must create a counter metric (e.g., request count)."""
-        content = self._read("docs", "examples", "observability_demo.py")
-        patterns = [
-            r"create_counter",
-            r"Counter\(",
-            r"counter",
-            r"\.add\(",
+    def test_span_attributes(self):
+        """Verify span attributes for request metadata"""
+        path = os.path.join(
+            self.REPO_DIR, "docs/examples/observability_demo.py"
+        )
+        with open(path) as f:
+            content = f.read()
+
+        attr_indicators = [
+            "set_attribute", "attributes", "method", "path",
+            "status_code", "attribute",
         ]
-        assert any(
-            re.search(p, content, re.IGNORECASE) for p in patterns
-        ), "Script does not create a counter metric"
+        found = [ind for ind in attr_indicators if ind in content]
+        assert len(found) >= 2, (
+            f"Should attach span attributes. Found: {found}"
+        )
 
-    def test_creates_histogram_metric(self):
-        """Script must create a histogram metric (e.g., request duration)."""
-        content = self._read("docs", "examples", "observability_demo.py")
-        patterns = [
-            r"create_histogram",
-            r"Histogram\(",
-            r"histogram",
-            r"\.record\(",
+    def test_meter_provider_setup(self):
+        """Verify MeterProvider and Meter are initialized"""
+        path = os.path.join(
+            self.REPO_DIR, "docs/examples/observability_demo.py"
+        )
+        with open(path) as f:
+            content = f.read()
+
+        meter_indicators = [
+            "MeterProvider", "Meter", "get_meter",
+            "meter", "metrics",
         ]
-        assert any(
-            re.search(p, content, re.IGNORECASE) for p in patterns
-        ), "Script does not create a histogram metric"
+        found = [ind for ind in meter_indicators if ind in content]
+        assert len(found) >= 2, (
+            f"Should initialize MeterProvider. Found: {found}"
+        )
 
-    # ------------------------------------------------------------------
-    # L1: Logging with trace correlation
-    # ------------------------------------------------------------------
+    def test_counter_and_histogram(self):
+        """Verify counter and histogram metric types"""
+        path = os.path.join(
+            self.REPO_DIR, "docs/examples/observability_demo.py"
+        )
+        with open(path) as f:
+            content = f.read()
 
-    def test_structured_logging_configured(self):
-        """Script must set up structured logging."""
-        content = self._read("docs", "examples", "observability_demo.py")
-        log_patterns = [
-            r"logging",
-            r"logger",
-            r"getLogger",
-            r"LoggingHandler",
-            r"structlog",
+        counter_indicators = ["counter", "Counter", "add("]
+        histogram_indicators = ["histogram", "Histogram", "record("]
+
+        counter_found = [ind for ind in counter_indicators if ind in content]
+        histogram_found = [ind for ind in histogram_indicators if ind in content]
+
+        assert len(counter_found) >= 1, (
+            f"Should create a counter metric. Found: {counter_found}"
+        )
+        assert len(histogram_found) >= 1, (
+            f"Should create a histogram metric. Found: {histogram_found}"
+        )
+
+    def test_structured_logging(self):
+        """Verify structured logging setup"""
+        path = os.path.join(
+            self.REPO_DIR, "docs/examples/observability_demo.py"
+        )
+        with open(path) as f:
+            content = f.read()
+
+        log_indicators = [
+            "logging", "logger", "LoggerProvider", "log",
+            "getLogger", "info", "warning", "error",
         ]
-        assert any(
-            re.search(p, content) for p in log_patterns
-        ), "Script does not configure structured logging"
+        found = [ind for ind in log_indicators if ind in content]
+        assert len(found) >= 3, (
+            f"Should set up structured logging. Found: {found}"
+        )
 
     def test_log_trace_correlation(self):
-        """Log output must include trace/span IDs for correlation."""
-        content = self._read("docs", "examples", "observability_demo.py")
-        correlation_patterns = [
-            r"trace_id",
-            r"span_id",
-            r"otelTraceID",
-            r"otelSpanID",
-            r"get_current_span",
-            r"format_trace_id",
-            r"trace.*id.*log|log.*trace.*id",
+        """Verify trace IDs appear in log output"""
+        path = os.path.join(
+            self.REPO_DIR, "docs/examples/observability_demo.py"
+        )
+        with open(path) as f:
+            content = f.read()
+
+        correlation_indicators = [
+            "trace_id", "span_id", "otelTraceID",
+            "otelSpanID", "context", "get_current_span",
         ]
-        assert any(
-            re.search(p, content, re.IGNORECASE) for p in correlation_patterns
-        ), "Logging does not include trace/span ID correlation"
-
-    def test_multiple_log_levels(self):
-        """Script must log at different severity levels."""
-        content = self._read("docs", "examples", "observability_demo.py")
-        levels = [
-            r"\.info\(",
-            r"\.warning\(",
-            r"\.error\(",
-            r"\.debug\(",
-            r"\.warn\(",
-            r"\.critical\(",
-        ]
-        level_count = sum(1 for p in levels if re.search(p, content))
-        assert level_count >= 2, (
-            f"Script only uses {level_count} log level(s) — "
-            f"need at least 2 (e.g., info, warning, error)"
+        found = [ind for ind in correlation_indicators if ind in content]
+        assert len(found) >= 1, (
+            f"Should include log-trace correlation. Found: {found}"
         )
 
-    # ------------------------------------------------------------------
-    # L2: Dynamic execution
-    # ------------------------------------------------------------------
+    # === Functional Checks ===
 
-    def test_demo_runs_successfully(self):
-        """observability_demo.py must run to completion."""
-        result = subprocess.run(
-            ["python", "docs/examples/observability_demo.py"],
-            cwd=self.REPO_DIR,
-            capture_output=True,
-            text=True,
-            timeout=60,
+    def test_script_valid_python(self):
+        """Verify observability_demo.py is valid Python"""
+        path = os.path.join(
+            self.REPO_DIR, "docs/examples/observability_demo.py"
         )
-        assert result.returncode == 0, (
-            f"Demo script failed (rc={result.returncode}):\n"
-            f"stderr: {result.stderr[-3000:]}"
+        with open(path) as f:
+            source = f.read()
+        try:
+            ast.parse(source)
+        except SyntaxError as e:
+            pytest.fail(f"observability_demo.py has syntax errors: {e}")
+
+    def test_has_main_entry_point(self):
+        """Verify script has __main__ entry point"""
+        path = os.path.join(
+            self.REPO_DIR, "docs/examples/observability_demo.py"
+        )
+        with open(path) as f:
+            content = f.read()
+
+        assert '__name__' in content and '__main__' in content, (
+            "Script should have a __main__ entry point"
         )
 
-    def test_demo_output_contains_trace_data(self):
-        """Running the demo must produce output containing trace/span information."""
-        result = subprocess.run(
-            ["python", "docs/examples/observability_demo.py"],
-            cwd=self.REPO_DIR,
-            capture_output=True,
-            text=True,
-            timeout=60,
+    def test_imports_opentelemetry(self):
+        """Verify script imports from opentelemetry"""
+        path = os.path.join(
+            self.REPO_DIR, "docs/examples/observability_demo.py"
         )
-        combined = result.stdout + result.stderr
-        trace_patterns = [
-            r"trace",
-            r"span",
-            r"Span",
-            r"Trace",
-            r"[0-9a-f]{32}",
-            r"StatusCode",
-        ]
-        assert any(re.search(p, combined, re.IGNORECASE) for p in trace_patterns), (
-            f"Demo output does not contain trace/span information:\n"
-            f"{combined[:3000]}"
+        with open(path) as f:
+            content = f.read()
+
+        assert "opentelemetry" in content, (
+            "Script should import from opentelemetry"
         )

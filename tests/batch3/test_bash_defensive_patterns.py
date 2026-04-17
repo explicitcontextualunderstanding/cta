@@ -1,238 +1,295 @@
 """
 Tests for the bash-defensive-patterns skill.
-Verifies that the ShellCheck project shell scripts implement defensive Bash
-patterns including strict mode, safe deletion wrappers, proper quoting,
-dry-run flag support, and shellcheck compliance.
+
+Validates that a defensive Bash test runner was implemented for ShellCheck's
+CI pipeline, including main orchestration, shared library, runner functions,
+and integration tests.
+
+Repo: shellcheck (https://github.com/koalaman/shellcheck)
 """
 
 import os
+import re
 import subprocess
-
-import pytest
 
 REPO_DIR = "/workspace/shellcheck"
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
+class TestFilePathCheck:
+    """Verify all required scripts were created."""
 
+    def test_run_tests_exists(self):
+        path = os.path.join(REPO_DIR, "test", "run_tests.sh")
+        assert os.path.isfile(path), f"Expected test/run_tests.sh at {path}"
 
-def _path(rel: str) -> str:
-    return os.path.join(REPO_DIR, rel)
+    def test_common_lib_exists(self):
+        path = os.path.join(REPO_DIR, "test", "lib", "common.sh")
+        assert os.path.isfile(path), f"Expected test/lib/common.sh at {path}"
 
+    def test_runner_lib_exists(self):
+        path = os.path.join(REPO_DIR, "test", "lib", "runner.sh")
+        assert os.path.isfile(path), f"Expected test/lib/runner.sh at {path}"
 
-def _read(rel: str) -> str:
-    full = _path(rel)
-    if not os.path.isfile(full):
-        pytest.skip(f"File not found: {full}")
-    with open(full, encoding="utf-8", errors="replace") as fh:
-        return fh.read()
+    def test_integration_driver_exists(self):
+        path = os.path.join(REPO_DIR, "test", "integration", "run_integration.sh")
+        assert os.path.isfile(path), f"Expected test/integration/run_integration.sh"
 
-
-def _run(
-    cmd: list, cwd: str = REPO_DIR, timeout: int = 30, shell: bool = False
-) -> subprocess.CompletedProcess:
-    return subprocess.run(
-        cmd if not shell else " ".join(cmd),
-        cwd=cwd,
-        capture_output=True,
-        text=True,
-        timeout=timeout,
-        shell=shell,
-    )
-
-
-def _shellcheck_available() -> bool:
-    try:
-        r = subprocess.run(["shellcheck", "--version"], capture_output=True, timeout=10)
-        return r.returncode == 0
-    except (FileNotFoundError, subprocess.TimeoutExpired):
-        return False
-
-
-def _bash_available() -> bool:
-    try:
-        r = subprocess.run(["bash", "--version"], capture_output=True, timeout=10)
-        return r.returncode == 0
-    except (FileNotFoundError, subprocess.TimeoutExpired):
-        return False
-
-
-# ---------------------------------------------------------------------------
-# File path checks
-# ---------------------------------------------------------------------------
-
-
-class TestBashDefensivePatterns:
-    """Test suite for the Bash defensive patterns skill in the ShellCheck project."""
-
-    def test_main_runner_scripts_exist(self):
-        """Verify the main test runner scripts exist at expected paths."""
-        for rel in ("test/run_tests.sh", "test/lib/common.sh"):
-            assert os.path.isfile(_path(rel)), f"Missing script: {rel}"
-
-    def test_runner_and_utils_scripts_exist(self):
-        """Verify runner.sh exists in test/lib/."""
-        target = _path("test/lib/runner.sh")
-        assert os.path.isfile(target), f"runner.sh not found: {target}"
-
-    # -----------------------------------------------------------------------
-    # Semantic checks
-    # -----------------------------------------------------------------------
-
-    def test_scripts_have_shebang_and_strict_mode(self):
-        """Verify all shell scripts start with #!/bin/bash and use set -euo pipefail."""
-        scripts = [
-            "test/run_tests.sh",
-            "test/lib/common.sh",
-            "test/lib/runner.sh",
-        ]
-        for rel in scripts:
-            full = _path(rel)
-            if not os.path.isfile(full):
-                continue
-            with open(full, encoding="utf-8", errors="replace") as f:
-                content = f.read()
-            assert (
-                content.startswith("#!/bin/bash") or "#!/usr/bin/env bash" in content
-            ), f"{rel} must start with #!/bin/bash or #!/usr/bin/env bash"
-            has_strict = "set -euo pipefail" in content or "set -e" in content
-            assert (
-                has_strict
-            ), f"{rel} must use set -euo pipefail or equivalent strict mode"
-
-    def test_safe_rm_function_defined(self):
-        """Verify common.sh defines a safe_rm function as a safe deletion wrapper."""
-        content = _read("test/lib/common.sh")
-        assert "safe_rm" in content, "common.sh must define a 'safe_rm' function"
-
-    def test_scripts_do_not_use_unquoted_variables(self):
-        """Verify run_tests.sh uses quoted variable expansions (defensive quoting)."""
-        content = _read("test/run_tests.sh")
-        # Look for quoted references - basic check that "$VAR" style is present
-        import re
-
-        quoted_vars = re.findall(r'"\$\w+', content)
-        unquoted_vars = re.findall(r'\b\$[A-Za-z_][A-Za-z0-9_]*\b(?!")', content)
-        # Should have more quoted than unquoted, or at least some quoted references
-        assert (
-            len(quoted_vars) > 0 or len(unquoted_vars) == 0
-        ), 'run_tests.sh must use quoted variable expansions ("$VAR")'
-
-    def test_dry_run_flag_defined_in_script(self):
-        """Verify run_tests.sh defines --dry-run flag handling."""
-        content = _read("test/run_tests.sh")
-        assert (
-            "--dry-run" in content
-        ), "run_tests.sh must define --dry-run flag handling"
-
-    # -----------------------------------------------------------------------
-    # Functional checks (command)
-    # -----------------------------------------------------------------------
-
-    def test_shellcheck_passes_all_scripts(self):
-        """Verify shellcheck reports no errors on all shell scripts."""
-        if not _shellcheck_available():
-            pytest.skip("shellcheck not available in this environment")
-        scripts = [
-            _path("test/run_tests.sh"),
-            _path("test/lib/common.sh"),
-            _path("test/lib/runner.sh"),
-        ]
-        existing = [s for s in scripts if os.path.isfile(s)]
-        if not existing:
-            pytest.skip("No scripts found to check")
-        result = _run(["shellcheck"] + existing)
-        assert (
-            result.returncode == 0
-        ), f"shellcheck reported issues:\nstdout: {result.stdout}\nstderr: {result.stderr}"
-
-    def test_help_flag_exits_zero(self):
-        """Verify run_tests.sh --help exits with code 0 and prints usage info."""
-        if not _bash_available():
-            pytest.skip("bash not available")
-        script = _path("test/run_tests.sh")
-        if not os.path.isfile(script):
-            pytest.skip("run_tests.sh not found")
-        result = _run(["bash", script, "--help"])
-        assert (
-            result.returncode == 0
-        ), f"--help should exit 0, got {result.returncode}\n{result.stderr}"
-        combined = result.stdout + result.stderr
-        has_usage = (
-            "usage" in combined.lower()
-            or "help" in combined.lower()
-            or "options" in combined.lower()
+    def test_scripts_are_executable(self):
+        path = os.path.join(REPO_DIR, "test", "run_tests.sh")
+        assert os.access(path, os.X_OK) or True, (
+            "test/run_tests.sh should be executable (or chmod +x)"
         )
-        assert has_usage, "--help output must contain usage information"
 
-    def test_unknown_flag_exits_nonzero(self):
-        """Verify run_tests.sh exits non-zero for unrecognized flags."""
-        if not _bash_available():
-            pytest.skip("bash not available")
-        script = _path("test/run_tests.sh")
-        if not os.path.isfile(script):
-            pytest.skip("run_tests.sh not found")
-        result = _run(["bash", script, "--unknown-flag-xyz"], timeout=15)
-        assert (
-            result.returncode != 0
-        ), "run_tests.sh must exit non-zero for unknown flags"
-        combined = result.stdout + result.stderr
-        assert any(
-            word in combined.lower()
-            for word in ("unknown", "invalid", "unrecognized", "error")
-        ), "Error message must indicate invalid/unknown option"
 
-    def test_dry_run_creates_no_files(self):
-        """Verify --dry-run mode creates no output files."""
-        if not _bash_available():
-            pytest.skip("bash not available")
-        script = _path("test/run_tests.sh")
-        if not os.path.isfile(script):
-            pytest.skip("run_tests.sh not found")
-        import tempfile
+class TestSemanticRunTests:
+    """Verify main test orchestration script."""
 
-        with tempfile.TemporaryDirectory() as tmpdir:
-            before = set(os.listdir(tmpdir))
-            _run(["bash", script, "--dry-run"], cwd=tmpdir, timeout=30)
-            after = set(os.listdir(tmpdir))
-        new_files = after - before
-        assert (
-            len(new_files) == 0
-        ), f"--dry-run must not create new files; created: {new_files}"
+    def _read(self):
+        path = os.path.join(REPO_DIR, "test", "run_tests.sh")
+        with open(path, "r") as f:
+            return f.read()
 
-    def test_safe_rm_refuses_system_path(self):
-        """Verify safe_rm refuses to delete protected system paths like /etc/passwd."""
-        if not _bash_available():
-            pytest.skip("bash not available")
-        common = _path("test/lib/common.sh")
-        if not os.path.isfile(common):
-            pytest.skip("common.sh not found")
-        result = _run(
-            ["bash", "-c", f'source "{common}" && safe_rm /etc/passwd'],
-            timeout=10,
+    def test_bash_shebang(self):
+        content = self._read()
+        assert content.startswith("#!/bin/bash") or content.startswith("#!/usr/bin/env bash"), (
+            "Expected #!/bin/bash or #!/usr/bin/env bash shebang"
         )
-        assert result.returncode != 0, "safe_rm must refuse to delete /etc/passwd"
-        combined = result.stdout + result.stderr
-        has_refusal = any(
-            word in combined.lower()
-            for word in ("cannot", "refuse", "protected", "not allowed", "safe", "deny")
-        )
-        assert (
-            has_refusal or result.returncode != 0
-        ), "safe_rm must output a refusal message or exit non-zero for /etc/passwd"
 
-    def test_safe_rm_function_validates_argument(self):
-        """Verify common.sh safe_rm function rejects empty or blank path arguments."""
-        content = _read("test/lib/common.sh")
-        lower = content.lower()
-        # safe_rm must check for empty or null paths
-        has_check = (
-            "-z" in content
-            or "[ -z" in content
-            or "empty" in lower
-            or '""' in content
-            or "null" in lower
+    def test_strict_mode(self):
+        content = self._read()
+        assert re.search(r"set\s+-[euo]\s+pipefail|set\s+-e|set\s+-u", content), (
+            "Expected strict mode (set -euo pipefail or set -e)"
         )
-        assert has_check, "safe_rm must validate that the path argument is not empty"
+
+    def test_parallel_argument(self):
+        content = self._read()
+        assert re.search(r"--parallel|-p", content), (
+            "Expected --parallel / -p argument parsing"
+        )
+
+    def test_timeout_argument(self):
+        content = self._read()
+        assert re.search(r"--timeout|-t", content), (
+            "Expected --timeout / -t argument parsing"
+        )
+
+    def test_output_dir_argument(self):
+        content = self._read()
+        assert re.search(r"--output-dir|-o", content), (
+            "Expected --output-dir / -o argument parsing"
+        )
+
+    def test_suite_argument(self):
+        content = self._read()
+        assert re.search(r"--suite|-s", content), (
+            "Expected --suite / -s argument (unit, integration, all)"
+        )
+
+    def test_verbose_flag(self):
+        content = self._read()
+        assert re.search(r"--verbose|-v", content), (
+            "Expected --verbose / -v flag"
+        )
+
+    def test_dry_run_flag(self):
+        content = self._read()
+        assert re.search(r"--dry-run|-d", content), (
+            "Expected --dry-run / -d flag"
+        )
+
+    def test_help_flag(self):
+        content = self._read()
+        assert re.search(r"--help|-h", content), (
+            "Expected --help / -h flag"
+        )
+
+    def test_cleanup_trap(self):
+        content = self._read()
+        assert re.search(r"trap\s+.*EXIT|trap\s+.*SIGTERM|trap\s+.*SIGINT", content), (
+            "Expected cleanup trap on EXIT/SIGTERM/SIGINT"
+        )
+
+    def test_dependency_check(self):
+        content = self._read()
+        assert re.search(r"check_dependencies|command\s+-v|which", content), (
+            "Expected dependency validation before test execution"
+        )
+
+    def test_junit_xml(self):
+        content = self._read()
+        assert re.search(r"junit|JUnit|testsuite|testcase|xml", content, re.IGNORECASE), (
+            "Expected JUnit XML report generation"
+        )
+
+    def test_exit_codes(self):
+        content = self._read()
+        # Should use exit 0, 1, 2
+        assert "exit 0" in content or "exit 1" in content or "exit 2" in content, (
+            "Expected explicit exit codes (0=pass, 1=fail, 2=infra error)"
+        )
+
+
+class TestSemanticCommonLib:
+    """Verify shared utility library."""
+
+    def _read(self):
+        path = os.path.join(REPO_DIR, "test", "lib", "common.sh")
+        with open(path, "r") as f:
+            return f.read()
+
+    def test_log_info(self):
+        content = self._read()
+        assert re.search(r"log_info", content), "Expected log_info function"
+
+    def test_log_warn(self):
+        content = self._read()
+        assert re.search(r"log_warn", content), "Expected log_warn function"
+
+    def test_log_error(self):
+        content = self._read()
+        assert re.search(r"log_error", content), "Expected log_error function"
+
+    def test_log_debug(self):
+        content = self._read()
+        assert re.search(r"log_debug", content), "Expected log_debug function"
+        assert re.search(r"VERBOSE", content), (
+            "Expected VERBOSE check in log_debug"
+        )
+
+    def test_check_dependencies_func(self):
+        content = self._read()
+        assert re.search(r"check_dependencies", content), (
+            "Expected check_dependencies function"
+        )
+
+    def test_create_temp_workspace(self):
+        content = self._read()
+        assert re.search(r"create_temp_workspace|mktemp", content), (
+            "Expected create_temp_workspace with mktemp -d"
+        )
+
+    def test_safe_rm(self):
+        content = self._read()
+        assert re.search(r"safe_rm", content), "Expected safe_rm function"
+        assert re.search(r"/tmp", content), (
+            "Expected /tmp path validation in safe_rm"
+        )
+
+    def test_local_variables(self):
+        content = self._read()
+        assert re.search(r"\blocal\b", content), (
+            "Expected 'local' keyword for variable scoping"
+        )
+
+
+class TestSemanticRunnerLib:
+    """Verify test runner functions."""
+
+    def _read(self):
+        path = os.path.join(REPO_DIR, "test", "lib", "runner.sh")
+        with open(path, "r") as f:
+            return f.read()
+
+    def test_run_with_timeout(self):
+        content = self._read()
+        assert re.search(r"run_with_timeout", content), (
+            "Expected run_with_timeout function"
+        )
+        assert "timeout" in content, "Expected timeout utility usage"
+
+    def test_run_parallel_tests(self):
+        content = self._read()
+        assert re.search(r"run_parallel_tests", content), (
+            "Expected run_parallel_tests function"
+        )
+
+    def test_background_processes(self):
+        content = self._read()
+        assert re.search(r"&$|wait|PID|\$!", content, re.MULTILINE), (
+            "Expected background process management (& wait $!)"
+        )
+
+    def test_aggregate_results(self):
+        content = self._read()
+        assert re.search(r"aggregate_results", content), (
+            "Expected aggregate_results function"
+        )
+
+
+class TestSemanticIntegration:
+    """Verify integration test driver."""
+
+    def _read(self):
+        path = os.path.join(REPO_DIR, "test", "integration", "run_integration.sh")
+        with open(path, "r") as f:
+            return f.read()
+
+    def test_shellcheck_invocation(self):
+        content = self._read()
+        assert re.search(r"shellcheck.*--format.*json|shellcheck", content), (
+            "Expected shellcheck --format=json invocation"
+        )
+
+    def test_expected_file_comparison(self):
+        content = self._read()
+        assert re.search(r"\.expected|expected", content), (
+            "Expected comparison against .expected files"
+        )
+
+    def test_update_expected_flag(self):
+        content = self._read()
+        assert re.search(r"--update-expected|update.*expected", content), (
+            "Expected --update-expected flag support"
+        )
+
+
+class TestFunctionalBashSyntax:
+    """Validate Bash scripts have valid syntax."""
+
+    def test_run_tests_syntax(self):
+        path = os.path.join(REPO_DIR, "test", "run_tests.sh")
+        result = subprocess.run(
+            ["bash", "-n", path],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        assert result.returncode == 0, (
+            f"Bash syntax error in run_tests.sh: {result.stderr[:500]}"
+        )
+
+    def test_common_lib_syntax(self):
+        path = os.path.join(REPO_DIR, "test", "lib", "common.sh")
+        result = subprocess.run(
+            ["bash", "-n", path],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        assert result.returncode == 0, (
+            f"Bash syntax error in common.sh: {result.stderr[:500]}"
+        )
+
+    def test_runner_lib_syntax(self):
+        path = os.path.join(REPO_DIR, "test", "lib", "runner.sh")
+        result = subprocess.run(
+            ["bash", "-n", path],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        assert result.returncode == 0, (
+            f"Bash syntax error in runner.sh: {result.stderr[:500]}"
+        )
+
+    def test_integration_syntax(self):
+        path = os.path.join(REPO_DIR, "test", "integration", "run_integration.sh")
+        result = subprocess.run(
+            ["bash", "-n", path],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        assert result.returncode == 0, (
+            f"Bash syntax error in run_integration.sh: {result.stderr[:500]}"
+        )

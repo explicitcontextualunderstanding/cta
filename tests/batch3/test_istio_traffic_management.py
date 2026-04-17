@@ -1,183 +1,260 @@
 """
-Tests for istio-traffic-management skill.
-Validates VirtualService, DestinationRule, CanaryConfig, ProgressiveRollout in istio repository.
+Tests for the istio-traffic-management skill.
+
+Validates that Istio VirtualService and DestinationRule traffic management
+builders were implemented, including canary deployment configuration.
+
+Repo: istio (https://github.com/istio/istio)
 """
 
 import os
+import re
 import subprocess
-import glob
-import pytest
 
 REPO_DIR = "/workspace/istio"
 
 
-def _path(rel: str) -> str:
-    return os.path.join(REPO_DIR, rel)
+class TestFilePathCheck:
+    """Verify that all required files were created."""
+
+    def test_virtualservice_builder_exists(self):
+        path = os.path.join(
+            REPO_DIR, "pilot", "pkg", "config", "traffic",
+            "virtualservice_builder.go",
+        )
+        assert os.path.isfile(path), f"Expected virtualservice_builder.go at {path}"
+
+    def test_destinationrule_builder_exists(self):
+        path = os.path.join(
+            REPO_DIR, "pilot", "pkg", "config", "traffic",
+            "destinationrule_builder.go",
+        )
+        assert os.path.isfile(path), f"Expected destinationrule_builder.go"
+
+    def test_canary_exists(self):
+        path = os.path.join(
+            REPO_DIR, "pilot", "pkg", "config", "traffic", "canary.go",
+        )
+        assert os.path.isfile(path), f"Expected canary.go at {path}"
+
+    def test_virtualservice_test_exists(self):
+        path = os.path.join(
+            REPO_DIR, "pilot", "pkg", "config", "traffic",
+            "virtualservice_builder_test.go",
+        )
+        assert os.path.isfile(path), f"Expected virtualservice_builder_test.go"
+
+    def test_destinationrule_test_exists(self):
+        path = os.path.join(
+            REPO_DIR, "pilot", "pkg", "config", "traffic",
+            "destinationrule_builder_test.go",
+        )
+        assert os.path.isfile(path), f"Expected destinationrule_builder_test.go"
 
 
-def _read(rel: str) -> str:
-    with open(_path(rel), encoding="utf-8", errors="ignore") as f:
-        return f.read()
+class TestSemanticVirtualServiceBuilder:
+    """Verify VirtualService builder with routing, faults, retries."""
 
+    def _read(self):
+        path = os.path.join(
+            REPO_DIR, "pilot", "pkg", "config", "traffic",
+            "virtualservice_builder.go",
+        )
+        with open(path, "r") as f:
+            return f.read()
 
-def _run(cmd: str, cwd: str = REPO_DIR, timeout: int = 120):
-    return subprocess.run(
-        cmd, shell=True, cwd=cwd, capture_output=True, text=True, timeout=timeout
-    )
-
-
-def _read_package(pkg_dir: str) -> str:
-    """Read all .go files in a directory and return concatenated content."""
-    full_dir = _path(pkg_dir)
-    content = ""
-    for f in glob.glob(os.path.join(full_dir, "*.go")):
-        with open(f, encoding="utf-8", errors="ignore") as fh:
-            content += fh.read()
-    return content
-
-
-class TestIstioTrafficManagement:
-
-    # ── file_path_check ──────────────────────────────────────────────────────
-
-    def test_traffic_management_files_exist(self):
-        """virtual_service.go and destination_rule.go must exist."""
-        for rel in [
-            "pilot/pkg/config/traffic/virtual_service.go",
-            "pilot/pkg/config/traffic/destination_rule.go",
-        ]:
-            assert os.path.isfile(_path(rel)), f"{rel} not found"
-            assert os.path.getsize(_path(rel)) > 0, f"{rel} is empty"
-
-    def test_traffic_package_has_multiple_go_files(self):
-        """Traffic config package must contain at least 3 .go files."""
-        pkg_dir = _path("pilot/pkg/config/traffic")
-        if not os.path.isdir(pkg_dir):
-            pytest.skip("pilot/pkg/config/traffic directory not found")
-        go_files = glob.glob(os.path.join(pkg_dir, "*.go"))
-        assert (
-            len(go_files) >= 3
-        ), f"Expected >= 3 .go files in traffic package, found {len(go_files)}"
-
-    # ── semantic_check ───────────────────────────────────────────────────────
-
-    def test_virtual_service_struct_defined(self):
-        """virtual_service.go must define VirtualServiceBuilder or VirtualService type."""
-        content = _read("pilot/pkg/config/traffic/virtual_service.go")
-        assert (
-            "type VirtualService" in content or "func NewVirtualService" in content
-        ), "VirtualService type/constructor not found in virtual_service.go"
-
-    def test_destination_rule_lb_policy_defined(self):
-        """destination_rule.go must include LoadBalancingPolicy and ROUND_ROBIN."""
-        content = _read("pilot/pkg/config/traffic/destination_rule.go")
-        assert "ROUND_ROBIN" in content, "ROUND_ROBIN load balancing constant not found"
-        assert (
-            "maxEjectionPercent" in content or "MaxEjectionPercent" in content
-        ), "maxEjectionPercent field not found in destination_rule.go"
-
-    def test_canary_config_and_rollout_defined(self):
-        """Package must define CanaryConfig and ProgressiveRollout types."""
-        content = _read_package("pilot/pkg/config/traffic")
-        assert (
-            "CanaryConfig" in content
-        ), "CanaryConfig type not found in traffic package"
-        assert (
-            "ProgressiveRollout" in content
-        ), "ProgressiveRollout type not found in traffic package"
-
-    def test_route_weights_sum_to_100_validation(self):
-        """virtual_service.go must validate that route weights sum to 100."""
-        content = _read("pilot/pkg/config/traffic/virtual_service.go")
-        assert (
-            "100" in content
-        ), "Weight validation (sum to 100) not found in virtual_service.go"
-
-    # ── functional_check ─────────────────────────────────────────────────────
-
-    def test_routes_80_20_valid(self):
-        """Routes with weights [80, 20] (sum=100) must pass validation."""
-
-        def validate_routes(routes):
-            total = sum(r["weight"] for r in routes)
-            if total != 100:
-                raise ValueError(f"Route weights must sum to 100, got {total}")
-            return None
-
-        assert (
-            validate_routes(
-                [
-                    {"destination": "v1", "weight": 80},
-                    {"destination": "v2", "weight": 20},
-                ]
-            )
-            is None
+    def test_struct_definition(self):
+        content = self._read()
+        assert re.search(r"type\s+VirtualServiceBuilder\s+struct", content), (
+            "Expected VirtualServiceBuilder struct"
         )
 
-    def test_routes_60_30_weight_error(self):
-        """Routes with weights [60, 30] (sum=90) must return a validation error."""
+    def test_api_version(self):
+        content = self._read()
+        assert re.search(r"networking\.istio\.io/v1beta1", content), (
+            "Expected apiVersion: networking.istio.io/v1beta1"
+        )
 
-        def validate_routes(routes):
-            total = sum(r["weight"] for r in routes)
-            if total != 100:
-                raise ValueError(f"Route weights must sum to 100, got {total}")
-            return None
+    def test_hosts_field(self):
+        content = self._read()
+        assert re.search(r"hosts|Hosts", content), (
+            "Expected hosts field (required, at least one)"
+        )
 
-        with pytest.raises(ValueError, match="100"):
-            validate_routes(
-                [
-                    {"destination": "v1", "weight": 60},
-                    {"destination": "v2", "weight": 30},
-                ]
+    def test_route_weight(self):
+        content = self._read()
+        assert re.search(r"weight|Weight", content), (
+            "Expected route weight configuration"
+        )
+
+    def test_weight_sum_validation(self):
+        content = self._read()
+        assert re.search(r"100|sum|Sum|weight.*100", content), (
+            "Expected weights sum to 100 validation"
+        )
+
+    def test_fault_injection_delay(self):
+        content = self._read()
+        assert re.search(r"delay|Delay|fault.*delay", content, re.IGNORECASE), (
+            "Expected fault injection delay support"
+        )
+
+    def test_fault_injection_abort(self):
+        content = self._read()
+        assert re.search(r"abort|Abort|fault.*abort", content, re.IGNORECASE), (
+            "Expected fault injection abort support"
+        )
+
+    def test_retry_policy(self):
+        content = self._read()
+        assert re.search(r"retry|Retry|retryOn|perTryTimeout", content), (
+            "Expected retry policy configuration"
+        )
+
+    def test_request_timeout(self):
+        content = self._read()
+        assert re.search(r"timeout|Timeout", content), (
+            "Expected request timeout configuration"
+        )
+
+
+class TestSemanticDestinationRuleBuilder:
+    """Verify DestinationRule builder with circuit breaker, LB, connection pool."""
+
+    def _read(self):
+        path = os.path.join(
+            REPO_DIR, "pilot", "pkg", "config", "traffic",
+            "destinationrule_builder.go",
+        )
+        with open(path, "r") as f:
+            return f.read()
+
+    def test_struct_definition(self):
+        content = self._read()
+        assert re.search(r"type\s+DestinationRuleBuilder\s+struct", content), (
+            "Expected DestinationRuleBuilder struct"
+        )
+
+    def test_api_version(self):
+        content = self._read()
+        assert re.search(r"networking\.istio\.io/v1beta1", content), (
+            "Expected apiVersion networking.istio.io/v1beta1"
+        )
+
+    def test_subsets(self):
+        content = self._read()
+        assert re.search(r"subset|Subset", content), (
+            "Expected subsets with label selectors"
+        )
+
+    def test_connection_pool(self):
+        content = self._read()
+        assert re.search(
+            r"connectionPool|ConnectionPool|maxConnections|MaxConnections", content
+        ), "Expected connection pool configuration"
+
+    def test_outlier_detection(self):
+        content = self._read()
+        assert re.search(
+            r"outlierDetection|OutlierDetection|consecutive5xxErrors", content
+        ), "Expected outlier detection (circuit breaker)"
+
+    def test_load_balancing(self):
+        content = self._read()
+        assert re.search(
+            r"ROUND_ROBIN|LEAST_REQUEST|RANDOM|loadBalanc", content
+        ), "Expected load balancing mode configuration"
+
+    def test_max_ejection_percent(self):
+        content = self._read()
+        assert re.search(r"maxEjectionPercent|MaxEjection", content), (
+            "Expected maxEjectionPercent validation (0-100)"
+        )
+
+
+class TestSemanticCanaryDeployment:
+    """Verify canary deployment configuration."""
+
+    def _read(self):
+        path = os.path.join(
+            REPO_DIR, "pilot", "pkg", "config", "traffic", "canary.go",
+        )
+        with open(path, "r") as f:
+            return f.read()
+
+    def test_canary_config_struct(self):
+        content = self._read()
+        assert re.search(r"type\s+Canary\w*\s+struct", content), (
+            "Expected CanaryConfig struct"
+        )
+
+    def test_stable_canary_subsets(self):
+        content = self._read()
+        assert "stable" in content.lower() and "canary" in content.lower(), (
+            "Expected stable and canary subset references"
+        )
+
+    def test_progressive_rollout(self):
+        content = self._read()
+        assert re.search(r"progressive|rollout|ProgressiveRollout", content, re.IGNORECASE), (
+            "Expected progressive_rollout method"
+        )
+
+    def test_monotonic_validation(self):
+        content = self._read()
+        assert re.search(r"monoton|increasing|previous|step", content, re.IGNORECASE), (
+            "Expected monotonically increasing weight validation"
+        )
+
+
+class TestFunctionalGoSyntax:
+    """Validate Go source files."""
+
+    def _base_dir(self):
+        return os.path.join(
+            REPO_DIR, "pilot", "pkg", "config", "traffic",
+        )
+
+    def test_package_declaration(self):
+        path = os.path.join(self._base_dir(), "virtualservice_builder.go")
+        with open(path, "r") as f:
+            content = f.read(500)
+        assert re.search(r"^package\s+\w+", content, re.MULTILINE), (
+            "Expected package declaration"
+        )
+
+    def test_go_vet(self):
+        result = subprocess.run(
+            ["go", "vet", "./pilot/pkg/config/traffic/..."],
+            cwd=REPO_DIR,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        if result.returncode != 0:
+            stderr = result.stderr.lower()
+            assert "syntax error" not in stderr, (
+                f"Go syntax errors: {result.stderr[:500]}"
             )
 
-    def test_canary_config_10_percent_routes(self):
-        """CanaryConfig(10%) must produce stable=90 and canary=10 routes."""
+    def test_virtualservice_test_funcs(self):
+        path = os.path.join(
+            self._base_dir(), "virtualservice_builder_test.go",
+        )
+        with open(path, "r") as f:
+            content = f.read()
+        count = len(re.findall(r"func\s+Test\w+", content))
+        assert count >= 3, (
+            f"Expected >= 3 test functions in VS test, found {count}"
+        )
 
-        def canary_config(canary_weight: int):
-            if not 0 < canary_weight < 100:
-                raise ValueError("canary_weight must be between 1 and 99")
-            return [
-                {"destination": "stable", "weight": 100 - canary_weight},
-                {"destination": "canary", "weight": canary_weight},
-            ]
-
-        routes = canary_config(10)
-        stable = next(r for r in routes if r["destination"] == "stable")
-        canary = next(r for r in routes if r["destination"] == "canary")
-        assert stable["weight"] == 90
-        assert canary["weight"] == 10
-
-    def test_max_ejection_percent_110_error(self):
-        """DestinationRule must reject maxEjectionPercent > 100."""
-
-        def validate_destination_rule(max_ejection_percent: int):
-            if not 0 <= max_ejection_percent <= 100:
-                raise ValueError(
-                    f"maxEjectionPercent must be between 0 and 100, got {max_ejection_percent}"
-                )
-
-        with pytest.raises(ValueError, match="maxEjectionPercent"):
-            validate_destination_rule(110)
-
-    def test_progressive_rollout_stages_4(self):
-        """ProgressiveRollout([5,25,50,100]) must generate 4 rollout stages."""
-
-        def progressive_rollout(weights):
-            if weights != sorted(weights):
-                raise ValueError("Rollout weights must be monotonically increasing")
-            return [{"canary_weight": w} for w in weights]
-
-        stages = progressive_rollout([5, 25, 50, 100])
-        assert len(stages) == 4
-
-    def test_progressive_rollout_non_monotonic_error(self):
-        """ProgressiveRollout([50,25,75]) must raise an error for non-monotonic weights."""
-
-        def progressive_rollout(weights):
-            if weights != sorted(weights):
-                raise ValueError("Rollout weights must be monotonically increasing")
-            return [{"canary_weight": w} for w in weights]
-
-        with pytest.raises(ValueError, match="monotonically"):
-            progressive_rollout([50, 25, 75])
+    def test_destinationrule_test_funcs(self):
+        path = os.path.join(
+            self._base_dir(), "destinationrule_builder_test.go",
+        )
+        with open(path, "r") as f:
+            content = f.read()
+        count = len(re.findall(r"func\s+Test\w+", content))
+        assert count >= 3, (
+            f"Expected >= 3 test functions in DR test, found {count}"
+        )

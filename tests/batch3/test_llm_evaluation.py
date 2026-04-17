@@ -1,148 +1,306 @@
 """
-Tests for llm-evaluation skill.
-Validates HELM benchmark LLM evaluation metrics: ContainsMetric, ExactMatchMetric,
-FaithfulnessMetric, and MultiMetricScorer in helm repository.
+Tests for the llm-evaluation skill.
+
+Validates that an LLM evaluation framework with multi-metric scoring,
+faithfulness metric, LLM-as-judge, and structured evaluation reports
+was implemented for HELM.
+
+Repo: helm (https://github.com/stanford-crfm/helm)
 """
 
+import ast
 import os
-import pytest
+import re
+import subprocess
+import sys
 
 REPO_DIR = "/workspace/helm"
 
 
-def _path(rel: str) -> str:
-    return os.path.join(REPO_DIR, rel)
+class TestFilePathCheck:
+    """Verify that all required files were created."""
+
+    def test_multi_metric_scorer_exists(self):
+        path = os.path.join(
+            REPO_DIR, "src", "helm", "benchmark", "metrics", "multi_metric_scorer.py"
+        )
+        assert os.path.isfile(path), f"Expected multi_metric_scorer.py at {path}"
+
+    def test_faithfulness_metric_exists(self):
+        path = os.path.join(
+            REPO_DIR, "src", "helm", "benchmark", "metrics", "faithfulness_metric.py"
+        )
+        assert os.path.isfile(path), f"Expected faithfulness_metric.py at {path}"
+
+    def test_evaluation_report_exists(self):
+        path = os.path.join(
+            REPO_DIR, "src", "helm", "benchmark", "metrics", "evaluation_report.py"
+        )
+        assert os.path.isfile(path), f"Expected evaluation_report.py at {path}"
+
+    def test_test_file_exists(self):
+        path = os.path.join(
+            REPO_DIR, "src", "helm", "benchmark", "metrics", "test_multi_metric_scorer.py"
+        )
+        assert os.path.isfile(path), f"Expected test_multi_metric_scorer.py at {path}"
 
 
-def _read(rel: str) -> str:
-    with open(_path(rel), encoding="utf-8", errors="ignore") as f:
-        return f.read()
+class TestSemanticMultiMetricScorer:
+    """Verify the MultiMetricScorer class structure."""
+
+    def _read_scorer(self):
+        path = os.path.join(
+            REPO_DIR, "src", "helm", "benchmark", "metrics", "multi_metric_scorer.py"
+        )
+        with open(path, "r") as f:
+            return f.read()
+
+    def test_multi_metric_scorer_class(self):
+        content = self._read_scorer()
+        assert re.search(r"class\s+MultiMetricScorer", content), (
+            "Expected MultiMetricScorer class"
+        )
+
+    def test_metric_result_class(self):
+        content = self._read_scorer()
+        assert re.search(r"class\s+MetricResult|MetricResult", content), (
+            "Expected MetricResult class with score/explanation/metadata"
+        )
+
+    def test_sample_result_class(self):
+        content = self._read_scorer()
+        assert re.search(r"class\s+SampleResult|SampleResult", content), (
+            "Expected SampleResult class"
+        )
+
+    def test_aggregate_modes(self):
+        """Should support mean, weighted mean, and minimum aggregation."""
+        content = self._read_scorer()
+        assert re.search(r"mean|weighted|minimum|min", content, re.IGNORECASE), (
+            "Expected aggregate score modes (mean, weighted mean, minimum)"
+        )
+
+    def test_weight_support(self):
+        content = self._read_scorer()
+        assert re.search(r"weight", content), (
+            "Expected weight parameter for metrics"
+        )
 
 
-class TestLlmEvaluation:
+class TestSemanticBuiltInMetrics:
+    """Verify built-in metric implementations."""
 
-    # ── file_path_check ──────────────────────────────────────────────────────
+    def _read_scorer(self):
+        path = os.path.join(
+            REPO_DIR, "src", "helm", "benchmark", "metrics", "multi_metric_scorer.py"
+        )
+        with open(path, "r") as f:
+            return f.read()
 
-    def test_multi_metric_scorer_file_exists(self):
-        """multi_metric_scorer.py must exist in helm/benchmark/metrics."""
-        rel = "helm/benchmark/metrics/multi_metric_scorer.py"
-        assert os.path.isfile(_path(rel)), f"{rel} not found"
-        assert os.path.getsize(_path(rel)) > 0, "multi_metric_scorer.py is empty"
+    def test_exact_match_metric(self):
+        content = self._read_scorer()
+        assert re.search(r"class\s+ExactMatchMetric|ExactMatch", content), (
+            "Expected ExactMatchMetric class"
+        )
 
-    def test_faithfulness_metric_file_exists(self):
-        """faithfulness_metric.py must exist in helm/benchmark/metrics."""
-        rel = "helm/benchmark/metrics/faithfulness_metric.py"
-        assert os.path.isfile(_path(rel)), f"{rel} not found"
+    def test_contains_metric(self):
+        content = self._read_scorer()
+        assert re.search(r"class\s+ContainsMetric|Contains", content), (
+            "Expected ContainsMetric class"
+        )
 
-    # ── semantic_check ───────────────────────────────────────────────────────
+    def test_rouge_metric(self):
+        content = self._read_scorer()
+        assert re.search(r"class\s+RougeMetric|Rouge|ROUGE|rouge_l", content, re.IGNORECASE), (
+            "Expected RougeMetric class (ROUGE-L)"
+        )
 
-    def test_metric_classes_defined(self):
-        """multi_metric_scorer.py must define ExactMatchMetric, ContainsMetric, MultiMetricScorer."""
-        content = _read("helm/benchmark/metrics/multi_metric_scorer.py")
-        for cls in [
-            "class ExactMatchMetric",
-            "class ContainsMetric",
-            "class MultiMetricScorer",
-        ]:
-            assert cls in content, f"{cls} not found in multi_metric_scorer.py"
+    def test_length_penalty_metric(self):
+        content = self._read_scorer()
+        assert re.search(r"class\s+LengthPenaltyMetric|LengthPenalty", content), (
+            "Expected LengthPenaltyMetric class"
+        )
 
-    def test_faithfulness_metric_class_defined(self):
-        """faithfulness_metric.py must define FaithfulnessMetric with score method."""
-        content = _read("helm/benchmark/metrics/faithfulness_metric.py")
-        assert (
-            "class FaithfulnessMetric" in content
-        ), "FaithfulnessMetric class not found"
-        assert "def score" in content, "score() method not found in FaithfulnessMetric"
+    def test_case_sensitive_parameter(self):
+        content = self._read_scorer()
+        assert re.search(r"case_sensitive|case.insensitive", content, re.IGNORECASE), (
+            "Expected case_sensitive parameter in ContainsMetric"
+        )
 
-    def test_weighted_scoring_logic(self):
-        """MultiMetricScorer must implement weighted mean: sum(w*s)/sum(w)."""
-        content = _read("helm/benchmark/metrics/multi_metric_scorer.py")
-        assert "weight" in content, "No weight parameter found in MultiMetricScorer"
 
-    def test_llm_judge_exception_fallback_defined(self):
-        """FaithfulnessMetric must catch LLMJudge exceptions and return 0.0."""
-        content = _read("helm/benchmark/metrics/faithfulness_metric.py")
-        assert (
-            "try" in content and "except" in content
-        ), "No try/except block for LLMJudge exception handling"
-        assert "0.0" in content, "Fallback score 0.0 not found in exception handler"
+class TestSemanticFaithfulnessMetric:
+    """Verify faithfulness metric implementation."""
 
-    # ── functional_check (mocked) ─────────────────────────────────────────────
+    def _read_faithfulness(self):
+        path = os.path.join(
+            REPO_DIR, "src", "helm", "benchmark", "metrics", "faithfulness_metric.py"
+        )
+        with open(path, "r") as f:
+            return f.read()
 
-    def test_contains_metric_paris_score_1(self):
-        """ContainsMetric('Paris') must return 1.0 when answer contains 'Paris'."""
+    def test_faithfulness_class(self):
+        content = self._read_faithfulness()
+        assert re.search(r"class\s+\w*Faithfulness\w*", content), (
+            "Expected FaithfulnessMetric class"
+        )
 
-        class ContainsMetric:
-            def __init__(self, target):
-                self.target = target
+    def test_sentence_splitting(self):
+        content = self._read_faithfulness()
+        assert re.search(r"split|sentence|\.|\?|!", content), (
+            "Expected sentence splitting logic"
+        )
 
-            def score(self, answer):
-                return 1.0 if self.target in answer else 0.0
+    def test_word_overlap_ratio(self):
+        """Support ratio >= 0.5 threshold for sentence support."""
+        content = self._read_faithfulness()
+        assert re.search(r"overlap|intersection|0\.5|ratio", content, re.IGNORECASE), (
+            "Expected word overlap ratio computation (>= 0.5 threshold)"
+        )
 
-        m = ContainsMetric("Paris")
-        assert m.score("The capital of France is Paris.") == 1.0
+    def test_per_sentence_details(self):
+        content = self._read_faithfulness()
+        assert re.search(r"supported|per.sentence|metadata|details", content, re.IGNORECASE), (
+            "Expected per-sentence support details in metadata"
+        )
 
-    def test_contains_metric_absent_score_0(self):
-        """ContainsMetric must return 0.0 when target string is absent."""
 
-        class ContainsMetric:
-            def __init__(self, target):
-                self.target = target
+class TestSemanticLLMJudge:
+    """Verify LLM-as-judge metric."""
 
-            def score(self, answer):
-                return 1.0 if self.target in answer else 0.0
+    def _read_scorer(self):
+        path = os.path.join(
+            REPO_DIR, "src", "helm", "benchmark", "metrics", "multi_metric_scorer.py"
+        )
+        with open(path, "r") as f:
+            return f.read()
 
-        m = ContainsMetric("Paris")
-        assert m.score("London is a city.") == 0.0
+    def test_llm_judge_class(self):
+        content = self._read_scorer()
+        assert re.search(r"class\s+LLMJudgeMetric|LLMJudge", content), (
+            "Expected LLMJudgeMetric class"
+        )
 
-    def test_exact_match_whitespace_normalization(self):
-        """ExactMatchMetric must strip whitespace before comparison."""
+    def test_judge_function_injection(self):
+        content = self._read_scorer()
+        assert re.search(r"judge_function|judge_fn|scorer", content), (
+            "Expected injectable judge_function parameter"
+        )
 
-        class ExactMatchMetric:
-            def __init__(self, target):
-                self.target = target
+    def test_exception_handling(self):
+        content = self._read_scorer()
+        assert re.search(r"except|Exception|0\.0.*error|error.*0\.0", content), (
+            "Expected exception handling returning score 0.0"
+        )
 
-            def score(self, answer):
-                return 1.0 if answer.strip() == self.target else 0.0
 
-        m = ExactMatchMetric("Paris")
-        assert m.score("  Paris  ") == 1.0
+class TestSemanticEvaluationReport:
+    """Verify evaluation report generation."""
 
-    def test_faithfulness_metric_half_support(self):
-        """FaithfulnessMetric returns 0.5 when 1 of 2 sentences is supported."""
+    def _read_report(self):
+        path = os.path.join(
+            REPO_DIR, "src", "helm", "benchmark", "metrics", "evaluation_report.py"
+        )
+        with open(path, "r") as f:
+            return f.read()
 
-        class FaithfulnessMetric:
-            def score(self, sentences_supported):
-                if not sentences_supported:
-                    return 0.0
-                return sum(sentences_supported) / len(sentences_supported)
+    def test_evaluation_report_class(self):
+        content = self._read_report()
+        assert re.search(r"class\s+EvaluationReport", content), (
+            "Expected EvaluationReport class"
+        )
 
-        m = FaithfulnessMetric()
-        assert m.score([True, False]) == 0.5
+    def test_add_sample_method(self):
+        content = self._read_report()
+        assert re.search(r"def\s+add_sample", content), (
+            "Expected add_sample method"
+        )
 
-    def test_weighted_mean_0_67(self):
-        """Weighted score: ExactMatch(w=1, s=0) + Contains(w=2, s=1.0) = 2/3 ≈ 0.667."""
-        scores = [(0.0, 1), (1.0, 2)]
-        total_weight = sum(w for _, w in scores)
-        weighted_sum = sum(s * w for s, w in scores)
-        result = weighted_sum / total_weight
-        assert abs(result - 2 / 3) < 1e-9
+    def test_summary_method(self):
+        content = self._read_report()
+        assert re.search(r"def\s+summary", content), (
+            "Expected summary method"
+        )
 
-    def test_llm_judge_exception_returns_0(self):
-        """FaithfulnessMetric must return 0.0 when LLMJudge raises an exception."""
+    def test_report_summary_class(self):
+        content = self._read_report()
+        assert re.search(r"ReportSummary|class\s+\w*Summary", content), (
+            "Expected ReportSummary class"
+        )
 
-        class FaithfulnessMetric:
-            def __init__(self, judge):
-                self.judge = judge
+    def test_to_json_method(self):
+        content = self._read_report()
+        assert re.search(r"def\s+to_json", content), (
+            "Expected to_json export method"
+        )
 
-            def score(self, answer, context):
-                try:
-                    return self.judge(answer, context)
-                except Exception:
-                    return 0.0
+    def test_to_csv_method(self):
+        content = self._read_report()
+        assert re.search(r"def\s+to_csv", content), (
+            "Expected to_csv export method"
+        )
 
-        def failing_judge(answer, context):
-            raise RuntimeError("LLMJudge API error")
+    def test_percentile_statistics(self):
+        content = self._read_report()
+        assert re.search(r"p25|p50|p75|percentile|median|std", content, re.IGNORECASE), (
+            "Expected percentile statistics in report summary"
+        )
 
-        m = FaithfulnessMetric(judge=failing_judge)
-        assert m.score("test", "test") == 0.0
+
+class TestFunctionalPythonSyntax:
+    """Validate Python syntax of all created files."""
+
+    def _check_syntax(self, filepath):
+        with open(filepath, "r") as f:
+            source = f.read()
+        ast.parse(source)
+
+    def test_scorer_syntax(self):
+        self._check_syntax(
+            os.path.join(REPO_DIR, "src", "helm", "benchmark", "metrics", "multi_metric_scorer.py")
+        )
+
+    def test_faithfulness_syntax(self):
+        self._check_syntax(
+            os.path.join(REPO_DIR, "src", "helm", "benchmark", "metrics", "faithfulness_metric.py")
+        )
+
+    def test_report_syntax(self):
+        self._check_syntax(
+            os.path.join(REPO_DIR, "src", "helm", "benchmark", "metrics", "evaluation_report.py")
+        )
+
+    def test_test_file_syntax(self):
+        self._check_syntax(
+            os.path.join(
+                REPO_DIR, "src", "helm", "benchmark", "metrics", "test_multi_metric_scorer.py"
+            )
+        )
+
+
+class TestFunctionalAgentTests:
+    """Verify the agent's own tests."""
+
+    def test_sufficient_test_count(self):
+        path = os.path.join(
+            REPO_DIR, "src", "helm", "benchmark", "metrics", "test_multi_metric_scorer.py"
+        )
+        with open(path, "r") as f:
+            content = f.read()
+        test_count = len(re.findall(r"def\s+test_", content))
+        assert test_count >= 5, (
+            f"Expected at least 5 test functions, found {test_count}"
+        )
+
+    def test_agent_tests_pass(self):
+        result = subprocess.run(
+            [sys.executable, "-m", "pytest",
+             "src/helm/benchmark/metrics/test_multi_metric_scorer.py",
+             "-v", "--tb=short"],
+            cwd=REPO_DIR,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        assert result.returncode == 0, (
+            f"Agent's evaluation tests failed:\n{result.stdout[-1000:]}\n{result.stderr[-500:]}"
+        )

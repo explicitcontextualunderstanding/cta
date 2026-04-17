@@ -1,184 +1,208 @@
-"""Test file for the prompt-engineering-patterns skill.
-
-This suite validates the SemanticFewShotPromptTemplate and ExampleStore
-classes in langchain's prompts package.
+"""
+Test skill: prompt-engineering-patterns
+Verify that the Agent implements a SemanticFewShotPromptTemplate with dynamic
+example selection (cosine similarity + MMR), chain-of-thought support, and
+proper LangChain BasePromptTemplate integration.
 """
 
-from __future__ import annotations
-
-import ast
-import pathlib
+import os
 import re
-
+import ast
+import subprocess
 import pytest
 
 
 class TestPromptEngineeringPatterns:
-    """Verify prompt engineering patterns in LangChain."""
-
     REPO_DIR = "/workspace/langchain"
+    PROMPTS_DIR = "libs/langchain/langchain/prompts"
 
-    SEMANTIC_FEW_SHOT_PY = "libs/langchain/langchain/prompts/semantic_few_shot.py"
-    EXAMPLE_STORE_PY = "libs/langchain/langchain/prompts/example_store.py"
-    INIT_PY = "libs/langchain/langchain/prompts/__init__.py"
+    # ────────────────── helpers ──────────────────
 
-    # ------------------------------------------------------------------
-    # Helpers
-    # ------------------------------------------------------------------
+    def _read(self, rel_path):
+        fpath = os.path.join(self.REPO_DIR, rel_path)
+        with open(fpath, "r") as f:
+            return f.read()
 
-    def _repo_path(self, relative: str) -> pathlib.Path:
-        return pathlib.Path(self.REPO_DIR, *relative.split("/"))
+    def _exists(self, rel_path):
+        return os.path.isfile(os.path.join(self.REPO_DIR, rel_path))
 
-    def _read_text(self, relative: str) -> str:
-        path = self._repo_path(relative)
-        assert path.exists(), f"Expected path to exist: {path}"
-        return path.read_text(encoding="utf-8", errors="ignore")
+    def _parse(self, rel_path):
+        fpath = os.path.join(self.REPO_DIR, rel_path)
+        with open(fpath, "r") as f:
+            return ast.parse(f.read())
 
-    def _assert_non_empty_file(self, relative: str) -> pathlib.Path:
-        path = self._repo_path(relative)
-        assert path.is_file(), f"Expected file to exist: {path}"
-        assert path.stat().st_size > 0, f"Expected non-empty file: {path}"
-        return path
+    # === File Path Checks ===
 
-    def _class_source(self, source: str, class_name: str) -> str | None:
-        tree = ast.parse(source)
-        for node in ast.walk(tree):
-            if isinstance(node, ast.ClassDef) and node.name == class_name:
-                start = node.lineno - 1
-                end = node.end_lineno or start + 1
-                lines = source.splitlines()
-                return "\n".join(lines[start:end])
-        return None
+    def test_semantic_few_shot_module_exists(self):
+        """semantic_few_shot.py must exist"""
+        assert self._exists(f"{self.PROMPTS_DIR}/semantic_few_shot.py")
 
-    def _all_prompt_sources(self) -> str:
-        parts = []
-        for rel in (self.SEMANTIC_FEW_SHOT_PY, self.EXAMPLE_STORE_PY):
-            p = self._repo_path(rel)
-            if p.is_file():
-                parts.append(p.read_text(encoding="utf-8", errors="ignore"))
-        return "\n".join(parts)
+    def test_example_store_module_exists(self):
+        """example_store.py must exist"""
+        assert self._exists(f"{self.PROMPTS_DIR}/example_store.py")
 
-    # ------------------------------------------------------------------
-    # Layer 1 – file_path_check (3 cases)
-    # ------------------------------------------------------------------
+    def test_unit_test_file_exists(self):
+        """Unit test file must exist"""
+        assert self._exists(
+            "libs/langchain/tests/unit_tests/prompts/test_semantic_few_shot.py"
+        )
 
-    def test_file_path_libs_langchain_langchain_prompts_semantic_few_shot_py_exists(
-        self,
-    ):
-        """Verify semantic_few_shot.py exists and is non-empty."""
-        self._assert_non_empty_file(self.SEMANTIC_FEW_SHOT_PY)
+    # === Semantic Checks — ExampleStore ===
 
-    def test_file_path_libs_langchain_langchain_prompts_example_store_py_exists(self):
-        """Verify example_store.py exists and is non-empty."""
-        self._assert_non_empty_file(self.EXAMPLE_STORE_PY)
+    def test_example_store_class_defined(self):
+        """ExampleStore class must be defined"""
+        tree = self._parse(f"{self.PROMPTS_DIR}/example_store.py")
+        classes = [n.name for n in ast.walk(tree) if isinstance(n, ast.ClassDef)]
+        assert "ExampleStore" in classes, "ExampleStore class not found"
 
-    def test_file_path_libs_langchain_langchain_prompts___init___py_modified(self):
-        """Verify prompts/__init__.py exists (modified)."""
-        self._assert_non_empty_file(self.INIT_PY)
+    def test_example_store_select_method(self):
+        """ExampleStore must have a select() method"""
+        src = self._read(f"{self.PROMPTS_DIR}/example_store.py")
+        assert re.search(r'def\s+select\s*\(\s*self', src), (
+            "select() method not found in ExampleStore"
+        )
 
-    # ------------------------------------------------------------------
-    # Layer 2 – semantic_check (5 cases)
-    # ------------------------------------------------------------------
+    def test_example_store_select_diverse_method(self):
+        """ExampleStore must have a select_diverse() method for MMR"""
+        src = self._read(f"{self.PROMPTS_DIR}/example_store.py")
+        assert re.search(r'def\s+select_diverse\s*\(\s*self', src), (
+            "select_diverse() method not found in ExampleStore"
+        )
 
-    def test_semantic_examplestore_constructor_accepts_examples_embedding_function(
-        self,
-    ):
-        """ExampleStore constructor accepts examples, embedding_function, input_key."""
-        src = self._read_text(self.EXAMPLE_STORE_PY)
-        body = self._class_source(src, "ExampleStore")
-        assert body is not None, "ExampleStore class not found"
-        assert re.search(r"def\s+__init__\s*\(", body), "__init__ required"
-        for param in ("examples", "embedding_function", "input_key"):
-            assert param in body, f"ExampleStore.__init__ missing param: {param}"
+    def test_example_store_add_example_method(self):
+        """ExampleStore must have an add_example() method"""
+        src = self._read(f"{self.PROMPTS_DIR}/example_store.py")
+        assert re.search(r'def\s+add_example\s*\(\s*self', src), (
+            "add_example() method not found"
+        )
 
-    def test_semantic_select_method_signature_query_k_list_dict(self):
-        """select method signature: (query, k) -> list[dict]."""
-        src = self._read_text(self.EXAMPLE_STORE_PY)
-        assert re.search(r"def\s+select\s*\(", src), "select method not found"
-        assert re.search(r"query", src) and re.search(
-            r"\bk\b", src
-        ), "select should accept query and k parameters"
+    def test_example_store_remove_example_method(self):
+        """ExampleStore must have a remove_example() method"""
+        src = self._read(f"{self.PROMPTS_DIR}/example_store.py")
+        assert re.search(r'def\s+remove_example\s*\(\s*self', src), (
+            "remove_example() method not found"
+        )
 
-    def test_semantic_select_diverse_method_signature_query_k_lambda_mult_list_dic(
-        self,
-    ):
-        """select_diverse method signature: (query, k, lambda_mult) -> list[dict]."""
-        src = self._read_text(self.EXAMPLE_STORE_PY)
-        assert re.search(
-            r"def\s+select_diverse\s*\(", src
-        ), "select_diverse method not found"
-        assert re.search(
-            r"lambda_mult", src
-        ), "select_diverse should accept lambda_mult parameter"
+    def test_cosine_similarity_function(self):
+        """cosine_similarity utility function must be defined"""
+        src = self._read(f"{self.PROMPTS_DIR}/example_store.py")
+        assert re.search(r'def\s+cosine_similarity\s*\(', src), (
+            "cosine_similarity function not found"
+        )
 
-    def test_semantic_semanticfewshotprompttemplate_inherits_from_baseprompttempla(
-        self,
-    ):
-        """SemanticFewShotPromptTemplate inherits from BasePromptTemplate."""
-        src = self._read_text(self.SEMANTIC_FEW_SHOT_PY)
-        tree = ast.parse(src)
-        for node in ast.walk(tree):
-            if isinstance(node, ast.ClassDef) and "SemanticFewShot" in node.name:
-                bases = [getattr(b, "id", getattr(b, "attr", "")) for b in node.bases]
-                assert any(
-                    "PromptTemplate" in b or "Base" in b for b in bases
-                ), "SemanticFewShotPromptTemplate should inherit from BasePromptTemplate"
-                return
-        pytest.fail("SemanticFewShotPromptTemplate class not found")
+    # === Semantic Checks — SemanticFewShotPromptTemplate ===
 
-    def test_semantic_constructor_accepts_system_template_instruction_template_exa(
-        self,
-    ):
-        """Constructor accepts system_template, instruction_template, example_store, k, etc."""
-        src = self._read_text(self.SEMANTIC_FEW_SHOT_PY)
-        for param in ("system_template", "instruction_template", "example_store", "k"):
-            assert param in src, f"SemanticFewShotPromptTemplate missing param: {param}"
+    def test_template_class_defined(self):
+        """SemanticFewShotPromptTemplate class must be defined"""
+        tree = self._parse(f"{self.PROMPTS_DIR}/semantic_few_shot.py")
+        classes = [n.name for n in ast.walk(tree) if isinstance(n, ast.ClassDef)]
+        assert "SemanticFewShotPromptTemplate" in classes, (
+            "SemanticFewShotPromptTemplate class not found"
+        )
 
-    # ------------------------------------------------------------------
-    # Layer 3 – functional_check (5 cases, source analysis)
-    # ------------------------------------------------------------------
+    def test_template_inherits_base(self):
+        """SemanticFewShotPromptTemplate must inherit from BasePromptTemplate"""
+        src = self._read(f"{self.PROMPTS_DIR}/semantic_few_shot.py")
+        assert "BasePromptTemplate" in src, (
+            "SemanticFewShotPromptTemplate should inherit from BasePromptTemplate"
+        )
 
-    def test_functional_select_query_k_3_returns_3_most_similar_examples_from_pool_o(
-        self,
-    ):
-        """select(query, k=3) returns 3 most similar examples from pool of 100."""
-        src = self._read_text(self.EXAMPLE_STORE_PY)
-        assert re.search(r"def\s+select\s*\(", src), "select method required"
-        assert re.search(
-            r"sort|argsort|topk|nlargest|[:k]|\[:k\]", src
-        ), "select should rank and return top-k examples"
+    def test_format_method(self):
+        """format() method must be defined"""
+        src = self._read(f"{self.PROMPTS_DIR}/semantic_few_shot.py")
+        assert re.search(r'def\s+format\s*\(\s*self', src), (
+            "format() method not found"
+        )
 
-    def test_functional_select_diverse_query_k_3_lambda_mult_0_5_returns_diverse_set(
-        self,
-    ):
-        """select_diverse(query, k=3, lambda_mult=0.5) returns diverse set."""
-        src = self._read_text(self.EXAMPLE_STORE_PY)
-        assert re.search(
-            r"select_diverse|MMR|maximal.marginal", src, re.IGNORECASE
-        ), "select_diverse should implement MMR-based selection"
+    def test_format_messages_method(self):
+        """format_messages() method must be defined"""
+        src = self._read(f"{self.PROMPTS_DIR}/semantic_few_shot.py")
+        assert re.search(r'def\s+format_messages\s*\(\s*self', src), (
+            "format_messages() method not found"
+        )
 
-    def test_functional_format_input_query_produces_prompt_with_system_3_examples_in(
-        self,
-    ):
-        """format(input='query') produces prompt with system + 3 examples + instruction."""
-        src = self._read_text(self.SEMANTIC_FEW_SHOT_PY)
-        assert re.search(r"def\s+format\s*\(", src), "format method required"
-        assert re.search(
-            r"system|example|instruction", src, re.IGNORECASE
-        ), "format should compose system, examples, and instruction"
+    def test_input_variables_property(self):
+        """input_variables property must be defined"""
+        src = self._read(f"{self.PROMPTS_DIR}/semantic_few_shot.py")
+        assert "input_variables" in src, "input_variables property not found"
 
-    def test_functional_format_with_include_reasoning_true_includes_reasoning_lines(
-        self,
-    ):
-        """format with include_reasoning=True includes Reasoning lines."""
-        src = self._read_text(self.SEMANTIC_FEW_SHOT_PY)
-        assert re.search(
-            r"include_reasoning|reasoning", src
-        ), "SemanticFewShotPromptTemplate should support include_reasoning"
+    def test_include_reasoning_support(self):
+        """Template must support include_reasoning parameter for CoT"""
+        src = self._read(f"{self.PROMPTS_DIR}/semantic_few_shot.py")
+        assert "include_reasoning" in src, (
+            "include_reasoning parameter not found — CoT support missing"
+        )
 
-    def test_functional_format_messages_returns_systemmessage_humanmessage(self):
-        """format_messages returns [SystemMessage, HumanMessage]."""
-        src = self._read_text(self.SEMANTIC_FEW_SHOT_PY)
-        assert re.search(
-            r"format_messages|SystemMessage|HumanMessage", src
-        ), "SemanticFewShotPromptTemplate should support format_messages"
+    def test_selection_strategy_options(self):
+        """Template must support 'similarity' and 'mmr' selection strategies"""
+        src = self._read(f"{self.PROMPTS_DIR}/semantic_few_shot.py")
+        assert "similarity" in src and "mmr" in src, (
+            "selection_strategy must support 'similarity' and 'mmr'"
+        )
+
+    def test_example_separator_configurable(self):
+        """example_separator must be a configurable parameter"""
+        src = self._read(f"{self.PROMPTS_DIR}/semantic_few_shot.py")
+        assert "example_separator" in src, (
+            "example_separator parameter not found"
+        )
+
+    # === Semantic Checks — __init__.py exports ===
+
+    def test_init_exports_classes(self):
+        """__init__.py must export SemanticFewShotPromptTemplate and ExampleStore"""
+        src = self._read(f"{self.PROMPTS_DIR}/__init__.py")
+        assert "SemanticFewShotPromptTemplate" in src, (
+            "SemanticFewShotPromptTemplate not exported from __init__.py"
+        )
+
+    # === Functional Checks ===
+
+    def test_example_store_importable(self):
+        """ExampleStore must be importable"""
+        result = subprocess.run(
+            ["python", "-c",
+             "from langchain.prompts.example_store import ExampleStore, cosine_similarity; "
+             "print('OK')"],
+            capture_output=True, text=True, cwd=self.REPO_DIR, timeout=30,
+        )
+        assert "OK" in result.stdout, (
+            f"Import failed:\n{result.stdout}\n{result.stderr}"
+        )
+
+    def test_template_importable(self):
+        """SemanticFewShotPromptTemplate must be importable"""
+        result = subprocess.run(
+            ["python", "-c",
+             "from langchain.prompts.semantic_few_shot import "
+             "SemanticFewShotPromptTemplate; print('OK')"],
+            capture_output=True, text=True, cwd=self.REPO_DIR, timeout=30,
+        )
+        assert "OK" in result.stdout, (
+            f"Import failed:\n{result.stdout}\n{result.stderr}"
+        )
+
+    def test_cosine_similarity_correctness(self):
+        """cosine_similarity must return 1.0 for identical vectors"""
+        result = subprocess.run(
+            ["python", "-c",
+             "from langchain.prompts.example_store import cosine_similarity; "
+             "assert abs(cosine_similarity([1.0, 0.0], [1.0, 0.0]) - 1.0) < 1e-6; "
+             "print('OK')"],
+            capture_output=True, text=True, cwd=self.REPO_DIR, timeout=30,
+        )
+        assert "OK" in result.stdout, (
+            f"cosine_similarity test failed:\n{result.stdout}\n{result.stderr}"
+        )
+
+    def test_unit_tests_pass(self):
+        """Unit tests for semantic few-shot must pass"""
+        result = subprocess.run(
+            ["python", "-m", "pytest",
+             "libs/langchain/tests/unit_tests/prompts/test_semantic_few_shot.py",
+             "-v", "--tb=short"],
+            capture_output=True, text=True, cwd=self.REPO_DIR, timeout=120,
+        )
+        assert result.returncode == 0, (
+            f"Unit tests failed:\n{result.stdout}\n{result.stderr}"
+        )

@@ -1,184 +1,222 @@
 """
-Test for 'spark-optimization' skill — Spark Optimization
-Validates Spark optimization functions: optimize_join, repartition_for_writes,
-compute_aggregations, cache_with_strategy, detect_skew via AST/static analysis.
+Tests for skill: spark-optimization
+Repo: apache/spark
+Image: zhangyiiiiii/swe-skills-bench-jvm
+Task: Implement data skew handling and partition optimization utilities
+      for Apache Spark (PySpark).
 """
 
+import ast
 import os
 import re
-import ast
-import glob
+import subprocess
+
 import pytest
 
+REPO_DIR = "/workspace/spark"
+OPT_DIR = os.path.join(REPO_DIR, "python", "pyspark", "sql", "optimization")
 
-class TestSparkOptimization:
-    """Tests for Spark optimization patterns in the spark repo."""
+INIT_FILE = os.path.join(OPT_DIR, "__init__.py")
+SKEW_FILE = os.path.join(OPT_DIR, "skew_handler.py")
+PARTITION_FILE = os.path.join(OPT_DIR, "partition_advisor.py")
+CACHE_FILE = os.path.join(OPT_DIR, "cache_manager.py")
+CONFIG_FILE = os.path.join(OPT_DIR, "config_tuner.py")
+TEST_FILE = os.path.join(REPO_DIR, "python", "pyspark", "tests", "test_optimization.py")
 
-    REPO_DIR = "/workspace/spark"
 
-    def _read(self, relpath):
-        full = os.path.join(self.REPO_DIR, relpath)
-        with open(full, "r", errors="ignore") as f:
-            return f.read()
+# ---------------------------------------------------------------------------
+# Layer 1 — file_path_check
+# ---------------------------------------------------------------------------
 
-    def _find_spark_opt_files(self):
-        """Find all spark_optimizations*.py and examples/**/*.py files."""
-        patterns = [
-            os.path.join(self.REPO_DIR, "**", "spark_optimizations*.py"),
-            os.path.join(self.REPO_DIR, "examples", "**", "*.py"),
-        ]
-        files = []
-        for p in patterns:
-            files.extend(glob.glob(p, recursive=True))
-        return files
+class TestFilePathCheck:
+    """Verify all required optimization files were created."""
 
-    def _get_all_content(self):
-        """Read and concatenate all relevant source files."""
-        files = self._find_spark_opt_files()
-        assert len(files) > 0, "No spark optimization files found"
-        contents = []
-        for f in files:
-            rel = os.path.relpath(f, self.REPO_DIR)
-            contents.append(self._read(rel))
-        return "\n".join(contents)
+    def test_init_exists(self):
+        assert os.path.isfile(INIT_FILE), f"Expected {INIT_FILE}"
 
-    def _parse_all_functions(self):
-        """Parse all source files and return set of top-level function names."""
-        files = self._find_spark_opt_files()
-        assert len(files) > 0, "No spark optimization files found"
-        func_names = set()
-        for f in files:
-            rel = os.path.relpath(f, self.REPO_DIR)
-            content = self._read(rel)
-            try:
-                tree = ast.parse(content)
-                for node in ast.walk(tree):
-                    if isinstance(node, ast.FunctionDef):
-                        func_names.add(node.name)
-            except SyntaxError:
-                pass
-        return func_names
+    def test_skew_handler_exists(self):
+        assert os.path.isfile(SKEW_FILE), f"Expected {SKEW_FILE}"
 
-    # --- File Path Checks ---
+    def test_partition_advisor_exists(self):
+        assert os.path.isfile(PARTITION_FILE), f"Expected {PARTITION_FILE}"
 
-    def test_spark_optimization_files_exist(self):
-        """Verifies that spark optimization source files exist."""
-        files = self._find_spark_opt_files()
-        assert (
-            len(files) > 0
-        ), "No spark_optimizations*.py or examples/**/*.py files found"
+    def test_cache_manager_exists(self):
+        assert os.path.isfile(CACHE_FILE), f"Expected {CACHE_FILE}"
 
-    # --- Semantic Checks (AST analysis) ---
+    def test_config_tuner_exists(self):
+        assert os.path.isfile(CONFIG_FILE), f"Expected {CONFIG_FILE}"
 
-    def test_sem_optimize_join_function_defined(self):
-        """optimize_join function is defined."""
-        func_names = self._parse_all_functions()
-        assert (
-            "optimize_join" in func_names
-        ), f"optimize_join not found. Functions: {func_names}"
+    def test_test_file_exists(self):
+        assert os.path.isfile(TEST_FILE), f"Expected {TEST_FILE}"
 
-    def test_sem_repartition_for_writes_function_defined(self):
-        """repartition_for_writes function is defined."""
-        func_names = self._parse_all_functions()
-        assert (
-            "repartition_for_writes" in func_names
-        ), f"repartition_for_writes not found. Functions: {func_names}"
 
-    def test_sem_compute_aggregations_function_defined(self):
-        """compute_aggregations function is defined."""
-        func_names = self._parse_all_functions()
-        assert (
-            "compute_aggregations" in func_names
-        ), f"compute_aggregations not found. Functions: {func_names}"
+# ---------------------------------------------------------------------------
+# Layer 2 — semantic_check
+# ---------------------------------------------------------------------------
 
-    def test_sem_cache_with_strategy_function_defined(self):
-        """cache_with_strategy function is defined."""
-        func_names = self._parse_all_functions()
-        assert (
-            "cache_with_strategy" in func_names
-        ), f"cache_with_strategy not found. Functions: {func_names}"
+class TestSemanticSkewHandler:
+    """Verify skew handling utilities."""
 
-    def test_sem_detect_skew_function_defined(self):
-        """detect_skew function is defined."""
-        func_names = self._parse_all_functions()
-        assert (
-            "detect_skew" in func_names
-        ), f"detect_skew not found. Functions: {func_names}"
+    @pytest.fixture(autouse=True)
+    def _load_source(self):
+        with open(SKEW_FILE, "r", encoding="utf-8") as f:
+            self.src = f.read()
+        self.tree = ast.parse(self.src)
 
-    # --- Functional Checks (static content analysis) ---
+    def test_salted_join_function(self):
+        funcs = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.FunctionDef)]
+        assert "salted_join" in funcs, f"Expected salted_join function; found: {funcs}"
 
-    def test_func_optimize_join_uses_broadcast(self):
-        """optimize_join uses broadcast for small table optimization."""
-        content = self._get_all_content()
-        assert (
-            "broadcast" in content.lower()
-        ), "broadcast not found in spark optimization code"
+    def test_detect_skew_function(self):
+        funcs = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.FunctionDef)]
+        assert "detect_skew" in funcs, f"Expected detect_skew function; found: {funcs}"
 
-    def test_func_cache_with_strategy_uses_storage_level(self):
-        """cache_with_strategy references StorageLevel."""
-        content = self._get_all_content()
-        assert "StorageLevel" in content, "StorageLevel not found in code"
+    def test_salt_column_logic(self):
+        """salted_join must add a random salt column."""
+        has_salt = "salt" in self.src.lower() and ("rand" in self.src.lower() or "random" in self.src.lower())
+        assert has_salt, "Expected random salt column logic in salted_join"
 
-    def test_func_cache_with_strategy_uses_memory_and_disk(self):
-        """cache_with_strategy references MEMORY_AND_DISK."""
-        content = self._get_all_content()
-        assert "MEMORY_AND_DISK" in content, "MEMORY_AND_DISK not found in code"
+    def test_num_salts_validation(self):
+        """num_salts must be >= 2."""
+        assert "ValueError" in self.src, "Expected ValueError for num_salts < 2"
 
-    def test_func_repartition_uses_repartition_or_partition_by(self):
-        """repartition_for_writes uses repartition or partitionBy."""
-        content = self._get_all_content()
-        has_repartition = "repartition" in content
-        has_partition_by = "partitionBy" in content
-        assert (
-            has_repartition or has_partition_by
-        ), "Neither repartition nor partitionBy found"
+    def test_skew_ratio_in_detect(self):
+        """detect_skew must return skew_ratio."""
+        assert "skew_ratio" in self.src, "Expected skew_ratio in detect_skew output"
 
-    def test_func_detect_skew_handles_value_error(self):
-        """detect_skew handles or raises ValueError for invalid inputs."""
-        content = self._get_all_content()
-        assert "ValueError" in content, "ValueError not found in code"
+    def test_top_keys_in_detect(self):
+        assert "top_keys" in self.src, "Expected top_keys in detect_skew output"
 
-    def test_func_compute_aggregations_uses_agg_functions(self):
-        """compute_aggregations uses aggregate functions (sum, avg, count, min, max)."""
-        content = self._get_all_content()
-        agg_funcs = ["sum", "avg", "count", "min", "max"]
-        found = [f for f in agg_funcs if f in content.lower()]
-        assert (
-            len(found) >= 2
-        ), f"Expected at least 2 aggregate functions, found: {found}"
 
-    def test_func_optimize_join_has_threshold_logic(self):
-        """optimize_join contains threshold or size-based logic for broadcast decisions."""
-        content = self._get_all_content()
-        has_threshold = re.search(r"threshold|size|bytes|mb|MB", content)
-        assert has_threshold, "No threshold/size-based logic found in optimize_join"
+class TestSemanticPartitionAdvisor:
+    """Verify partition advisor."""
 
-    def test_func_repartition_has_num_partitions(self):
-        """repartition_for_writes accepts num_partitions parameter."""
-        content = self._get_all_content()
-        assert re.search(
-            r"num_partitions|numPartitions|n_partitions", content
-        ), "No num_partitions parameter found"
+    @pytest.fixture(autouse=True)
+    def _load_source(self):
+        with open(PARTITION_FILE, "r", encoding="utf-8") as f:
+            self.src = f.read()
+        self.tree = ast.parse(self.src)
 
-    def test_func_all_functions_have_docstrings(self):
-        """All optimization functions have docstrings."""
-        files = self._find_spark_opt_files()
-        assert len(files) > 0
-        target_funcs = {
-            "optimize_join",
-            "repartition_for_writes",
-            "compute_aggregations",
-            "cache_with_strategy",
-            "detect_skew",
-        }
-        for f in files:
-            rel = os.path.relpath(f, self.REPO_DIR)
-            content = self._read(rel)
-            try:
-                tree = ast.parse(content)
-                for node in ast.walk(tree):
-                    if isinstance(node, ast.FunctionDef) and node.name in target_funcs:
-                        docstring = ast.get_docstring(node)
-                        assert docstring is not None, f"{node.name} has no docstring"
-            except SyntaxError:
-                pass
+    def test_class_defined(self):
+        classes = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.ClassDef)]
+        assert "PartitionAdvisor" in classes, f"Expected PartitionAdvisor; found: {classes}"
+
+    def test_analyze_method(self):
+        funcs = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.FunctionDef)]
+        assert "analyze" in funcs, "Expected analyze() method"
+
+    def test_repartition_optimally_method(self):
+        funcs = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.FunctionDef)]
+        assert "repartition_optimally" in funcs, "Expected repartition_optimally() method"
+
+    def test_coalesce_vs_repartition(self):
+        """Must use coalesce for reducing and repartition for increasing."""
+        assert "coalesce" in self.src and "repartition" in self.src, (
+            "Expected both coalesce and repartition logic"
+        )
+
+    def test_target_partition_mb(self):
+        assert "target_partition_mb" in self.src or "128" in self.src, (
+            "Expected configurable target_partition_mb (default 128)"
+        )
+
+
+class TestSemanticCacheManager:
+    """Verify smart cache manager."""
+
+    @pytest.fixture(autouse=True)
+    def _load_source(self):
+        with open(CACHE_FILE, "r", encoding="utf-8") as f:
+            self.src = f.read()
+        self.tree = ast.parse(self.src)
+
+    def test_class_defined(self):
+        classes = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.ClassDef)]
+        assert "CacheManager" in classes, f"Expected CacheManager; found: {classes}"
+
+    def test_smart_cache_method(self):
+        funcs = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.FunctionDef)]
+        assert "smart_cache" in funcs, "Expected smart_cache() method"
+
+    def test_storage_levels(self):
+        """Must reference MEMORY_ONLY, MEMORY_AND_DISK, DISK_ONLY."""
+        for level in ["MEMORY_ONLY", "MEMORY_AND_DISK", "DISK_ONLY"]:
+            assert level in self.src, f"Expected storage level {level}"
+
+    def test_invalidate_method(self):
+        funcs = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.FunctionDef)]
+        assert "invalidate" in funcs, "Expected invalidate() method"
+
+
+class TestSemanticConfigTuner:
+    """Verify configuration tuner."""
+
+    @pytest.fixture(autouse=True)
+    def _load_source(self):
+        with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+            self.src = f.read()
+        self.tree = ast.parse(self.src)
+
+    def test_class_defined(self):
+        classes = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.ClassDef)]
+        assert "ConfigTuner" in classes, f"Expected ConfigTuner; found: {classes}"
+
+    def test_apply_profile_method(self):
+        funcs = [n.name for n in ast.walk(self.tree) if isinstance(n, ast.FunctionDef)]
+        assert "apply_profile" in funcs, "Expected apply_profile() method"
+
+    def test_profiles_defined(self):
+        for profile in ["small", "medium", "large"]:
+            assert profile in self.src, f"Expected profile '{profile}'"
+
+    def test_aqe_configuration(self):
+        """Must configure AQE (Adaptive Query Execution)."""
+        has_aqe = "aqe" in self.src.lower() or "adaptiveQueryExecution" in self.src
+        assert has_aqe, "Expected AQE configuration"
+
+
+# ---------------------------------------------------------------------------
+# Layer 3 — functional_check
+# ---------------------------------------------------------------------------
+
+class TestFunctionalSparkOptimization:
+    """Functional checks — syntax and structure validation."""
+
+    def _parse(self, filepath):
+        with open(filepath, "r", encoding="utf-8") as f:
+            src = f.read()
+        try:
+            ast.parse(src)
+            return True, None
+        except SyntaxError as e:
+            return False, str(e)
+
+    def test_skew_handler_valid_python(self):
+        ok, err = self._parse(SKEW_FILE)
+        assert ok, f"skew_handler.py syntax error: {err}"
+
+    def test_partition_advisor_valid_python(self):
+        ok, err = self._parse(PARTITION_FILE)
+        assert ok, f"partition_advisor.py syntax error: {err}"
+
+    def test_cache_manager_valid_python(self):
+        ok, err = self._parse(CACHE_FILE)
+        assert ok, f"cache_manager.py syntax error: {err}"
+
+    def test_config_tuner_valid_python(self):
+        ok, err = self._parse(CONFIG_FILE)
+        assert ok, f"config_tuner.py syntax error: {err}"
+
+    def test_test_file_valid_python(self):
+        ok, err = self._parse(TEST_FILE)
+        assert ok, f"test_optimization.py syntax error: {err}"
+
+    def test_init_exports_public_api(self):
+        """__init__.py should export the main classes."""
+        with open(INIT_FILE, "r", encoding="utf-8") as f:
+            src = f.read()
+        expected_exports = ["salted_join", "PartitionAdvisor", "CacheManager", "ConfigTuner"]
+        found = [e for e in expected_exports if e in src]
+        assert len(found) >= 2, (
+            f"Expected __init__.py to export at least 2 public APIs; found: {found}"
+        )

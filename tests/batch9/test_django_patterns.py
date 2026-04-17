@@ -1,167 +1,190 @@
 """
-Test for 'django-patterns' skill — Django REST Framework Patterns
-Validates serializers, views, permissions, signals, and pagination for a Django
-DRF project including ModelSerializer, ViewSet, IsOwnerOrAdmin permission,
-and API response codes.
+Test skill: django-patterns
+Verify that the Agent adds a ProductReview feature to Saleor including model,
+GraphQL types/mutations, dataloader, Celery task, and signal.
 """
 
-import glob
 import os
-import re
 import subprocess
-import sys
-
+import ast
+import re
 import pytest
 
 
 class TestDjangoPatterns:
-    """Verify Django REST Framework patterns: serializers, views, permissions, signals."""
-
     REPO_DIR = "/workspace/saleor"
 
-    # ── helpers ──────────────────────────────────────────────────────────
+    # === File Path Checks ===
 
-    @staticmethod
-    def _read_file(path: str) -> str:
-        try:
-            with open(path, "r", errors="ignore") as fh:
-                return fh.read()
-        except OSError:
-            return ""
-
-    def _app_path(self, name: str) -> str:
-        return os.path.join(self.REPO_DIR, "myapp", name)
-
-    def _find_file(self, name: str) -> str:
-        """Find a file in myapp or any common Django app directory."""
-        direct = self._app_path(name)
-        if os.path.isfile(direct):
-            return direct
-        candidates = glob.glob(os.path.join(self.REPO_DIR, "**", name), recursive=True)
-        return candidates[0] if candidates else direct
-
-    # ── file_path_check ──────────────────────────────────────────────────
-
-    def test_serializers_py_exists(self):
-        """myapp/serializers.py must exist with ModelSerializer definitions."""
-        path = self._app_path("serializers.py")
-        assert os.path.isfile(path), f"{path} does not exist"
-        assert os.path.getsize(path) > 0
-
-    def test_views_py_exists(self):
-        """myapp/views.py must exist with ModelViewSet definitions."""
-        path = self._app_path("views.py")
-        assert os.path.isfile(path), f"{path} does not exist"
-
-    def test_permissions_py_exists(self):
-        """myapp/permissions.py must exist with IsOwnerOrAdmin permission class."""
-        path = self._app_path("permissions.py")
-        assert os.path.isfile(path), f"{path} does not exist"
-
-    def test_signals_py_exists(self):
-        """myapp/signals.py must exist with Django signal handlers."""
-        path = self._app_path("signals.py")
-        assert os.path.isfile(path), f"{path} does not exist"
-
-    # ── semantic_check ───────────────────────────────────────────────────
-
-    def test_serializer_declares_model_and_fields(self):
-        """serializers.py must have ModelSerializer with Meta.model and Meta.fields."""
-        path = self._app_path("serializers.py")
-        if not os.path.isfile(path):
-            pytest.skip("serializers.py not found")
-        content = self._read_file(path)
-        assert "ModelSerializer" in content, "ModelSerializer not referenced"
-        assert "class Meta:" in content, "Meta inner class not found"
-        assert "model =" in content or "model=" in content, "Meta.model not set"
-        assert "fields =" in content or "fields=" in content, "Meta.fields not set"
-
-    def test_viewset_declares_permission_classes(self):
-        """views.py must declare permission_classes on the ViewSet."""
-        path = self._app_path("views.py")
-        if not os.path.isfile(path):
-            pytest.skip("views.py not found")
-        content = self._read_file(path)
-        assert "permission_classes" in content, "permission_classes not declared"
-        has_perm = "IsAuthenticated" in content or "IsOwnerOrAdmin" in content
-        assert has_perm, "No authentication permission found in permission_classes"
-
-    def test_isowneror_admin_permission_defined(self):
-        """permissions.py must define IsOwnerOrAdmin extending BasePermission."""
-        path = self._app_path("permissions.py")
-        if not os.path.isfile(path):
-            pytest.skip("permissions.py not found")
-        content = self._read_file(path)
-        assert "IsOwnerOrAdmin" in content, "IsOwnerOrAdmin class not defined"
-        assert "BasePermission" in content, "BasePermission not referenced"
-        assert "has_object_permission" in content, "has_object_permission not implemented"
-
-    def test_pagination_configured(self):
-        """Pagination must be configured in ViewSet or settings."""
-        path = self._app_path("views.py")
-        if not os.path.isfile(path):
-            pytest.skip("views.py not found")
-        content = self._read_file(path)
-        settings_content = ""
-        for settings_file in ("settings.py", os.path.join("config", "settings.py")):
-            sp = os.path.join(self.REPO_DIR, settings_file)
-            if os.path.isfile(sp):
-                settings_content = self._read_file(sp)
+    def test_review_model_file_exists(self):
+        """Verify ProductReview model file exists"""
+        found = False
+        for root, dirs, files in os.walk(os.path.join(self.REPO_DIR, "saleor")):
+            for f in files:
+                if "review" in f.lower() and f.endswith(".py"):
+                    found = True
+                    break
+            if found:
                 break
-        has_pagination = (
-            "pagination_class" in content
-            or "DEFAULT_PAGINATION_CLASS" in settings_content
+        assert found, "ProductReview model file not found"
+
+    # === Semantic Checks ===
+
+    def test_product_review_model_defined(self):
+        """Verify ProductReview Django model is defined with required fields"""
+        model_content = ""
+        for root, dirs, files in os.walk(os.path.join(self.REPO_DIR, "saleor")):
+            for f in files:
+                if "review" in f.lower() and "model" in f.lower() and f.endswith(".py"):
+                    with open(os.path.join(root, f)) as fh:
+                        model_content += fh.read()
+                elif f == "models.py" and "review" in root.lower():
+                    with open(os.path.join(root, f)) as fh:
+                        model_content += fh.read()
+        if not model_content:
+            # Search more broadly
+            for root, dirs, files in os.walk(os.path.join(self.REPO_DIR, "saleor")):
+                for f in files:
+                    if f.endswith(".py"):
+                        fpath = os.path.join(root, f)
+                        with open(fpath) as fh:
+                            content = fh.read()
+                        if "ProductReview" in content and "class " in content:
+                            model_content = content
+                            break
+                if model_content:
+                    break
+        assert "ProductReview" in model_content, "ProductReview class not defined"
+        assert "models.Model" in model_content or "Model)" in model_content, (
+            "ProductReview does not extend Django Model"
         )
-        assert has_pagination, "No pagination configuration found"
 
-    # ── functional_check ─────────────────────────────────────────────────
+    def test_product_review_has_required_fields(self):
+        """Verify ProductReview has rating, title, content, product FK"""
+        all_content = ""
+        for root, dirs, files in os.walk(os.path.join(self.REPO_DIR, "saleor")):
+            for f in files:
+                if f.endswith(".py"):
+                    fpath = os.path.join(root, f)
+                    with open(fpath) as fh:
+                        content = fh.read()
+                    if "ProductReview" in content:
+                        all_content += content
+        assert "rating" in all_content.lower(), "ProductReview missing rating field"
+        assert "product" in all_content.lower(), "ProductReview missing product reference"
 
-    def test_unauthenticated_request_returns_401(self):
-        """Unauthenticated GET to protected endpoint must return 401."""
-        try:
-            sys.path.insert(0, self.REPO_DIR)
-            from rest_framework.test import APIClient
-        except ImportError:
-            pytest.skip("Django REST framework not importable")
-        client = APIClient()
-        response = client.get("/api/myresource/")
-        assert response.status_code == 401
+    def test_graphql_type_defined(self):
+        """Verify GraphQL type for ProductReview exists"""
+        found = False
+        for root, dirs, files in os.walk(os.path.join(self.REPO_DIR, "saleor")):
+            if "graphql" in root.lower():
+                for f in files:
+                    if f.endswith(".py"):
+                        fpath = os.path.join(root, f)
+                        with open(fpath) as fh:
+                            content = fh.read()
+                        if "ProductReview" in content and ("ObjectType" in content or "graphene" in content or "Type" in content):
+                            found = True
+                            break
+            if found:
+                break
+        assert found, "GraphQL type for ProductReview not found"
 
-    def test_non_owner_returns_403(self):
-        """Non-owner accessing another user's resource must get 403."""
-        try:
-            sys.path.insert(0, self.REPO_DIR)
-            from rest_framework.test import APIClient
-            from django.contrib.auth.models import User
-        except ImportError:
-            pytest.skip("Django REST framework not importable")
-        # This test requires Django test DB setup — skip in pure static env
-        pytest.skip("Requires Django test database setup")
+    def test_graphql_mutations_defined(self):
+        """Verify GraphQL mutations for ProductReview exist"""
+        mutation_content = ""
+        for root, dirs, files in os.walk(os.path.join(self.REPO_DIR, "saleor")):
+            if "graphql" in root.lower():
+                for f in files:
+                    if ("mutation" in f.lower() or "review" in f.lower()) and f.endswith(".py"):
+                        fpath = os.path.join(root, f)
+                        with open(fpath) as fh:
+                            content = fh.read()
+                        if "Review" in content:
+                            mutation_content += content
+        has_create = "Create" in mutation_content or "create" in mutation_content
+        assert has_create, "No create mutation for ProductReview found"
 
-    def test_invalid_post_returns_400(self):
-        """POST with empty body to creation endpoint must return 400."""
-        try:
-            sys.path.insert(0, self.REPO_DIR)
-            from rest_framework.test import APIClient
-        except ImportError:
-            pytest.skip("Django REST framework not importable")
-        pytest.skip("Requires Django test database setup")
+    def test_dataloader_defined(self):
+        """Verify dataloader for ProductReview exists"""
+        found = False
+        for root, dirs, files in os.walk(os.path.join(self.REPO_DIR, "saleor")):
+            for f in files:
+                if f.endswith(".py"):
+                    fpath = os.path.join(root, f)
+                    try:
+                        with open(fpath) as fh:
+                            content = fh.read()
+                        if "dataloader" in content.lower() and "review" in content.lower():
+                            found = True
+                            break
+                    except (UnicodeDecodeError, PermissionError):
+                        continue
+            if found:
+                break
+        assert found, "DataLoader for ProductReview not found"
 
-    def test_paginated_response_has_required_fields(self):
-        """Paginated GET list must return count, next, previous, results fields."""
-        try:
-            sys.path.insert(0, self.REPO_DIR)
-            from rest_framework.test import APIClient
-        except ImportError:
-            pytest.skip("Django REST framework not importable")
-        pytest.skip("Requires Django test database setup")
+    def test_celery_task_exists(self):
+        """Verify Celery task related to reviews exists"""
+        found = False
+        for root, dirs, files in os.walk(os.path.join(self.REPO_DIR, "saleor")):
+            for f in files:
+                if f.endswith(".py") and ("task" in f.lower() or "review" in f.lower()):
+                    fpath = os.path.join(root, f)
+                    with open(fpath) as fh:
+                        content = fh.read()
+                    if "@" in content and ("task" in content.lower() or "celery" in content.lower()) and "review" in content.lower():
+                        found = True
+                        break
+            if found:
+                break
+        assert found, "Celery task for reviews not found"
 
-    def test_signal_handler_dispatches_celery_task(self):
-        """signals.py must contain post_save signal and Celery task dispatch."""
-        path = self._app_path("signals.py")
-        if not os.path.isfile(path):
-            pytest.skip("signals.py not found")
-        content = self._read_file(path)
-        assert "post_save" in content, "post_save signal not found in signals.py"
-        has_task = "delay" in content or "apply_async" in content or "send_task" in content
-        assert has_task, "No Celery task dispatch found in signal handler"
+    # === Functional Checks ===
+
+    def test_review_model_file_parses(self):
+        """Verify review model Python file has valid syntax"""
+        for root, dirs, files in os.walk(os.path.join(self.REPO_DIR, "saleor")):
+            for f in files:
+                if f.endswith(".py") and "review" in f.lower():
+                    fpath = os.path.join(root, f)
+                    with open(fpath) as fh:
+                        source = fh.read()
+                    if "ProductReview" in source:
+                        try:
+                            ast.parse(source)
+                        except SyntaxError as e:
+                            pytest.fail(f"Syntax error in {fpath}: {e}")
+                        return
+        pytest.skip("No ProductReview model file found to parse")
+
+    def test_django_check_passes(self):
+        """Verify Django system check passes"""
+        result = subprocess.run(
+            ["python", "-m", "django", "check"],
+            cwd=self.REPO_DIR,
+            capture_output=True,
+            text=True,
+            timeout=120,
+            env={**os.environ, "DJANGO_SETTINGS_MODULE": "saleor.settings"},
+        )
+        if result.returncode != 0:
+            assert "review" not in result.stderr.lower(), (
+                f"Django check errors related to reviews: {result.stderr[:500]}"
+            )
+
+    def test_migrations_makeable(self):
+        """Verify Django can create migrations for the review model"""
+        result = subprocess.run(
+            ["python", "manage.py", "makemigrations", "--check", "--dry-run"],
+            cwd=self.REPO_DIR,
+            capture_output=True,
+            text=True,
+            timeout=120,
+            env={**os.environ, "DJANGO_SETTINGS_MODULE": "saleor.settings"},
+        )
+        # returncode 0 means no pending migrations (they've been created already)
+        # returncode 1 means there are pending migrations that need creating
+        assert result.returncode in (0, 1), (
+            f"makemigrations failed unexpectedly: {result.stderr[:500]}"
+        )

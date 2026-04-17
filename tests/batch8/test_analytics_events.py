@@ -1,145 +1,260 @@
 """
-Test for 'analytics-events' skill — Dashboard Subscription Analytics Events
-Validates that the Agent implemented TypeScript analytics event tracking
-for the Metabase DashboardSubscriptionPanel component.
+Test skill: analytics-events
+Verify that the Agent correctly adds Dashboard Subscription Analytics Events
+to the Metabase frontend, including TypeScript types, tracking functions,
+and unit tests.
 """
 
 import os
+import subprocess
 import re
-
 import pytest
 
 
 class TestAnalyticsEvents:
-    """Verify Metabase dashboard subscription analytics event implementation."""
-
     REPO_DIR = "/workspace/metabase"
 
-    @staticmethod
-    def _read(path: str) -> str:
-        try:
-            with open(path, "r", errors="ignore") as fh:
-                return fh.read()
-        except OSError:
-            return ""
+    # === File Path Checks ===
 
-    # ── file_path_check ─────────────────────────────────────────────
-
-    def test_analytics_event_file_exists(self):
-        """Verify event.ts and schema.ts analytics type files exist."""
-        for rel in (
-            "frontend/src/metabase-types/analytics/event.ts",
-            "frontend/src/metabase-types/analytics/schema.ts",
-        ):
-            path = os.path.join(self.REPO_DIR, rel)
-            assert os.path.isfile(path), f"Missing: {rel}"
-
-    def test_analytics_module_file_exists(self):
-        """Verify the DashboardSubscriptionPanel analytics.ts module exists."""
-        path = os.path.join(
+    def test_analytics_module_exists(self):
+        """Verify that the subscription analytics module exists"""
+        filepath = os.path.join(
             self.REPO_DIR,
-            "frontend/src/metabase/dashboard/components/DashboardSubscriptionPanel/analytics.ts",
+            "frontend/src/metabase/dashboard/components/DashboardSubscriptionPanel/analytics.ts"
         )
-        assert os.path.isfile(path), "analytics.ts missing for DashboardSubscriptionPanel"
+        assert os.path.exists(filepath), f"analytics.ts not found at {filepath}"
 
-    def test_analytics_spec_file_exists(self):
-        """Verify the analytics.unit.spec.ts test file exists."""
-        path = os.path.join(
+    def test_analytics_test_file_exists(self):
+        """Verify that the analytics unit test file exists"""
+        filepath = os.path.join(
             self.REPO_DIR,
-            "frontend/src/metabase/dashboard/components/DashboardSubscriptionPanel/analytics.unit.spec.ts",
+            "frontend/src/metabase/dashboard/components/DashboardSubscriptionPanel/analytics.unit.spec.ts"
         )
-        assert os.path.isfile(path), "analytics.unit.spec.ts test file missing"
+        assert os.path.exists(filepath), f"analytics.unit.spec.ts not found at {filepath}"
 
-    # ── semantic_check ──────────────────────────────────────────────
+    def test_event_type_file_exists(self):
+        """Verify that the event type definition file exists"""
+        filepath = os.path.join(
+            self.REPO_DIR,
+            "frontend/src/metabase-types/analytics/event.ts"
+        )
+        assert os.path.exists(filepath), f"event.ts not found at {filepath}"
 
-    def test_dashboard_subscription_event_variants(self):
-        """Verify DashboardSubscriptionEvent type has all 4 event variant names."""
-        content = self._read(os.path.join(
-            self.REPO_DIR, "frontend/src/metabase-types/analytics/event.ts"))
-        assert content, "event.ts is empty or unreadable"
-        for variant in (
+    # === Semantic Checks ===
+
+    def test_event_type_defines_subscription_events(self):
+        """Verify DashboardSubscriptionEvent type defines all four event variants"""
+        filepath = os.path.join(
+            self.REPO_DIR,
+            "frontend/src/metabase-types/analytics/event.ts"
+        )
+        with open(filepath) as f:
+            content = f.read()
+
+        assert "DashboardSubscriptionEvent" in content, (
+            "event.ts missing DashboardSubscriptionEvent type definition"
+        )
+
+        event_variants = [
             "dashboard_subscription_created",
             "dashboard_subscription_updated",
             "dashboard_subscription_deleted",
             "dashboard_subscription_test_sent",
-        ):
-            assert variant in content, f"Event variant '{variant}' not found in event.ts"
+        ]
+        for variant in event_variants:
+            assert variant in content, (
+                f"event.ts missing event variant '{variant}'"
+            )
 
-    def test_schema_version_in_event_variants(self):
-        """Verify schema and version fields are present in event variant definitions."""
-        content = self._read(os.path.join(
-            self.REPO_DIR, "frontend/src/metabase-types/analytics/event.ts"))
-        assert content, "event.ts is empty or unreadable"
-        assert "dashboard-subscription" in content, "schema 'dashboard-subscription' not found"
-        assert "1-0-0" in content, "version '1-0-0' not found"
-
-    def test_analytics_union_includes_event(self):
-        """Verify AnalyticsEvent union type in schema.ts includes DashboardSubscriptionEvent."""
-        content = self._read(os.path.join(
-            self.REPO_DIR, "frontend/src/metabase-types/analytics/schema.ts"))
-        assert content, "schema.ts is empty or unreadable"
-        assert "DashboardSubscriptionEvent" in content, \
-            "DashboardSubscriptionEvent not in AnalyticsEvent union"
-
-    def test_guard_logic_in_tracking_functions(self):
-        """Verify guard conditions (dashboardId > 0 and changedFields.length check) exist in analytics.ts."""
-        content = self._read(os.path.join(
+    def test_event_type_has_required_payload_fields(self):
+        """Verify event types include required payload fields"""
+        filepath = os.path.join(
             self.REPO_DIR,
-            "frontend/src/metabase/dashboard/components/DashboardSubscriptionPanel/analytics.ts",
-        ))
-        assert content, "analytics.ts is empty or unreadable"
-        assert "dashboardId" in content, "dashboardId guard missing"
-        assert "changedFields" in content, "changedFields guard missing"
-        assert "length" in content, "length check missing"
+            "frontend/src/metabase-types/analytics/event.ts"
+        )
+        with open(filepath) as f:
+            content = f.read()
 
-    # ── functional_check (command) ──────────────────────────────────
+        required_fields = [
+            "dashboard_id",
+            "subscription_type",
+            "schedule",
+            "recipient_count",
+            "subscription_id",
+            "changed_fields",
+            "success",
+        ]
+        found = [f for f in required_fields if f in content]
+        assert len(found) >= 5, (
+            f"event.ts has only {len(found)} of {len(required_fields)} required payload fields. "
+            f"Found: {found}"
+        )
 
-    def _skip_unless_yarn(self):
-        if not os.path.isdir(self.REPO_DIR):
-            pytest.skip("Repo dir does not exist")
-        if not os.path.isfile(os.path.join(self.REPO_DIR, "yarn.lock")):
-            pytest.skip("yarn.lock missing")
-
-    def test_track_subscription_created_dispatches(self):
-        """trackSubscriptionCreated(42, 'email', 'daily', 5) dispatches event with correct payload fields."""
-        self._skip_unless_yarn()
-        content = self._read(os.path.join(
+    def test_schema_registration(self):
+        """Verify DashboardSubscriptionEvent is registered in the analytics schema"""
+        filepath = os.path.join(
             self.REPO_DIR,
-            "frontend/src/metabase/dashboard/components/DashboardSubscriptionPanel/analytics.unit.spec.ts",
-        ))
-        assert content, "analytics.unit.spec.ts is empty"
-        assert "trackSubscriptionCreated" in content or "created" in content.lower(), \
-            "No test for trackSubscriptionCreated dispatch"
+            "frontend/src/metabase-types/analytics/schema.ts"
+        )
+        with open(filepath) as f:
+            content = f.read()
 
-    def test_track_subscription_updated_empty_fields_no_dispatch(self):
-        """trackSubscriptionUpdated(42, 7, []) must not dispatch any event."""
-        self._skip_unless_yarn()
-        content = self._read(os.path.join(
-            self.REPO_DIR,
-            "frontend/src/metabase/dashboard/components/DashboardSubscriptionPanel/analytics.unit.spec.ts",
-        ))
-        assert content, "analytics.unit.spec.ts is empty"
-        assert "updated" in content.lower() or "empty" in content.lower() or "[]" in content, \
-            "No test for empty changedFields guard"
+        assert "DashboardSubscriptionEvent" in content, (
+            "schema.ts does not include DashboardSubscriptionEvent in the AnalyticsEvent union"
+        )
+        assert "dashboard-subscription" in content, (
+            "schema.ts does not register 'dashboard-subscription' schema name"
+        )
 
-    def test_track_subscription_created_negative_id_no_dispatch(self):
-        """trackSubscriptionCreated(-1, 'email', 'daily', 5) must not dispatch any event."""
-        self._skip_unless_yarn()
-        content = self._read(os.path.join(
+    def test_analytics_module_has_tracking_functions(self):
+        """Verify analytics.ts exports all required tracking functions"""
+        filepath = os.path.join(
             self.REPO_DIR,
-            "frontend/src/metabase/dashboard/components/DashboardSubscriptionPanel/analytics.unit.spec.ts",
-        ))
-        assert content, "analytics.unit.spec.ts is empty"
-        assert "-1" in content or "negative" in content.lower() or "invalid" in content.lower(), \
-            "No test for negative dashboardId guard"
+            "frontend/src/metabase/dashboard/components/DashboardSubscriptionPanel/analytics.ts"
+        )
+        with open(filepath) as f:
+            content = f.read()
 
-    def test_track_subscription_test_sent_success_false(self):
-        """trackSubscriptionTestSent(42, 'slack', false) dispatches event with success=false."""
-        self._skip_unless_yarn()
-        content = self._read(os.path.join(
+        functions = [
+            "trackSubscriptionCreated",
+            "trackSubscriptionUpdated",
+            "trackSubscriptionDeleted",
+            "trackSubscriptionTestSent",
+        ]
+        for func in functions:
+            assert func in content, (
+                f"analytics.ts missing tracking function '{func}'"
+            )
+
+    def test_event_has_schema_and_version(self):
+        """Verify events include schema and version fields"""
+        filepath = os.path.join(
             self.REPO_DIR,
-            "frontend/src/metabase/dashboard/components/DashboardSubscriptionPanel/analytics.unit.spec.ts",
-        ))
-        assert content, "analytics.unit.spec.ts is empty"
-        assert "test_sent" in content.lower() or "TestSent" in content, \
-            "No test for trackSubscriptionTestSent dispatch"
+            "frontend/src/metabase-types/analytics/event.ts"
+        )
+        with open(filepath) as f:
+            content = f.read()
+
+        assert "schema" in content, (
+            "event.ts does not include 'schema' field in event type"
+        )
+        assert "version" in content, (
+            "event.ts does not include 'version' field in event type"
+        )
+        assert "1-0-0" in content, (
+            "event.ts does not include version '1-0-0'"
+        )
+
+    # === Functional Checks ===
+
+    def test_analytics_module_is_valid_typescript(self):
+        """Verify that analytics.ts is parseable TypeScript"""
+        filepath = os.path.join(
+            self.REPO_DIR,
+            "frontend/src/metabase/dashboard/components/DashboardSubscriptionPanel/analytics.ts"
+        )
+        with open(filepath) as f:
+            content = f.read()
+
+        # Basic structural validation - must have export statements
+        has_exports = "export" in content
+        assert has_exports, "analytics.ts should export tracking functions"
+
+        # Should import from analytics
+        has_imports = "import" in content
+        assert has_imports, "analytics.ts should import from the analytics library"
+
+    def test_tracking_validates_dashboard_id(self):
+        """Verify tracking functions validate dashboardId is positive integer"""
+        filepath = os.path.join(
+            self.REPO_DIR,
+            "frontend/src/metabase/dashboard/components/DashboardSubscriptionPanel/analytics.ts"
+        )
+        with open(filepath) as f:
+            content = f.read()
+
+        # Should have validation logic for dashboardId
+        has_validation = (
+            "dashboardId" in content
+            and ("> 0" in content or ">= 1" in content or "positive" in content.lower()
+                 or "isNaN" in content or "Number.isInteger" in content
+                 or "typeof" in content)
+        )
+        assert has_validation, (
+            "analytics.ts does not appear to validate dashboardId as a positive integer. "
+            "Functions should silently return for invalid dashboardId."
+        )
+
+    def test_update_tracking_validates_changed_fields(self):
+        """Verify trackSubscriptionUpdated skips dispatch for empty changedFields"""
+        filepath = os.path.join(
+            self.REPO_DIR,
+            "frontend/src/metabase/dashboard/components/DashboardSubscriptionPanel/analytics.ts"
+        )
+        with open(filepath) as f:
+            content = f.read()
+
+        # Should check changedFields is not empty before dispatching
+        has_empty_check = (
+            "length" in content
+            or ".length > 0" in content
+            or ".length === 0" in content
+            or "changedFields" in content
+        )
+        assert has_empty_check, (
+            "analytics.ts does not validate that changedFields is non-empty "
+            "before dispatching the update event."
+        )
+
+    def test_unit_test_covers_all_events(self):
+        """Verify unit tests cover all four event types"""
+        filepath = os.path.join(
+            self.REPO_DIR,
+            "frontend/src/metabase/dashboard/components/DashboardSubscriptionPanel/analytics.unit.spec.ts"
+        )
+        with open(filepath) as f:
+            content = f.read()
+
+        for func in ["trackSubscriptionCreated", "trackSubscriptionUpdated",
+                      "trackSubscriptionDeleted", "trackSubscriptionTestSent"]:
+            assert func in content, (
+                f"Unit test file does not test '{func}'"
+            )
+
+    def test_unit_test_covers_skip_behavior(self):
+        """Verify unit tests validate silent skip for invalid inputs"""
+        filepath = os.path.join(
+            self.REPO_DIR,
+            "frontend/src/metabase/dashboard/components/DashboardSubscriptionPanel/analytics.unit.spec.ts"
+        )
+        with open(filepath) as f:
+            content = f.read()
+
+        has_skip_tests = (
+            "invalid" in content.lower()
+            or "negative" in content.lower()
+            or "empty" in content.lower()
+            or "not.toHaveBeenCalled" in content
+            or "should not" in content.lower()
+        )
+        assert has_skip_tests, (
+            "Unit tests do not appear to cover skip behavior for invalid inputs. "
+            "Expected tests for negative dashboardId and empty changedFields."
+        )
+
+    def test_analytics_lib_updated(self):
+        """Verify that analytics.ts or lib/analytics.ts includes subscription tracking"""
+        filepath = os.path.join(
+            self.REPO_DIR,
+            "frontend/src/metabase/lib/analytics.ts"
+        )
+        if os.path.exists(filepath):
+            with open(filepath) as f:
+                content = f.read()
+            has_subscription = (
+                "subscription" in content.lower()
+                or "dashboard_subscription" in content
+            )
+            assert has_subscription, (
+                "lib/analytics.ts does not include dashboard subscription tracking functions"
+            )

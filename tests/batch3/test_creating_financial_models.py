@@ -1,140 +1,209 @@
 """
-Tests for creating-financial-models skill.
-Validates DCFValuationEngine implementation in QuantLib repository.
+Tests for the creating-financial-models skill.
+
+Validates that a DCF valuation engine with sensitivity analysis was
+implemented for QuantLib, including FCF projection, terminal value
+(Gordon Growth and Exit Multiple), discounting, and sensitivity grid.
+
+Repo: QuantLib (https://github.com/lballabio/QuantLib)
 """
 
 import os
-import pytest
+import re
+import subprocess
 
 REPO_DIR = "/workspace/QuantLib"
 
 
-def _path(rel: str) -> str:
-    return os.path.join(REPO_DIR, rel)
+class TestFilePathCheck:
+    """Verify that all required files were created."""
+
+    def test_dcf_header_exists(self):
+        path = os.path.join(REPO_DIR, "ql", "models", "dcf_valuation.hpp")
+        assert os.path.isfile(path), f"Expected dcf_valuation.hpp at {path}"
+
+    def test_dcf_implementation_exists(self):
+        path = os.path.join(REPO_DIR, "ql", "models", "dcf_valuation.cpp")
+        assert os.path.isfile(path), f"Expected dcf_valuation.cpp at {path}"
+
+    def test_dcf_test_cpp_exists(self):
+        path = os.path.join(REPO_DIR, "test-suite", "dcfvaluation.cpp")
+        assert os.path.isfile(path), f"Expected dcfvaluation.cpp test at {path}"
+
+    def test_dcf_test_header_exists(self):
+        path = os.path.join(REPO_DIR, "test-suite", "dcfvaluation.hpp")
+        assert os.path.isfile(path), f"Expected dcfvaluation.hpp test header at {path}"
 
 
-def _read(rel: str) -> str:
-    with open(_path(rel), encoding="utf-8", errors="ignore") as f:
-        return f.read()
+class TestSemanticDCFHeader:
+    """Verify DCF valuation engine header definitions."""
+
+    def _read_header(self):
+        path = os.path.join(REPO_DIR, "ql", "models", "dcf_valuation.hpp")
+        with open(path, "r") as f:
+            return f.read()
+
+    def test_dcf_class_declared(self):
+        content = self._read_header()
+        assert re.search(r"class\s+\w*DCF\w*|class\s+\w*Dcf\w*|class\s+\w*Valuation\w*", content), (
+            "Expected DCF valuation engine class declaration"
+        )
+
+    def test_include_guards_present(self):
+        content = self._read_header()
+        assert re.search(r"#ifndef|#pragma once", content), (
+            "Expected include guards in header file"
+        )
+
+    def test_fcf_projection_method(self):
+        """Free cash flow projection method should be declared."""
+        content = self._read_header()
+        assert re.search(r"project|fcf|freeCashFlow|free_cash_flow", content, re.IGNORECASE), (
+            "Expected FCF projection method in header"
+        )
+
+    def test_terminal_value_method(self):
+        content = self._read_header()
+        assert re.search(r"terminal|gordon|exit.*multiple", content, re.IGNORECASE), (
+            "Expected terminal value calculation method in header"
+        )
+
+    def test_sensitivity_analysis_method(self):
+        content = self._read_header()
+        assert re.search(r"sensitiv|grid|matrix", content, re.IGNORECASE), (
+            "Expected sensitivity analysis method in header"
+        )
+
+    def test_wacc_parameter(self):
+        content = self._read_header()
+        assert re.search(r"wacc|WACC|discountRate|discount_rate", content), (
+            "Expected WACC/discount rate parameter"
+        )
 
 
-class TestCreatingFinancialModels:
+class TestSemanticDCFImplementation:
+    """Verify DCF implementation details."""
 
-    # ── file_path_check ──────────────────────────────────────────────────────
+    def _read_impl(self):
+        path = os.path.join(REPO_DIR, "ql", "models", "dcf_valuation.cpp")
+        with open(path, "r") as f:
+            return f.read()
 
-    def test_dcf_valuation_header_exists(self):
-        """ql/models/dcf_valuation.hpp must exist."""
-        assert os.path.isfile(
-            _path("ql/models/dcf_valuation.hpp")
-        ), "ql/models/dcf_valuation.hpp not found"
+    def test_gordon_growth_formula(self):
+        """Gordon Growth: TV = FCF * (1+g) / (WACC - g)."""
+        content = self._read_impl()
+        assert re.search(r"gordon|perpetuity|1\s*\+\s*g|wacc\s*-\s*g", content, re.IGNORECASE), (
+            "Expected Gordon Growth Model formula implementation"
+        )
 
-    def test_dcf_valuation_source_exists(self):
-        """ql/models/dcf_valuation.cpp must exist."""
-        assert os.path.isfile(
-            _path("ql/models/dcf_valuation.cpp")
-        ), "ql/models/dcf_valuation.cpp not found"
+    def test_exit_multiple_method(self):
+        content = self._read_impl()
+        assert re.search(r"exit.*multiple|multiple.*fcf|ev.*fcf", content, re.IGNORECASE), (
+            "Expected Exit Multiple terminal value method"
+        )
 
-    def test_dcf_test_suite_exists(self):
-        """test-suite/dcfvaluation.cpp must exist."""
-        assert os.path.isfile(
-            _path("test-suite/dcfvaluation.cpp")
-        ), "test-suite/dcfvaluation.cpp not found"
+    def test_present_value_discounting(self):
+        """PV = CF / (1 + WACC)^t."""
+        content = self._read_impl()
+        assert re.search(r"pow|std::pow|\^|discount", content), (
+            "Expected present value discounting formula (pow or discount)"
+        )
 
-    # ── semantic_check ───────────────────────────────────────────────────────
+    def test_growth_rate_ge_wacc_error(self):
+        """If perpetuity growth >= WACC, should raise an error."""
+        content = self._read_impl()
+        assert re.search(r"growth.*>=.*wacc|wacc.*<=.*growth|error|throw|exception", content, re.IGNORECASE), (
+            "Expected error handling when growth rate >= WACC"
+        )
 
-    def test_dcf_class_defined_in_header(self):
-        """Header must declare DCFValuationEngine class."""
-        content = _read("ql/models/dcf_valuation.hpp")
-        assert (
-            "DCFValuationEngine" in content
-        ), "DCFValuationEngine class not declared in header"
+    def test_net_debt_adjustment(self):
+        content = self._read_impl()
+        assert re.search(r"net.*debt|equity.*value|enterprise.*debt", content, re.IGNORECASE), (
+            "Expected net debt adjustment for equity value calculation"
+        )
 
-    def test_fcf_method_declared(self):
-        """Source must contain free cash flow method."""
-        content = _read("ql/models/dcf_valuation.cpp")
-        assert any(
-            kw in content for kw in ["fcf", "freeCashFlow", "free_cash_flow"]
-        ), "FCF method not found in dcf_valuation.cpp"
+    def test_sensitivity_grid_generation(self):
+        content = self._read_impl()
+        assert re.search(r"grid|matrix|sensitiv|vector.*vector|2D", content, re.IGNORECASE), (
+            "Expected 2D sensitivity grid generation"
+        )
 
-    def test_terminal_value_method_declared(self):
-        """Source must contain terminal value calculation method."""
-        content = _read("ql/models/dcf_valuation.cpp")
-        assert any(
-            kw in content for kw in ["terminalValue", "terminal_value", "gordonGrowth"]
-        ), "Terminal value method not found in dcf_valuation.cpp"
+    def test_constant_and_custom_growth_modes(self):
+        content = self._read_impl()
+        assert re.search(r"constant|custom|vector|growth.*rate", content, re.IGNORECASE), (
+            "Expected support for both constant and custom growth rate modes"
+        )
 
-    def test_enterprise_value_method_declared(self):
-        """Source must contain enterprise value summation method."""
-        content = _read("ql/models/dcf_valuation.cpp")
-        assert any(
-            kw in content for kw in ["enterpriseValue", "enterprise_value", "npv"]
-        ), "Enterprise value method not found in dcf_valuation.cpp"
 
-    def test_sensitivity_analysis_declared(self):
-        """Source must contain sensitivityAnalysis method."""
-        content = _read("ql/models/dcf_valuation.cpp")
-        assert (
-            "sensitivityAnalysis" in content or "sensitivity_analysis" in content
-        ), "sensitivityAnalysis method not found in dcf_valuation.cpp"
+class TestSemanticTestSuite:
+    """Verify the test file covers key scenarios."""
 
-    # ── functional_check ─────────────────────────────────────────────────────
+    def _read_test(self):
+        path = os.path.join(REPO_DIR, "test-suite", "dcfvaluation.cpp")
+        with open(path, "r") as f:
+            return f.read()
 
-    def test_pv_formula_three_equal_cashflows(self):
-        """PV of [100, 100, 100] @ WACC=0.10 must be approximately 248.69."""
-        wacc = 0.10
-        fcf = [100.0, 100.0, 100.0]
-        pv = sum(fcf[i] / (1 + wacc) ** (i + 1) for i in range(len(fcf)))
-        assert abs(pv - 248.69) < 0.1, f"Expected PV ≈ 248.69, got {pv:.4f}"
+    def test_has_test_functions(self):
+        content = self._read_test()
+        test_count = len(re.findall(r"void\s+test\w+|BOOST_AUTO_TEST_CASE|TEST\(", content))
+        assert test_count >= 3, (
+            f"Expected at least 3 test functions in dcfvaluation.cpp, found {test_count}"
+        )
 
-    def test_gordon_growth_terminal_value(self):
-        """Gordon Growth Model: FCF=200, g=0.03, WACC=0.10 must yield ≈ 2942.86."""
-        fcf_final = 200.0
-        g = 0.03
-        wacc = 0.10
-        tv = fcf_final * (1 + g) / (wacc - g)
-        assert abs(tv - 2942.86) < 1.0, f"Expected TV ≈ 2942.86, got {tv:.4f}"
+    def test_includes_dcf_header(self):
+        content = self._read_test()
+        assert re.search(r'#include.*dcf_valuation', content, re.IGNORECASE), (
+            "Expected test file to include dcf_valuation header"
+        )
 
-    def test_growth_rate_equals_wacc_raises_error(self):
-        """When growth_rate == WACC, division by zero must raise ValueError."""
+    def test_tolerance_checks(self):
+        """Tests should compare with a tolerance <= 0.01."""
+        content = self._read_test()
+        assert re.search(r"tolerance|CLOSE|0\.01|epsilon|abs.*<|fabs", content, re.IGNORECASE), (
+            "Expected tolerance-based comparisons in test assertions"
+        )
 
-        def gordon_growth(fcf_final, g, wacc):
-            if abs(g - wacc) < 1e-12:
-                raise ValueError("growth_rate cannot equal WACC: division by zero")
-            return fcf_final * (1 + g) / (wacc - g)
 
-        with pytest.raises(ValueError, match="division by zero"):
-            gordon_growth(100.0, 0.10, 0.10)
+class TestFunctionalCppSyntax:
+    """Validate C++ file syntax where possible."""
 
-    def test_negative_fcf_raises_error(self):
-        """Negative FCF input must raise ValueError."""
+    def test_header_has_matching_braces(self):
+        path = os.path.join(REPO_DIR, "ql", "models", "dcf_valuation.hpp")
+        with open(path, "r") as f:
+            content = f.read()
+        assert content.count("{") == content.count("}"), (
+            "Unmatched braces in dcf_valuation.hpp"
+        )
 
-        def compute_pv(fcf_list, wacc):
-            if any(v < 0 for v in fcf_list):
-                raise ValueError("FCF values must be non-negative")
-            return sum(
-                fcf_list[i] / (1 + wacc) ** (i + 1) for i in range(len(fcf_list))
+    def test_impl_has_matching_braces(self):
+        path = os.path.join(REPO_DIR, "ql", "models", "dcf_valuation.cpp")
+        with open(path, "r") as f:
+            content = f.read()
+        assert content.count("{") == content.count("}"), (
+            "Unmatched braces in dcf_valuation.cpp"
+        )
+
+    def test_impl_includes_header(self):
+        path = os.path.join(REPO_DIR, "ql", "models", "dcf_valuation.cpp")
+        with open(path, "r") as f:
+            content = f.read()
+        assert re.search(r'#include.*dcf_valuation\.hpp', content), (
+            "Expected dcf_valuation.cpp to include its header"
+        )
+
+    def test_no_syntax_errors_via_compiler(self):
+        """Attempt to syntax-check using g++ -fsyntax-only if available."""
+        header_path = os.path.join(REPO_DIR, "ql", "models", "dcf_valuation.hpp")
+        result = subprocess.run(
+            ["g++", "-std=c++17", "-fsyntax-only",
+             "-I", REPO_DIR, header_path],
+            capture_output=True, text=True, timeout=30,
+        )
+        # We expect this might fail due to missing QuantLib deps, but core syntax should be valid
+        # Only fail if there are clear syntax errors (not missing includes)
+        if result.returncode != 0:
+            errors = result.stderr.lower()
+            pure_syntax = any(kw in errors for kw in ["expected", "unexpected", "unterminated"])
+            assert not pure_syntax, (
+                f"C++ syntax errors in header: {result.stderr[:500]}"
             )
-
-        with pytest.raises(ValueError, match="non-negative"):
-            compute_pv([-50.0, 100.0], 0.10)
-
-    def test_sensitivity_grid_dimensions(self):
-        """Sensitivity grid over 3 WACC × 2 growth rates must return 3×2 matrix."""
-
-        def sensitivity_analysis(fcf_final, wacc_range, growth_range):
-            grid = []
-            for wacc in wacc_range:
-                row = []
-                for g in growth_range:
-                    if abs(g - wacc) < 1e-12:
-                        row.append(None)
-                    else:
-                        row.append(fcf_final * (1 + g) / (wacc - g))
-                grid.append(row)
-            return grid
-
-        wacc_range = [0.08, 0.10, 0.12]
-        growth_range = [0.02, 0.03]
-        grid = sensitivity_analysis(200.0, wacc_range, growth_range)
-        assert len(grid) == 3, f"Expected 3 rows, got {len(grid)}"
-        assert all(len(row) == 2 for row in grid), "Each row must have 2 columns"

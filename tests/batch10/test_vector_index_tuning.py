@@ -1,198 +1,260 @@
 """
-Test for 'vector-index-tuning' skill — FAISS index benchmarking and tuning
-Validates that the Agent implemented FAISS HNSW and IVF-PQ index
-benchmarking with recall@k measurement and parameter tuning.
+Test skill: vector-index-tuning
+Verify that the Agent correctly implements HNSW benchmarking, quantization,
+memory estimation, and parameter recommendation for FAISS.
 """
 
 import os
 import re
-
+import ast
+import subprocess
 import pytest
 
 
 class TestVectorIndexTuning:
-    """Verify FAISS index benchmark and tuning implementation."""
-
     REPO_DIR = "/workspace/faiss"
 
-    def test_faiss_benchmark_file_exists(self):
-        """faiss_benchmark.py must exist with FAISS index usage."""
-        found = False
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            for f in files:
-                if f == "faiss_benchmark.py":
-                    path = os.path.join(root, f)
-                    with open(path, "r", errors="ignore") as fh:
-                        content = fh.read()
-                    if re.search(r"IndexHNSW|IndexIVFPQ|faiss", content):
-                        found = True
-                        break
-            if found:
-                break
-        assert found, "faiss_benchmark.py with FAISS index usage not found"
+    # === File Path Checks ===
 
-    def test_quantization_config_file_exists(self):
-        """quantization_config.py must define PQ parameters."""
-        found = False
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            for f in files:
-                if f == "quantization_config.py":
-                    path = os.path.join(root, f)
-                    with open(path, "r", errors="ignore") as fh:
-                        content = fh.read()
-                    if re.search(r"nlist|nbits|PQ|quantiz", content, re.IGNORECASE):
-                        found = True
-                        break
-            if found:
-                break
-        assert found, "quantization_config.py with PQ parameters not found"
+    def test_hnsw_benchmark_exists(self):
+        """Verify faiss/python/hnsw_benchmark.py was created"""
+        path = os.path.join(self.REPO_DIR, "faiss/python/hnsw_benchmark.py")
+        assert os.path.exists(path), f"hnsw_benchmark.py not found at {path}"
 
-    def test_hnsw_index_uses_ef_construction(self):
-        """HNSW index must set ef_construction parameter."""
-        found = False
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            for f in files:
-                if f == "faiss_benchmark.py":
-                    path = os.path.join(root, f)
-                    with open(path, "r", errors="ignore") as fh:
-                        content = fh.read()
-                    if re.search(r"efConstruction|ef_construction", content):
-                        found = True
-                        break
-            if found:
-                break
-        assert found, "ef_construction parameter not set on HNSW index"
+    def test_quantization_exists(self):
+        """Verify faiss/python/quantization.py was created"""
+        path = os.path.join(self.REPO_DIR, "faiss/python/quantization.py")
+        assert os.path.exists(path), f"quantization.py not found at {path}"
 
-    def test_recall_at_k_metric_defined(self):
-        """recall@k metric must be computed."""
-        found = False
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            for f in files:
-                if f == "faiss_benchmark.py":
-                    path = os.path.join(root, f)
-                    with open(path, "r", errors="ignore") as fh:
-                        content = fh.read()
-                    if re.search(r"recall|compute_recall|recall_at_k", content, re.IGNORECASE):
-                        if re.search(r"intersection|ground.truth|top.k", content, re.IGNORECASE):
-                            found = True
-                            break
-            if found:
-                break
-        assert found, "recall@k metric computation not found"
+    def test_memory_estimator_exists(self):
+        """Verify faiss/python/memory_estimator.py was created"""
+        path = os.path.join(self.REPO_DIR, "faiss/python/memory_estimator.py")
+        assert os.path.exists(path), f"memory_estimator.py not found at {path}"
 
-    def test_pq_compression_ratio_computed(self):
-        """PQ compression ratio must be computed or reported."""
-        found = False
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            for f in files:
-                if f in ("quantization_config.py", "faiss_benchmark.py"):
-                    path = os.path.join(root, f)
-                    with open(path, "r", errors="ignore") as fh:
-                        content = fh.read()
-                    if re.search(r"compression|ratio|original.*compress|code_size", content, re.IGNORECASE):
-                        found = True
-                        break
-            if found:
-                break
-        assert found, "PQ compression ratio computation not found"
+    def test_param_recommender_exists(self):
+        """Verify faiss/python/param_recommender.py was created"""
+        path = os.path.join(self.REPO_DIR, "faiss/python/param_recommender.py")
+        assert os.path.exists(path), f"param_recommender.py not found at {path}"
 
-    def test_ef_search_tradeoff_explored(self):
-        """Multiple ef_search values must be tested for recall-latency tradeoff."""
-        found = False
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            for f in files:
-                if f == "faiss_benchmark.py":
-                    path = os.path.join(root, f)
-                    with open(path, "r", errors="ignore") as fh:
-                        content = fh.read()
-                    if re.search(r"ef_search|efSearch", content):
-                        if re.search(r"\[.*\d+.*,.*\d+.*,.*\d+", content):
-                            found = True
-                            break
-            if found:
-                break
-        assert found, "ef_search sweep with multiple values not found"
+    def test_test_file_exists(self):
+        """Verify test file was created"""
+        path = os.path.join(
+            self.REPO_DIR, "faiss/python/tests/test_vector_index_tuning.py"
+        )
+        assert os.path.exists(path), f"test_vector_index_tuning.py not found at {path}"
 
-    def test_faiss_benchmark_syntax_valid(self):
-        """faiss_benchmark.py must have valid Python syntax."""
-        found = False
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            for f in files:
-                if f == "faiss_benchmark.py":
-                    path = os.path.join(root, f)
-                    with open(path, "r", errors="ignore") as fh:
-                        content = fh.read()
-                    try:
-                        compile(content, path, "exec")
-                        found = True
-                    except SyntaxError:
-                        pass
-                    break
-            if found:
-                break
-        assert found, "faiss_benchmark.py has syntax errors"
+    # === Semantic Checks: HNSW Benchmark ===
 
-    def test_hnsw_index_built_and_searchable(self):
-        """HNSW index creation with IndexHNSWFlat must be present."""
-        found = False
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            for f in files:
-                if f == "faiss_benchmark.py":
-                    path = os.path.join(root, f)
-                    with open(path, "r", errors="ignore") as fh:
-                        content = fh.read()
-                    if re.search(r"IndexHNSWFlat", content):
-                        if re.search(r"\.add\(|\.search\(", content):
-                            found = True
-                            break
-            if found:
-                break
-        assert found, "IndexHNSWFlat with add/search operations not found"
+    def test_hnsw_benchmark_class_defined(self):
+        """Verify HNSWBenchmark class is defined"""
+        path = os.path.join(self.REPO_DIR, "faiss/python/hnsw_benchmark.py")
+        with open(path) as f:
+            content = f.read()
+        assert "class HNSWBenchmark" in content, (
+            "HNSWBenchmark class should be defined"
+        )
 
-    def test_recall_at_k_returns_1_for_exact_match(self):
-        """recall@k function must handle perfect recall case."""
-        found = False
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            for f in files:
-                if f == "faiss_benchmark.py":
-                    path = os.path.join(root, f)
-                    with open(path, "r", errors="ignore") as fh:
-                        content = fh.read()
-                    if re.search(r"def\s+compute_recall|def\s+recall_at_k|def\s+calculate_recall", content):
-                        found = True
-                        break
-            if found:
-                break
-        assert found, "recall@k function definition not found"
+    def test_hnsw_benchmark_has_run_method(self):
+        """Verify HNSWBenchmark has run method"""
+        path = os.path.join(self.REPO_DIR, "faiss/python/hnsw_benchmark.py")
+        with open(path) as f:
+            content = f.read()
+        assert "def run(" in content, "HNSWBenchmark should have run method"
 
-    def test_empty_index_search_returns_empty(self):
-        """Empty index edge case must be handled."""
-        found = False
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            for f in files:
-                if f == "faiss_benchmark.py":
-                    path = os.path.join(root, f)
-                    with open(path, "r", errors="ignore") as fh:
-                        content = fh.read()
-                    if re.search(r"empty|ntotal|\.ntotal\s*==\s*0|no.*vector", content, re.IGNORECASE):
-                        found = True
-                        break
-            if found:
-                break
-        assert found, "Empty index handling not found"
+    def test_hnsw_has_pareto_optimal(self):
+        """Verify find_pareto_optimal method"""
+        path = os.path.join(self.REPO_DIR, "faiss/python/hnsw_benchmark.py")
+        with open(path) as f:
+            content = f.read()
+        assert "pareto" in content.lower(), (
+            "Should have find_pareto_optimal method"
+        )
 
-    def test_pq_index_smaller_than_flat(self):
-        """IVF-PQ index creation must be present."""
-        found = False
-        for root, dirs, files in os.walk(self.REPO_DIR):
-            for f in files:
-                if f == "faiss_benchmark.py":
-                    path = os.path.join(root, f)
-                    with open(path, "r", errors="ignore") as fh:
-                        content = fh.read()
-                    if re.search(r"IndexIVFPQ|IndexPQ", content):
-                        found = True
-                        break
-            if found:
-                break
-        assert found, "IVF-PQ index creation not found"
+    def test_hnsw_measures_recall(self):
+        """Verify recall@k is computed"""
+        path = os.path.join(self.REPO_DIR, "faiss/python/hnsw_benchmark.py")
+        with open(path) as f:
+            content = f.read()
+        assert "recall" in content.lower(), "Should compute recall@k metric"
+
+    # === Semantic Checks: Quantization ===
+
+    def test_scalar_quantizer_defined(self):
+        """Verify ScalarQuantizerINT8 class is defined"""
+        path = os.path.join(self.REPO_DIR, "faiss/python/quantization.py")
+        with open(path) as f:
+            content = f.read()
+        assert "ScalarQuantizerINT8" in content, (
+            "ScalarQuantizerINT8 class should be defined"
+        )
+
+    def test_product_quantizer_defined(self):
+        """Verify ProductQuantizer class is defined"""
+        path = os.path.join(self.REPO_DIR, "faiss/python/quantization.py")
+        with open(path) as f:
+            content = f.read()
+        assert "class ProductQuantizer" in content, (
+            "ProductQuantizer class should be defined"
+        )
+
+    def test_binary_quantizer_defined(self):
+        """Verify BinaryQuantizer class is defined"""
+        path = os.path.join(self.REPO_DIR, "faiss/python/quantization.py")
+        with open(path) as f:
+            content = f.read()
+        assert "BinaryQuantizer" in content, (
+            "BinaryQuantizer class should be defined"
+        )
+
+    def test_scalar_quantizer_has_fit_quantize_dequantize(self):
+        """Verify ScalarQuantizerINT8 has fit, quantize, dequantize methods"""
+        path = os.path.join(self.REPO_DIR, "faiss/python/quantization.py")
+        with open(path) as f:
+            content = f.read()
+        for method in ["def fit(", "def quantize(", "def dequantize("]:
+            assert method in content, f"ScalarQuantizerINT8 should have {method}"
+
+    def test_product_quantizer_has_encode_decode(self):
+        """Verify ProductQuantizer has encode and decode methods"""
+        path = os.path.join(self.REPO_DIR, "faiss/python/quantization.py")
+        with open(path) as f:
+            content = f.read()
+        assert "def encode(" in content, "ProductQuantizer should have encode method"
+        assert "def decode(" in content, "ProductQuantizer should have decode method"
+
+    def test_product_quantizer_validates_dimensions(self):
+        """Verify ProductQuantizer raises ValueError for indivisible dims"""
+        path = os.path.join(self.REPO_DIR, "faiss/python/quantization.py")
+        with open(path) as f:
+            content = f.read()
+        assert "ValueError" in content, (
+            "Should raise ValueError for indivisible dimension/n_subvectors"
+        )
+
+    def test_binary_quantizer_has_hamming_distance(self):
+        """Verify BinaryQuantizer has hamming_distance method"""
+        path = os.path.join(self.REPO_DIR, "faiss/python/quantization.py")
+        with open(path) as f:
+            content = f.read()
+        assert "hamming_distance" in content, (
+            "BinaryQuantizer should have hamming_distance method"
+        )
+
+    # === Semantic Checks: Memory Estimator ===
+
+    def test_estimate_memory_function(self):
+        """Verify estimate_memory function is defined"""
+        path = os.path.join(self.REPO_DIR, "faiss/python/memory_estimator.py")
+        with open(path) as f:
+            content = f.read()
+        assert "def estimate_memory(" in content, (
+            "estimate_memory function should be defined"
+        )
+
+    def test_memory_estimator_supports_quantization_types(self):
+        """Verify supported quantization types: fp32, fp16, int8, pq, binary"""
+        path = os.path.join(self.REPO_DIR, "faiss/python/memory_estimator.py")
+        with open(path) as f:
+            content = f.read()
+        for qtype in ["fp32", "fp16", "int8", "pq", "binary"]:
+            assert qtype in content, (
+                f"Memory estimator should support '{qtype}' quantization"
+            )
+
+    def test_memory_estimator_supports_index_types(self):
+        """Verify supported index types: flat, hnsw, ivf"""
+        path = os.path.join(self.REPO_DIR, "faiss/python/memory_estimator.py")
+        with open(path) as f:
+            content = f.read()
+        for itype in ["flat", "hnsw", "ivf"]:
+            assert itype in content, (
+                f"Memory estimator should support '{itype}' index type"
+            )
+
+    # === Semantic Checks: Param Recommender ===
+
+    def test_recommend_hnsw_params_function(self):
+        """Verify recommend_hnsw_params function is defined"""
+        path = os.path.join(self.REPO_DIR, "faiss/python/param_recommender.py")
+        with open(path) as f:
+            content = f.read()
+        assert "def recommend_hnsw_params(" in content, (
+            "recommend_hnsw_params function should be defined"
+        )
+
+    def test_recommend_quantization_function(self):
+        """Verify recommend_quantization function is defined"""
+        path = os.path.join(self.REPO_DIR, "faiss/python/param_recommender.py")
+        with open(path) as f:
+            content = f.read()
+        assert "def recommend_quantization(" in content, (
+            "recommend_quantization function should be defined"
+        )
+
+    def test_recommender_memory_warning(self):
+        """Verify recommender emits warning when memory exceeds available"""
+        path = os.path.join(self.REPO_DIR, "faiss/python/param_recommender.py")
+        with open(path) as f:
+            content = f.read()
+        assert "warning" in content.lower(), (
+            "Recommender should emit warning when memory exceeds available"
+        )
+
+    # === Functional Checks ===
+
+    def test_hnsw_benchmark_parses(self):
+        """Verify hnsw_benchmark.py has valid Python syntax"""
+        path = os.path.join(self.REPO_DIR, "faiss/python/hnsw_benchmark.py")
+        with open(path) as f:
+            source = f.read()
+        try:
+            ast.parse(source)
+        except SyntaxError as e:
+            pytest.fail(f"hnsw_benchmark.py has syntax error: {e}")
+
+    def test_quantization_parses(self):
+        """Verify quantization.py has valid Python syntax"""
+        path = os.path.join(self.REPO_DIR, "faiss/python/quantization.py")
+        with open(path) as f:
+            source = f.read()
+        try:
+            ast.parse(source)
+        except SyntaxError as e:
+            pytest.fail(f"quantization.py has syntax error: {e}")
+
+    def test_memory_estimator_parses(self):
+        """Verify memory_estimator.py has valid Python syntax"""
+        path = os.path.join(self.REPO_DIR, "faiss/python/memory_estimator.py")
+        with open(path) as f:
+            source = f.read()
+        try:
+            ast.parse(source)
+        except SyntaxError as e:
+            pytest.fail(f"memory_estimator.py has syntax error: {e}")
+
+    def test_param_recommender_parses(self):
+        """Verify param_recommender.py has valid Python syntax"""
+        path = os.path.join(self.REPO_DIR, "faiss/python/param_recommender.py")
+        with open(path) as f:
+            source = f.read()
+        try:
+            ast.parse(source)
+        except SyntaxError as e:
+            pytest.fail(f"param_recommender.py has syntax error: {e}")
+
+    def test_vector_index_tuning_tests_pass(self):
+        """Verify all vector index tuning tests pass"""
+        result = subprocess.run(
+            [
+                "python", "-m", "pytest",
+                "faiss/python/tests/test_vector_index_tuning.py",
+                "-v", "--tb=short",
+            ],
+            cwd=self.REPO_DIR,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        assert result.returncode == 0, (
+            f"Tests failed:\n{result.stdout}\n{result.stderr}"
+        )

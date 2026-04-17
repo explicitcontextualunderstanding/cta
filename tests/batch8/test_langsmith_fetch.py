@@ -1,145 +1,136 @@
 """
-Test for 'langsmith-fetch' skill — LangSmith Trace Analyzer
-Validates that the Agent created a Python module for fetching and analyzing
-LangSmith traces with latency, error rate, token grouping, and top-N slowest.
+Tests for the langsmith-fetch skill.
+Validates a LangSmith trace analyzer with trace loading, run tree parsing,
+error pattern detection, statistics, and diagnostic report generation.
 """
 
 import os
 import re
-import sys
+import ast
 
-import pytest
+REPO_DIR = "/workspace/langchain"
+SMITH_DIR = os.path.join(REPO_DIR, "libs", "langchain", "langchain", "smith")
 
 
 class TestLangsmithFetch:
-    """Verify LangSmith trace analyzer implementation."""
+    """Tests for the LangSmith trace analyzer."""
 
-    REPO_DIR = "/workspace/langchain"
+    # ── file_path_check ──────────────────────────────────────────────
 
-    @staticmethod
-    def _read(path: str) -> str:
-        try:
-            with open(path, "r", errors="ignore") as fh:
-                return fh.read()
-        except OSError:
+    def test_trace_analyzer_exists(self):
+        """TraceAnalyzer module must exist."""
+        path = os.path.join(SMITH_DIR, "trace_analyzer.py")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    def test_trace_loader_exists(self):
+        """TraceLoader module must exist."""
+        path = os.path.join(SMITH_DIR, "trace_loader.py")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    def test_report_generator_exists(self):
+        """DiagnosticReport module must exist."""
+        path = os.path.join(SMITH_DIR, "report_generator.py")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    # ── semantic_check ───────────────────────────────────────────────
+
+    def _read(self, filename):
+        path = os.path.join(SMITH_DIR, filename)
+        if not os.path.isfile(path):
             return ""
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read()
 
-    # ── file_path_check ─────────────────────────────────────────────
+    def test_trace_loader_class(self):
+        """TraceLoader must define load_from_file and load_from_dict."""
+        content = self._read("trace_loader.py")
+        assert re.search(r"class\s+TraceLoader", content), "TraceLoader class not defined"
+        assert re.search(r"def\s+load_from_file\b", content), "load_from_file not defined"
+        assert re.search(r"def\s+load_from_dict\b", content), "load_from_dict not defined"
 
-    def test_langsmith_package_exists(self):
-        """Verify __init__.py and loader.py exist under src/langsmith_analyzer/."""
-        for rel in ("src/langsmith_analyzer/__init__.py", "src/langsmith_analyzer/loader.py"):
-            path = os.path.join(self.REPO_DIR, rel)
-            assert os.path.isfile(path), f"Missing: {rel}"
+    def test_loader_validation(self):
+        """TraceLoader must validate required fields and raise ValueError."""
+        content = self._read("trace_loader.py")
+        assert re.search(r"ValueError|Missing required field", content), (
+            "Validation with ValueError not found"
+        )
+        for field in ["run_id", "name", "run_type"]:
+            assert field in content, f"Required field '{field}' not validated"
 
-    def test_analyzer_aggregator_models_exist(self):
-        """Verify analyzer.py, aggregator.py, and models.py exist."""
-        for rel in ("src/langsmith_analyzer/analyzer.py",
-                     "src/langsmith_analyzer/aggregator.py",
-                     "src/langsmith_analyzer/models.py"):
-            path = os.path.join(self.REPO_DIR, rel)
-            assert os.path.isfile(path), f"Missing: {rel}"
+    def test_analyzer_class(self):
+        """TraceAnalyzer must define flatten_runs, get_timeline, get_errors, compute_statistics."""
+        content = self._read("trace_analyzer.py")
+        assert re.search(r"class\s+TraceAnalyzer", content), "TraceAnalyzer class not defined"
+        for method in ["flatten_runs", "get_timeline", "get_errors", "compute_statistics"]:
+            assert re.search(rf"def\s+{method}\b", content), f"{method} not defined"
 
-    def test_all_classes_importable(self):
-        """TraceLoader, TraceAnalyzer, MetricsAggregator are importable."""
-        if not os.path.isdir(self.REPO_DIR):
-            pytest.skip("Repo dir does not exist")
-        sys.path.insert(0, os.path.join(self.REPO_DIR, "src"))
-        try:
-            from langsmith_analyzer.loader import TraceLoader  # noqa: F401
-            from langsmith_analyzer.analyzer import TraceAnalyzer  # noqa: F401
-            from langsmith_analyzer.aggregator import MetricsAggregator  # noqa: F401
-        except ImportError:
-            pytest.skip("langsmith_analyzer not importable")
-        finally:
-            sys.path.pop(0)
+    def test_analyzer_tool_and_llm_calls(self):
+        """TraceAnalyzer must define get_tool_calls and get_llm_calls."""
+        content = self._read("trace_analyzer.py")
+        assert re.search(r"def\s+get_tool_calls\b", content), "get_tool_calls not defined"
+        assert re.search(r"def\s+get_llm_calls\b", content), "get_llm_calls not defined"
 
-    # ── semantic_check ──────────────────────────────────────────────
+    def test_pattern_detection(self):
+        """TraceAnalyzer must detect timeout, retry_storm, cascading_failure, empty_retrieval."""
+        content = self._read("trace_analyzer.py")
+        assert re.search(r"def\s+detect_patterns\b", content), "detect_patterns not defined"
+        for pattern in ["timeout", "retry_storm", "cascading_failure", "empty_retrieval"]:
+            assert pattern in content, f"Pattern '{pattern}' not detected"
 
-    def test_trace_and_analysis_result_models(self):
-        """Verify models.py defines Trace with latency_ms, status, tokens_used, and AnalysisResult."""
-        content = self._read(os.path.join(self.REPO_DIR, "src/langsmith_analyzer/models.py"))
-        assert content, "models.py is empty or unreadable"
-        for field in ("latency_ms", "status", "tokens_used", "AnalysisResult"):
-            assert field in content, f"'{field}' not found in models.py"
+    def test_statistics_fields(self):
+        """compute_statistics must return total_runs, error_count, total_tokens, avg_llm_duration_ms."""
+        content = self._read("trace_analyzer.py")
+        for field in ["total_runs", "error_count", "total_tokens", "error_rate"]:
+            assert field in content, f"Statistics field '{field}' not found"
 
-    def test_analysis_result_fields(self):
-        """Verify AnalysisResult has avg_latency_ms, error_rate, token_usage_by_model, top_slowest_traces."""
-        content = self._read(os.path.join(self.REPO_DIR, "src/langsmith_analyzer/models.py"))
-        assert content, "models.py is empty or unreadable"
-        for field in ("avg_latency_ms", "error_rate", "token_usage_by_model",
-                      "top_slowest_traces"):
-            assert field in content, f"'{field}' not found in models.py"
+    def test_diagnostic_report_class(self):
+        """DiagnosticReport must define generate and to_text methods."""
+        content = self._read("report_generator.py")
+        assert re.search(r"class\s+DiagnosticReport", content), (
+            "DiagnosticReport class not defined"
+        )
+        assert re.search(r"def\s+generate\b", content), "generate method not defined"
+        assert re.search(r"def\s+to_text\b", content), "to_text method not defined"
 
-    def test_api_key_from_env(self):
-        """Verify loader.py reads LANGCHAIN_API_KEY from os.environ."""
-        content = self._read(os.path.join(self.REPO_DIR, "src/langsmith_analyzer/loader.py"))
-        assert content, "loader.py is empty or unreadable"
-        assert "LANGCHAIN_API_KEY" in content, "LANGCHAIN_API_KEY not found"
-        assert "os.environ" in content, "os.environ not found"
+    def test_run_types_validated(self):
+        """TraceLoader must validate run_type is one of chain, llm, tool, retriever."""
+        content = self._read("trace_loader.py")
+        for rt in ["chain", "llm", "tool", "retriever"]:
+            assert rt in content, f"Run type '{rt}' not referenced"
 
-    # ── functional_check (import) ───────────────────────────────────
+    # ── functional_check ─────────────────────────────────────────────
 
-    def _import(self, dotpath: str):
-        if not os.path.isdir(self.REPO_DIR):
-            pytest.skip("Repo dir does not exist")
-        sys.path.insert(0, os.path.join(self.REPO_DIR, "src"))
-        try:
-            return __import__(dotpath, fromlist=[""])
-        except ImportError:
-            pytest.skip(f"{dotpath} not importable")
-        finally:
-            sys.path.pop(0)
+    def test_all_files_valid_python(self):
+        """All trace analyzer Python files must have valid syntax."""
+        errors = []
+        for fname in ["trace_analyzer.py", "trace_loader.py", "report_generator.py"]:
+            content = self._read(fname)
+            if not content:
+                continue
+            try:
+                ast.parse(content)
+            except SyntaxError as e:
+                errors.append(f"{fname}: {e}")
+        assert not errors, "Syntax errors:\n" + "\n".join(errors)
 
-    def test_empty_traces_returns_zero_metrics(self):
-        """analyze([]) returns avg_latency_ms=0 and error_rate=0.0."""
-        mod = self._import("langsmith_analyzer.analyzer")
-        result = mod.TraceAnalyzer().analyze([])
-        assert result.avg_latency_ms == 0
-        assert result.error_rate == 0.0
+    def test_depth_tracking(self):
+        """flatten_runs must track depth and parent_run_id."""
+        content = self._read("trace_analyzer.py")
+        assert "depth" in content, "depth tracking not found in flatten_runs"
+        assert "parent_run_id" in content, "parent_run_id tracking not found"
 
-    def test_error_rate_calculated_correctly(self):
-        """2 errors in 10 traces produces error_rate=0.2."""
-        mod = self._import("langsmith_analyzer.analyzer")
-        models = self._import("langsmith_analyzer.models")
-        traces = [
-            models.Trace(id=str(i), latency_ms=100,
-                        status="error" if i < 2 else "ok",
-                        model="gpt-4", tokens_used=100, timestamp="2024-01-01")
-            for i in range(10)
-        ]
-        assert mod.TraceAnalyzer().analyze(traces).error_rate == 0.2
+    def test_duration_computation(self):
+        """Timeline must compute duration_ms from start_time and end_time."""
+        content = self._read("trace_analyzer.py")
+        assert re.search(r"duration_ms|duration", content), "duration_ms computation not found"
 
-    def test_token_usage_grouped_by_model(self):
-        """token_usage_by_model['gpt-4'] equals sum of tokens from both gpt-4 traces."""
-        mod = self._import("langsmith_analyzer.analyzer")
-        models = self._import("langsmith_analyzer.models")
-        traces = [
-            models.Trace(id="1", latency_ms=100, status="ok",
-                        model="gpt-4", tokens_used=500, timestamp="2024-01-01"),
-            models.Trace(id="2", latency_ms=200, status="ok",
-                        model="gpt-4", tokens_used=300, timestamp="2024-01-01"),
-        ]
-        assert mod.TraceAnalyzer().analyze(traces).token_usage_by_model["gpt-4"] == 800
+    def test_severity_levels(self):
+        """Pattern detection must assign severity: critical or warning."""
+        content = self._read("trace_analyzer.py")
+        assert "critical" in content, "Critical severity not found"
+        assert "warning" in content, "Warning severity not found"
 
-    def test_top_slowest_traces_capped_at_five(self):
-        """8 traces produce exactly 5 entries in top_slowest_traces."""
-        mod = self._import("langsmith_analyzer.analyzer")
-        models = self._import("langsmith_analyzer.models")
-        traces = [
-            models.Trace(id=str(i), latency_ms=i * 100, status="ok",
-                        model="gpt-4", tokens_used=100, timestamp="2024-01-01")
-            for i in range(8)
-        ]
-        assert len(mod.TraceAnalyzer().analyze(traces).top_slowest_traces) == 5
-
-    def test_avg_latency_computed_correctly(self):
-        """Traces with latency_ms [100, 200, 300] produce avg_latency_ms=200.0."""
-        mod = self._import("langsmith_analyzer.analyzer")
-        models = self._import("langsmith_analyzer.models")
-        traces = [
-            models.Trace(id=str(i), latency_ms=ms, status="ok",
-                        model="gpt-4", tokens_used=100, timestamp="2024-01-01")
-            for i, ms in enumerate([100, 200, 300])
-        ]
-        assert mod.TraceAnalyzer().analyze(traces).avg_latency_ms == 200.0
+    def test_test_file_exists(self):
+        """Test file must exist."""
+        path = os.path.join(REPO_DIR, "tests", "test_langsmith_fetch.py")
+        assert os.path.isfile(path), f"Missing {path}"

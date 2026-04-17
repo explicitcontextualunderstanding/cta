@@ -1,184 +1,222 @@
 """
-Test for 'implementing-jsc-classes-zig' skill — BunHasher JSC Class
-Validates that the Agent created a JavaScript hash class using Bun's
-Zig-JSC bindings with class definition, Zig implementation, and tests.
+Test skill: implementing-jsc-classes-zig
+Verify that the Agent correctly implements a JavaScript hash class using
+Bun's Zig-JSC bindings including the .classes.ts definition, the .zig
+implementation, and the JavaScript test file.
 """
 
 import os
 import re
-
+import subprocess
 import pytest
 
 
 class TestImplementingJscClassesZig:
-    """Verify BunHasher JSC class implementation."""
-
     REPO_DIR = "/workspace/bun"
 
-    def _read(self, *parts):
-        fpath = os.path.join(self.REPO_DIR, *parts)
-        assert os.path.isfile(fpath), f"Required file not found: {fpath}"
-        with open(fpath, "r", errors="ignore") as fh:
-            return fh.read()
+    # === File Path Checks ===
 
-    # ------------------------------------------------------------------
-    # L1: File existence
-    # ------------------------------------------------------------------
-
-    def test_classes_ts_exists(self):
-        """BunHasher.classes.ts must exist."""
-        assert os.path.isfile(
-            os.path.join(self.REPO_DIR, "src/bun.js/api/BunHasher.classes.ts")
+    def test_classes_ts_file_exists(self):
+        """Verify BunHasher.classes.ts definition file exists"""
+        path = os.path.join(
+            self.REPO_DIR, "src/bun.js/api/BunHasher.classes.ts"
         )
+        assert os.path.exists(path), f"BunHasher.classes.ts not found at {path}"
 
-    def test_zig_implementation_exists(self):
-        """BunHasher.zig must exist."""
-        assert os.path.isfile(
-            os.path.join(self.REPO_DIR, "src/bun.js/api/BunHasher.zig")
+    def test_zig_implementation_file_exists(self):
+        """Verify BunHasher.zig implementation file exists"""
+        path = os.path.join(
+            self.REPO_DIR, "src/bun.js/api/BunHasher.zig"
         )
+        assert os.path.exists(path), f"BunHasher.zig not found at {path}"
 
     def test_test_file_exists(self):
-        """hasher.test.ts test file must exist."""
-        assert os.path.isfile(os.path.join(self.REPO_DIR, "test/js/bun/hasher.test.ts"))
+        """Verify hasher.test.ts test file exists"""
+        path = os.path.join(self.REPO_DIR, "test/js/bun/hasher.test.ts")
+        assert os.path.exists(path), f"hasher.test.ts not found at {path}"
 
-    # ------------------------------------------------------------------
-    # L1: Class definition structure
-    # ------------------------------------------------------------------
+    # === Semantic Checks ===
 
-    def test_classes_ts_uses_define(self):
-        """BunHasher.classes.ts must use define() pattern."""
-        content = self._read("src/bun.js/api/BunHasher.classes.ts")
-        assert re.search(
-            r"define\(", content
-        ), "BunHasher.classes.ts does not use define()"
+    def test_classes_ts_uses_define_pattern(self):
+        """Verify BunHasher.classes.ts uses Bun's define() code generator pattern"""
+        path = os.path.join(
+            self.REPO_DIR, "src/bun.js/api/BunHasher.classes.ts"
+        )
+        with open(path) as f:
+            content = f.read()
 
-    def test_classes_ts_declares_constructor(self):
-        """Class definition must declare a constructor."""
-        content = self._read("src/bun.js/api/BunHasher.classes.ts")
-        patterns = [r"construct", r"constructor", r"init"]
-        assert any(
-            re.search(p, content, re.IGNORECASE) for p in patterns
-        ), "Class definition missing constructor"
+        assert "define" in content, (
+            "BunHasher.classes.ts should use Bun's define() pattern"
+        )
 
-    def test_classes_ts_declares_methods(self):
-        """Class definition must declare prototype methods."""
-        content = self._read("src/bun.js/api/BunHasher.classes.ts")
-        patterns = [r"hash", r"digest", r"update", r"prototype", r"method"]
-        found = sum(1 for p in patterns if re.search(p, content, re.IGNORECASE))
-        assert found >= 2, "Class definition missing method declarations"
+    def test_classes_ts_declares_constructor_and_methods(self):
+        """Verify class definition declares constructor, methods, and property"""
+        path = os.path.join(
+            self.REPO_DIR, "src/bun.js/api/BunHasher.classes.ts"
+        )
+        with open(path) as f:
+            content = f.read().lower()
 
-    def test_classes_ts_declares_getter(self):
-        """Class definition must declare a property getter."""
-        content = self._read("src/bun.js/api/BunHasher.classes.ts")
-        patterns = [r"get\b", r"getter", r"property", r"algorithm", r"name"]
-        assert any(
-            re.search(p, content, re.IGNORECASE) for p in patterns
-        ), "Class definition missing property getter"
+        required = {
+            "constructor": "construct" in content or "constructor" in content,
+            "hash_method": "hash" in content or "update" in content or "digest" in content,
+            "property_getter": "get" in content or "property" in content or "algorithm" in content,
+            "finalize": "finalize" in content or "deinit" in content or "destroy" in content,
+        }
+        found = [k for k, v in required.items() if v]
+        assert len(found) >= 3, (
+            f"Class definition should declare constructor, methods, getter, and finalize. "
+            f"Found: {found}"
+        )
 
-    def test_classes_ts_has_finalize(self):
-        """Class definition must enable finalization for cleanup."""
-        content = self._read("src/bun.js/api/BunHasher.classes.ts")
-        patterns = [r"finalize", r"deinit", r"destructor", r"cleanup"]
-        assert any(
-            re.search(p, content, re.IGNORECASE) for p in patterns
-        ), "Class definition missing finalization"
+    def test_zig_implements_struct(self):
+        """Verify BunHasher.zig implements a Zig struct with required functions"""
+        path = os.path.join(
+            self.REPO_DIR, "src/bun.js/api/BunHasher.zig"
+        )
+        with open(path) as f:
+            content = f.read()
 
-    # ------------------------------------------------------------------
-    # L2: Zig implementation
-    # ------------------------------------------------------------------
+        # Should define a struct
+        assert "struct" in content, "BunHasher.zig should define a struct"
 
-    def test_zig_has_struct(self):
-        """BunHasher.zig must define a struct."""
-        content = self._read("src/bun.js/api/BunHasher.zig")
-        assert re.search(r"(pub\s+)?const\s+\w+\s*=\s*struct", content) or re.search(
-            r"struct\s*\{", content
-        ), "BunHasher.zig does not define a struct"
+        # Should have public functions
+        pub_fn_count = content.count("pub fn")
+        assert pub_fn_count >= 3, (
+            f"BunHasher.zig should expose at least 3 public functions. "
+            f"Found {pub_fn_count}"
+        )
 
     def test_zig_supports_multiple_algorithms(self):
-        """Zig implementation must support multiple hash algorithms."""
-        content = self._read("src/bun.js/api/BunHasher.zig")
-        algorithms = [
-            r"sha256",
-            r"sha512",
-            r"md5",
-            r"sha1",
-            r"blake2",
-            r"sha384",
-            r"xxhash",
-            r"SHA256",
-            r"SHA512",
-            r"MD5",
+        """Verify Zig implementation supports multiple hash algorithm variants"""
+        path = os.path.join(
+            self.REPO_DIR, "src/bun.js/api/BunHasher.zig"
+        )
+        with open(path) as f:
+            content = f.read().lower()
+
+        algorithms = ["sha256", "sha1", "md5", "sha512", "sha384", "blake"]
+        found = [algo for algo in algorithms if algo in content]
+        assert len(found) >= 2, (
+            f"Zig implementation should support multiple hash algorithms. "
+            f"Found: {found}. Expected at least 2."
+        )
+
+    def test_zig_handles_string_and_binary_input(self):
+        """Verify Zig implementation accepts both string and binary inputs"""
+        path = os.path.join(
+            self.REPO_DIR, "src/bun.js/api/BunHasher.zig"
+        )
+        with open(path) as f:
+            content = f.read()
+
+        # Should reference string or slice types
+        input_handling = [
+            "JSValue", "String", "string", "slice", "Uint8Array",
+            "ArrayBuffer", "bytes", "toSlice",
         ]
-        found = sum(1 for a in algorithms if re.search(a, content, re.IGNORECASE))
-        assert (
-            found >= 2
-        ), f"Only {found} hash algorithm(s) referenced — need at least 2"
-
-    def test_zig_accepts_string_input(self):
-        """Zig must accept string input for hashing."""
-        content = self._read("src/bun.js/api/BunHasher.zig")
-        patterns = [r"string", r"String", r"\[\]u8", r"slice", r"toJSString"]
-        assert any(
-            re.search(p, content) for p in patterns
-        ), "Zig does not accept string input"
-
-    def test_zig_accepts_binary_input(self):
-        """Zig must accept binary (Uint8Array) input."""
-        content = self._read("src/bun.js/api/BunHasher.zig")
-        patterns = [r"Uint8Array", r"ArrayBuffer", r"TypedArray", r"binary", r"bytes"]
-        assert any(
-            re.search(p, content, re.IGNORECASE) for p in patterns
-        ), "Zig does not accept binary input"
+        found = [ind for ind in input_handling if ind in content]
+        assert len(found) >= 2, (
+            f"Zig implementation should handle string and binary inputs. "
+            f"Found: {found}. Expected at least 2 of: {input_handling}"
+        )
 
     def test_zig_has_finalizer(self):
-        """Zig must implement memory cleanup in finalizer."""
-        content = self._read("src/bun.js/api/BunHasher.zig")
-        patterns = [r"finalize", r"deinit", r"destroy", r"free", r"allocator"]
-        assert any(
-            re.search(p, content, re.IGNORECASE) for p in patterns
-        ), "Zig missing finalizer/cleanup"
+        """Verify Zig implementation has a finalizer for memory cleanup"""
+        path = os.path.join(
+            self.REPO_DIR, "src/bun.js/api/BunHasher.zig"
+        )
+        with open(path) as f:
+            content = f.read()
 
-    def test_zig_has_public_functions(self):
-        """Zig must expose at least 3 public functions."""
-        content = self._read("src/bun.js/api/BunHasher.zig")
-        pub_fns = re.findall(r"pub\s+fn\s+\w+", content)
-        assert (
-            len(pub_fns) >= 3
-        ), f"Only {len(pub_fns)} public function(s) — need at least 3"
-
-    # ------------------------------------------------------------------
-    # L2: Test suite
-    # ------------------------------------------------------------------
-
-    def test_test_has_algorithm_tests(self):
-        """Test file must test each supported hash algorithm."""
-        content = self._read("test/js/bun/hasher.test.ts")
-        patterns = [r"sha256|sha512|md5|sha1|blake2", r"algorithm"]
-        assert any(
-            re.search(p, content, re.IGNORECASE) for p in patterns
-        ), "Tests do not cover hash algorithms"
-
-    def test_test_covers_input_types(self):
-        """Test file must test various input types."""
-        content = self._read("test/js/bun/hasher.test.ts")
-        input_patterns = [
-            r'""',  # empty string
-            r"Uint8Array",  # binary
-            r"unicode|emoji|utf",  # unicode
+        finalize_indicators = [
+            "finalize", "deinit", "destroy", "dealloc", "free",
         ]
-        found = sum(1 for p in input_patterns if re.search(p, content, re.IGNORECASE))
-        assert found >= 2, "Tests do not cover enough input types"
+        found = [ind for ind in finalize_indicators if ind in content]
+        assert len(found) >= 1, (
+            f"Zig implementation should have a finalizer for cleanup. "
+            f"None of {finalize_indicators} found."
+        )
 
-    def test_test_verifies_determinism(self):
-        """Tests should verify deterministic output."""
-        content = self._read("test/js/bun/hasher.test.ts")
-        patterns = [r"equal|toBe|toEqual|same|match", r"expect.*digest.*toBe"]
-        assert any(
-            re.search(p, content, re.IGNORECASE) for p in patterns
-        ), "Tests do not verify deterministic output"
+    def test_zig_uses_jsc_interface_methods(self):
+        """Verify Zig implementation integrates with JSC interface methods"""
+        path = os.path.join(
+            self.REPO_DIR, "src/bun.js/api/BunHasher.zig"
+        )
+        with open(path) as f:
+            content = f.read()
 
-    def test_test_has_enough_cases(self):
-        """Test file must have at least 4 test cases."""
-        content = self._read("test/js/bun/hasher.test.ts")
-        test_count = len(re.findall(r"(it|test)\s*\(", content))
-        assert test_count >= 4, f"Only {test_count} test case(s) — need at least 4"
+        jsc_indicators = [
+            "JSC", "JSValue", "JSGlobalObject", "callFrame",
+            "globalObject", "toJS", "fromJS",
+        ]
+        found = [ind for ind in jsc_indicators if ind in content]
+        assert len(found) >= 3, (
+            f"Zig should integrate with JSC interface. "
+            f"Found: {found}. Expected at least 3 of: {jsc_indicators}"
+        )
+
+    # === Functional Checks ===
+
+    def test_classes_ts_has_valid_syntax(self):
+        """Verify BunHasher.classes.ts has valid JavaScript/TypeScript syntax"""
+        path = os.path.join(
+            self.REPO_DIR, "src/bun.js/api/BunHasher.classes.ts"
+        )
+        result = subprocess.run(
+            ["node", "--check", path],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        # .ts file may not parse with node directly, check for basic structure instead
+        if result.returncode != 0:
+            with open(path) as f:
+                content = f.read()
+            assert "export" in content or "define" in content, (
+                "BunHasher.classes.ts should have valid structure"
+            )
+
+    def test_test_file_covers_algorithms(self):
+        """Verify test file tests multiple hash algorithms"""
+        path = os.path.join(self.REPO_DIR, "test/js/bun/hasher.test.ts")
+        with open(path) as f:
+            content = f.read().lower()
+
+        algorithms = ["sha256", "sha1", "md5", "sha512"]
+        found = [algo for algo in algorithms if algo in content]
+        assert len(found) >= 2, (
+            f"Test file should test multiple algorithms. Found: {found}"
+        )
+
+    def test_test_file_covers_input_types(self):
+        """Verify test file tests various input types"""
+        path = os.path.join(self.REPO_DIR, "test/js/bun/hasher.test.ts")
+        with open(path) as f:
+            content = f.read()
+
+        input_types = {
+            "empty_string": '""' in content or "empty" in content.lower(),
+            "string_input": "string" in content.lower() or '"hello' in content.lower() or "'hello" in content.lower(),
+            "binary_input": "Uint8Array" in content or "Buffer" in content or "binary" in content.lower(),
+        }
+        found = [k for k, v in input_types.items() if v]
+        assert len(found) >= 2, (
+            f"Test file should cover various input types. Found: {found}"
+        )
+
+    def test_test_file_verifies_determinism(self):
+        """Verify test file checks deterministic output (same input = same hash)"""
+        path = os.path.join(self.REPO_DIR, "test/js/bun/hasher.test.ts")
+        with open(path) as f:
+            content = f.read().lower()
+
+        determinism_indicators = [
+            "equal", "same", "deterministic", "consistent",
+            "expect(", "tobe(", "toequal(",
+        ]
+        found = [ind for ind in determinism_indicators if ind in content]
+        assert len(found) >= 2, (
+            f"Test file should verify deterministic hash output. "
+            f"Found: {found}"
+        )

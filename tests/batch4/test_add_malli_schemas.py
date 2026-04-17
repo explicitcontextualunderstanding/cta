@@ -1,200 +1,229 @@
 """
-Test for 'add-malli-schemas' skill — Malli Schema Validation for Bookmarks
-Validates that the Agent added Malli schemas for the Bookmark entity with
-proper types, enums, and route-level validation in Metabase.
+Tests for skill: add-malli-schemas
+Repo: metabase/metabase
+Image: zhangyiiiiii/swe-skills-bench-clojure
+Task: Add Malli schemas to Metabase Bookmark API endpoints for input
+      validation and response typing.
 """
 
 import os
 import re
+import subprocess
 
 import pytest
 
+REPO_DIR = "/workspace/metabase"
+BOOKMARK_API = os.path.join(REPO_DIR, "src", "metabase", "api", "bookmark.clj")
+BOOKMARK_MODEL = os.path.join(REPO_DIR, "src", "metabase", "models", "bookmark.clj")
 
-class TestAddMalliSchemas:
-    """Verify Malli schema definitions for Metabase Bookmarks."""
 
-    REPO_DIR = "/workspace/metabase"
+# ---------------------------------------------------------------------------
+# Layer 1 — file_path_check
+# ---------------------------------------------------------------------------
 
-    # ---- helpers ----
+class TestFilePathCheck:
+    """Verify that the required files exist."""
 
-    @staticmethod
-    def _read(path):
-        with open(path, "r", errors="ignore") as fh:
-            return fh.read()
-
-    def _find(self, *parts):
-        path = os.path.join(self.REPO_DIR, *parts)
-        return path if os.path.exists(path) else None
-
-    def _api_bookmark(self):
-        candidates = [
-            "src/metabase/api/bookmark.clj",
-            "src/metabase/api/bookmark.cljc",
-        ]
-        for c in candidates:
-            p = self._find(c)
-            if p:
-                return p
-        return None
-
-    def _models_bookmark(self):
-        candidates = [
-            "src/metabase/models/bookmark.clj",
-            "src/metabase/models/bookmark.cljc",
-        ]
-        for c in candidates:
-            p = self._find(c)
-            if p:
-                return p
-        return None
-
-    # ---- file_path_check ----
-
-    def test_api_bookmark_exists(self):
-        """Verifies api/bookmark.clj exists."""
-        path = self._api_bookmark()
-        assert path is not None, "api/bookmark.clj not found"
-
-    def test_models_bookmark_exists(self):
-        """Verifies models/bookmark.clj exists."""
-        path = self._models_bookmark()
-        assert path is not None, "models/bookmark.clj not found"
-
-    # ---- semantic_check ----
-
-    def test_sem_positive_int_schema(self):
-        """Verifies ms/PositiveInt or :pos-int schema usage."""
-        content = self._read(self._api_bookmark())
-        models_content = self._read(self._models_bookmark())
-        combined = content + models_content
-        assert (
-            "ms/PositiveInt" in combined
-            or "PositiveInt" in combined
-            or "pos-int" in combined
-        ), "PositiveInt schema not found"
-
-    def test_sem_enum_keyword(self):
-        """Verifies [:enum ...] schema usage."""
-        content = self._read(self._models_bookmark())
-        assert (
-            "[:enum" in content or ":enum" in content
-        ), "No :enum schema in models/bookmark"
-
-    def test_sem_bookmark_schema(self):
-        """Verifies ::Bookmark or :Bookmark schema definition."""
-        content = self._read(self._models_bookmark())
-        assert (
-            "::Bookmark" in content or ":Bookmark" in content or "Bookmark" in content
-        ), "Bookmark schema not defined in models"
-
-    def test_sem_maybe_or_optional(self):
-        """Verifies [:maybe or [:optional schema usage."""
-        content = self._read(self._models_bookmark())
-        assert (
-            "[:maybe" in content or "[:optional" in content or ":optional" in content
-        ), "No :maybe/:optional schema found"
-
-    def test_sem_sequential_schema(self):
-        """Verifies :sequential or vector schema for collections."""
-        content = self._read(self._models_bookmark())
-        assert (
-            ":sequential" in content
-            or "[:sequential" in content
-            or "[:vector" in content
-        ), "No :sequential schema found"
-
-    def test_sem_require_malli(self):
-        """Verifies Malli namespace is required."""
-        content = self._read(self._api_bookmark())
-        models_content = self._read(self._models_bookmark())
-        combined = content + models_content
-        assert (
-            "malli" in combined.lower()
-            or "metabase.util.malli" in combined
-            or "ms/" in combined
-        ), "Malli namespace not required"
-
-    # ---- functional_check ----
-
-    def test_func_non_blank_string(self):
-        """Verifies NonBlankString or non-blank-string schema used."""
-        content = self._read(self._models_bookmark())
-        api_content = self._read(self._api_bookmark())
-        combined = content + api_content
-        assert (
-            "NonBlankString" in combined
-            or "non-blank-string" in combined
-            or ":string" in combined
-        ), "No string validation schema found"
-
-    def test_func_success_boolean(self):
-        """Verifies success response has boolean type."""
-        content = self._read(self._api_bookmark())
-        assert (
-            ":boolean" in content or "ms/Boolean" in content or "boolean?" in content
-        ), "No boolean schema for success response"
-
-    def test_func_card_enum(self):
-        """Verifies 'card' is an enum value for bookmark type."""
-        content = self._read(self._models_bookmark())
-        api_content = self._read(self._api_bookmark())
-        combined = content + api_content
-        assert re.search(
-            r'"card"|:card|"card"', combined
-        ), "No 'card' enum value found for bookmark type"
-
-    def test_func_dashboard_enum(self):
-        """Verifies 'dashboard' is an enum value for bookmark type."""
-        content = self._read(self._models_bookmark())
-        api_content = self._read(self._api_bookmark())
-        combined = content + api_content
-        assert re.search(
-            r'"dashboard"|:dashboard|"dashboard"', combined
-        ), "No 'dashboard' enum value found"
-
-    def test_func_collection_enum(self):
-        """Verifies 'collection' is an enum value for bookmark type."""
-        content = self._read(self._models_bookmark())
-        api_content = self._read(self._api_bookmark())
-        combined = content + api_content
-        assert re.search(
-            r'"collection"|:collection|"collection"', combined
-        ), "No 'collection' enum value found"
-
-    def test_func_defendpoint_routes(self):
-        """Verifies >= 4 defendpoint/api-let routes in api/bookmark.clj."""
-        content = self._read(self._api_bookmark())
-        matches = re.findall(
-            r"(defendpoint|api/defendpoint|api-let|compojure)", content
+    def test_bookmark_api_file_exists(self):
+        assert os.path.isfile(BOOKMARK_API), (
+            f"Expected bookmark API file at {BOOKMARK_API}"
         )
-        assert (
-            len(matches) >= 4
-        ), f"Expected >= 4 route definitions, found {len(matches)}"
 
-    def test_func_model_pos_int(self):
-        """Verifies model ID uses pos-int? or PositiveInt."""
-        content = self._read(self._models_bookmark())
-        api_content = self._read(self._api_bookmark())
-        combined = content + api_content
-        assert (
-            "pos-int?" in combined
-            or "PositiveInt" in combined
-            or "ms/PositiveInt" in combined
-        ), "No positive integer validation for model ID"
+    def test_bookmark_model_file_exists(self):
+        assert os.path.isfile(BOOKMARK_MODEL), (
+            f"Expected bookmark model file at {BOOKMARK_MODEL}"
+        )
 
-    def test_func_ordering_field(self):
-        """Verifies ordering/index field in bookmark model."""
-        content = self._read(self._models_bookmark())
-        assert (
-            "ordering" in content or "index" in content or "position" in content
-        ), "No ordering/index field in bookmark model"
 
-    def test_func_schema_validation_on_create(self):
-        """Verifies schema validation applied on bookmark creation route."""
-        content = self._read(self._api_bookmark())
-        assert re.search(
-            r"(POST|:post|create|bookmark)", content, re.IGNORECASE
-        ), "No create/POST route found in api/bookmark"
-        assert re.search(
-            r"(ms/|malli|schema|:>)", content
-        ), "No schema validation on bookmark creation"
+# ---------------------------------------------------------------------------
+# Layer 2 — semantic_check
+# ---------------------------------------------------------------------------
+
+class TestSemanticBookmarkAPI:
+    """Check that Malli schema annotations are present in the API file."""
+
+    @pytest.fixture(autouse=True)
+    def _load_api_source(self):
+        with open(BOOKMARK_API, "r", encoding="utf-8") as f:
+            self.api_src = f.read()
+
+    # -- Route parameter schemas --
+
+    def test_route_params_use_positive_int(self):
+        """Route IDs (id, card-id, dashboard-id, collection-id) must use ms/PositiveInt."""
+        assert "ms/PositiveInt" in self.api_src or "PositiveInt" in self.api_src, (
+            "Expected ms/PositiveInt annotation for route parameter IDs"
+        )
+
+    def test_route_param_map_annotation_syntax(self):
+        """Route params must use the :- [:map ...] annotation syntax."""
+        pattern = r":-\s*\[:map"
+        assert re.search(pattern, self.api_src), (
+            "Expected :- [:map ...] annotation syntax for route parameters"
+        )
+
+    # -- Query parameter schemas --
+
+    def test_get_bookmark_has_optional_type_query_param(self):
+        """GET /api/bookmark must accept an optional type query param with enum schema."""
+        assert re.search(r'\[:enum\s+"card"\s+"dashboard"\s+"collection"\]', self.api_src), (
+            "Expected [:enum \"card\" \"dashboard\" \"collection\"] for type query param"
+        )
+
+    def test_optional_query_param_marker(self):
+        """Optional query params must be annotated with {:optional true} or :maybe."""
+        has_optional = ":optional true" in self.api_src or ":maybe" in self.api_src
+        assert has_optional, (
+            "Expected {:optional true} or :maybe for optional query parameters"
+        )
+
+    # -- Request body schemas --
+
+    def test_post_bookmark_body_has_type_enum(self):
+        """POST /api/bookmark body must validate type as enum of card/dashboard/collection."""
+        pattern = r'\[:enum\s+"card"\s+"dashboard"\s+"collection"\]'
+        matches = re.findall(pattern, self.api_src)
+        assert len(matches) >= 1, (
+            "Expected at least one [:enum \"card\" \"dashboard\" \"collection\"] for POST body"
+        )
+
+    def test_post_bookmark_body_has_item_id(self):
+        """POST body must include item_id with ms/PositiveInt."""
+        has_item_id = re.search(r":item_id.*PositiveInt", self.api_src)
+        assert has_item_id, (
+            "Expected :item_id ms/PositiveInt in POST /api/bookmark body schema"
+        )
+
+    def test_put_ordering_body_has_sequential_schema(self):
+        """PUT /api/bookmark/ordering body must use :sequential for orderings."""
+        assert ":sequential" in self.api_src or "sequential" in self.api_src, (
+            "Expected :sequential annotation for PUT ordering body"
+        )
+
+    # -- Response schemas --
+
+    def test_delete_response_schema(self):
+        """DELETE /api/bookmark/:id response must use [:map [:success :boolean]]."""
+        has_success = re.search(r":success.*:boolean", self.api_src)
+        assert has_success, (
+            "Expected [:map [:success :boolean]] response schema for DELETE endpoint"
+        )
+
+
+class TestSemanticBookmarkModel:
+    """Check that named Malli schema ::Bookmark is defined in the model file."""
+
+    @pytest.fixture(autouse=True)
+    def _load_model_source(self):
+        with open(BOOKMARK_MODEL, "r", encoding="utf-8") as f:
+            self.model_src = f.read()
+
+    def test_bookmark_named_schema_defined(self):
+        """::Bookmark named schema must be defined using mr/def or mc/def-schema."""
+        has_def = (
+            "::Bookmark" in self.model_src
+            or "Bookmark" in self.model_src
+        )
+        assert has_def, (
+            "Expected named schema ::Bookmark defined in bookmark model file"
+        )
+
+    def test_bookmark_schema_has_required_fields(self):
+        """::Bookmark schema must contain id, type, item_id, user_id, created_at, updated_at."""
+        required_keys = [":id", ":type", ":item_id", ":user_id", ":created_at", ":updated_at"]
+        missing = [k for k in required_keys if k not in self.model_src]
+        assert not missing, (
+            f"Bookmark schema missing keys: {missing}"
+        )
+
+    def test_temporal_fields_use_any(self):
+        """Temporal fields (created_at, updated_at) must use :any in response schema."""
+        # Check that :any appears associated with temporal fields
+        assert ":any" in self.model_src, (
+            "Expected :any type for temporal fields in Bookmark response schema"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Layer 3 — functional_check
+# ---------------------------------------------------------------------------
+
+class TestFunctionalMalliSchemas:
+    """Functional checks — validate Clojure source can be loaded and schemas compile."""
+
+    def _run(self, cmd, cwd=REPO_DIR, timeout=120):
+        result = subprocess.run(
+            cmd, shell=True, cwd=cwd,
+            capture_output=True, text=True, timeout=timeout,
+        )
+        return result
+
+    def test_api_file_has_valid_clojure_syntax(self):
+        """Bookmark API file must have balanced parentheses (basic Clojure syntax)."""
+        with open(BOOKMARK_API, "r", encoding="utf-8") as f:
+            src = f.read()
+        opens = src.count("(")
+        closes = src.count(")")
+        assert opens == closes, (
+            f"Unbalanced parentheses in bookmark.clj: {opens} open vs {closes} close"
+        )
+
+    def test_model_file_has_valid_clojure_syntax(self):
+        """Bookmark model file must have balanced parentheses."""
+        with open(BOOKMARK_MODEL, "r", encoding="utf-8") as f:
+            src = f.read()
+        opens = src.count("(")
+        closes = src.count(")")
+        assert opens == closes, (
+            f"Unbalanced parentheses in bookmark model: {opens} open vs {closes} close"
+        )
+
+    def test_api_ns_declaration_requires_malli(self):
+        """The API namespace must require malli schema utilities."""
+        with open(BOOKMARK_API, "r", encoding="utf-8") as f:
+            src = f.read()
+        has_malli = (
+            "metabase.util.malli.schema" in src
+            or "metabase.util.malli" in src
+            or "malli" in src
+        )
+        assert has_malli, (
+            "Expected malli-related require in bookmark API namespace"
+        )
+
+    def test_defendpoint_forms_present(self):
+        """API file must contain defendpoint forms for GET, POST, PUT, DELETE."""
+        with open(BOOKMARK_API, "r", encoding="utf-8") as f:
+            src = f.read()
+        methods = ["GET", "POST", "PUT", "DELETE"]
+        found = [m for m in methods if re.search(rf"defendpoint\s+:{m.upper()}\b|defendpoint\s+{m}", src, re.IGNORECASE)]
+        missing = set(methods) - set(found)
+        assert not missing, (
+            f"Missing defendpoint forms for HTTP methods: {missing}"
+        )
+
+    def test_clj_kondo_lint_bookmark_api(self):
+        """Run clj-kondo on the bookmark API file if available."""
+        result = self._run("which clj-kondo", timeout=10)
+        if result.returncode != 0:
+            pytest.skip("clj-kondo not available in this environment")
+
+        result = self._run(f"clj-kondo --lint {BOOKMARK_API}", timeout=60)
+        # clj-kondo returns 2 for errors, 3 for warnings — we only fail on errors
+        assert result.returncode != 2, (
+            f"clj-kondo found errors in bookmark API:\n{result.stdout}\n{result.stderr}"
+        )
+
+    def test_model_requires_malli_registry(self):
+        """The model namespace must require malli registry (mr) for defining named schemas."""
+        with open(BOOKMARK_MODEL, "r", encoding="utf-8") as f:
+            src = f.read()
+        has_registry = (
+            "metabase.util.malli.registry" in src
+            or "mr/def" in src
+            or "malli.registry" in src
+            or "malli" in src
+        )
+        assert has_registry, (
+            "Expected malli registry require in bookmark model namespace for mr/def"
+        )

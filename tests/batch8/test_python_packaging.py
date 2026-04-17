@@ -1,108 +1,163 @@
 """
-Test for 'python-packaging' skill — Python Packaging Standards
-Validates that the Agent set up a modern Python package with pyproject.toml,
-hatchling build backend, PEP 561 py.typed marker, and CLI entry point.
+Tests for the python-packaging skill.
+Validates creation of a distributable Python package for the Packaging library's
+test utilities with PEP 621 metadata, src layout, and utility classes.
 """
 
 import os
 import re
-import subprocess
+import ast
 
-import pytest
+REPO_DIR = "/workspace/packaging"
+PKG_DIR = os.path.join(REPO_DIR, "packaging_test_utils")
+SRC_DIR = os.path.join(PKG_DIR, "src", "packaging_test_utils")
 
 
 class TestPythonPackaging:
-    """Verify Python packaging standards implementation."""
+    """Tests for the packaging-test-utils package."""
 
-    REPO_DIR = "/workspace/packaging"
-
-    @staticmethod
-    def _read(path: str) -> str:
-        try:
-            with open(path, "r", errors="ignore") as fh:
-                return fh.read()
-        except OSError:
-            return ""
-
-    # ── file_path_check ─────────────────────────────────────────────
+    # ── file_path_check ──────────────────────────────────────────────
 
     def test_pyproject_toml_exists(self):
-        """Verify pyproject.toml exists at the project root."""
-        path = os.path.join(self.REPO_DIR, "pyproject.toml")
-        assert os.path.isfile(path), "Missing: pyproject.toml"
+        """pyproject.toml must exist."""
+        path = os.path.join(PKG_DIR, "pyproject.toml")
+        assert os.path.isfile(path), f"Missing {path}"
 
-    def test_py_typed_marker_exists(self):
-        """Verify src/mypackage/py.typed PEP 561 marker file exists."""
-        path = os.path.join(self.REPO_DIR, "src/mypackage/py.typed")
-        assert os.path.isfile(path), "Missing: src/mypackage/py.typed"
+    def test_init_file_exists(self):
+        """Package __init__.py must exist in src layout."""
+        path = os.path.join(SRC_DIR, "__init__.py")
+        assert os.path.isfile(path), f"Missing {path}"
 
-    def test_package_init_exists(self):
-        """Verify src/mypackage/__init__.py exists with __version__ attribute."""
-        path = os.path.join(self.REPO_DIR, "src/mypackage/__init__.py")
-        assert os.path.isfile(path), "Missing: src/mypackage/__init__.py"
+    def test_versions_module_exists(self):
+        """VersionFactory module must exist."""
+        path = os.path.join(SRC_DIR, "versions.py")
+        assert os.path.isfile(path), f"Missing {path}"
 
-    # ── semantic_check ──────────────────────────────────────────────
+    def test_specifiers_module_exists(self):
+        """SpecifierFactory module must exist."""
+        path = os.path.join(SRC_DIR, "specifiers.py")
+        assert os.path.isfile(path), f"Missing {path}"
 
-    def test_hatchling_build_backend(self):
-        """Verify pyproject.toml declares hatchling as build backend."""
-        content = self._read(os.path.join(self.REPO_DIR, "pyproject.toml"))
-        assert content, "pyproject.toml is empty or unreadable"
-        assert "hatchling" in content, "hatchling not found"
-        assert "build-backend" in content, "build-backend not found"
+    def test_markers_module_exists(self):
+        """MarkerEvaluator module must exist."""
+        path = os.path.join(SRC_DIR, "markers.py")
+        assert os.path.isfile(path), f"Missing {path}"
 
-    def test_requires_python_310(self):
-        """Verify requires-python is set to >= '3.10'."""
-        content = self._read(os.path.join(self.REPO_DIR, "pyproject.toml"))
-        assert content, "pyproject.toml is empty or unreadable"
-        assert "requires-python" in content, "requires-python not found"
-        assert "3.10" in content, "3.10 not found in requires-python"
+    def test_readme_exists(self):
+        """README.md must exist."""
+        path = os.path.join(PKG_DIR, "README.md")
+        assert os.path.isfile(path), f"Missing {path}"
 
-    def test_cli_entry_point_defined(self):
-        """Verify [project.scripts] section defines at least one CLI entry point."""
-        content = self._read(os.path.join(self.REPO_DIR, "pyproject.toml"))
-        assert content, "pyproject.toml is empty or unreadable"
-        assert "[project.scripts]" in content, "[project.scripts] section not found"
+    # ── semantic_check ───────────────────────────────────────────────
 
-    # ── functional_check (command) ──────────────────────────────────
+    def _read_src(self, filename):
+        path = os.path.join(SRC_DIR, filename)
+        if not os.path.isfile(path):
+            return ""
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read()
 
-    def _skip_unless_repo(self):
-        if not os.path.isdir(self.REPO_DIR):
-            pytest.skip("Repo dir does not exist")
+    def _read_pkg(self, filename):
+        path = os.path.join(PKG_DIR, filename)
+        if not os.path.isfile(path):
+            return ""
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read()
 
-    def test_editable_install_exits_zero(self):
-        """pip install -e . succeeds with exit code 0."""
-        self._skip_unless_repo()
-        result = subprocess.run(
-            ["pip", "install", "-e", "."],
-            capture_output=True, text=True, cwd=self.REPO_DIR, timeout=120,
+    def test_pyproject_pep621_metadata(self):
+        """pyproject.toml must include PEP 621 project metadata."""
+        content = self._read_pkg("pyproject.toml")
+        assert "[project]" in content, "[project] table missing"
+        assert "packaging-test-utils" in content, "Package name not found"
+        assert "requires-python" in content, "requires-python not specified"
+
+    def test_pyproject_hatchling_backend(self):
+        """pyproject.toml must use hatchling as build backend."""
+        content = self._read_pkg("pyproject.toml")
+        assert "hatchling" in content, "hatchling build backend not specified"
+
+    def test_pyproject_packaging_dependency(self):
+        """pyproject.toml must depend on packaging>=24.0."""
+        content = self._read_pkg("pyproject.toml")
+        assert re.search(r"packaging.*>=.*24", content), (
+            "packaging>=24.0 dependency not found"
         )
-        assert result.returncode == 0, f"pip install -e . failed: {result.stderr}"
 
-    def test_import_package_exits_zero(self):
-        """After editable install, importing mypackage and printing __version__ exits 0."""
-        self._skip_unless_repo()
-        result = subprocess.run(
-            ["python", "-c", "import mypackage; print(mypackage.__version__)"],
-            capture_output=True, text=True, cwd=self.REPO_DIR, timeout=30,
+    def test_test_optional_dependency(self):
+        """pyproject.toml must have test optional dependency with pytest."""
+        content = self._read_pkg("pyproject.toml")
+        assert re.search(r"test.*=|optional-dependencies", content, re.IGNORECASE), (
+            "Test optional dependency not found"
         )
-        assert result.returncode == 0, f"import failed: {result.stderr}"
+        assert "pytest" in content, "pytest not in test dependencies"
 
-    def test_cli_help_exits_zero(self):
-        """The installed CLI entry point --help exits 0."""
-        self._skip_unless_repo()
-        result = subprocess.run(
-            ["mypackage", "--help"],
-            capture_output=True, text=True, cwd=self.REPO_DIR, timeout=30,
-        )
-        assert result.returncode == 0, f"CLI --help failed: {result.stderr}"
+    def test_version_factory_class(self):
+        """VersionFactory must define create, sequence, and pre_release_set."""
+        content = self._read_src("versions.py")
+        assert re.search(r"class\s+VersionFactory", content), "VersionFactory class not defined"
+        for method in ["create", "sequence", "pre_release_set"]:
+            assert re.search(rf"def\s+{method}\b", content), (
+                f"VersionFactory.{method} method not defined"
+            )
 
-    def test_importlib_metadata_version_returns_string(self):
-        """importlib.metadata.version('mypackage') returns a non-empty string."""
-        self._skip_unless_repo()
-        result = subprocess.run(
-            ["python", "-c",
-             "import importlib.metadata; v = importlib.metadata.version('mypackage'); "
-             "assert isinstance(v, str) and len(v) > 0"],
-            capture_output=True, text=True, cwd=self.REPO_DIR, timeout=30,
+    def test_specifier_factory_class(self):
+        """SpecifierFactory must define from_spec, range, compatible, matches."""
+        content = self._read_src("specifiers.py")
+        assert re.search(r"class\s+SpecifierFactory", content), (
+            "SpecifierFactory class not defined"
         )
-        assert result.returncode == 0, f"metadata version check failed: {result.stderr}"
+        for method in ["from_spec", "range", "compatible", "matches"]:
+            assert re.search(rf"def\s+{method}\b", content), (
+                f"SpecifierFactory.{method} method not defined"
+            )
+
+    def test_marker_evaluator_class(self):
+        """MarkerEvaluator must define evaluate and required_on."""
+        content = self._read_src("markers.py")
+        assert re.search(r"class\s+MarkerEvaluator", content), (
+            "MarkerEvaluator class not defined"
+        )
+        assert re.search(r"def\s+evaluate\b", content), "evaluate method not defined"
+        assert re.search(r"def\s+required_on\b", content), "required_on method not defined"
+
+    # ── functional_check ─────────────────────────────────────────────
+
+    def test_all_files_valid_python(self):
+        """All source Python files must have valid syntax."""
+        errors = []
+        for fname in ["__init__.py", "versions.py", "specifiers.py", "markers.py"]:
+            content = self._read_src(fname)
+            if not content:
+                continue
+            try:
+                ast.parse(content)
+            except SyntaxError as e:
+                errors.append(f"{fname}: {e}")
+        assert not errors, "Syntax errors:\n" + "\n".join(errors)
+
+    def test_init_exports_public_api(self):
+        """__init__.py must export VersionFactory, SpecifierFactory, MarkerEvaluator."""
+        content = self._read_src("__init__.py")
+        for cls in ["VersionFactory", "SpecifierFactory", "MarkerEvaluator"]:
+            assert cls in content, f"{cls} not exported from __init__.py"
+
+    def test_invalid_version_raises_error(self):
+        """VersionFactory must raise InvalidVersion for invalid strings."""
+        content = self._read_src("versions.py")
+        assert re.search(r"InvalidVersion|invalid.*version", content, re.IGNORECASE), (
+            "InvalidVersion error handling not found"
+        )
+
+    def test_src_layout_wheel_config(self):
+        """pyproject.toml must specify src layout for hatch wheel build."""
+        content = self._read_pkg("pyproject.toml")
+        assert re.search(r"packages|src", content), (
+            "src layout configuration not found in pyproject.toml"
+        )
+
+    def test_test_files_exist(self):
+        """Test files for versions, specifiers, markers must exist."""
+        tests_dir = os.path.join(PKG_DIR, "tests")
+        for fname in ["test_versions.py", "test_specifiers.py", "test_markers.py"]:
+            path = os.path.join(tests_dir, fname)
+            assert os.path.isfile(path), f"Missing {path}"

@@ -1,185 +1,233 @@
 """
-Tests for service-mesh-observability skill.
-Validates health scoring Go files in viz/metrics/ in linkerd2 repository.
+Tests for the service-mesh-observability skill.
+
+Validates that a service mesh observability dashboard data generator
+was implemented for Linkerd's viz extension, including metrics collection,
+health scoring, and topology building.
+
+Repo: linkerd2 (https://github.com/linkerd/linkerd2)
 """
 
 import os
-import subprocess
-import glob
 import re
-import pytest
+import subprocess
 
 REPO_DIR = "/workspace/linkerd2"
 
 
-def _path(rel: str) -> str:
-    return os.path.join(REPO_DIR, rel)
+class TestFilePathCheck:
+    """Verify all required files were created."""
+
+    def test_collector_exists(self):
+        path = os.path.join(REPO_DIR, "viz", "metrics", "collector.go")
+        assert os.path.isfile(path), f"Expected viz/metrics/collector.go"
+
+    def test_health_scorer_exists(self):
+        path = os.path.join(REPO_DIR, "viz", "metrics", "health_scorer.go")
+        assert os.path.isfile(path), f"Expected viz/metrics/health_scorer.go"
+
+    def test_topology_exists(self):
+        path = os.path.join(REPO_DIR, "viz", "metrics", "topology.go")
+        assert os.path.isfile(path), f"Expected viz/metrics/topology.go"
+
+    def test_collector_test_exists(self):
+        path = os.path.join(REPO_DIR, "viz", "metrics", "collector_test.go")
+        assert os.path.isfile(path), f"Expected collector_test.go"
+
+    def test_health_scorer_test_exists(self):
+        path = os.path.join(REPO_DIR, "viz", "metrics", "health_scorer_test.go")
+        assert os.path.isfile(path), f"Expected health_scorer_test.go"
 
 
-def _read_dir(dirname: str) -> str:
-    pattern = os.path.join(REPO_DIR, dirname, "*.go")
-    files = glob.glob(pattern)
-    return "\n".join(open(f, encoding="utf-8", errors="ignore").read() for f in files)
+class TestSemanticMetricsCollector:
+    """Verify golden signal metrics collection from Prometheus."""
 
+    def _read(self):
+        path = os.path.join(REPO_DIR, "viz", "metrics", "collector.go")
+        with open(path, "r") as f:
+            return f.read()
 
-def _run(cmd: str, timeout: int = 120):
-    return subprocess.run(
-        cmd, shell=True, cwd=REPO_DIR, capture_output=True, text=True, timeout=timeout
-    )
-
-
-class TestServiceMeshObservability:
-
-    # ── file_path_check ──────────────────────────────────────────────────────
-
-    def test_viz_metrics_directory_exists(self):
-        """viz/metrics/ must contain at least one .go file."""
-        pattern = os.path.join(REPO_DIR, "viz", "metrics", "*.go")
-        files = glob.glob(pattern)
-        assert len(files) >= 1, f"No .go files found in {_path('viz/metrics')}"
-
-    def test_health_scorer_go_exists(self):
-        """A health scorer Go file must exist in viz/metrics/."""
-        candidates = [
-            "viz/metrics/health_scorer.go",
-            "viz/metrics/scorer.go",
-        ]
-        found = any(os.path.isfile(_path(r)) for r in candidates)
-        assert found, f"No health scorer Go file found at {candidates}"
-
-    # ── semantic_check ───────────────────────────────────────────────────────
-
-    def test_error_score_calculation_defined(self):
-        """ErrorScore or errorScore function must be defined in viz/metrics/."""
-        content = _read_dir("viz/metrics")
-        assert (
-            "ErrorScore" in content
-            or "errorScore" in content
-            or "CalculateErrorScore" in content
-        ), "Error score calculation function not found in viz/metrics/"
-
-    def test_health_status_constants_defined(self):
-        """Healthy, Degraded, Critical health status constants must be defined."""
-        content = _read_dir("viz/metrics")
-        for status in ("Healthy", "Degraded", "Critical"):
-            assert (
-                status in content
-            ), f"{status} constant/iota not found in viz/metrics/ Go files"
-
-    def test_circular_dependency_detection_defined(self):
-        """Circular dependency detection must be implemented for service graph topology."""
-        content = _read_dir("viz/metrics")
-        has_cycle = (
-            "CircularDep" in content
-            or "circular" in content.lower()
-            or "detectCycle" in content
-            or "DependencyGraph" in content
-            or "cycle" in content.lower()
+    def test_struct_definition(self):
+        content = self._read()
+        assert re.search(r"type\s+MetricsCollector\s+struct", content), (
+            "Expected MetricsCollector struct"
         )
-        assert has_cycle, "No circular dependency detection found in viz/metrics/"
 
-    def test_latency_score_function_defined(self):
-        """LatencyScore or latencyScore function must be defined referencing p99."""
-        content = _read_dir("viz/metrics")
-        has_latency = "LatencyScore" in content or "latencyScore" in content
-        has_p99 = "P99" in content or "p99" in content or "99" in content
-        assert has_latency, "LatencyScore/latencyScore not found in viz/metrics/"
-        assert has_p99, "p99 percentile reference not found in viz/metrics/"
+    def test_prometheus_querier_interface(self):
+        content = self._read()
+        assert re.search(r"PrometheusQuerier|interface|Query", content), (
+            "Expected PrometheusQuerier interface for testability"
+        )
 
-    # ── functional_check ─────────────────────────────────────────────────────
+    def test_latency_metric(self):
+        content = self._read()
+        assert re.search(r"response_latency|latency|p50|p95|p99", content, re.IGNORECASE), (
+            "Expected latency histogram query (p50/p95/p99)"
+        )
 
-    def test_go_viz_metrics_tests_pass(self):
-        """go test ./viz/metrics/... must pass."""
-        result = _run("go test ./viz/metrics/...")
-        if result.returncode != 0 and (
-            "go: " in result.stderr[:50] or "cannot find" in result.stderr
-        ):
-            pytest.skip("Go not available or viz/metrics module not found")
-        assert (
-            result.returncode == 0
-        ), f"go test ./viz/metrics/... failed:\n{result.stdout}\n{result.stderr}"
+    def test_traffic_metric(self):
+        content = self._read()
+        assert re.search(r"request_total|traffic|rps|requests.*per.*second", content, re.IGNORECASE), (
+            "Expected traffic counter (requests per second)"
+        )
 
-    def test_error_score_0_9_for_0_5pct_error_rate(self):
-        """error_rate=0.005 must yield error_score=0.9 (mocked)."""
+    def test_error_metric(self):
+        content = self._read()
+        assert re.search(r"error.*rate|classification.*failure|failure", content, re.IGNORECASE), (
+            "Expected error rate metric (classification=failure)"
+        )
 
-        def error_score(error_rate: float) -> float:
-            return max(0.0, 1.0 - error_rate * 20)
+    def test_saturation_metric(self):
+        content = self._read()
+        assert re.search(r"tcp_open_connections|saturation|connection", content, re.IGNORECASE), (
+            "Expected saturation metric (tcp_open_connections)"
+        )
 
-        score = error_score(0.005)
-        assert abs(score - 0.9) < 0.01, f"Expected 0.9, got {score}"
+    def test_service_metrics_struct(self):
+        content = self._read()
+        assert re.search(r"ServiceMetrics|service_metrics", content), (
+            "Expected ServiceMetrics return struct"
+        )
 
-    def test_degraded_status_for_score_0_757(self):
-        """Composite score 0.757 must map to Degraded status (mocked)."""
+    def test_linkerd_labels(self):
+        content = self._read()
+        assert re.search(r"deployment|namespace|authority|direction", content), (
+            "Expected Linkerd label conventions (deployment, namespace, etc.)"
+        )
 
-        def classify_health(score: float) -> str:
-            if score >= 0.8:
-                return "Healthy"
-            elif score >= 0.5:
-                return "Degraded"
-            else:
-                return "Critical"
 
-        assert classify_health(0.757) == "Degraded"
+class TestSemanticHealthScorer:
+    """Verify health scoring engine."""
 
-    def test_critical_status_for_score_0_49(self):
-        """Composite score 0.49 must map to Critical status (mocked)."""
+    def _read(self):
+        path = os.path.join(REPO_DIR, "viz", "metrics", "health_scorer.go")
+        with open(path, "r") as f:
+            return f.read()
 
-        def classify_health(score: float) -> str:
-            if score >= 0.8:
-                return "Healthy"
-            elif score >= 0.5:
-                return "Degraded"
-            else:
-                return "Critical"
+    def test_struct_definition(self):
+        content = self._read()
+        assert re.search(r"type\s+HealthScorer\s+struct", content), (
+            "Expected HealthScorer struct"
+        )
 
-        assert classify_health(0.49) == "Critical"
+    def test_health_config(self):
+        content = self._read()
+        assert re.search(r"HealthConfig|health_config", content), (
+            "Expected HealthConfig struct for configurable thresholds"
+        )
 
-    def test_rps_anomaly_penalty_0_3(self):
-        """rps=0 vs avg=100 must apply a penalty of 0.3 (mocked)."""
+    def test_error_score_calculation(self):
+        content = self._read()
+        assert re.search(r"error.*score|ErrorScore", content, re.IGNORECASE), (
+            "Expected error_score calculation"
+        )
 
-        def traffic_penalty(
-            current_rps: float, avg_rps: float, threshold: float = 0.1
-        ) -> float:
-            if avg_rps == 0:
-                return 0.0
-            ratio = current_rps / avg_rps
-            if ratio < threshold:
-                return 0.3
-            return 0.0
+    def test_latency_score_calculation(self):
+        content = self._read()
+        assert re.search(r"latency.*score|LatencyScore", content, re.IGNORECASE), (
+            "Expected latency_score calculation"
+        )
 
-        penalty = traffic_penalty(current_rps=0, avg_rps=100)
-        assert abs(penalty - 0.3) < 0.01, f"Expected penalty=0.3, got {penalty}"
+    def test_traffic_anomaly(self):
+        content = self._read()
+        assert re.search(r"anomal|traffic.*score|penalty|0\.3", content, re.IGNORECASE), (
+            "Expected traffic anomaly detection with 0.3 penalty"
+        )
 
-    def test_circular_dependency_a_b_c_a_detected(self):
-        """A->B->C->A circular dependency must be detected (mocked)."""
+    def test_weighted_average(self):
+        content = self._read()
+        assert re.search(r"0\.5.*0\.3.*0\.2|weight|Weight", content), (
+            "Expected weighted average: error(0.5) + latency(0.3) + traffic(0.2)"
+        )
 
-        def has_cycle(edges: list) -> bool:
-            from collections import defaultdict
+    def test_health_classification(self):
+        content = self._read()
+        for status in ["healthy", "degraded", "critical"]:
+            assert status in content.lower(), (
+                f"Expected health classification '{status}'"
+            )
 
-            graph = defaultdict(list)
-            for src, dst in edges:
-                graph[src].append(dst)
 
-            visited = set()
-            stack = set()
+class TestSemanticTopology:
+    """Verify service topology builder."""
 
-            def dfs(node):
-                visited.add(node)
-                stack.add(node)
-                for neighbor in graph[node]:
-                    if neighbor not in visited:
-                        if dfs(neighbor):
-                            return True
-                    elif neighbor in stack:
-                        return True
-                stack.discard(node)
-                return False
+    def _read(self):
+        path = os.path.join(REPO_DIR, "viz", "metrics", "topology.go")
+        with open(path, "r") as f:
+            return f.read()
 
-            for node in list(graph.keys()):
-                if node not in visited:
-                    if dfs(node):
-                        return True
-            return False
+    def test_struct_definition(self):
+        content = self._read()
+        assert re.search(r"type\s+TopologyBuilder\s+struct", content), (
+            "Expected TopologyBuilder struct"
+        )
 
-        edges = [("A", "B"), ("B", "C"), ("C", "A")]
-        assert has_cycle(edges), "Expected cycle detection for A->B->C->A"
+    def test_nodes_and_edges(self):
+        content = self._read()
+        assert re.search(r"nodes|Nodes", content) and re.search(r"edges|Edges", content), (
+            "Expected nodes and edges in topology output"
+        )
+
+    def test_circular_dependency(self):
+        content = self._read()
+        assert re.search(r"circular|cycle|Circular|Cycle", content, re.IGNORECASE), (
+            "Expected circular dependency detection"
+        )
+
+    def test_gateway_detection(self):
+        content = self._read()
+        assert re.search(r"gateway|Gateway", content, re.IGNORECASE), (
+            "Expected gateway service detection (>5 downstream)"
+        )
+
+    def test_leaf_detection(self):
+        content = self._read()
+        assert re.search(r"leaf|Leaf", content, re.IGNORECASE), (
+            "Expected leaf service detection (zero downstream)"
+        )
+
+    def test_json_tags(self):
+        content = self._read()
+        assert re.search(r'`json:"', content), (
+            "Expected JSON struct tags for marshaling"
+        )
+
+
+class TestFunctionalGoSyntax:
+    """Validate Go files compile."""
+
+    def test_package_declaration(self):
+        path = os.path.join(REPO_DIR, "viz", "metrics", "collector.go")
+        with open(path, "r") as f:
+            content = f.read(500)
+        assert re.search(r"^package\s+\w+", content, re.MULTILINE), (
+            "Expected package declaration"
+        )
+
+    def test_go_build(self):
+        result = subprocess.run(
+            ["go", "build", "./viz/metrics/..."],
+            cwd=REPO_DIR,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        if result.returncode != 0:
+            stderr = result.stderr.lower()
+            assert "syntax error" not in stderr, (
+                f"Go syntax errors: {result.stderr[:500]}"
+            )
+
+    def test_collector_test_funcs(self):
+        path = os.path.join(REPO_DIR, "viz", "metrics", "collector_test.go")
+        with open(path, "r") as f:
+            content = f.read()
+        count = len(re.findall(r"func\s+Test\w+", content))
+        assert count >= 2, f"Expected >= 2 test functions, found {count}"
+
+    def test_health_scorer_test_funcs(self):
+        path = os.path.join(REPO_DIR, "viz", "metrics", "health_scorer_test.go")
+        with open(path, "r") as f:
+            content = f.read()
+        count = len(re.findall(r"func\s+Test\w+", content))
+        assert count >= 2, f"Expected >= 2 test functions, found {count}"

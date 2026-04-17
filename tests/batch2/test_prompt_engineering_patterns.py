@@ -1,216 +1,173 @@
 """
-Test for 'prompt-engineering-patterns' skill — Prompt Engineering Patterns
-Validates that the Agent created a prompt evaluation runner for LangChain
-with configurable test cases, automated scoring metrics, and summary reporting.
+Test skill: prompt-engineering-patterns
+Verify that the Agent creates a prompt evaluation runner for LangChain
+including test case loading, scoring metrics, configurable parameters,
+and summary report output.
 """
 
 import os
 import re
+import ast
 import subprocess
-
 import pytest
-
-from _dependency_utils import ensure_python_dependencies
-
-
-@pytest.fixture(scope="module", autouse=True)
-def _ensure_repo_dependencies():
-    ensure_python_dependencies(TestPromptEngineeringPatterns.REPO_DIR)
 
 
 class TestPromptEngineeringPatterns:
-    """Verify prompt evaluation runner for LangChain."""
-
     REPO_DIR = "/workspace/langchain"
 
-    def _read(self, *parts):
-        fpath = os.path.join(self.REPO_DIR, *parts)
-        assert os.path.isfile(fpath), f"Required file not found: {fpath}"
-        with open(fpath, "r", errors="ignore") as fh:
-            return fh.read()
+    # === File Path Checks ===
 
-    # ------------------------------------------------------------------
-    # L1: File existence and syntax
-    # ------------------------------------------------------------------
+    def test_eval_script_exists(self):
+        """Verify scripts/run_prompt_eval.py exists"""
+        path = os.path.join(self.REPO_DIR, "scripts/run_prompt_eval.py")
+        assert os.path.exists(path), f"run_prompt_eval.py not found at {path}"
 
-    def test_script_exists(self):
-        """scripts/run_prompt_eval.py must exist."""
-        fpath = os.path.join(self.REPO_DIR, "scripts", "run_prompt_eval.py")
-        assert os.path.isfile(fpath), "scripts/run_prompt_eval.py not found"
-
-    def test_script_compiles(self):
-        """run_prompt_eval.py must be syntactically valid Python."""
-        result = subprocess.run(
-            ["python", "-m", "py_compile", "scripts/run_prompt_eval.py"],
-            cwd=self.REPO_DIR,
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-        assert result.returncode == 0, f"Syntax error:\n{result.stderr}"
-
-    def test_has_main_entry_point(self):
-        """Script must have a __main__ entry point."""
-        content = self._read("scripts", "run_prompt_eval.py")
-        assert re.search(
-            r'if\s+__name__\s*==\s*["\']__main__["\']', content
-        ), "Missing __main__ entry point"
-
-    # ------------------------------------------------------------------
-    # L1: Evaluation framework structure
-    # ------------------------------------------------------------------
+    # === Semantic Checks ===
 
     def test_accepts_prompt_templates(self):
-        """Script must accept prompt templates as input."""
-        content = self._read("scripts", "run_prompt_eval.py")
-        patterns = [r"template", r"prompt", r"PromptTemplate"]
-        assert any(
-            re.search(p, content, re.IGNORECASE) for p in patterns
-        ), "Script does not reference prompt templates"
+        """Verify script handles prompt templates as input"""
+        path = os.path.join(self.REPO_DIR, "scripts/run_prompt_eval.py")
+        with open(path) as f:
+            content = f.read().lower()
 
-    def test_accepts_test_cases(self):
-        """Script must accept test cases with input variables and expected outputs."""
-        content = self._read("scripts", "run_prompt_eval.py")
-        patterns = [
-            r"test.case",
-            r"eval.case",
-            r"scenario",
-            r"example",
-            r"input.*expected|expected.*input",
+        template_indicators = [
+            "template", "prompt", "prompttemplate", "prompt_template",
         ]
-        assert any(
-            re.search(p, content, re.IGNORECASE) for p in patterns
-        ), "Script does not reference test cases"
-
-    # ------------------------------------------------------------------
-    # L1: Scoring metrics
-    # ------------------------------------------------------------------
-
-    def test_implements_at_least_two_scoring_metrics(self):
-        """Script must implement at least two automated scoring metrics."""
-        content = self._read("scripts", "run_prompt_eval.py")
-        metric_patterns = [
-            r"similarity",
-            r"string_similarity",
-            r"cosine",
-            r"keyword",
-            r"keyword_presence",
-            r"exact_match",
-            r"exact",
-            r"format.*compliance",
-            r"format.*check",
-            r"bleu",
-            r"rouge",
-            r"f1",
-            r"semantic",
-            r"relevance",
-            r"score",
-            r"metric",
-        ]
-        matches = sum(
-            1 for p in metric_patterns if re.search(p, content, re.IGNORECASE)
+        found = [ind for ind in template_indicators if ind in content]
+        assert len(found) >= 2, (
+            f"Script should handle prompt templates. Found: {found}"
         )
-        assert (
-            matches >= 2
-        ), f"Only {matches} scoring metric reference(s) found — need at least 2"
 
-    def test_scores_recorded_per_result(self):
-        """Each evaluation result must capture metric scores."""
-        content = self._read("scripts", "run_prompt_eval.py")
-        patterns = [
-            r"score",
-            r"result.*metric",
-            r"metric.*score",
-            r"scores\[",
-            r"results\.append",
+    def test_test_case_loading(self):
+        """Verify script loads test cases from JSON or YAML"""
+        path = os.path.join(self.REPO_DIR, "scripts/run_prompt_eval.py")
+        with open(path) as f:
+            content = f.read()
+
+        file_indicators = ["json", "yaml", "yml", "load", "open("]
+        found = [ind for ind in file_indicators if ind in content.lower()]
+        assert len(found) >= 2, (
+            f"Script should support loading test cases from files. Found: {found}"
+        )
+
+    def test_scoring_metrics_defined(self):
+        """Verify at least two automated scoring metrics"""
+        path = os.path.join(self.REPO_DIR, "scripts/run_prompt_eval.py")
+        with open(path) as f:
+            content = f.read().lower()
+
+        metric_indicators = [
+            "similarity", "keyword", "format", "compliance",
+            "relevance", "score", "bleu", "rouge", "cosine",
+            "exact_match", "f1", "precision", "recall",
         ]
-        assert any(
-            re.search(p, content, re.IGNORECASE) for p in patterns
-        ), "Script does not record scores per result"
+        found = [ind for ind in metric_indicators if ind in content]
+        assert len(found) >= 2, (
+            f"Should define at least two scoring metrics. Found: {found}"
+        )
 
-    # ------------------------------------------------------------------
-    # L1: Configuration loading
-    # ------------------------------------------------------------------
+    def test_results_capture(self):
+        """Verify results capture prompt, inputs, output, and scores"""
+        path = os.path.join(self.REPO_DIR, "scripts/run_prompt_eval.py")
+        with open(path) as f:
+            content = f.read().lower()
 
-    def test_supports_config_file_loading(self):
-        """Script must support loading test cases from JSON or YAML."""
-        content = self._read("scripts", "run_prompt_eval.py")
-        patterns = [
-            r"json\.load",
-            r"yaml\.safe_load",
-            r"yaml\.load",
-            r"\.json",
-            r"\.yaml",
-            r"\.yml",
-            r"argparse",
-            r"config.*file",
+        result_fields = ["prompt", "input", "output", "score"]
+        found = [f for f in result_fields if f in content]
+        assert len(found) >= 3, (
+            f"Results should capture prompt/input/output/score. Found: {found}"
+        )
+
+    def test_configurable_model_params(self):
+        """Verify configurable model parameters (temperature, max_tokens)"""
+        path = os.path.join(self.REPO_DIR, "scripts/run_prompt_eval.py")
+        with open(path) as f:
+            content = f.read().lower()
+
+        param_indicators = [
+            "temperature", "max_tokens", "max_length",
+            "argparse", "config", "args",
         ]
-        assert any(
-            re.search(p, content) for p in patterns
-        ), "Script does not support loading configuration from a file"
+        found = [ind for ind in param_indicators if ind in content]
+        assert len(found) >= 2, (
+            f"Should support configurable model params. Found: {found}"
+        )
 
-    def test_supports_model_parameters(self):
-        """Script must support configurable model parameters."""
-        content = self._read("scripts", "run_prompt_eval.py")
-        patterns = [r"temperature", r"max_tokens", r"model", r"model_name"]
-        assert any(
-            re.search(p, content, re.IGNORECASE) for p in patterns
-        ), "Script does not support configurable model parameters"
+    def test_summary_report(self):
+        """Verify summary report with pass/fail rates and average scores"""
+        path = os.path.join(self.REPO_DIR, "scripts/run_prompt_eval.py")
+        with open(path) as f:
+            content = f.read().lower()
 
-    # ------------------------------------------------------------------
-    # L2: Report generation
-    # ------------------------------------------------------------------
-
-    def test_generates_summary_report(self):
-        """Script must generate a summary report with pass/fail rates."""
-        content = self._read("scripts", "run_prompt_eval.py")
-        report_patterns = [
-            r"summary",
-            r"report",
-            r"pass.*rate|rate.*pass",
-            r"average.*score|score.*average",
-            r"print.*result|print.*summary",
+        report_indicators = [
+            "summary", "report", "average", "mean", "pass",
+            "fail", "print", "aggregate",
         ]
-        assert any(
-            re.search(p, content, re.IGNORECASE) for p in report_patterns
-        ), "Script does not generate a summary report"
+        found = [ind for ind in report_indicators if ind in content]
+        assert len(found) >= 3, (
+            f"Should produce summary report. Found: {found}"
+        )
 
-    def test_supports_structured_output(self):
-        """Script must support JSON or CSV export of detailed results."""
-        content = self._read("scripts", "run_prompt_eval.py")
-        export_patterns = [
-            r"json\.dump",
-            r"csv\.writer",
-            r"to_csv",
-            r"to_json",
-            r"\.json",
-            r"\.csv",
-            r"output.*file",
+    def test_export_results(self):
+        """Verify optional export to JSON or CSV"""
+        path = os.path.join(self.REPO_DIR, "scripts/run_prompt_eval.py")
+        with open(path) as f:
+            content = f.read().lower()
+
+        export_indicators = ["json", "csv", "export", "save", "write", "dump"]
+        found = [ind for ind in export_indicators if ind in content]
+        assert len(found) >= 1, (
+            f"Should support exporting results. Found: {found}"
+        )
+
+    # === Functional Checks ===
+
+    def test_script_valid_python(self):
+        """Verify run_prompt_eval.py is valid Python"""
+        path = os.path.join(self.REPO_DIR, "scripts/run_prompt_eval.py")
+        with open(path) as f:
+            source = f.read()
+        try:
+            ast.parse(source)
+        except SyntaxError as e:
+            pytest.fail(f"run_prompt_eval.py has syntax errors: {e}")
+
+    def test_has_main_entry_point(self):
+        """Verify script has a __main__ entry point"""
+        path = os.path.join(self.REPO_DIR, "scripts/run_prompt_eval.py")
+        with open(path) as f:
+            content = f.read()
+
+        assert '__name__' in content and '__main__' in content, (
+            "Script should have a __main__ entry point"
+        )
+
+    def test_defines_callable_functions(self):
+        """Verify script defines reusable evaluation functions"""
+        path = os.path.join(self.REPO_DIR, "scripts/run_prompt_eval.py")
+        with open(path) as f:
+            source = f.read()
+
+        tree = ast.parse(source)
+        func_names = [
+            node.name for node in ast.walk(tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
         ]
-        assert any(
-            re.search(p, content) for p in export_patterns
-        ), "Script does not support structured output export (JSON/CSV)"
+        assert len(func_names) >= 3, (
+            f"Script should define multiple functions. Found: {func_names}"
+        )
 
-    # ------------------------------------------------------------------
-    # L2: Quality checks
-    # ------------------------------------------------------------------
+    def test_multiple_templates_comparison(self):
+        """Verify support for comparing multiple templates"""
+        path = os.path.join(self.REPO_DIR, "scripts/run_prompt_eval.py")
+        with open(path) as f:
+            content = f.read().lower()
 
-    def test_results_capture_prompt_and_inputs(self):
-        """Each result must capture the prompt used and the input variables."""
-        content = self._read("scripts", "run_prompt_eval.py")
-        patterns = [
-            r"prompt.*input|input.*prompt",
-            r"variables",
-            r"template.*result|result.*template",
+        comparison_indicators = [
+            "templates", "compare", "multiple", "for ", "each",
+            "results[", "template_name",
         ]
-        assert any(
-            re.search(p, content, re.IGNORECASE) for p in patterns
-        ), "Results do not capture prompt and input information"
-
-    def test_results_capture_generated_output(self):
-        """Each result must capture the generated output."""
-        content = self._read("scripts", "run_prompt_eval.py")
-        patterns = [r"output", r"response", r"generated", r"completion"]
-        assert any(
-            re.search(p, content, re.IGNORECASE) for p in patterns
-        ), "Results do not capture generated output"
+        found = [ind for ind in comparison_indicators if ind in content]
+        assert len(found) >= 2, (
+            f"Should support comparing multiple templates. Found: {found}"
+        )

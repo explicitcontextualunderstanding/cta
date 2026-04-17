@@ -1,172 +1,159 @@
 """
-Test for 'distributed-tracing' skill — OpenTelemetry Collector Tracing
-Validates Go source files for ConsumeTraces, peer.service extraction,
-LRU cache with TTL, config validation, and functional tests.
+Test skill: distributed-tracing
+Verify that the Agent builds an OpenTelemetry Collector pipeline with
+a custom dependency processor in Go and a valid collector configuration.
 """
 
 import os
 import re
 import subprocess
-
 import pytest
+
+try:
+    import yaml
+except ImportError:
+    yaml = None
 
 
 class TestDistributedTracing:
-    """Verify OpenTelemetry Collector distributed tracing implementation."""
-
     REPO_DIR = "/workspace/opentelemetry-collector"
 
-    # ── file_path_check ─────────────────────────────────────────────────────
+    PROCESSOR_GO = "processor/dependencyprocessor/processor.go"
+    CONFIG_GO = "processor/dependencyprocessor/config.go"
+    FACTORY_GO = "processor/dependencyprocessor/factory.go"
+    PROCESSOR_TEST = "processor/dependencyprocessor/processor_test.go"
+    COLLECTOR_CFG = "examples/tracing-pipeline/otel-collector-config.yaml"
 
-    def test_go_source_files_exist(self):
-        """Verify at least 3 Go source files for tracing exist."""
-        go_files = self._find_go_files(exclude_test=True)
-        assert len(go_files) >= 3, f"Expected ≥3 Go source files, found {len(go_files)}"
+    def _read_file(self, rel_path):
+        filepath = os.path.join(self.REPO_DIR, rel_path)
+        with open(filepath) as f:
+            return f.read()
 
-    def test_config_yaml_exists(self):
-        """Verify a collector config YAML file exists."""
-        for dirpath, _, fnames in os.walk(self.REPO_DIR):
-            if ".git" in dirpath:
-                continue
-            for f in fnames:
-                if (
-                    f.endswith(".yaml") or f.endswith(".yml")
-                ) and "config" in f.lower():
-                    return
-        pytest.skip("No config YAML found (may be embedded in Go)")
+    # === File Path Checks ===
 
-    # ── semantic_check ──────────────────────────────────────────────────────
+    def test_processor_go_exists(self):
+        filepath = os.path.join(self.REPO_DIR, self.PROCESSOR_GO)
+        assert os.path.exists(filepath), f"processor.go not found"
 
-    def test_consume_traces_function(self):
-        """Verify ConsumeTraces function is implemented."""
-        go_files = self._find_go_files()
-        assert go_files, "No Go files found"
-        for fpath in go_files:
-            content = self._read(fpath)
-            if re.search(r"func.*ConsumeTraces|ConsumeTraces\(", content):
-                return
-        pytest.fail("No ConsumeTraces function found")
+    def test_config_go_exists(self):
+        filepath = os.path.join(self.REPO_DIR, self.CONFIG_GO)
+        assert os.path.exists(filepath), f"config.go not found"
 
-    def test_peer_service_extraction(self):
-        """Verify peer.service attribute extraction logic."""
-        go_files = self._find_go_files()
-        assert go_files, "No Go files found"
-        for fpath in go_files:
-            content = self._read(fpath)
-            if "peer.service" in content or "peerService" in content.lower():
-                return
-        pytest.fail("No peer.service extraction found")
+    def test_factory_go_exists(self):
+        filepath = os.path.join(self.REPO_DIR, self.FACTORY_GO)
+        assert os.path.exists(filepath), f"factory.go not found"
 
-    def test_lru_cache_with_ttl(self):
-        """Verify LRU cache with TTL is implemented."""
-        go_files = self._find_go_files()
-        assert go_files, "No Go files found"
-        has_lru = False
-        has_ttl = False
-        for fpath in go_files:
-            content = self._read(fpath)
-            if re.search(r"(lru|LRU|cache|Cache)", content):
-                has_lru = True
-            if re.search(r"(ttl|TTL|expir|Expir)", content):
-                has_ttl = True
-        assert has_lru, "No LRU cache implementation found"
-        assert has_ttl, "No TTL/expiration logic found"
+    def test_processor_test_exists(self):
+        filepath = os.path.join(self.REPO_DIR, self.PROCESSOR_TEST)
+        assert os.path.exists(filepath), f"processor_test.go not found"
 
-    def test_config_validate_method(self):
-        """Verify Config struct has Validate() method."""
-        go_files = self._find_go_files()
-        assert go_files, "No Go files found"
-        for fpath in go_files:
-            content = self._read(fpath)
-            if re.search(r"func\s*\(.*Config\)\s*Validate\b", content):
-                return
-        pytest.fail("No Config.Validate() method found")
+    def test_collector_config_exists(self):
+        filepath = os.path.join(self.REPO_DIR, self.COLLECTOR_CFG)
+        assert os.path.exists(filepath), f"otel-collector-config.yaml not found"
 
-    # ── functional_check ────────────────────────────────────────────────────
+    # === Semantic Checks ===
+
+    def test_processor_implements_traces_interface(self):
+        """Verify processTraces method exists"""
+        content = self._read_file(self.PROCESSOR_GO)
+        assert "processTraces" in content, "Missing processTraces method"
+        assert "pdata.Traces" in content, "Missing pdata.Traces parameter"
+
+    def test_processor_extracts_peer_service(self):
+        """Verify processor checks peer.service attribute"""
+        content = self._read_file(self.PROCESSOR_GO)
+        assert "peer.service" in content, "Missing peer.service extraction"
+
+    def test_processor_extracts_net_peer(self):
+        """Verify processor checks net.peer.name + net.peer.port"""
+        content = self._read_file(self.PROCESSOR_GO)
+        assert "net.peer.name" in content, "Missing net.peer.name extraction"
+
+    def test_processor_extracts_http_url(self):
+        """Verify processor extracts host from http.url"""
+        content = self._read_file(self.PROCESSOR_GO)
+        assert "http.url" in content, "Missing http.url extraction"
+
+    def test_processor_sets_dependency_attribute(self):
+        """Verify processor sets service.dependency attribute"""
+        content = self._read_file(self.PROCESSOR_GO)
+        assert "service.dependency" in content, \
+            "Missing service.dependency attribute"
+
+    def test_processor_uses_lru_cache(self):
+        """Verify LRU cache for dependency pairs"""
+        content = self._read_file(self.PROCESSOR_GO)
+        has_cache = bool(re.search(r'(lru|cache|LRU|Cache)', content))
+        assert has_cache, "Missing LRU cache for dependency pairs"
+
+    def test_config_fields(self):
+        """Verify Config struct with CacheTTL, MaxCacheSize, AttributeKey"""
+        content = self._read_file(self.CONFIG_GO)
+        assert "CacheTTL" in content, "Config missing CacheTTL field"
+        assert "MaxCacheSize" in content, "Config missing MaxCacheSize"
+        assert "AttributeKey" in content, "Config missing AttributeKey"
+
+    def test_config_validation(self):
+        """Verify Validate method rejects invalid config"""
+        content = self._read_file(self.CONFIG_GO)
+        assert "Validate" in content, "Config missing Validate method"
+
+    def test_factory_new_factory(self):
+        """Verify NewFactory function returning processor.Factory"""
+        content = self._read_file(self.FACTORY_GO)
+        assert "NewFactory" in content, "Missing NewFactory function"
+        assert '"dependency"' in content, 'Missing type "dependency"'
+
+    def test_collector_config_receivers(self):
+        """Verify OTLP gRPC (4317) and HTTP (4318) receivers"""
+        content = self._read_file(self.COLLECTOR_CFG)
+        assert "4317" in content, "Config missing OTLP gRPC port 4317"
+        assert "4318" in content, "Config missing OTLP HTTP port 4318"
+
+    def test_collector_config_processors(self):
+        """Verify memory_limiter, dependency, batch processors"""
+        content = self._read_file(self.COLLECTOR_CFG)
+        assert "memory_limiter" in content, "Config missing memory_limiter"
+        assert "dependency" in content, "Config missing dependency processor"
+        assert "batch" in content, "Config missing batch processor"
+
+    def test_collector_config_exporters(self):
+        """Verify Jaeger, Prometheus, debug exporters"""
+        content = self._read_file(self.COLLECTOR_CFG)
+        assert "jaeger" in content, "Config missing Jaeger exporter"
+        assert "prometheus" in content, "Config missing Prometheus exporter"
+        assert "debug" in content, "Config missing debug exporter"
+
+    def test_collector_config_pipelines(self):
+        """Verify traces and metrics pipelines"""
+        content = self._read_file(self.COLLECTOR_CFG)
+        assert "traces" in content, "Config missing traces pipeline"
+        assert "metrics" in content, "Config missing metrics pipeline"
+
+    # === Functional Checks ===
+
+    def test_collector_config_valid_yaml(self):
+        """Verify collector config is valid YAML"""
+        if yaml is None:
+            pytest.skip("PyYAML not installed")
+        content = self._read_file(self.COLLECTOR_CFG)
+        try:
+            doc = yaml.safe_load(content)
+        except yaml.YAMLError as e:
+            pytest.fail(f"Collector config YAML error: {e}")
+        assert "receivers" in doc, "Config missing receivers key"
+        assert "exporters" in doc, "Config missing exporters key"
+        assert "service" in doc, "Config missing service key"
 
     def test_go_files_compile(self):
-        """Verify Go files compile with go build."""
-        try:
-            subprocess.run(["go", "version"], capture_output=True, timeout=10)
-        except (FileNotFoundError, subprocess.TimeoutExpired):
-            pytest.skip("go not available")
+        """Verify Go files compile"""
+        proc_dir = os.path.join(self.REPO_DIR, "processor/dependencyprocessor")
         result = subprocess.run(
             ["go", "build", "./..."],
+            cwd=proc_dir,
             capture_output=True,
             text=True,
-            timeout=120,
-            cwd=self.REPO_DIR,
+            timeout=60,
         )
         if result.returncode != 0:
-            # Allow missing dependencies, but not syntax errors
-            if "syntax error" in result.stderr.lower():
-                pytest.fail(f"Go syntax error: {result.stderr[:500]}")
-
-    def test_go_test_runs(self):
-        """Verify Go tests can at least be listed."""
-        try:
-            subprocess.run(["go", "version"], capture_output=True, timeout=10)
-        except (FileNotFoundError, subprocess.TimeoutExpired):
-            pytest.skip("go not available")
-        result = subprocess.run(
-            ["go", "test", "-list", ".*", "./..."],
-            capture_output=True,
-            text=True,
-            timeout=120,
-            cwd=self.REPO_DIR,
-        )
-        # Non-zero is ok if just missing deps
-        if "syntax error" in result.stderr.lower():
-            pytest.fail(f"Go syntax error: {result.stderr[:500]}")
-
-    def test_cache_dedup_logic(self):
-        """Verify cache prevents duplicate processing."""
-        go_files = self._find_go_files()
-        for fpath in go_files:
-            content = self._read(fpath)
-            if re.search(
-                r"(dedup|duplicate|already.?seen|cache.*hit|Get\(|Load\()",
-                content,
-                re.IGNORECASE,
-            ):
-                return
-        pytest.fail("No cache deduplication logic found")
-
-    def test_invalid_config_handling(self):
-        """Verify invalid configuration is properly rejected."""
-        go_files = self._find_go_files()
-        for fpath in go_files:
-            content = self._read(fpath)
-            if re.search(
-                r"(err\s*!=\s*nil|return.*error|fmt\.Errorf|errors\.New)", content
-            ):
-                if "config" in content.lower() or "Config" in content:
-                    return
-        pytest.fail("No invalid config error handling found")
-
-    def test_span_attributes_set(self):
-        """Verify span attributes like http.method or status_code are set."""
-        go_files = self._find_go_files()
-        for fpath in go_files:
-            content = self._read(fpath)
-            if re.search(r"(http\.method|status_code|SetAttributes|Span)", content):
-                return
-        pytest.fail("No span attributes found in tracing code")
-
-    # ── helpers ──────────────────────────────────────────────────────────────
-
-    def _find_go_files(self, exclude_test=False):
-        results = []
-        for dirpath, _, fnames in os.walk(self.REPO_DIR):
-            if ".git" in dirpath or "vendor" in dirpath:
-                continue
-            for f in fnames:
-                if f.endswith(".go"):
-                    if exclude_test and f.endswith("_test.go"):
-                        continue
-                    results.append(os.path.join(dirpath, f))
-        return results
-
-    def _read(self, path):
-        with open(path, "r", errors="ignore") as fh:
-            return fh.read()
+            pytest.fail(f"Go build failed: {result.stderr[:500]}")

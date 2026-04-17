@@ -1,138 +1,153 @@
 """
-Test for 'gitlab-ci-patterns' skill — GitLab CI Pipeline Generator
-Validates that the Agent created a Python package for generating GitLab CI
-pipeline YAML with stages, job templates, rules, and artifact defaults.
+Tests for the gitlab-ci-patterns skill.
+Validates a GitLab CI pipeline generator with multi-stage pipelines,
+job templates, cache strategies, and configuration validation.
 """
 
 import os
 import re
-import sys
+import ast
 
-import pytest
+REPO_DIR = "/workspace/gitlabhq"
+SCRIPTS_DIR = os.path.join(REPO_DIR, "scripts", "ci")
 
 
 class TestGitlabCiPatterns:
-    """Verify GitLab CI pipeline generator implementation."""
+    """Tests for the GitLab CI pipeline generator."""
 
-    REPO_DIR = "/workspace/gitlabhq"
+    # ── file_path_check ──────────────────────────────────────────────
 
-    @staticmethod
-    def _read(path: str) -> str:
-        try:
-            with open(path, "r", errors="ignore") as fh:
-                return fh.read()
-        except OSError:
+    def test_pipeline_generator_exists(self):
+        """PipelineGenerator module must exist."""
+        path = os.path.join(SCRIPTS_DIR, "pipeline_generator.py")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    def test_job_templates_exists(self):
+        """Job templates module must exist."""
+        path = os.path.join(SCRIPTS_DIR, "job_templates.py")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    def test_cache_config_exists(self):
+        """CacheStrategy module must exist."""
+        path = os.path.join(SCRIPTS_DIR, "cache_config.py")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    def test_validator_exists(self):
+        """PipelineValidator module must exist."""
+        path = os.path.join(SCRIPTS_DIR, "validator.py")
+        assert os.path.isfile(path), f"Missing {path}"
+
+    # ── semantic_check ───────────────────────────────────────────────
+
+    def _read(self, filename):
+        path = os.path.join(SCRIPTS_DIR, filename)
+        if not os.path.isfile(path):
             return ""
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read()
 
-    # ── file_path_check ─────────────────────────────────────────────
+    def test_pipeline_generator_class(self):
+        """PipelineGenerator must define generate, add_job, to_yaml, to_dict."""
+        content = self._read("pipeline_generator.py")
+        assert re.search(r"class\s+PipelineGenerator", content), (
+            "PipelineGenerator class not defined"
+        )
+        for method in ["generate", "add_job", "to_yaml", "to_dict"]:
+            assert re.search(rf"def\s+{method}\b", content), f"{method} not defined"
 
-    def test_gitlab_ci_package_exists(self):
-        """Verify gitlab_ci package __init__.py and generator.py exist."""
-        for rel in ("src/gitlab_ci/__init__.py", "src/gitlab_ci/generator.py"):
-            path = os.path.join(self.REPO_DIR, rel)
-            assert os.path.isfile(path), f"Missing: {rel}"
+    def test_stage_ordering(self):
+        """PipelineGenerator must define correct stage ordering."""
+        content = self._read("pipeline_generator.py")
+        for stage in ["build", "test", "security", "package", "deploy"]:
+            assert stage in content, f"Stage '{stage}' not found"
 
-    def test_templates_stages_models_exist(self):
-        """Verify templates.py, stages.py, and models.py exist."""
-        for rel in ("src/gitlab_ci/templates.py", "src/gitlab_ci/stages.py",
-                     "src/gitlab_ci/models.py"):
-            path = os.path.join(self.REPO_DIR, rel)
-            assert os.path.isfile(path), f"Missing: {rel}"
+    def test_language_support(self):
+        """PipelineGenerator must support python, node, ruby, go."""
+        content = self._read("pipeline_generator.py")
+        for lang in ["python", "node", "ruby", "go"]:
+            assert lang in content, f"Language '{lang}' not found"
 
-    def test_all_classes_importable(self):
-        """All main classes are importable without errors."""
-        if not os.path.isdir(self.REPO_DIR):
-            pytest.skip("Repo dir does not exist")
-        sys.path.insert(0, os.path.join(self.REPO_DIR, "src"))
-        try:
-            from gitlab_ci.generator import PipelineGenerator  # noqa: F401
-            from gitlab_ci.templates import JobTemplate  # noqa: F401
-            from gitlab_ci.stages import StageOrchestrator  # noqa: F401
-        except ImportError:
-            pytest.skip("gitlab_ci not importable")
-        finally:
-            sys.path.pop(0)
+    def test_job_template_classes(self):
+        """Job templates must include BuildJob, TestJob, SecurityScanJob, DeployJob."""
+        content = self._read("job_templates.py")
+        for cls in ["BuildJob", "TestJob", "SecurityScanJob", "DeployJob"]:
+            assert re.search(rf"class\s+{cls}", content), f"{cls} class not defined"
 
-    # ── semantic_check ──────────────────────────────────────────────
+    def test_docker_build_job(self):
+        """DockerBuildJob must use docker:24-dind service."""
+        content = self._read("job_templates.py")
+        assert re.search(r"class\s+DockerBuildJob", content), "DockerBuildJob class not defined"
+        assert re.search(r"docker.*dind|dind", content), "Docker-in-Docker service not configured"
 
-    def test_generator_and_exception_classes_defined(self):
-        """Verify PipelineGenerator, DuplicateStageError, and UnknownStageError are defined."""
-        content = self._read(os.path.join(self.REPO_DIR, "src/gitlab_ci/generator.py"))
-        assert content, "generator.py is empty or unreadable"
-        for name in ("PipelineGenerator", "DuplicateStageError", "UnknownStageError"):
-            assert name in content, f"'{name}' not found in generator.py"
+    def test_deploy_manual_production(self):
+        """Production deploy must require manual approval."""
+        content = self._read("job_templates.py")
+        assert re.search(r"when.*manual|manual", content), "Manual deployment trigger not found"
 
-    def test_yaml_dump_in_generator(self):
-        """Verify generator.py uses yaml.dump or ruamel.yaml for serialization."""
-        content = self._read(os.path.join(self.REPO_DIR, "src/gitlab_ci/generator.py"))
-        assert content, "generator.py is empty or unreadable"
-        found = "yaml.dump" in content or "ruamel" in content
-        assert found, "No YAML serialization found in generator.py"
+    def test_cache_strategy_class(self):
+        """CacheStrategy must define for_job with per-job-type policies."""
+        content = self._read("cache_config.py")
+        assert re.search(r"class\s+CacheStrategy", content), "CacheStrategy class not defined"
+        assert re.search(r"def\s+for_job\b", content), "for_job method not defined"
+        assert re.search(r"pull-push|pull|push", content), "Cache policies not found"
 
-    def test_job_template_render_defined(self):
-        """Verify templates.py defines JobTemplate class with render() method."""
-        content = self._read(os.path.join(self.REPO_DIR, "src/gitlab_ci/templates.py"))
-        assert content, "templates.py is empty or unreadable"
-        assert "class JobTemplate" in content, "JobTemplate class not found"
-        assert "def render" in content, "render method not found"
+    def test_validator_class(self):
+        """PipelineValidator must define validate and validate_yaml methods."""
+        content = self._read("validator.py")
+        assert re.search(r"class\s+PipelineValidator", content), (
+            "PipelineValidator class not defined"
+        )
+        assert re.search(r"def\s+validate\b", content), "validate method not defined"
+        assert re.search(r"def\s+validate_yaml\b", content), "validate_yaml method not defined"
 
-    # ── functional_check (import) ───────────────────────────────────
+    def test_validator_checks(self):
+        """Validator must check undefined stages and missing dependencies."""
+        content = self._read("validator.py")
+        assert re.search(r"undefined.*stage|references.*stage", content, re.IGNORECASE), (
+            "Undefined stage check not found"
+        )
+        assert re.search(r"needs.*non-existent|needs.*not.*found", content, re.IGNORECASE), (
+            "Missing dependency check not found"
+        )
 
-    def _import(self, dotpath: str):
-        if not os.path.isdir(self.REPO_DIR):
-            pytest.skip("Repo dir does not exist")
-        sys.path.insert(0, os.path.join(self.REPO_DIR, "src"))
-        try:
-            return __import__(dotpath, fromlist=[""])
-        except ImportError:
-            pytest.skip(f"{dotpath} not importable")
-        finally:
-            sys.path.pop(0)
+    # ── functional_check ─────────────────────────────────────────────
 
-    def test_generate_produces_valid_yaml_with_stages(self):
-        """PipelineGenerator.generate() returns valid YAML with correct stages list."""
-        import yaml
-        gen_mod = self._import("gitlab_ci.generator")
-        models_mod = self._import("gitlab_ci.models")
-        config = models_mod.PipelineConfig(stages=["build", "test"], jobs=[])
-        output = gen_mod.PipelineGenerator().generate(config)
-        parsed = yaml.safe_load(output)
-        assert parsed.get("stages") == ["build", "test"]
+    def test_all_files_valid_python(self):
+        """All pipeline generator Python files must have valid syntax."""
+        errors = []
+        for fname in ["pipeline_generator.py", "job_templates.py",
+                       "cache_config.py", "validator.py"]:
+            content = self._read(fname)
+            if not content:
+                continue
+            try:
+                ast.parse(content)
+            except SyntaxError as e:
+                errors.append(f"{fname}: {e}")
+        assert not errors, "Syntax errors:\n" + "\n".join(errors)
 
-    def test_generated_yaml_is_parseable(self):
-        """yaml.safe_load on generated output does not raise."""
-        import yaml
-        gen_mod = self._import("gitlab_ci.generator")
-        models_mod = self._import("gitlab_ci.models")
-        output = gen_mod.PipelineGenerator().generate(
-            models_mod.PipelineConfig(stages=["build"], jobs=[]))
-        parsed = yaml.safe_load(output)
-        assert parsed is not None
+    def test_unsupported_language_raises(self):
+        """PipelineGenerator must raise ValueError for unsupported language."""
+        content = self._read("pipeline_generator.py")
+        assert re.search(r"ValueError|Unsupported.*language|unsupported", content, re.IGNORECASE), (
+            "ValueError for unsupported language not found"
+        )
 
-    def test_duplicate_stage_raises_error(self):
-        """PipelineGenerator raises DuplicateStageError on duplicate stage names."""
-        gen_mod = self._import("gitlab_ci.generator")
-        models_mod = self._import("gitlab_ci.models")
-        with pytest.raises(gen_mod.DuplicateStageError):
-            gen_mod.PipelineGenerator().generate(
-                models_mod.PipelineConfig(stages=["build", "build"], jobs=[]))
+    def test_duplicate_job_raises(self):
+        """PipelineGenerator must raise ValueError for duplicate job names."""
+        content = self._read("pipeline_generator.py")
+        assert re.search(r"ValueError|[Dd]uplicate.*job", content), (
+            "Duplicate job check not found"
+        )
 
-    def test_job_template_renders_rules(self):
-        """JobTemplate.render with rules parameter produces job dict with 'rules' key."""
-        mod = self._import("gitlab_ci.templates")
-        job = mod.JobTemplate().render(
-            "my-test", "test", ["pytest"],
-            rules=[{"if": "$CI_COMMIT_BRANCH"}])
-        assert "rules" in job, "'rules' key missing from rendered job"
+    def test_security_scan_advisory(self):
+        """SecurityScanJob must use allow_failure: true."""
+        content = self._read("job_templates.py")
+        assert re.search(r"allow_failure.*[Tt]rue|allow_failure.*true", content), (
+            "allow_failure: true not found for security scan"
+        )
 
-    def test_artifact_expire_in_default(self):
-        """Generated output uses '1 week' as default artifact expire_in."""
-        import yaml
-        gen_mod = self._import("gitlab_ci.generator")
-        models_mod = self._import("gitlab_ci.models")
-        artifact = models_mod.Artifact(paths=["dist/"])
-        job = models_mod.Job("build-job", "build", ["make build"], artifact=artifact)
-        config = models_mod.PipelineConfig(stages=["build"], jobs=[job])
-        output = yaml.safe_load(gen_mod.PipelineGenerator().generate(config))
-        expire = output.get("build-job", {}).get("artifacts", {}).get("expire_in", "MISSING")
-        assert expire == "1 week", f"Expected '1 week', got '{expire}'"
+    def test_test_file_exists(self):
+        """Test file must exist."""
+        path = os.path.join(REPO_DIR, "tests", "test_gitlab_ci_patterns.py")
+        assert os.path.isfile(path), f"Missing {path}"

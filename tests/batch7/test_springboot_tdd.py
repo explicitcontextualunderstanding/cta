@@ -1,164 +1,230 @@
-"""Test file for the springboot-tdd skill.
-
-This suite validates a TDD-driven Specialty REST API in spring-petclinic:
-controller, service, repository, and DTO with validation.
+"""
+Test skill: springboot-tdd
+Verify that the Agent correctly implements a Veterinary Specialty Management
+REST API in the Spring PetClinic application with proper TDD practices.
 """
 
-from __future__ import annotations
-
-import pathlib
+import os
 import re
-
+import subprocess
+import json
 import pytest
 
 
 class TestSpringbootTdd:
-    """Verify Spring Boot Specialty CRUD API in spring-petclinic."""
-
     REPO_DIR = "/workspace/spring-petclinic"
 
-    BASE_PKG = "src/main/java/org/springframework/samples/petclinic/specialty"
-    CONTROLLER = f"{BASE_PKG}/SpecialtyController.java"
-    SERVICE = f"{BASE_PKG}/SpecialtyService.java"
-    REPOSITORY = f"{BASE_PKG}/SpecialtyRepository.java"
+    # === File Path Checks ===
 
-    # ------------------------------------------------------------------
-    # Helpers
-    # ------------------------------------------------------------------
+    def test_specialty_controller_exists(self):
+        """Verify SpecialtyController.java exists"""
+        fpath = os.path.join(
+            self.REPO_DIR,
+            "src/main/java/org/springframework/samples/petclinic/specialty/SpecialtyController.java"
+        )
+        assert os.path.isfile(fpath), f"SpecialtyController.java not found at {fpath}"
 
-    def _repo_path(self, relative: str) -> pathlib.Path:
-        return pathlib.Path(self.REPO_DIR, *relative.split("/"))
+    def test_specialty_service_exists(self):
+        """Verify SpecialtyService.java exists"""
+        fpath = os.path.join(
+            self.REPO_DIR,
+            "src/main/java/org/springframework/samples/petclinic/specialty/SpecialtyService.java"
+        )
+        assert os.path.isfile(fpath), f"SpecialtyService.java not found at {fpath}"
 
-    def _read_text(self, relative: str) -> str:
-        path = self._repo_path(relative)
-        assert path.exists(), f"Expected path to exist: {path}"
-        return path.read_text(encoding="utf-8", errors="ignore")
+    def test_specialty_repository_exists(self):
+        """Verify SpecialtyRepository.java exists"""
+        fpath = os.path.join(
+            self.REPO_DIR,
+            "src/main/java/org/springframework/samples/petclinic/specialty/SpecialtyRepository.java"
+        )
+        assert os.path.isfile(fpath), f"SpecialtyRepository.java not found at {fpath}"
 
-    def _assert_non_empty_file(self, relative: str) -> pathlib.Path:
-        path = self._repo_path(relative)
-        assert path.is_file(), f"Expected file to exist: {path}"
-        assert path.stat().st_size > 0, f"Expected non-empty file: {path}"
-        return path
+    def test_specialty_dto_exists(self):
+        """Verify SpecialtyDto.java exists"""
+        fpath = os.path.join(
+            self.REPO_DIR,
+            "src/main/java/org/springframework/samples/petclinic/specialty/SpecialtyDto.java"
+        )
+        assert os.path.isfile(fpath), f"SpecialtyDto.java not found at {fpath}"
 
-    def _all_java_sources(self, directory: str) -> str:
-        """Read all .java files under a directory."""
-        result = []
-        root = self._repo_path(directory)
-        if root.is_dir():
-            for f in root.rglob("*.java"):
-                result.append(f.read_text(encoding="utf-8", errors="ignore"))
-        return "\n".join(result)
+    def test_controller_tests_exist(self):
+        """Verify SpecialtyControllerTests.java exists"""
+        fpath = os.path.join(
+            self.REPO_DIR,
+            "src/test/java/org/springframework/samples/petclinic/specialty/SpecialtyControllerTests.java"
+        )
+        assert os.path.isfile(fpath), f"SpecialtyControllerTests.java not found at {fpath}"
 
-    # ------------------------------------------------------------------
-    # Layer 1 – file_path_check (3 cases)
-    # ------------------------------------------------------------------
+    def test_service_tests_exist(self):
+        """Verify SpecialtyServiceTests.java exists"""
+        fpath = os.path.join(
+            self.REPO_DIR,
+            "src/test/java/org/springframework/samples/petclinic/specialty/SpecialtyServiceTests.java"
+        )
+        assert os.path.isfile(fpath), f"SpecialtyServiceTests.java not found at {fpath}"
 
-    def test_file_path_specialty_controller_java_exists(self):
-        """Verify SpecialtyController.java exists."""
-        self._assert_non_empty_file(self.CONTROLLER)
+    # === Semantic Checks ===
 
-    def test_file_path_specialty_service_java_exists(self):
-        """Verify SpecialtyService.java exists."""
-        self._assert_non_empty_file(self.SERVICE)
+    def test_controller_has_crud_endpoints(self):
+        """Verify SpecialtyController has GET, POST, PUT, DELETE endpoint annotations"""
+        fpath = os.path.join(
+            self.REPO_DIR,
+            "src/main/java/org/springframework/samples/petclinic/specialty/SpecialtyController.java"
+        )
+        with open(fpath, "r") as f:
+            content = f.read()
+        assert re.search(r'@GetMapping', content), "Controller missing @GetMapping"
+        assert re.search(r'@PostMapping', content), "Controller missing @PostMapping"
+        assert re.search(r'@PutMapping', content), "Controller missing @PutMapping"
+        assert re.search(r'@DeleteMapping', content), "Controller missing @DeleteMapping"
 
-    def test_file_path_specialty_repository_java_exists(self):
-        """Verify SpecialtyRepository.java exists."""
-        self._assert_non_empty_file(self.REPOSITORY)
+    def test_controller_uses_api_specialties_path(self):
+        """Verify controller is mapped to /api/specialties path"""
+        fpath = os.path.join(
+            self.REPO_DIR,
+            "src/main/java/org/springframework/samples/petclinic/specialty/SpecialtyController.java"
+        )
+        with open(fpath, "r") as f:
+            content = f.read()
+        has_path = bool(re.search(r'["\']/?api/specialties["\']', content))
+        assert has_path, "Controller should be mapped to '/api/specialties'"
 
-    # ------------------------------------------------------------------
-    # Layer 2 – semantic_check (5 cases)
-    # ------------------------------------------------------------------
+    def test_controller_returns_proper_status_codes(self):
+        """Verify controller uses appropriate HTTP status codes (201, 204, 404, 409)"""
+        fpath = os.path.join(
+            self.REPO_DIR,
+            "src/main/java/org/springframework/samples/petclinic/specialty/SpecialtyController.java"
+        )
+        with open(fpath, "r") as f:
+            content = f.read()
+        has_created = bool(re.search(r'(CREATED|201|HttpStatus\.CREATED)', content))
+        has_no_content = bool(re.search(r'(NO_CONTENT|204|HttpStatus\.NO_CONTENT)', content))
+        assert has_created, "Controller should return HTTP 201 for creation"
+        assert has_no_content, "Controller should return HTTP 204 for deletion"
 
-    def test_semantic_controller_has_restcontroller_with_requestmapping_api_specialties(
-        self,
-    ):
-        """SpecialtyController has @RestController with @RequestMapping('/api/specialties')."""
-        src = self._read_text(self.CONTROLLER)
-        assert re.search(
-            r"@RestController", src
-        ), "SpecialtyController should be annotated with @RestController"
-        assert re.search(
-            r"@RequestMapping.*['\"/]api/specialties", src
-        ), "Should have @RequestMapping('/api/specialties')"
+    def test_dto_has_name_field(self):
+        """Verify SpecialtyDto has a name field"""
+        fpath = os.path.join(
+            self.REPO_DIR,
+            "src/main/java/org/springframework/samples/petclinic/specialty/SpecialtyDto.java"
+        )
+        with open(fpath, "r") as f:
+            content = f.read()
+        has_name = bool(re.search(r'(String\s+name|name\s*;|getName|setName)', content))
+        assert has_name, "SpecialtyDto should have a 'name' field"
 
-    def test_semantic_crud_methods_annotated_with_mapping_annotations(self):
-        """CRUD methods annotated with @GetMapping, @PostMapping, @PutMapping, @DeleteMapping."""
-        src = self._read_text(self.CONTROLLER)
-        for annotation in [
-            "@GetMapping",
-            "@PostMapping",
-            "@PutMapping",
-            "@DeleteMapping",
-        ]:
-            assert (
-                annotation in src
-            ), f"Controller should have {annotation} annotated method"
+    def test_dto_has_validation_annotations(self):
+        """Verify SpecialtyDto has validation annotations for name field"""
+        fpath = os.path.join(
+            self.REPO_DIR,
+            "src/main/java/org/springframework/samples/petclinic/specialty/SpecialtyDto.java"
+        )
+        with open(fpath, "r") as f:
+            content = f.read()
+        has_not_blank = bool(re.search(r'@NotBlank|@NotEmpty|@NotNull', content))
+        has_size = bool(re.search(r'@Size|@Length', content))
+        assert has_not_blank, "SpecialtyDto should have @NotBlank or @NotNull on name"
+        assert has_size, "SpecialtyDto should have @Size annotation for name (2-80 chars)"
 
-    def test_semantic_specialtydto_has_name_field_with_validation(self):
-        """SpecialtyDto has name field with validation annotations."""
-        all_src = self._all_java_sources(self.BASE_PKG)
-        assert re.search(
-            r"class\s+Specialty(Dto|DTO|Request)", all_src
-        ), "SpecialtyDto or similar DTO class should exist"
-        assert re.search(
-            r"@(NotBlank|NotEmpty|NotNull|Size|Valid)", all_src
-        ), "DTO should have validation annotations"
+    def test_service_has_business_methods(self):
+        """Verify SpecialtyService has CRUD business methods"""
+        fpath = os.path.join(
+            self.REPO_DIR,
+            "src/main/java/org/springframework/samples/petclinic/specialty/SpecialtyService.java"
+        )
+        with open(fpath, "r") as f:
+            content = f.read()
+        methods = re.findall(r'(public|protected)\s+\w+\s+(\w+)\s*\(', content)
+        method_names = [m[1] for m in methods]
+        # Should have methods for find, create, update, delete
+        has_find = any("find" in m.lower() or "get" in m.lower() or "all" in m.lower() for m in method_names)
+        has_create = any("create" in m.lower() or "save" in m.lower() or "add" in m.lower() for m in method_names)
+        has_delete = any("delete" in m.lower() or "remove" in m.lower() for m in method_names)
+        assert has_find, f"Service should have a find/get method. Found: {method_names}"
+        assert has_create, f"Service should have a create/save method. Found: {method_names}"
+        assert has_delete, f"Service should have a delete/remove method. Found: {method_names}"
 
-    def test_semantic_service_encapsulates_uniqueness_and_not_found(self):
-        """SpecialtyService encapsulates uniqueness check and not-found logic."""
-        src = self._read_text(self.SERVICE)
-        assert re.search(
-            r"unique|duplicate|exists|Conflict|409", src, re.IGNORECASE
-        ), "Service should check for uniqueness"
-        assert re.search(
-            r"not.*found|NotFound|404|Optional|orElseThrow", src, re.IGNORECASE
-        ), "Service should handle not-found cases"
+    def test_repository_extends_spring_data(self):
+        """Verify SpecialtyRepository extends a Spring Data interface"""
+        fpath = os.path.join(
+            self.REPO_DIR,
+            "src/main/java/org/springframework/samples/petclinic/specialty/SpecialtyRepository.java"
+        )
+        with open(fpath, "r") as f:
+            content = f.read()
+        has_extends = bool(re.search(
+            r'extends\s+(JpaRepository|CrudRepository|PagingAndSortingRepository|Repository)',
+            content
+        ))
+        assert has_extends, "SpecialtyRepository should extend a Spring Data repository interface"
 
-    def test_semantic_repository_extends_spring_data_jpa(self):
-        """SpecialtyRepository extends Spring Data JPA interface with pagination."""
-        src = self._read_text(self.REPOSITORY)
-        assert re.search(
-            r"extends\s+(JpaRepository|CrudRepository|PagingAndSorting)", src
-        ), "Repository should extend a Spring Data JPA interface"
+    def test_controller_tests_use_mockmvc(self):
+        """Verify controller tests use MockMvc for endpoint testing"""
+        fpath = os.path.join(
+            self.REPO_DIR,
+            "src/test/java/org/springframework/samples/petclinic/specialty/SpecialtyControllerTests.java"
+        )
+        with open(fpath, "r") as f:
+            content = f.read()
+        assert "MockMvc" in content, "Controller tests should use MockMvc"
+        assert "@Test" in content, "Controller tests should have @Test annotations"
 
-    # ------------------------------------------------------------------
-    # Layer 3 – functional_check (5 cases)
-    # ------------------------------------------------------------------
+    def test_controller_tests_cover_error_cases(self):
+        """Verify controller tests include conflict and validation error scenarios"""
+        fpath = os.path.join(
+            self.REPO_DIR,
+            "src/test/java/org/springframework/samples/petclinic/specialty/SpecialtyControllerTests.java"
+        )
+        with open(fpath, "r") as f:
+            content = f.read()
+        has_conflict = bool(re.search(r'(409|CONFLICT|conflict|duplicate)', content, re.IGNORECASE))
+        has_bad_request = bool(re.search(r'(400|BAD_REQUEST|badRequest|validation)', content, re.IGNORECASE))
+        has_not_found = bool(re.search(r'(404|NOT_FOUND|notFound)', content, re.IGNORECASE))
+        assert has_conflict, "Controller tests should cover 409 Conflict scenario"
+        assert has_bad_request, "Controller tests should cover 400 Bad Request scenario"
+        assert has_not_found, "Controller tests should cover 404 Not Found scenario"
 
-    def test_functional_get_api_specialties_returns_sorted_json_200(self):
-        """GET /api/specialties returns sorted JSON array with 200."""
-        src = self._read_text(self.CONTROLLER)
-        assert re.search(r"@GetMapping", src), "Should have GET endpoint"
-        service_src = self._read_text(self.SERVICE)
-        assert re.search(
-            r"findAll|getAll|list", service_src
-        ), "Service should have a list/findAll method"
+    # === Functional Checks ===
 
-    def test_functional_post_unique_name_returns_201_location(self):
-        """POST with unique name returns 201 with Location header."""
-        src = self._read_text(self.CONTROLLER)
-        assert re.search(r"@PostMapping", src), "Should have POST endpoint"
-        assert re.search(
-            r"201|CREATED|ResponseEntity\.created|HttpStatus\.CREATED", src
-        ), "POST should return 201 Created"
+    def test_project_compiles(self):
+        """Verify the project compiles successfully with mvnw"""
+        mvnw = os.path.join(self.REPO_DIR, "mvnw")
+        if not os.path.isfile(mvnw):
+            pytest.skip("mvnw not found, cannot compile")
+        result = subprocess.run(
+            ["./mvnw", "compile", "-DskipTests", "-q"],
+            cwd=self.REPO_DIR,
+            capture_output=True,
+            text=True,
+            timeout=300
+        )
+        assert result.returncode == 0, f"Compilation failed: {result.stderr[-1000:]}"
 
-    def test_functional_post_duplicate_name_returns_409(self):
-        """POST with duplicate name returns 409."""
-        all_src = self._all_java_sources(self.BASE_PKG)
-        assert re.search(
-            r"409|CONFLICT|Conflict|DataIntegrity|Duplicate", all_src, re.IGNORECASE
-        ), "Duplicate name should return 409"
+    def test_all_tests_pass(self):
+        """Verify all tests (new and existing) pass via mvnw test"""
+        mvnw = os.path.join(self.REPO_DIR, "mvnw")
+        if not os.path.isfile(mvnw):
+            pytest.skip("mvnw not found, cannot run tests")
+        result = subprocess.run(
+            ["./mvnw", "test", "-q"],
+            cwd=self.REPO_DIR,
+            capture_output=True,
+            text=True,
+            timeout=600
+        )
+        assert result.returncode == 0, (
+            f"Tests failed. Last 1000 chars of stdout:\n{result.stdout[-1000:]}\n"
+            f"stderr:\n{result.stderr[-1000:]}"
+        )
 
-    def test_functional_post_blank_name_returns_400(self):
-        """POST with blank name returns 400."""
-        all_src = self._all_java_sources(self.BASE_PKG)
-        assert re.search(
-            r"@Valid|@NotBlank|400|BAD_REQUEST|MethodArgumentNotValid", all_src
-        ), "Blank name should trigger 400"
-
-    def test_functional_get_api_specialties_999_returns_404(self):
-        """GET /api/specialties/999 returns 404."""
-        all_src = self._all_java_sources(self.BASE_PKG)
-        assert re.search(
-            r"404|NOT_FOUND|NotFoundException|ResourceNotFound", all_src, re.IGNORECASE
-        ), "Non-existent ID should return 404"
+    def test_service_tests_mock_repository(self):
+        """Verify service tests use mocked repository (not integration tests)"""
+        fpath = os.path.join(
+            self.REPO_DIR,
+            "src/test/java/org/springframework/samples/petclinic/specialty/SpecialtyServiceTests.java"
+        )
+        with open(fpath, "r") as f:
+            content = f.read()
+        has_mock = bool(re.search(r'(@Mock|@MockBean|Mockito|mock\()', content))
+        assert has_mock, "Service tests should mock the repository using Mockito or @MockBean"
