@@ -1,0 +1,82 @@
+{
+  "task_id": "nx-workspace-patterns",
+  "modules": {
+    "parsing": {
+      "traces_with_skill": 1,
+      "traces_without_skill": 1
+    },
+    "segmentation": {
+      "phased_traces_with_skill": 1,
+      "phased_traces_without_skill": 1
+    },
+    "alignment": {
+      "total_divergences": 13,
+      "divergence_statistics": {
+        "total_divergences": 13,
+        "by_type": {
+          "target_mismatch": 12,
+          "unilateral_action": 1
+        },
+        "by_phase": {
+          "implementation": 13
+        },
+        "avg_skill_similarity": 0.24620687618422055
+      }
+    },
+    "sip_detection": {
+      "total_sips": 13,
+      "sip_statistics": {
+        "total_sips": 13,
+        "by_type": {
+          "edge_case_prompting": {
+            "count": 1,
+            "avg_confidence": 0.55,
+            "category": "constructive"
+          },
+          "surface_anchoring": {
+            "count": 12,
+            "avg_confidence": 0.6666666666666666,
+            "category": "destructive"
+          }
+        },
+        "avg_confidence": 0.6576923076923078
+      }
+    },
+    "quality_prediction": {
+      "skill_id": "nx-workspace-patterns",
+      "utility_class": "neutral",
+      "probability": {
+        "positive": 0.25,
+        "neutral": 0.5,
+        "negative": 0.25
+      },
+      "feature_importance": {
+        "template_specificity": 1.0,
+        "abstraction_level": 0.01440443939923999,
+        "coverage_breadth": 0.8363769174579985,
+        "document_length": 0.5071789627465303,
+        "code_to_prose_ratio": 0.7779401022644266,
+        "instruction_density": 0.8217677136596054
+      },
+      "recommendation": "\u2248 Observed \u0394P=+0.000: no measurable effect on pass rate (heuristic disagrees: \u2717 Skill too broad - may cause concept bleed)",
+      "confidence": 0.5
+    }
+  },
+  "summary": {
+    "task_id": "nx-workspace-patterns",
+    "analysis_complete": true,
+    "modules_executed": [
+      "parsing",
+      "segmentation",
+      "alignment",
+      "sip_detection",
+      "quality_prediction"
+    ],
+    "dominant_sips": [
+      "surface_anchoring",
+      "edge_case_prompting"
+    ],
+    "skill_utility": "neutral",
+    "skill_confidence": 0.5
+  }
+}

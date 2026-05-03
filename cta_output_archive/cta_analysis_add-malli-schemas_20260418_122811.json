@@ -1,0 +1,55 @@
+{
+  "task_id": "add-malli-schemas",
+  "modules": {
+    "parsing": {
+      "traces_with_skill": 1,
+      "traces_without_skill": 1
+    },
+    "segmentation": {
+      "phased_traces_with_skill": 1,
+      "phased_traces_without_skill": 1
+    },
+    "alignment": {
+      "total_divergences": 4,
+      "divergence_statistics": {
+        "total_divergences": 4,
+        "by_type": {
+          "target_mismatch": 4
+        },
+        "by_phase": {
+          "implementation": 1,
+          "finalization": 3
+        },
+        "avg_skill_similarity": 0.5
+      }
+    },
+    "sip_detection": {
+      "total_sips": 1,
+      "sip_statistics": {
+        "total_sips": 1,
+        "by_type": {
+          "concept_bleed": {
+            "count": 1,
+            "avg_confidence": 0.6
+          }
+        },
+        "avg_confidence": 0.6
+      }
+    },
+    "quality_prediction": {}
+  },
+  "summary": {
+    "task_id": "add-malli-schemas",
+    "analysis_complete": true,
+    "modules_executed": [
+      "parsing",
+      "segmentation",
+      "alignment",
+      "sip_detection",
+      "quality_prediction"
+    ],
+    "dominant_sips": [
+      "concept_bleed"
+    ]
+  }
+}

@@ -38,13 +38,19 @@ class CTAPipeline:
         self.output_dir = Path(self.config['data']['output_dir'])
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
-        # Initialize modules
+        # Initialize modules. Both Module 3 (skill_region resolution) and
+        # Module 4 (Surface Anchoring detection) need the full skill
+        # document; wire the pipeline's loader to both so they can resolve
+        # docs by task_id.
         self.parser = TraceParser()
         self.segmenter = PhaseSegmenter()
         self.aligner = TraceAligner(
-            intent_similarity_threshold=self.config['modules']['trace_aligner']['intent_similarity_threshold']
+            intent_similarity_threshold=self.config['modules']['trace_aligner']['intent_similarity_threshold'],
+            skill_doc_provider=self._load_skill_document,
         )
-        self.sip_detector = SIPDetector()
+        self.sip_detector = SIPDetector(
+            skill_doc_provider=self._load_skill_document,
+        )
         self.predictor = SkillQualityPredictor()
 
         logger.info("CTA Pipeline initialized")
@@ -86,15 +92,18 @@ class CTAPipeline:
                 'phased_traces_without_skill': len(phased_traces_minus)
             }
 
-            # Module 3: Align and detect divergences
-            divergences = self._run_module3(phased_traces_plus, phased_traces_minus)
+            # Module 3: Align and detect divergences (passes task_id so the
+            # aligner can resolve the real skill_region from SKILL.md).
+            divergences = self._run_module3(
+                phased_traces_plus, phased_traces_minus, task_id=task_id
+            )
             results['modules']['alignment'] = {
                 'total_divergences': len(divergences),
                 'divergence_statistics': self._get_divergence_stats(divergences)
             }
 
-            # Module 4: Detect SIPs
-            sips = self._run_module4(divergences)
+            # Module 4: Detect SIPs (passing task_id so SA can look up the skill doc)
+            sips = self._run_module4(divergences, task_id=task_id)
             results['modules']['sip_detection'] = {
                 'total_sips': len(sips),
                 'sip_statistics': self._get_sip_stats(sips)
@@ -124,8 +133,12 @@ class CTAPipeline:
         traces_plus = []
         traces_minus = []
 
-        # Find and parse trace files
-        for trace_file in trace_logs_dir.glob('**/claude_output/*.json'):
+        # Find and parse trace files. Primary source is the Claude Code
+        # stream-json ``.jsonl`` written by claude_code_proxy.py; we also
+        # pick up any legacy ``*.json`` traces if present.
+        trace_candidates = list(trace_logs_dir.glob('**/claude_thinking/*.jsonl'))
+        trace_candidates += list(trace_logs_dir.glob('**/claude_output/*.json'))
+        for trace_file in trace_candidates:
             try:
                 trace = self.parser.parse_trace_file(str(trace_file))
                 if trace.task_id == task_id:
@@ -148,30 +161,47 @@ class CTAPipeline:
 
         return phased_traces
 
-    def _run_module3(self, phased_traces_plus: List[PhasedTrace],
-                    phased_traces_minus: List[PhasedTrace]) -> List[DivergenceRecord]:
-        """Run Module 3: Trace Alignment and Divergence Detection"""
+    def _run_module3(
+        self,
+        phased_traces_plus: List[PhasedTrace],
+        phased_traces_minus: List[PhasedTrace],
+        task_id: Optional[str] = None,
+    ) -> List[DivergenceRecord]:
+        """Run Module 3: Trace Alignment and Divergence Detection.
+
+        ``task_id`` is forwarded so the aligner can pull the real SKILL.md
+        and populate each divergence's ``skill_region`` field, which is
+        required by Module 4's Surface Anchoring detector.
+        """
         logger.info("Module 3: Aligning traces and detecting divergences...")
 
         divergences = []
-
-        # Pair traces by run number
         min_runs = min(len(phased_traces_plus), len(phased_traces_minus))
         for i in range(min_runs):
             trace_plus = phased_traces_plus[i]
             trace_minus = phased_traces_minus[i]
 
-            run_divergences = self.aligner.align_traces(trace_plus, trace_minus)
+            run_divergences = self.aligner.align_traces(
+                trace_plus, trace_minus, task_id=task_id
+            )
             divergences.extend(run_divergences)
 
         logger.info(f"Detected {len(divergences)} divergences")
         return divergences
 
-    def _run_module4(self, divergences: List[DivergenceRecord]) -> List[SIPRecord]:
-        """Run Module 4: SIP Detection"""
+    def _run_module4(
+        self,
+        divergences: List[DivergenceRecord],
+        task_id: Optional[str] = None,
+    ) -> List[SIPRecord]:
+        """Run Module 4: SIP Detection.
+
+        ``task_id`` is forwarded so the Surface Anchoring detector can pull
+        the full skill document via the registered ``skill_doc_provider``.
+        """
         logger.info(f"Module 4: Detecting SIPs in {len(divergences)} divergences...")
 
-        sips = self.sip_detector.batch_detect(divergences)
+        sips = self.sip_detector.batch_detect(divergences, task_id=task_id)
         logger.info(f"Detected {len(sips)} skill influence patterns")
 
         return sips
@@ -259,16 +289,25 @@ class CTAPipeline:
             return None
 
     def _load_skill_document(self, task_id: str) -> Optional[str]:
-        """Load skill document"""
-        skills_dir = Path(self.config['data']['skills_dir'])
-        skill_file = skills_dir / f"{task_id}.md"
+        """Load skill document.
 
-        try:
-            if skill_file.exists():
-                with open(skill_file, 'r') as f:
-                    return f.read()
-        except Exception as e:
-            logger.debug(f"Could not load skill document: {e}")
+        Supports two layouts:
+          1. ``skills/<task_id>.md`` (single-file skill)
+          2. ``skills/<task_id>/SKILL.md`` (directory-style skill, current convention)
+        """
+        skills_dir = Path(self.config['data']['skills_dir'])
+        candidates = [
+            skills_dir / f"{task_id}.md",
+            skills_dir / task_id / "SKILL.md",
+        ]
+
+        for skill_file in candidates:
+            try:
+                if skill_file.exists():
+                    with open(skill_file, 'r') as f:
+                        return f.read()
+            except Exception as e:
+                logger.debug(f"Could not load skill document {skill_file}: {e}")
 
         return None
 

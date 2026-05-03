@@ -1,0 +1,90 @@
+{
+  "task_id": "distributed-tracing",
+  "modules": {
+    "parsing": {
+      "traces_with_skill": 1,
+      "traces_without_skill": 1
+    },
+    "segmentation": {
+      "phased_traces_with_skill": 1,
+      "phased_traces_without_skill": 1
+    },
+    "alignment": {
+      "total_divergences": 19,
+      "divergence_statistics": {
+        "total_divergences": 19,
+        "by_type": {
+          "target_mismatch": 17,
+          "unilateral_action": 2
+        },
+        "by_phase": {
+          "orientation": 9,
+          "implementation": 6,
+          "debugging": 4
+        },
+        "avg_skill_similarity": 0.24905958340744344
+      }
+    },
+    "sip_detection": {
+      "total_sips": 13,
+      "sip_statistics": {
+        "total_sips": 13,
+        "by_type": {
+          "edge_case_prompting": {
+            "count": 2,
+            "avg_confidence": 0.6000000000000001,
+            "category": "constructive"
+          },
+          "surface_anchoring": {
+            "count": 8,
+            "avg_confidence": 0.675,
+            "category": "destructive"
+          },
+          "concept_bleed": {
+            "count": 3,
+            "avg_confidence": 0.6,
+            "category": "destructive"
+          }
+        },
+        "avg_confidence": 0.6461538461538462
+      }
+    },
+    "quality_prediction": {
+      "skill_id": "distributed-tracing",
+      "utility_class": "neutral",
+      "probability": {
+        "positive": 0.25,
+        "neutral": 0.5,
+        "negative": 0.25
+      },
+      "feature_importance": {
+        "template_specificity": 1.0,
+        "abstraction_level": 0.005079383507967376,
+        "coverage_breadth": 0.8650190114068442,
+        "document_length": 0.5221254752851712,
+        "code_to_prose_ratio": 0.7433460076045628,
+        "instruction_density": 0.8498098859315589
+      },
+      "recommendation": "\u2248 Observed \u0394P=+0.000: no measurable effect on pass rate (heuristic disagrees: \u2717 Skill too broad - may cause concept bleed)",
+      "confidence": 0.5
+    }
+  },
+  "summary": {
+    "task_id": "distributed-tracing",
+    "analysis_complete": true,
+    "modules_executed": [
+      "parsing",
+      "segmentation",
+      "alignment",
+      "sip_detection",
+      "quality_prediction"
+    ],
+    "dominant_sips": [
+      "surface_anchoring",
+      "concept_bleed",
+      "edge_case_prompting"
+    ],
+    "skill_utility": "neutral",
+    "skill_confidence": 0.5
+  }
+}

@@ -150,7 +150,7 @@ class ClaudeCodeProxy:
         self._write_task_to_container(task_file_path, task_content)
 
         # Step 2: Build the claude CLI command (pass task text directly to claude and add skip-permissions flag)
-        claude_cmd = self._build_claude_command(task_content)
+        claude_cmd = self._build_claude_command(task_content, verbose=True)
 
         # Step 3: Execute the command
         print("\n" + "=" * 60)
@@ -202,6 +202,32 @@ class ClaudeCodeProxy:
         # Step 4: Copy output log from the container to the host
         self._copy_output_log_to_host()
 
+        # If we hit a known API schema-compatibility error, retry once with a more minimal CLI invocation.
+        # Some third-party API gateways reject extra request fields that Claude Code may send in verbose mode.
+        if result.exit_code != 0:
+            try:
+                last_log = self._read_current_log_from_container()
+            except Exception:
+                last_log = ""
+
+            if "Extra inputs are not permitted" in (last_log or ""):
+                logger.warning(
+                    "Detected API schema error ('Extra inputs are not permitted'). Retrying Claude Code without --verbose."
+                )
+                claude_cmd_retry = self._build_claude_command(
+                    task_content, verbose=False, retry_suffix="retry-nonverbose"
+                )
+                self._start_status_monitor()
+                result = self.docker_manager.execute_command(
+                    claude_cmd_retry,
+                    timeout=self.total_timeout_sec,
+                    user="dev",
+                )
+                self._stop_status_monitor()
+
+                # Copy retry output log too
+                self._copy_output_log_to_host()
+
         # Step 5: Copy thinking JSON files
         self._copy_thinking_json_to_host()
 
@@ -230,7 +256,9 @@ class ClaudeCodeProxy:
 
         logger.info(f"Task file written to: {task_file_path}")
 
-    def _build_claude_command(self, task_content: str) -> str:
+    def _build_claude_command(
+        self, task_content: str, verbose: bool = True, retry_suffix: Optional[str] = None
+    ) -> str:
         """
         Build the claude CLI command.
 
@@ -261,17 +289,33 @@ class ClaudeCodeProxy:
             timestamp=timestamp,
             ext=".log",
         )
+        if retry_suffix:
+            base, ext = os.path.splitext(log_filename)
+            log_filename = f"{base}_{retry_suffix}{ext}"
         log_file = f"{self.container_output_dir}/{log_filename}"
         # Save current log path for later copying
         self._current_log_file = log_file
         self._current_timestamp = timestamp
-        # CI=true disables interactive UI; --verbose outputs detailed thinking
+        # Prefer non-interactive print mode (-p) to avoid any interactive auth prompts.
+        # This is especially important when routing through API gateways via ANTHROPIC_BASE_URL.
+        verbose_flag = "--verbose " if verbose else ""
         cmd = (
             f"cd {self.workspace_dir} && "
-            f"CI=true claude '{escaped}' --dangerously-skip-permissions --verbose "
+            f"CI=true claude -p '{escaped}' --dangerously-skip-permissions {verbose_flag}"
             f"> {log_file} 2>&1"
         )
         return cmd
+
+    def _read_current_log_from_container(self) -> str:
+        """Read the current log file content from the container (best-effort)."""
+        if not getattr(self, "_current_log_file", None):
+            return ""
+        cat_result = self.docker_manager.execute_command(
+            f"cat {self._current_log_file}", timeout=60, user="dev"
+        )
+        if cat_result.exit_code == 0 and cat_result.stdout:
+            return cat_result.stdout
+        return ""
 
     def _copy_output_log_to_host(self):
         """

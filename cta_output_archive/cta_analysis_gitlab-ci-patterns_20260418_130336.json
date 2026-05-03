@@ -1,0 +1,81 @@
+{
+  "task_id": "gitlab-ci-patterns",
+  "modules": {
+    "parsing": {
+      "traces_with_skill": 1,
+      "traces_without_skill": 1
+    },
+    "segmentation": {
+      "phased_traces_with_skill": 1,
+      "phased_traces_without_skill": 1
+    },
+    "alignment": {
+      "total_divergences": 3,
+      "divergence_statistics": {
+        "total_divergences": 3,
+        "by_type": {
+          "target_mismatch": 3
+        },
+        "by_phase": {
+          "implementation": 3
+        },
+        "avg_skill_similarity": 0.22820095685393263
+      }
+    },
+    "sip_detection": {
+      "total_sips": 2,
+      "sip_statistics": {
+        "total_sips": 2,
+        "by_type": {
+          "redundant_exploration": {
+            "count": 1,
+            "avg_confidence": 0.5,
+            "category": "neutral"
+          },
+          "surface_anchoring": {
+            "count": 1,
+            "avg_confidence": 0.44999999999999996,
+            "category": "destructive"
+          }
+        },
+        "avg_confidence": 0.475
+      }
+    },
+    "quality_prediction": {
+      "skill_id": "gitlab-ci-patterns",
+      "utility_class": "positive",
+      "probability": {
+        "positive": 0.55,
+        "neutral": 0.22499999999999998,
+        "negative": 0.22499999999999998
+      },
+      "feature_importance": {
+        "template_specificity": 1.0,
+        "abstraction_level": 0.010788273781004389,
+        "coverage_breadth": 0.8596713021491783,
+        "document_length": 0.6492237673830594,
+        "code_to_prose_ratio": 0.7711757269279395,
+        "instruction_density": 0.8217446270543617
+      },
+      "recommendation": "\u2713 Observed \u0394P=+0.143: skill improves task pass rate (heuristic disagrees: \u2717 Skill too broad - may cause concept bleed)",
+      "confidence": 0.55
+    }
+  },
+  "summary": {
+    "task_id": "gitlab-ci-patterns",
+    "analysis_complete": true,
+    "modules_executed": [
+      "parsing",
+      "segmentation",
+      "alignment",
+      "sip_detection",
+      "quality_prediction"
+    ],
+    "dominant_sips": [
+      "redundant_exploration",
+      "surface_anchoring"
+    ],
+    "skill_utility": "positive",
+    "skill_confidence": 0.55
+  }
+}

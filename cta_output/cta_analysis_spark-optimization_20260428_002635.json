@@ -1,0 +1,92 @@
+{
+  "task_id": "spark-optimization",
+  "modules": {
+    "parsing": {
+      "traces_with_skill": 1,
+      "traces_without_skill": 1
+    },
+    "segmentation": {
+      "phased_traces_with_skill": 1,
+      "phased_traces_without_skill": 1
+    },
+    "alignment": {
+      "total_divergences": 11,
+      "divergence_statistics": {
+        "total_divergences": 11,
+        "by_type": {
+          "target_mismatch": 4,
+          "unilateral_action": 7
+        },
+        "by_phase": {
+          "orientation": 5,
+          "implementation": 3,
+          "validation": 1,
+          "debugging": 1,
+          "finalization": 1
+        },
+        "avg_skill_similarity": 0.2721234602727586
+      }
+    },
+    "sip_detection": {
+      "total_sips": 15,
+      "sip_statistics": {
+        "total_sips": 15,
+        "by_type": {
+          "edge_case_prompting": {
+            "count": 7,
+            "avg_confidence": 0.8785714285714287,
+            "category": "constructive"
+          },
+          "surface_anchoring": {
+            "count": 6,
+            "avg_confidence": 0.6916666666666668,
+            "category": "destructive"
+          },
+          "concept_bleed": {
+            "count": 2,
+            "avg_confidence": 0.775,
+            "category": "destructive"
+          }
+        },
+        "avg_confidence": 0.7899999999999998
+      }
+    },
+    "quality_prediction": {
+      "skill_id": "spark-optimization",
+      "utility_class": "neutral",
+      "probability": {
+        "positive": 0.25,
+        "neutral": 0.5,
+        "negative": 0.25
+      },
+      "feature_importance": {
+        "template_specificity": 1.0,
+        "abstraction_level": 0.001405283867341203,
+        "coverage_breadth": 0.8333333333333334,
+        "document_length": 0.4093333333333333,
+        "code_to_prose_ratio": 0.7535885167464115,
+        "instruction_density": 0.7934609250398724
+      },
+      "recommendation": "\u2248 Observed \u0394P=+0.000: no measurable effect on pass rate (heuristic disagrees: \u2717 Skill too broad - may cause concept bleed)",
+      "confidence": 0.5
+    }
+  },
+  "summary": {
+    "task_id": "spark-optimization",
+    "analysis_complete": true,
+    "modules_executed": [
+      "parsing",
+      "segmentation",
+      "alignment",
+      "sip_detection",
+      "quality_prediction"
+    ],
+    "dominant_sips": [
+      "edge_case_prompting",
+      "surface_anchoring",
+      "concept_bleed"
+    ],
+    "skill_utility": "neutral",
+    "skill_confidence": 0.5
+  }
+}

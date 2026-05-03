@@ -1,0 +1,62 @@
+{
+  "task_id": "turborepo",
+  "modules": {
+    "parsing": {
+      "traces_with_skill": 1,
+      "traces_without_skill": 1
+    },
+    "segmentation": {
+      "phased_traces_with_skill": 1,
+      "phased_traces_without_skill": 1
+    },
+    "alignment": {
+      "total_divergences": 0,
+      "divergence_statistics": {
+        "total_divergences": 0,
+        "by_type": {},
+        "by_phase": {},
+        "avg_skill_similarity": 0.0
+      }
+    },
+    "sip_detection": {
+      "total_sips": 0,
+      "sip_statistics": {
+        "total_sips": 0,
+        "by_type": {}
+      }
+    },
+    "quality_prediction": {
+      "skill_id": "turborepo",
+      "utility_class": "negative",
+      "probability": {
+        "positive": 0.0,
+        "neutral": 0.3333333333333333,
+        "negative": 0.6666666666666666
+      },
+      "feature_importance": {
+        "template_specificity": 1.0,
+        "abstraction_level": 0.009795046508972411,
+        "coverage_breadth": 0.8409926470588236,
+        "document_length": 0.25128860294117644,
+        "code_to_prose_ratio": 0.6865808823529412,
+        "instruction_density": 0.7821691176470589
+      },
+      "recommendation": "\u2717 Skill too broad - may cause concept bleed",
+      "confidence": 0.6666666666666666
+    }
+  },
+  "summary": {
+    "task_id": "turborepo",
+    "analysis_complete": true,
+    "modules_executed": [
+      "parsing",
+      "segmentation",
+      "alignment",
+      "sip_detection",
+      "quality_prediction"
+    ],
+    "dominant_sips": [],
+    "skill_utility": "negative",
+    "skill_confidence": 0.6666666666666666
+  }
+}

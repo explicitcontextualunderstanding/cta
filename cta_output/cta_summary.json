@@ -1,0 +1,566 @@
+{
+  "total_tasks": 49,
+  "skill_utility": {
+    "distribution": {
+      "positive": 3,
+      "neutral": 45,
+      "negative": 1
+    },
+    "by_class": {
+      "positive": [
+        "bash-defensive-patterns",
+        "add-admin-api-endpoint",
+        "gitlab-ci-patterns"
+      ],
+      "neutral": [
+        "service-mesh-observability",
+        "linkerd-patterns",
+        "rag-implementation",
+        "istio-traffic-management",
+        "add-uint-support",
+        "github-actions-templates",
+        "add-malli-schemas",
+        "tdd-workflow",
+        "gitops-workflow",
+        "implementing-agent-modes",
+        "nx-workspace-patterns",
+        "xlsx",
+        "analytics-events",
+        "turborepo",
+        "grafana-dashboards",
+        "python-resilience",
+        "distributed-tracing",
+        "llm-evaluation",
+        "v3-performance-optimization",
+        "dbt-transformation-patterns",
+        "creating-financial-models",
+        "bazel-build-optimization",
+        "security-review",
+        "mcp-builder",
+        "python-performance-optimization",
+        "risk-metrics-calculation",
+        "langsmith-fetch",
+        "analyze-ci",
+        "similarity-search-patterns",
+        "clojure-write",
+        "prometheus-configuration",
+        "python-observability",
+        "implementing-jsc-classes-zig",
+        "k8s-manifest-generator",
+        "python-anti-patterns",
+        "slo-implementation",
+        "changelog-automation",
+        "python-packaging",
+        "python-background-jobs",
+        "django-patterns",
+        "springboot-tdd",
+        "vector-index-tuning",
+        "python-configuration",
+        "spark-optimization",
+        "fix"
+      ],
+      "negative": [
+        "prompt-engineering-patterns"
+      ]
+    },
+    "avg_confidence": {
+      "neutral": 0.5,
+      "positive": 0.55,
+      "negative": 0.55
+    }
+  },
+  "divergences": {
+    "total_divergences": 696,
+    "by_type": {
+      "target_mismatch": 521,
+      "unilateral_action": 112,
+      "content_mismatch": 63
+    },
+    "by_phase": {
+      "orientation": 306,
+      "implementation": 277,
+      "finalization": 69,
+      "validation": 27,
+      "debugging": 17
+    }
+  },
+  "sips": {
+    "concept_bleed": {
+      "count": 99,
+      "tasks": [
+        "service-mesh-observability",
+        "bash-defensive-patterns",
+        "rag-implementation",
+        "add-malli-schemas",
+        "implementing-agent-modes",
+        "analytics-events",
+        "grafana-dashboards",
+        "distributed-tracing",
+        "llm-evaluation",
+        "v3-performance-optimization",
+        "dbt-transformation-patterns",
+        "creating-financial-models",
+        "bazel-build-optimization",
+        "security-review",
+        "mcp-builder",
+        "risk-metrics-calculation",
+        "clojure-write",
+        "prometheus-configuration",
+        "python-observability",
+        "add-admin-api-endpoint",
+        "implementing-jsc-classes-zig",
+        "django-patterns",
+        "vector-index-tuning",
+        "python-configuration",
+        "gitlab-ci-patterns",
+        "spark-optimization",
+        "fix"
+      ]
+    },
+    "edge_case_prompting": {
+      "count": 186,
+      "tasks": [
+        "bash-defensive-patterns",
+        "rag-implementation",
+        "add-malli-schemas",
+        "implementing-agent-modes",
+        "nx-workspace-patterns",
+        "xlsx",
+        "analytics-events",
+        "distributed-tracing",
+        "llm-evaluation",
+        "v3-performance-optimization",
+        "dbt-transformation-patterns",
+        "creating-financial-models",
+        "bazel-build-optimization",
+        "mcp-builder",
+        "risk-metrics-calculation",
+        "similarity-search-patterns",
+        "clojure-write",
+        "add-admin-api-endpoint",
+        "implementing-jsc-classes-zig",
+        "python-anti-patterns",
+        "python-background-jobs",
+        "django-patterns",
+        "springboot-tdd",
+        "vector-index-tuning",
+        "python-configuration",
+        "gitlab-ci-patterns",
+        "spark-optimization"
+      ]
+    },
+    "redundant_exploration": {
+      "count": 42,
+      "tasks": [
+        "bash-defensive-patterns",
+        "github-actions-templates",
+        "add-malli-schemas",
+        "grafana-dashboards",
+        "python-resilience",
+        "creating-financial-models",
+        "security-review",
+        "python-performance-optimization",
+        "risk-metrics-calculation",
+        "clojure-write",
+        "prometheus-configuration",
+        "python-observability",
+        "add-admin-api-endpoint",
+        "slo-implementation",
+        "python-packaging",
+        "springboot-tdd",
+        "python-configuration",
+        "gitlab-ci-patterns",
+        "fix"
+      ]
+    },
+    "surface_anchoring": {
+      "count": 184,
+      "tasks": [
+        "bash-defensive-patterns",
+        "rag-implementation",
+        "istio-traffic-management",
+        "nx-workspace-patterns",
+        "xlsx",
+        "analytics-events",
+        "turborepo",
+        "grafana-dashboards",
+        "distributed-tracing",
+        "llm-evaluation",
+        "v3-performance-optimization",
+        "dbt-transformation-patterns",
+        "bazel-build-optimization",
+        "risk-metrics-calculation",
+        "similarity-search-patterns",
+        "implementing-jsc-classes-zig",
+        "k8s-manifest-generator",
+        "python-packaging",
+        "django-patterns",
+        "vector-index-tuning",
+        "gitlab-ci-patterns",
+        "spark-optimization"
+      ]
+    },
+    "procedural_scaffolding": {
+      "count": 11,
+      "tasks": [
+        "grafana-dashboards",
+        "creating-financial-models",
+        "k8s-manifest-generator",
+        "python-anti-patterns"
+      ]
+    }
+  },
+  "case_studies": {
+    "best_positive": {
+      "skill_id": "risk-metrics-calculation",
+      "result": {
+        "task_id": "risk-metrics-calculation",
+        "modules": {
+          "parsing": {
+            "traces_with_skill": 1,
+            "traces_without_skill": 1
+          },
+          "segmentation": {
+            "phased_traces_with_skill": 1,
+            "phased_traces_without_skill": 1
+          },
+          "alignment": {
+            "total_divergences": 14,
+            "divergence_statistics": {
+              "total_divergences": 14,
+              "by_type": {
+                "target_mismatch": 9,
+                "unilateral_action": 5
+              },
+              "by_phase": {
+                "orientation": 7,
+                "implementation": 4,
+                "validation": 1,
+                "finalization": 2
+              },
+              "avg_skill_similarity": 0.19742459065273338
+            }
+          },
+          "sip_detection": {
+            "total_sips": 21,
+            "sip_statistics": {
+              "total_sips": 21,
+              "by_type": {
+                "edge_case_prompting": {
+                  "count": 6,
+                  "avg_confidence": 0.6833333333333335,
+                  "category": "constructive"
+                },
+                "redundant_exploration": {
+                  "count": 1,
+                  "avg_confidence": 0.5,
+                  "category": "neutral"
+                },
+                "surface_anchoring": {
+                  "count": 11,
+                  "avg_confidence": 0.6227272727272729,
+                  "category": "destructive"
+                },
+                "concept_bleed": {
+                  "count": 3,
+                  "avg_confidence": 0.6,
+                  "category": "destructive"
+                }
+              },
+              "avg_confidence": 0.6309523809523809
+            }
+          },
+          "quality_prediction": {
+            "skill_id": "risk-metrics-calculation",
+            "utility_class": "neutral",
+            "probability": {
+              "positive": 0.25,
+              "neutral": 0.5,
+              "negative": 0.25
+            },
+            "feature_importance": {
+              "template_specificity": 1.0,
+              "abstraction_level": 0.0022260877957537163,
+              "coverage_breadth": 0.8485401459854015,
+              "document_length": 0.2270693430656934,
+              "code_to_prose_ratio": 0.812043795620438,
+              "instruction_density": 0.8302919708029197
+            },
+            "recommendation": "\u2248 Observed \u0394P=+0.000: no measurable effect on pass rate (heuristic disagrees: \u2717 Skill too broad - may cause concept bleed)",
+            "confidence": 0.5
+          }
+        },
+        "summary": {
+          "task_id": "risk-metrics-calculation",
+          "analysis_complete": true,
+          "modules_executed": [
+            "parsing",
+            "segmentation",
+            "alignment",
+            "sip_detection",
+            "quality_prediction"
+          ],
+          "dominant_sips": [
+            "surface_anchoring",
+            "edge_case_prompting",
+            "concept_bleed"
+          ],
+          "skill_utility": "neutral",
+          "skill_confidence": 0.5
+        }
+      },
+      "utility": "neutral",
+      "dominant_sips": [
+        "surface_anchoring",
+        "edge_case_prompting",
+        "concept_bleed"
+      ]
+    },
+    "worst_negative": {
+      "skill_id": "springboot-tdd",
+      "result": {
+        "task_id": "springboot-tdd",
+        "modules": {
+          "parsing": {
+            "traces_with_skill": 1,
+            "traces_without_skill": 1
+          },
+          "segmentation": {
+            "phased_traces_with_skill": 1,
+            "phased_traces_without_skill": 1
+          },
+          "alignment": {
+            "total_divergences": 28,
+            "divergence_statistics": {
+              "total_divergences": 28,
+              "by_type": {
+                "target_mismatch": 21,
+                "unilateral_action": 7
+              },
+              "by_phase": {
+                "orientation": 12,
+                "implementation": 16
+              },
+              "avg_skill_similarity": 0.21628825555355788
+            }
+          },
+          "sip_detection": {
+            "total_sips": 21,
+            "sip_statistics": {
+              "total_sips": 21,
+              "by_type": {
+                "edge_case_prompting": {
+                  "count": 15,
+                  "avg_confidence": 0.6466666666666666,
+                  "category": "constructive"
+                },
+                "redundant_exploration": {
+                  "count": 6,
+                  "avg_confidence": 0.5499999999999999,
+                  "category": "neutral"
+                }
+              },
+              "avg_confidence": 0.6190476190476188
+            }
+          },
+          "quality_prediction": {
+            "skill_id": "springboot-tdd",
+            "utility_class": "neutral",
+            "probability": {
+              "positive": 0.25,
+              "neutral": 0.5,
+              "negative": 0.25
+            },
+            "feature_importance": {
+              "template_specificity": 1.0,
+              "abstraction_level": 0.01830019029881431,
+              "coverage_breadth": 0.8605664488017429,
+              "document_length": 0.7352679738562092,
+              "code_to_prose_ratio": 0.7298474945533769,
+              "instruction_density": 0.8061002178649238
+            },
+            "recommendation": "\u2248 Observed \u0394P=+0.000: no measurable effect on pass rate (heuristic disagrees: \u2717 Skill too broad - may cause concept bleed)",
+            "confidence": 0.5
+          }
+        },
+        "summary": {
+          "task_id": "springboot-tdd",
+          "analysis_complete": true,
+          "modules_executed": [
+            "parsing",
+            "segmentation",
+            "alignment",
+            "sip_detection",
+            "quality_prediction"
+          ],
+          "dominant_sips": [
+            "edge_case_prompting",
+            "redundant_exploration"
+          ],
+          "skill_utility": "neutral",
+          "skill_confidence": 0.5
+        }
+      },
+      "utility": "neutral",
+      "dominant_sips": [
+        "edge_case_prompting",
+        "redundant_exploration"
+      ]
+    },
+    "max_token_overhead": {
+      "skill_id": "service-mesh-observability",
+      "result": {
+        "task_id": "service-mesh-observability",
+        "modules": {
+          "parsing": {
+            "traces_with_skill": 1,
+            "traces_without_skill": 1
+          },
+          "segmentation": {
+            "phased_traces_with_skill": 1,
+            "phased_traces_without_skill": 1
+          },
+          "alignment": {
+            "total_divergences": 19,
+            "divergence_statistics": {
+              "total_divergences": 19,
+              "by_type": {
+                "target_mismatch": 19
+              },
+              "by_phase": {
+                "orientation": 13,
+                "implementation": 1,
+                "finalization": 5
+              },
+              "avg_skill_similarity": 0.23547274933879725
+            }
+          },
+          "sip_detection": {
+            "total_sips": 8,
+            "sip_statistics": {
+              "total_sips": 8,
+              "by_type": {
+                "concept_bleed": {
+                  "count": 8,
+                  "avg_confidence": 0.6187499999999999,
+                  "category": "destructive"
+                }
+              },
+              "avg_confidence": 0.6187499999999999
+            }
+          },
+          "quality_prediction": {
+            "skill_id": "service-mesh-observability",
+            "utility_class": "neutral",
+            "probability": {
+              "positive": 0.25,
+              "neutral": 0.5,
+              "negative": 0.25
+            },
+            "feature_importance": {
+              "template_specificity": 1.0,
+              "abstraction_level": 0.007075012789334887,
+              "coverage_breadth": 0.9433040078201369,
+              "document_length": 0.5754154447702835,
+              "code_to_prose_ratio": 0.8553274682306942,
+              "instruction_density": 0.9237536656891496
+            },
+            "recommendation": "\u2248 Observed \u0394P=+0.000: no measurable effect on pass rate (heuristic disagrees: \u2717 Skill too broad - may cause concept bleed)",
+            "confidence": 0.5
+          }
+        },
+        "summary": {
+          "task_id": "service-mesh-observability",
+          "analysis_complete": true,
+          "modules_executed": [
+            "parsing",
+            "segmentation",
+            "alignment",
+            "sip_detection",
+            "quality_prediction"
+          ],
+          "dominant_sips": [
+            "concept_bleed"
+          ],
+          "skill_utility": "neutral",
+          "skill_confidence": 0.5
+        }
+      },
+      "utility": "neutral",
+      "dominant_sips": [
+        "concept_bleed"
+      ]
+    },
+    "context_interference": {
+      "skill_id": "linkerd-patterns",
+      "result": {
+        "task_id": "linkerd-patterns",
+        "modules": {
+          "parsing": {
+            "traces_with_skill": 1,
+            "traces_without_skill": 1
+          },
+          "segmentation": {
+            "phased_traces_with_skill": 1,
+            "phased_traces_without_skill": 1
+          },
+          "alignment": {
+            "total_divergences": 16,
+            "divergence_statistics": {
+              "total_divergences": 16,
+              "by_type": {
+                "target_mismatch": 16
+              },
+              "by_phase": {
+                "orientation": 16
+              },
+              "avg_skill_similarity": 0.2882306622008791
+            }
+          },
+          "sip_detection": {
+            "total_sips": 0,
+            "sip_statistics": {
+              "total_sips": 0,
+              "by_type": {}
+            }
+          },
+          "quality_prediction": {
+            "skill_id": "linkerd-patterns",
+            "utility_class": "neutral",
+            "probability": {
+              "positive": 0.25,
+              "neutral": 0.5,
+              "negative": 0.25
+            },
+            "feature_importance": {
+              "template_specificity": 1.0,
+              "abstraction_level": 0.00024285039108253365,
+              "coverage_breadth": 0.8904109589041096,
+              "document_length": 0.5965753424657534,
+              "code_to_prose_ratio": 0.776255707762557,
+              "instruction_density": 0.8732876712328766
+            },
+            "recommendation": "\u2248 Observed \u0394P=+0.000: no measurable effect on pass rate (heuristic disagrees: \u2717 Skill too broad - may cause concept bleed)",
+            "confidence": 0.5
+          }
+        },
+        "summary": {
+          "task_id": "linkerd-patterns",
+          "analysis_complete": true,
+          "modules_executed": [
+            "parsing",
+            "segmentation",
+            "alignment",
+            "sip_detection",
+            "quality_prediction"
+          ],
+          "dominant_sips": [],
+          "skill_utility": "neutral",
+          "skill_confidence": 0.5
+        }
+      },
+      "utility": "neutral",
+      "dominant_sips": []
+    }
+  }
+}

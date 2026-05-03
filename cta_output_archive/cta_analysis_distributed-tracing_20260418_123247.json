@@ -1,0 +1,81 @@
+{
+  "task_id": "distributed-tracing",
+  "modules": {
+    "parsing": {
+      "traces_with_skill": 1,
+      "traces_without_skill": 1
+    },
+    "segmentation": {
+      "phased_traces_with_skill": 1,
+      "phased_traces_without_skill": 1
+    },
+    "alignment": {
+      "total_divergences": 5,
+      "divergence_statistics": {
+        "total_divergences": 5,
+        "by_type": {
+          "target_mismatch": 5
+        },
+        "by_phase": {
+          "implementation": 3,
+          "validation": 1,
+          "debugging": 1
+        },
+        "avg_skill_similarity": 0.5
+      }
+    },
+    "sip_detection": {
+      "total_sips": 6,
+      "sip_statistics": {
+        "total_sips": 6,
+        "by_type": {
+          "edge_case_prompting": {
+            "count": 3,
+            "avg_confidence": 0.5
+          },
+          "concept_bleed": {
+            "count": 3,
+            "avg_confidence": 0.6
+          }
+        },
+        "avg_confidence": 0.55
+      }
+    },
+    "quality_prediction": {
+      "skill_id": "distributed-tracing",
+      "utility_class": "neutral",
+      "probability": {
+        "positive": 0.25,
+        "neutral": 0.5,
+        "negative": 0.25
+      },
+      "feature_importance": {
+        "template_specificity": 1.0,
+        "abstraction_level": 0.005079383507967376,
+        "coverage_breadth": 0.8650190114068442,
+        "document_length": 0.5221254752851712,
+        "code_to_prose_ratio": 0.7433460076045628,
+        "instruction_density": 0.8498098859315589
+      },
+      "recommendation": "\u2248 Observed \u0394P=+0.000: no measurable effect on pass rate (heuristic disagrees: \u2717 Skill too broad - may cause concept bleed)",
+      "confidence": 0.5
+    }
+  },
+  "summary": {
+    "task_id": "distributed-tracing",
+    "analysis_complete": true,
+    "modules_executed": [
+      "parsing",
+      "segmentation",
+      "alignment",
+      "sip_detection",
+      "quality_prediction"
+    ],
+    "dominant_sips": [
+      "edge_case_prompting",
+      "concept_bleed"
+    ],
+    "skill_utility": "neutral",
+    "skill_confidence": 0.5
+  }
+}

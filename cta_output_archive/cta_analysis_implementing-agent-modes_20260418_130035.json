@@ -1,0 +1,83 @@
+{
+  "task_id": "implementing-agent-modes",
+  "modules": {
+    "parsing": {
+      "traces_with_skill": 1,
+      "traces_without_skill": 1
+    },
+    "segmentation": {
+      "phased_traces_with_skill": 1,
+      "phased_traces_without_skill": 1
+    },
+    "alignment": {
+      "total_divergences": 4,
+      "divergence_statistics": {
+        "total_divergences": 4,
+        "by_type": {
+          "target_mismatch": 4
+        },
+        "by_phase": {
+          "implementation": 1,
+          "validation": 1,
+          "finalization": 2
+        },
+        "avg_skill_similarity": 0.20561905732405789
+      }
+    },
+    "sip_detection": {
+      "total_sips": 4,
+      "sip_statistics": {
+        "total_sips": 4,
+        "by_type": {
+          "edge_case_prompting": {
+            "count": 1,
+            "avg_confidence": 0.6000000000000001,
+            "category": "constructive"
+          },
+          "concept_bleed": {
+            "count": 3,
+            "avg_confidence": 0.75,
+            "category": "destructive"
+          }
+        },
+        "avg_confidence": 0.7125
+      }
+    },
+    "quality_prediction": {
+      "skill_id": "implementing-agent-modes",
+      "utility_class": "neutral",
+      "probability": {
+        "positive": 0.25,
+        "neutral": 0.5,
+        "negative": 0.25
+      },
+      "feature_importance": {
+        "template_specificity": 1.0,
+        "abstraction_level": 0.00035198873636043646,
+        "coverage_breadth": 0.8333333333333334,
+        "document_length": 0.5953333333333333,
+        "code_to_prose_ratio": 0.7113821138211383,
+        "instruction_density": 0.7113821138211383
+      },
+      "recommendation": "\u2248 Observed \u0394P=+0.000: no measurable effect on pass rate (heuristic disagrees: \u2717 Skill too broad - may cause concept bleed)",
+      "confidence": 0.5
+    }
+  },
+  "summary": {
+    "task_id": "implementing-agent-modes",
+    "analysis_complete": true,
+    "modules_executed": [
+      "parsing",
+      "segmentation",
+      "alignment",
+      "sip_detection",
+      "quality_prediction"
+    ],
+    "dominant_sips": [
+      "concept_bleed",
+      "edge_case_prompting"
+    ],
+    "skill_utility": "neutral",
+    "skill_confidence": 0.5
+  }
+}

@@ -1,0 +1,81 @@
+{
+  "task_id": "analytics-events",
+  "modules": {
+    "parsing": {
+      "traces_with_skill": 1,
+      "traces_without_skill": 1
+    },
+    "segmentation": {
+      "phased_traces_with_skill": 1,
+      "phased_traces_without_skill": 1
+    },
+    "alignment": {
+      "total_divergences": 1,
+      "divergence_statistics": {
+        "total_divergences": 1,
+        "by_type": {
+          "target_mismatch": 1
+        },
+        "by_phase": {
+          "implementation": 1
+        },
+        "avg_skill_similarity": 0.5
+      }
+    },
+    "sip_detection": {
+      "total_sips": 2,
+      "sip_statistics": {
+        "total_sips": 2,
+        "by_type": {
+          "procedural_scaffolding": {
+            "count": 1,
+            "avg_confidence": 0.7000000000000001,
+            "category": "constructive"
+          },
+          "concept_bleed": {
+            "count": 1,
+            "avg_confidence": 0.95,
+            "category": "destructive"
+          }
+        },
+        "avg_confidence": 0.825
+      }
+    },
+    "quality_prediction": {
+      "skill_id": "analytics-events",
+      "utility_class": "neutral",
+      "probability": {
+        "positive": 0.25,
+        "neutral": 0.5,
+        "negative": 0.25
+      },
+      "feature_importance": {
+        "template_specificity": 1.0,
+        "abstraction_level": 0.00869622292678252,
+        "coverage_breadth": 0.8388704318936877,
+        "document_length": 0.33319933554817277,
+        "code_to_prose_ratio": 0.6993355481727574,
+        "instruction_density": 0.7990033222591362
+      },
+      "recommendation": "\u2248 Observed \u0394P=+0.000: no measurable effect on pass rate (heuristic disagrees: \u2717 Skill too broad - may cause concept bleed)",
+      "confidence": 0.5
+    }
+  },
+  "summary": {
+    "task_id": "analytics-events",
+    "analysis_complete": true,
+    "modules_executed": [
+      "parsing",
+      "segmentation",
+      "alignment",
+      "sip_detection",
+      "quality_prediction"
+    ],
+    "dominant_sips": [
+      "procedural_scaffolding",
+      "concept_bleed"
+    ],
+    "skill_utility": "neutral",
+    "skill_confidence": 0.5
+  }
+}

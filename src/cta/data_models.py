@@ -38,27 +38,79 @@ class PhaseType(Enum):
 
 
 class DivergenceType(Enum):
-    """Types of divergence between traces"""
+    """Types of divergence between paired traces.
+
+    The first three are *bilateral*: both with-skill and without-skill agents
+    expressed an aligned intent and produced an action window, but the
+    actions/targets/outcomes differ.
+
+    ``UNILATERAL_ACTION`` is *asymmetric*: the with-skill agent took an
+    action (typically a Write/Edit on a file the baseline never touched)
+    that has no aligned counterpart in the without-skill trace at all.
+    This is the signature of skill-induced artifact creation -- e.g.
+    ``bash-defensive-patterns`` prompting the agent to author a new
+    ``test_scripts.bats`` that the baseline never produced. Without this
+    type, those cases are silently dropped by the symmetric alignment
+    in Module 3 (see plan.md §2.4.2 "case 4: Unilateral Artifact").
+    """
     TARGET_MISMATCH = "target_mismatch"           # Different files/targets
     CONTENT_MISMATCH = "content_mismatch"         # Different code changes
     OUTCOME_MISMATCH = "outcome_mismatch"         # Different results
+    UNILATERAL_ACTION = "unilateral_action"       # Plus-only action; no minus counterpart
 
 
 class SIPType(Enum):
-    """Skill Influence Pattern types"""
+    """Skill Influence Pattern types (v2 schema, 5 categories).
+
+    Design rationale (see plan.md §2.5.1):
+        - Constructive: PS (Procedural Scaffolding), EP (Edge-case Prompting)
+        - Neutral:      RE (Redundant Exploration, merges legacy RR + PE)
+        - Destructive:  SA (Surface Anchoring), CB (Concept Bleed)
+
+    Deprecated v1 categories (retained as aliases for back-compat with old
+    serialized data, but emit DeprecationWarning when used):
+        CONSTRAINT_NARROWING -> merged into PROCEDURAL_SCAFFOLDING
+        REDUNDANT_REITERATION -> alias of REDUNDANT_EXPLORATION
+        PARALLEL_EXPLORATION  -> alias of REDUNDANT_EXPLORATION
+        CONTEXT_DISPLACEMENT  -> dropped (covered by skill `document_length` feature in M5)
+    """
+
     # Constructive
     PROCEDURAL_SCAFFOLDING = "procedural_scaffolding"
-    CONSTRAINT_NARROWING = "constraint_narrowing"
     EDGE_CASE_PROMPTING = "edge_case_prompting"
 
-    # Neutral
-    REDUNDANT_REITERATION = "redundant_reiteration"
-    PARALLEL_EXPLORATION = "parallel_exploration"
+    # Neutral (RE = merged RR + PE)
+    REDUNDANT_EXPLORATION = "redundant_exploration"
 
     # Destructive
     SURFACE_ANCHORING = "surface_anchoring"
     CONCEPT_BLEED = "concept_bleed"
-    CONTEXT_DISPLACEMENT = "context_displacement"
+
+    @classmethod
+    def _missing_(cls, value):
+        """Handle deprecated v1 category strings for back-compat."""
+        import warnings
+
+        legacy_map = {
+            "constraint_narrowing": cls.PROCEDURAL_SCAFFOLDING,
+            "redundant_reiteration": cls.REDUNDANT_EXPLORATION,
+            "parallel_exploration": cls.REDUNDANT_EXPLORATION,
+            "context_displacement": None,
+        }
+        if value in legacy_map:
+            mapped = legacy_map[value]
+            if mapped is None:
+                raise ValueError(
+                    f"SIP category '{value}' was removed in v2 schema "
+                    f"(see plan.md §2.5.1 for rationale)"
+                )
+            warnings.warn(
+                f"SIP category '{value}' is deprecated; mapping to '{mapped.value}'",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            return mapped
+        return None
 
 
 @dataclass

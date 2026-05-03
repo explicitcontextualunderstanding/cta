@@ -8,8 +8,8 @@ data:
   # Where to find skill documents
   skills_dir: "./skills"
 
-  # Where to find task metadata
-  task_metadata_file: "./config/tasks.json"
+  # Where to find task metadata (produced by scripts/cta_prepare_data.py)
+  task_metadata_file: "./config/cta_task_metadata.json"
 
   # Output directory
   output_dir: "./cta_output"
@@ -49,7 +49,7 @@ modules:
   # Module 3: Trace Alignment
   trace_aligner:
     # Intent similarity threshold for alignment
-    intent_similarity_threshold: 0.7
+    intent_similarity_threshold: 0.5
 
     # Embedding model (use simple hash-based for now)
     embedding_model: "hash"

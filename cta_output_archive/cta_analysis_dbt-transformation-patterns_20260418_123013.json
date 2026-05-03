@@ -1,0 +1,62 @@
+{
+  "task_id": "dbt-transformation-patterns",
+  "modules": {
+    "parsing": {
+      "traces_with_skill": 1,
+      "traces_without_skill": 1
+    },
+    "segmentation": {
+      "phased_traces_with_skill": 1,
+      "phased_traces_without_skill": 1
+    },
+    "alignment": {
+      "total_divergences": 0,
+      "divergence_statistics": {
+        "total_divergences": 0,
+        "by_type": {},
+        "by_phase": {},
+        "avg_skill_similarity": 0.0
+      }
+    },
+    "sip_detection": {
+      "total_sips": 0,
+      "sip_statistics": {
+        "total_sips": 0,
+        "by_type": {}
+      }
+    },
+    "quality_prediction": {
+      "skill_id": "dbt-transformation-patterns",
+      "utility_class": "negative",
+      "probability": {
+        "positive": 0.0,
+        "neutral": 0.2,
+        "negative": 0.8
+      },
+      "feature_importance": {
+        "template_specificity": 1.0,
+        "abstraction_level": 0.0095318916709335,
+        "coverage_breadth": 0.8407871198568874,
+        "document_length": 0.36860107334525943,
+        "code_to_prose_ratio": 0.7632677400119261,
+        "instruction_density": 0.8228980322003578
+      },
+      "recommendation": "\u2717 Skill too broad - may cause concept bleed",
+      "confidence": 0.8
+    }
+  },
+  "summary": {
+    "task_id": "dbt-transformation-patterns",
+    "analysis_complete": true,
+    "modules_executed": [
+      "parsing",
+      "segmentation",
+      "alignment",
+      "sip_detection",
+      "quality_prediction"
+    ],
+    "dominant_sips": [],
+    "skill_utility": "negative",
+    "skill_confidence": 0.8
+  }
+}

@@ -1,0 +1,59 @@
+{
+  "task_id": "implementing-jsc-classes-zig",
+  "modules": {
+    "parsing": {
+      "traces_with_skill": 1,
+      "traces_without_skill": 1
+    },
+    "segmentation": {
+      "phased_traces_with_skill": 1,
+      "phased_traces_without_skill": 1
+    },
+    "alignment": {
+      "total_divergences": 2,
+      "divergence_statistics": {
+        "total_divergences": 2,
+        "by_type": {
+          "target_mismatch": 2
+        },
+        "by_phase": {
+          "implementation": 2
+        },
+        "avg_skill_similarity": 0.5
+      }
+    },
+    "sip_detection": {
+      "total_sips": 4,
+      "sip_statistics": {
+        "total_sips": 4,
+        "by_type": {
+          "edge_case_prompting": {
+            "count": 2,
+            "avg_confidence": 0.5
+          },
+          "concept_bleed": {
+            "count": 2,
+            "avg_confidence": 0.6
+          }
+        },
+        "avg_confidence": 0.55
+      }
+    },
+    "quality_prediction": {}
+  },
+  "summary": {
+    "task_id": "implementing-jsc-classes-zig",
+    "analysis_complete": true,
+    "modules_executed": [
+      "parsing",
+      "segmentation",
+      "alignment",
+      "sip_detection",
+      "quality_prediction"
+    ],
+    "dominant_sips": [
+      "edge_case_prompting",
+      "concept_bleed"
+    ]
+  }
+}

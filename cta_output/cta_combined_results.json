@@ -1,0 +1,4039 @@
+{
+  "add-uint-support": {
+    "task_id": "add-uint-support",
+    "modules": {
+      "parsing": {
+        "traces_with_skill": 1,
+        "traces_without_skill": 1
+      },
+      "segmentation": {
+        "phased_traces_with_skill": 1,
+        "phased_traces_without_skill": 1
+      },
+      "alignment": {
+        "total_divergences": 6,
+        "divergence_statistics": {
+          "total_divergences": 6,
+          "by_type": {
+            "target_mismatch": 5,
+            "content_mismatch": 1
+          },
+          "by_phase": {
+            "orientation": 1,
+            "implementation": 5
+          },
+          "avg_skill_similarity": 0.3812742612091951
+        }
+      },
+      "sip_detection": {
+        "total_sips": 0,
+        "sip_statistics": {
+          "total_sips": 0,
+          "by_type": {}
+        }
+      },
+      "quality_prediction": {
+        "skill_id": "add-uint-support",
+        "utility_class": "neutral",
+        "probability": {
+          "positive": 0.25,
+          "neutral": 0.5,
+          "negative": 0.25
+        },
+        "feature_importance": {
+          "template_specificity": 1.0,
+          "abstraction_level": 0.007503551838017369,
+          "coverage_breadth": 0.8890746934225195,
+          "document_length": 0.501438127090301,
+          "code_to_prose_ratio": 0.7441471571906355,
+          "instruction_density": 0.8166109253065775
+        },
+        "recommendation": "\u2248 Observed \u0394P=+0.000: no measurable effect on pass rate (heuristic disagrees: \u2717 Skill too broad - may cause concept bleed)",
+        "confidence": 0.5
+      }
+    },
+    "summary": {
+      "task_id": "add-uint-support",
+      "analysis_complete": true,
+      "modules_executed": [
+        "parsing",
+        "segmentation",
+        "alignment",
+        "sip_detection",
+        "quality_prediction"
+      ],
+      "dominant_sips": [],
+      "skill_utility": "neutral",
+      "skill_confidence": 0.5
+    }
+  },
+  "fix": {
+    "task_id": "fix",
+    "modules": {
+      "parsing": {
+        "traces_with_skill": 1,
+        "traces_without_skill": 1
+      },
+      "segmentation": {
+        "phased_traces_with_skill": 1,
+        "phased_traces_without_skill": 1
+      },
+      "alignment": {
+        "total_divergences": 14,
+        "divergence_statistics": {
+          "total_divergences": 14,
+          "by_type": {
+            "target_mismatch": 14
+          },
+          "by_phase": {
+            "orientation": 11,
+            "validation": 3
+          },
+          "avg_skill_similarity": 0.24507073795262194
+        }
+      },
+      "sip_detection": {
+        "total_sips": 5,
+        "sip_statistics": {
+          "total_sips": 5,
+          "by_type": {
+            "redundant_exploration": {
+              "count": 2,
+              "avg_confidence": 0.55,
+              "category": "neutral"
+            },
+            "concept_bleed": {
+              "count": 3,
+              "avg_confidence": 0.65,
+              "category": "destructive"
+            }
+          },
+          "avg_confidence": 0.61
+        }
+      },
+      "quality_prediction": {
+        "skill_id": "fix",
+        "utility_class": "neutral",
+        "probability": {
+          "positive": 0.25,
+          "neutral": 0.5,
+          "negative": 0.25
+        },
+        "feature_importance": {
+          "template_specificity": 1.0,
+          "abstraction_level": 0.0,
+          "coverage_breadth": 0.0,
+          "document_length": 0.8882448979591837,
+          "code_to_prose_ratio": 0.9183673469387756,
+          "instruction_density": 0.8163265306122449
+        },
+        "recommendation": "\u2248 Observed \u0394P=+0.000: no measurable effect on pass rate (heuristic disagrees: \u2717 Skill likely detrimental)",
+        "confidence": 0.5
+      }
+    },
+    "summary": {
+      "task_id": "fix",
+      "analysis_complete": true,
+      "modules_executed": [
+        "parsing",
+        "segmentation",
+        "alignment",
+        "sip_detection",
+        "quality_prediction"
+      ],
+      "dominant_sips": [
+        "concept_bleed",
+        "redundant_exploration"
+      ],
+      "skill_utility": "neutral",
+      "skill_confidence": 0.5
+    }
+  },
+  "tdd-workflow": {
+    "task_id": "tdd-workflow",
+    "modules": {
+      "parsing": {
+        "traces_with_skill": 1,
+        "traces_without_skill": 1
+      },
+      "segmentation": {
+        "phased_traces_with_skill": 1,
+        "phased_traces_without_skill": 1
+      },
+      "alignment": {
+        "total_divergences": 13,
+        "divergence_statistics": {
+          "total_divergences": 13,
+          "by_type": {
+            "target_mismatch": 13
+          },
+          "by_phase": {
+            "implementation": 13
+          },
+          "avg_skill_similarity": 0.2318715406053518
+        }
+      },
+      "sip_detection": {
+        "total_sips": 0,
+        "sip_statistics": {
+          "total_sips": 0,
+          "by_type": {}
+        }
+      },
+      "quality_prediction": {
+        "skill_id": "tdd-workflow",
+        "utility_class": "neutral",
+        "probability": {
+          "positive": 0.25,
+          "neutral": 0.5,
+          "negative": 0.25
+        },
+        "feature_importance": {
+          "template_specificity": 1.0,
+          "abstraction_level": 0.011754749177801609,
+          "coverage_breadth": 0.8367346938775511,
+          "document_length": 0.5264734693877551,
+          "code_to_prose_ratio": 0.6408163265306123,
+          "instruction_density": 0.8326530612244898
+        },
+        "recommendation": "\u2248 Observed \u0394P=+0.000: no measurable effect on pass rate (heuristic disagrees: \u2717 Skill too broad - may cause concept bleed)",
+        "confidence": 0.5
+      }
+    },
+    "summary": {
+      "task_id": "tdd-workflow",
+      "analysis_complete": true,
+      "modules_executed": [
+        "parsing",
+        "segmentation",
+        "alignment",
+        "sip_detection",
+        "quality_prediction"
+      ],
+      "dominant_sips": [],
+      "skill_utility": "neutral",
+      "skill_confidence": 0.5
+    }
+  },
+  "security-review": {
+    "task_id": "security-review",
+    "modules": {
+      "parsing": {
+        "traces_with_skill": 1,
+        "traces_without_skill": 1
+      },
+      "segmentation": {
+        "phased_traces_with_skill": 1,
+        "phased_traces_without_skill": 1
+      },
+      "alignment": {
+        "total_divergences": 41,
+        "divergence_statistics": {
+          "total_divergences": 41,
+          "by_type": {
+            "target_mismatch": 41
+          },
+          "by_phase": {
+            "orientation": 10,
+            "implementation": 3,
+            "validation": 1,
+            "finalization": 27
+          },
+          "avg_skill_similarity": 0.239218568813443
+        }
+      },
+      "sip_detection": {
+        "total_sips": 10,
+        "sip_statistics": {
+          "total_sips": 10,
+          "by_type": {
+            "redundant_exploration": {
+              "count": 4,
+              "avg_confidence": 0.55,
+              "category": "neutral"
+            },
+            "concept_bleed": {
+              "count": 6,
+              "avg_confidence": 0.65,
+              "category": "destructive"
+            }
+          },
+          "avg_confidence": 0.61
+        }
+      },
+      "quality_prediction": {
+        "skill_id": "security-review",
+        "utility_class": "neutral",
+        "probability": {
+          "positive": 0.25,
+          "neutral": 0.5,
+          "negative": 0.25
+        },
+        "feature_importance": {
+          "template_specificity": 1.0,
+          "abstraction_level": 0.012866574631909107,
+          "coverage_breadth": 0.8361486486486487,
+          "document_length": 0.3996790540540541,
+          "code_to_prose_ratio": 0.6875,
+          "instruction_density": 0.8327702702702703
+        },
+        "recommendation": "\u2248 Observed \u0394P=+0.000: no measurable effect on pass rate (heuristic disagrees: \u2717 Skill too broad - may cause concept bleed)",
+        "confidence": 0.5
+      }
+    },
+    "summary": {
+      "task_id": "security-review",
+      "analysis_complete": true,
+      "modules_executed": [
+        "parsing",
+        "segmentation",
+        "alignment",
+        "sip_detection",
+        "quality_prediction"
+      ],
+      "dominant_sips": [
+        "concept_bleed",
+        "redundant_exploration"
+      ],
+      "skill_utility": "neutral",
+      "skill_confidence": 0.5
+    }
+  },
+  "springboot-tdd": {
+    "task_id": "springboot-tdd",
+    "modules": {
+      "parsing": {
+        "traces_with_skill": 1,
+        "traces_without_skill": 1
+      },
+      "segmentation": {
+        "phased_traces_with_skill": 1,
+        "phased_traces_without_skill": 1
+      },
+      "alignment": {
+        "total_divergences": 28,
+        "divergence_statistics": {
+          "total_divergences": 28,
+          "by_type": {
+            "target_mismatch": 21,
+            "unilateral_action": 7
+          },
+          "by_phase": {
+            "orientation": 12,
+            "implementation": 16
+          },
+          "avg_skill_similarity": 0.21628825555355788
+        }
+      },
+      "sip_detection": {
+        "total_sips": 21,
+        "sip_statistics": {
+          "total_sips": 21,
+          "by_type": {
+            "edge_case_prompting": {
+              "count": 15,
+              "avg_confidence": 0.6466666666666666,
+              "category": "constructive"
+            },
+            "redundant_exploration": {
+              "count": 6,
+              "avg_confidence": 0.5499999999999999,
+              "category": "neutral"
+            }
+          },
+          "avg_confidence": 0.6190476190476188
+        }
+      },
+      "quality_prediction": {
+        "skill_id": "springboot-tdd",
+        "utility_class": "neutral",
+        "probability": {
+          "positive": 0.25,
+          "neutral": 0.5,
+          "negative": 0.25
+        },
+        "feature_importance": {
+          "template_specificity": 1.0,
+          "abstraction_level": 0.01830019029881431,
+          "coverage_breadth": 0.8605664488017429,
+          "document_length": 0.7352679738562092,
+          "code_to_prose_ratio": 0.7298474945533769,
+          "instruction_density": 0.8061002178649238
+        },
+        "recommendation": "\u2248 Observed \u0394P=+0.000: no measurable effect on pass rate (heuristic disagrees: \u2717 Skill too broad - may cause concept bleed)",
+        "confidence": 0.5
+      }
+    },
+    "summary": {
+      "task_id": "springboot-tdd",
+      "analysis_complete": true,
+      "modules_executed": [
+        "parsing",
+        "segmentation",
+        "alignment",
+        "sip_detection",
+        "quality_prediction"
+      ],
+      "dominant_sips": [
+        "edge_case_prompting",
+        "redundant_exploration"
+      ],
+      "skill_utility": "neutral",
+      "skill_confidence": 0.5
+    }
+  },
+  "add-admin-api-endpoint": {
+    "task_id": "add-admin-api-endpoint",
+    "modules": {
+      "parsing": {
+        "traces_with_skill": 1,
+        "traces_without_skill": 1
+      },
+      "segmentation": {
+        "phased_traces_with_skill": 1,
+        "phased_traces_without_skill": 1
+      },
+      "alignment": {
+        "total_divergences": 25,
+        "divergence_statistics": {
+          "total_divergences": 25,
+          "by_type": {
+            "target_mismatch": 24,
+            "unilateral_action": 1
+          },
+          "by_phase": {
+            "orientation": 11,
+            "implementation": 13,
+            "debugging": 1
+          },
+          "avg_skill_similarity": 0.4168095513961559
+        }
+      },
+      "sip_detection": {
+        "total_sips": 18,
+        "sip_statistics": {
+          "total_sips": 18,
+          "by_type": {
+            "edge_case_prompting": {
+              "count": 1,
+              "avg_confidence": 0.65,
+              "category": "constructive"
+            },
+            "redundant_exploration": {
+              "count": 1,
+              "avg_confidence": 0.5,
+              "category": "neutral"
+            },
+            "concept_bleed": {
+              "count": 16,
+              "avg_confidence": 0.65625,
+              "category": "destructive"
+            }
+          },
+          "avg_confidence": 0.6472222222222223
+        }
+      },
+      "quality_prediction": {
+        "skill_id": "add-admin-api-endpoint",
+        "utility_class": "positive",
+        "probability": {
+          "positive": 0.55,
+          "neutral": 0.22499999999999998,
+          "negative": 0.22499999999999998
+        },
+        "feature_importance": {
+          "template_specificity": 1.0,
+          "abstraction_level": 0.0015873015873015873,
+          "coverage_breadth": 0.0,
+          "document_length": 0.7866666666666666,
+          "code_to_prose_ratio": 0.8333333333333334,
+          "instruction_density": 0.7352941176470589
+        },
+        "recommendation": "\u2713 Observed \u0394P=+0.040: skill improves task pass rate (heuristic disagrees: \u2248 Skill impact uncertain - consider careful evaluation)",
+        "confidence": 0.55
+      }
+    },
+    "summary": {
+      "task_id": "add-admin-api-endpoint",
+      "analysis_complete": true,
+      "modules_executed": [
+        "parsing",
+        "segmentation",
+        "alignment",
+        "sip_detection",
+        "quality_prediction"
+      ],
+      "dominant_sips": [
+        "concept_bleed",
+        "edge_case_prompting",
+        "redundant_exploration"
+      ],
+      "skill_utility": "positive",
+      "skill_confidence": 0.55
+    }
+  },
+  "mcp-builder": {
+    "task_id": "mcp-builder",
+    "modules": {
+      "parsing": {
+        "traces_with_skill": 1,
+        "traces_without_skill": 1
+      },
+      "segmentation": {
+        "phased_traces_with_skill": 1,
+        "phased_traces_without_skill": 1
+      },
+      "alignment": {
+        "total_divergences": 18,
+        "divergence_statistics": {
+          "total_divergences": 18,
+          "by_type": {
+            "target_mismatch": 11,
+            "unilateral_action": 7
+          },
+          "by_phase": {
+            "implementation": 18
+          },
+          "avg_skill_similarity": 0.26648774974171485
+        }
+      },
+      "sip_detection": {
+        "total_sips": 18,
+        "sip_statistics": {
+          "total_sips": 18,
+          "by_type": {
+            "edge_case_prompting": {
+              "count": 14,
+              "avg_confidence": 0.675,
+              "category": "constructive"
+            },
+            "concept_bleed": {
+              "count": 4,
+              "avg_confidence": 0.675,
+              "category": "destructive"
+            }
+          },
+          "avg_confidence": 0.6750000000000002
+        }
+      },
+      "quality_prediction": {
+        "skill_id": "mcp-builder",
+        "utility_class": "neutral",
+        "probability": {
+          "positive": 0.25,
+          "neutral": 0.5,
+          "negative": 0.25
+        },
+        "feature_importance": {
+          "template_specificity": 1.0,
+          "abstraction_level": 0.0016558118997681865,
+          "coverage_breadth": 0.8333333333333334,
+          "document_length": 0.4523333333333333,
+          "code_to_prose_ratio": 0.819268635724332,
+          "instruction_density": 0.7559774964838256
+        },
+        "recommendation": "\u2248 Observed \u0394P=+0.000: no measurable effect on pass rate (heuristic disagrees: \u2717 Skill too broad - may cause concept bleed)",
+        "confidence": 0.5
+      }
+    },
+    "summary": {
+      "task_id": "mcp-builder",
+      "analysis_complete": true,
+      "modules_executed": [
+        "parsing",
+        "segmentation",
+        "alignment",
+        "sip_detection",
+        "quality_prediction"
+      ],
+      "dominant_sips": [
+        "edge_case_prompting",
+        "concept_bleed"
+      ],
+      "skill_utility": "neutral",
+      "skill_confidence": 0.5
+    }
+  },
+  "python-resilience": {
+    "task_id": "python-resilience",
+    "modules": {
+      "parsing": {
+        "traces_with_skill": 1,
+        "traces_without_skill": 1
+      },
+      "segmentation": {
+        "phased_traces_with_skill": 1,
+        "phased_traces_without_skill": 1
+      },
+      "alignment": {
+        "total_divergences": 8,
+        "divergence_statistics": {
+          "total_divergences": 8,
+          "by_type": {
+            "target_mismatch": 8
+          },
+          "by_phase": {
+            "orientation": 4,
+            "implementation": 4
+          },
+          "avg_skill_similarity": 0.17328211411312716
+        }
+      },
+      "sip_detection": {
+        "total_sips": 1,
+        "sip_statistics": {
+          "total_sips": 1,
+          "by_type": {
+            "redundant_exploration": {
+              "count": 1,
+              "avg_confidence": 0.55,
+              "category": "neutral"
+            }
+          },
+          "avg_confidence": 0.55
+        }
+      },
+      "quality_prediction": {
+        "skill_id": "python-resilience",
+        "utility_class": "neutral",
+        "probability": {
+          "positive": 0.25,
+          "neutral": 0.5,
+          "negative": 0.25
+        },
+        "feature_importance": {
+          "template_specificity": 1.0,
+          "abstraction_level": 0.00030546464088782775,
+          "coverage_breadth": 0.8521699819168174,
+          "document_length": 0.4703978300180833,
+          "code_to_prose_ratio": 0.7617540687160941,
+          "instruction_density": 0.8250452079566004
+        },
+        "recommendation": "\u2248 Observed \u0394P=+0.000: no measurable effect on pass rate (heuristic disagrees: \u2717 Skill too broad - may cause concept bleed)",
+        "confidence": 0.5
+      }
+    },
+    "summary": {
+      "task_id": "python-resilience",
+      "analysis_complete": true,
+      "modules_executed": [
+        "parsing",
+        "segmentation",
+        "alignment",
+        "sip_detection",
+        "quality_prediction"
+      ],
+      "dominant_sips": [
+        "redundant_exploration"
+      ],
+      "skill_utility": "neutral",
+      "skill_confidence": 0.5
+    }
+  },
+  "xlsx": {
+    "task_id": "xlsx",
+    "modules": {
+      "parsing": {
+        "traces_with_skill": 1,
+        "traces_without_skill": 1
+      },
+      "segmentation": {
+        "phased_traces_with_skill": 1,
+        "phased_traces_without_skill": 1
+      },
+      "alignment": {
+        "total_divergences": 11,
+        "divergence_statistics": {
+          "total_divergences": 11,
+          "by_type": {
+            "target_mismatch": 7,
+            "unilateral_action": 4
+          },
+          "by_phase": {
+            "orientation": 6,
+            "implementation": 3,
+            "debugging": 2
+          },
+          "avg_skill_similarity": 0.22906914088404104
+        }
+      },
+      "sip_detection": {
+        "total_sips": 15,
+        "sip_statistics": {
+          "total_sips": 15,
+          "by_type": {
+            "edge_case_prompting": {
+              "count": 9,
+              "avg_confidence": 0.8,
+              "category": "constructive"
+            },
+            "surface_anchoring": {
+              "count": 6,
+              "avg_confidence": 0.4666666666666666,
+              "category": "destructive"
+            }
+          },
+          "avg_confidence": 0.6666666666666666
+        }
+      },
+      "quality_prediction": {
+        "skill_id": "xlsx",
+        "utility_class": "neutral",
+        "probability": {
+          "positive": 0.25,
+          "neutral": 0.5,
+          "negative": 0.25
+        },
+        "feature_importance": {
+          "template_specificity": 1.0,
+          "abstraction_level": 0.001797253955984717,
+          "coverage_breadth": 0.8578143360752056,
+          "document_length": 0.3060681551116334,
+          "code_to_prose_ratio": 0.7520564042303172,
+          "instruction_density": 0.7285546415981199
+        },
+        "recommendation": "\u2248 Observed \u0394P=+0.000: no measurable effect on pass rate (heuristic disagrees: \u2717 Skill too broad - may cause concept bleed)",
+        "confidence": 0.5
+      }
+    },
+    "summary": {
+      "task_id": "xlsx",
+      "analysis_complete": true,
+      "modules_executed": [
+        "parsing",
+        "segmentation",
+        "alignment",
+        "sip_detection",
+        "quality_prediction"
+      ],
+      "dominant_sips": [
+        "edge_case_prompting",
+        "surface_anchoring"
+      ],
+      "skill_utility": "neutral",
+      "skill_confidence": 0.5
+    }
+  },
+  "turborepo": {
+    "task_id": "turborepo",
+    "modules": {
+      "parsing": {
+        "traces_with_skill": 1,
+        "traces_without_skill": 1
+      },
+      "segmentation": {
+        "phased_traces_with_skill": 1,
+        "phased_traces_without_skill": 1
+      },
+      "alignment": {
+        "total_divergences": 10,
+        "divergence_statistics": {
+          "total_divergences": 10,
+          "by_type": {
+            "content_mismatch": 10
+          },
+          "by_phase": {
+            "implementation": 10
+          },
+          "avg_skill_similarity": 0.25875210138449506
+        }
+      },
+      "sip_detection": {
+        "total_sips": 3,
+        "sip_statistics": {
+          "total_sips": 3,
+          "by_type": {
+            "surface_anchoring": {
+              "count": 3,
+              "avg_confidence": 0.5166666666666667,
+              "category": "destructive"
+            }
+          },
+          "avg_confidence": 0.5166666666666667
+        }
+      },
+      "quality_prediction": {
+        "skill_id": "turborepo",
+        "utility_class": "neutral",
+        "probability": {
+          "positive": 0.25,
+          "neutral": 0.5,
+          "negative": 0.25
+        },
+        "feature_importance": {
+          "template_specificity": 1.0,
+          "abstraction_level": 0.009795046508972411,
+          "coverage_breadth": 0.8409926470588236,
+          "document_length": 0.25128860294117644,
+          "code_to_prose_ratio": 0.6865808823529412,
+          "instruction_density": 0.7821691176470589
+        },
+        "recommendation": "\u2248 Observed \u0394P=+0.000: no measurable effect on pass rate (heuristic disagrees: \u2717 Skill too broad - may cause concept bleed)",
+        "confidence": 0.5
+      }
+    },
+    "summary": {
+      "task_id": "turborepo",
+      "analysis_complete": true,
+      "modules_executed": [
+        "parsing",
+        "segmentation",
+        "alignment",
+        "sip_detection",
+        "quality_prediction"
+      ],
+      "dominant_sips": [
+        "surface_anchoring"
+      ],
+      "skill_utility": "neutral",
+      "skill_confidence": 0.5
+    }
+  },
+  "github-actions-templates": {
+    "task_id": "github-actions-templates",
+    "modules": {
+      "parsing": {
+        "traces_with_skill": 1,
+        "traces_without_skill": 1
+      },
+      "segmentation": {
+        "phased_traces_with_skill": 1,
+        "phased_traces_without_skill": 1
+      },
+      "alignment": {
+        "total_divergences": 7,
+        "divergence_statistics": {
+          "total_divergences": 7,
+          "by_type": {
+            "target_mismatch": 7
+          },
+          "by_phase": {
+            "implementation": 7
+          },
+          "avg_skill_similarity": 0.34986058619177995
+        }
+      },
+      "sip_detection": {
+        "total_sips": 4,
+        "sip_statistics": {
+          "total_sips": 4,
+          "by_type": {
+            "redundant_exploration": {
+              "count": 4,
+              "avg_confidence": 0.7000000000000001,
+              "category": "neutral"
+            }
+          },
+          "avg_confidence": 0.7000000000000001
+        }
+      },
+      "quality_prediction": {
+        "skill_id": "github-actions-templates",
+        "utility_class": "neutral",
+        "probability": {
+          "positive": 0.25,
+          "neutral": 0.5,
+          "negative": 0.25
+        },
+        "feature_importance": {
+          "template_specificity": 1.0,
+          "abstraction_level": 0.013953453437049339,
+          "coverage_breadth": 0.854591836734694,
+          "document_length": 0.592061224489796,
+          "code_to_prose_ratio": 0.7729591836734695,
+          "instruction_density": 0.8137755102040817
+        },
+        "recommendation": "\u2248 Observed \u0394P=+0.000: no measurable effect on pass rate (heuristic disagrees: \u2717 Skill too broad - may cause concept bleed)",
+        "confidence": 0.5
+      }
+    },
+    "summary": {
+      "task_id": "github-actions-templates",
+      "analysis_complete": true,
+      "modules_executed": [
+        "parsing",
+        "segmentation",
+        "alignment",
+        "sip_detection",
+        "quality_prediction"
+      ],
+      "dominant_sips": [
+        "redundant_exploration"
+      ],
+      "skill_utility": "neutral",
+      "skill_confidence": 0.5
+    }
+  },
+  "analytics-events": {
+    "task_id": "analytics-events",
+    "modules": {
+      "parsing": {
+        "traces_with_skill": 1,
+        "traces_without_skill": 1
+      },
+      "segmentation": {
+        "phased_traces_with_skill": 1,
+        "phased_traces_without_skill": 1
+      },
+      "alignment": {
+        "total_divergences": 23,
+        "divergence_statistics": {
+          "total_divergences": 23,
+          "by_type": {
+            "target_mismatch": 15,
+            "unilateral_action": 8
+          },
+          "by_phase": {
+            "orientation": 13,
+            "implementation": 5,
+            "validation": 2,
+            "debugging": 1,
+            "finalization": 2
+          },
+          "avg_skill_similarity": 0.2690793307965911
+        }
+      },
+      "sip_detection": {
+        "total_sips": 20,
+        "sip_statistics": {
+          "total_sips": 20,
+          "by_type": {
+            "edge_case_prompting": {
+              "count": 8,
+              "avg_confidence": 0.5625,
+              "category": "constructive"
+            },
+            "surface_anchoring": {
+              "count": 7,
+              "avg_confidence": 0.4714285714285714,
+              "category": "destructive"
+            },
+            "concept_bleed": {
+              "count": 5,
+              "avg_confidence": 0.64,
+              "category": "destructive"
+            }
+          },
+          "avg_confidence": 0.5499999999999999
+        }
+      },
+      "quality_prediction": {
+        "skill_id": "analytics-events",
+        "utility_class": "neutral",
+        "probability": {
+          "positive": 0.25,
+          "neutral": 0.5,
+          "negative": 0.25
+        },
+        "feature_importance": {
+          "template_specificity": 1.0,
+          "abstraction_level": 0.00869622292678252,
+          "coverage_breadth": 0.8388704318936877,
+          "document_length": 0.33319933554817277,
+          "code_to_prose_ratio": 0.6993355481727574,
+          "instruction_density": 0.7990033222591362
+        },
+        "recommendation": "\u2248 Observed \u0394P=+0.000: no measurable effect on pass rate (heuristic disagrees: \u2717 Skill too broad - may cause concept bleed)",
+        "confidence": 0.5
+      }
+    },
+    "summary": {
+      "task_id": "analytics-events",
+      "analysis_complete": true,
+      "modules_executed": [
+        "parsing",
+        "segmentation",
+        "alignment",
+        "sip_detection",
+        "quality_prediction"
+      ],
+      "dominant_sips": [
+        "edge_case_prompting",
+        "surface_anchoring",
+        "concept_bleed"
+      ],
+      "skill_utility": "neutral",
+      "skill_confidence": 0.5
+    }
+  },
+  "prometheus-configuration": {
+    "task_id": "prometheus-configuration",
+    "modules": {
+      "parsing": {
+        "traces_with_skill": 1,
+        "traces_without_skill": 1
+      },
+      "segmentation": {
+        "phased_traces_with_skill": 1,
+        "phased_traces_without_skill": 1
+      },
+      "alignment": {
+        "total_divergences": 16,
+        "divergence_statistics": {
+          "total_divergences": 16,
+          "by_type": {
+            "target_mismatch": 16
+          },
+          "by_phase": {
+            "orientation": 6,
+            "implementation": 1,
+            "finalization": 9
+          },
+          "avg_skill_similarity": 0.2599742572403226
+        }
+      },
+      "sip_detection": {
+        "total_sips": 3,
+        "sip_statistics": {
+          "total_sips": 3,
+          "by_type": {
+            "redundant_exploration": {
+              "count": 1,
+              "avg_confidence": 0.5,
+              "category": "neutral"
+            },
+            "concept_bleed": {
+              "count": 2,
+              "avg_confidence": 0.6,
+              "category": "destructive"
+            }
+          },
+          "avg_confidence": 0.5666666666666667
+        }
+      },
+      "quality_prediction": {
+        "skill_id": "prometheus-configuration",
+        "utility_class": "neutral",
+        "probability": {
+          "positive": 0.25,
+          "neutral": 0.5,
+          "negative": 0.25
+        },
+        "feature_importance": {
+          "template_specificity": 1.0,
+          "abstraction_level": 0.007619282624590155,
+          "coverage_breadth": 0.8619948409286329,
+          "document_length": 0.541677558039553,
+          "code_to_prose_ratio": 0.741616509028375,
+          "instruction_density": 0.8404987102321582
+        },
+        "recommendation": "\u2248 Observed \u0394P=+0.000: no measurable effect on pass rate (heuristic disagrees: \u2717 Skill too broad - may cause concept bleed)",
+        "confidence": 0.5
+      }
+    },
+    "summary": {
+      "task_id": "prometheus-configuration",
+      "analysis_complete": true,
+      "modules_executed": [
+        "parsing",
+        "segmentation",
+        "alignment",
+        "sip_detection",
+        "quality_prediction"
+      ],
+      "dominant_sips": [
+        "concept_bleed",
+        "redundant_exploration"
+      ],
+      "skill_utility": "neutral",
+      "skill_confidence": 0.5
+    }
+  },
+  "python-anti-patterns": {
+    "task_id": "python-anti-patterns",
+    "modules": {
+      "parsing": {
+        "traces_with_skill": 1,
+        "traces_without_skill": 1
+      },
+      "segmentation": {
+        "phased_traces_with_skill": 1,
+        "phased_traces_without_skill": 1
+      },
+      "alignment": {
+        "total_divergences": 14,
+        "divergence_statistics": {
+          "total_divergences": 14,
+          "by_type": {
+            "target_mismatch": 7,
+            "unilateral_action": 7
+          },
+          "by_phase": {
+            "orientation": 5,
+            "implementation": 6,
+            "validation": 1,
+            "debugging": 2
+          },
+          "avg_skill_similarity": 0.20544867656151605
+        }
+      },
+      "sip_detection": {
+        "total_sips": 8,
+        "sip_statistics": {
+          "total_sips": 8,
+          "by_type": {
+            "procedural_scaffolding": {
+              "count": 1,
+              "avg_confidence": 0.7000000000000001,
+              "category": "constructive"
+            },
+            "edge_case_prompting": {
+              "count": 7,
+              "avg_confidence": 0.5499999999999999,
+              "category": "constructive"
+            }
+          },
+          "avg_confidence": 0.5687500000000001
+        }
+      },
+      "quality_prediction": {
+        "skill_id": "python-anti-patterns",
+        "utility_class": "neutral",
+        "probability": {
+          "positive": 0.25,
+          "neutral": 0.5,
+          "negative": 0.25
+        },
+        "feature_importance": {
+          "template_specificity": 1.0,
+          "abstraction_level": 0.0010408897168423094,
+          "coverage_breadth": 0.8454106280193237,
+          "document_length": 0.4872946859903382,
+          "code_to_prose_ratio": 0.5942028985507246,
+          "instruction_density": 0.8067632850241546
+        },
+        "recommendation": "\u2248 Observed \u0394P=+0.000: no measurable effect on pass rate (heuristic disagrees: \u2717 Skill too broad - may cause concept bleed)",
+        "confidence": 0.5
+      }
+    },
+    "summary": {
+      "task_id": "python-anti-patterns",
+      "analysis_complete": true,
+      "modules_executed": [
+        "parsing",
+        "segmentation",
+        "alignment",
+        "sip_detection",
+        "quality_prediction"
+      ],
+      "dominant_sips": [
+        "edge_case_prompting",
+        "procedural_scaffolding"
+      ],
+      "skill_utility": "neutral",
+      "skill_confidence": 0.5
+    }
+  },
+  "implementing-jsc-classes-zig": {
+    "task_id": "implementing-jsc-classes-zig",
+    "modules": {
+      "parsing": {
+        "traces_with_skill": 1,
+        "traces_without_skill": 1
+      },
+      "segmentation": {
+        "phased_traces_with_skill": 1,
+        "phased_traces_without_skill": 1
+      },
+      "alignment": {
+        "total_divergences": 12,
+        "divergence_statistics": {
+          "total_divergences": 12,
+          "by_type": {
+            "target_mismatch": 8,
+            "unilateral_action": 4
+          },
+          "by_phase": {
+            "orientation": 7,
+            "implementation": 3,
+            "validation": 1,
+            "debugging": 1
+          },
+          "avg_skill_similarity": 0.29392000564209925
+        }
+      },
+      "sip_detection": {
+        "total_sips": 13,
+        "sip_statistics": {
+          "total_sips": 13,
+          "by_type": {
+            "edge_case_prompting": {
+              "count": 4,
+              "avg_confidence": 0.5750000000000001,
+              "category": "constructive"
+            },
+            "surface_anchoring": {
+              "count": 7,
+              "avg_confidence": 0.5785714285714286,
+              "category": "destructive"
+            },
+            "concept_bleed": {
+              "count": 2,
+              "avg_confidence": 0.675,
+              "category": "destructive"
+            }
+          },
+          "avg_confidence": 0.5923076923076923
+        }
+      },
+      "quality_prediction": {
+        "skill_id": "implementing-jsc-classes-zig",
+        "utility_class": "neutral",
+        "probability": {
+          "positive": 0.25,
+          "neutral": 0.5,
+          "negative": 0.25
+        },
+        "feature_importance": {
+          "template_specificity": 1.0,
+          "abstraction_level": 0.011078903199287527,
+          "coverage_breadth": 0.8400974025974026,
+          "document_length": 0.6485551948051949,
+          "code_to_prose_ratio": 0.7102272727272727,
+          "instruction_density": 0.8157467532467533
+        },
+        "recommendation": "\u2248 Observed \u0394P=+0.000: no measurable effect on pass rate (heuristic disagrees: \u2717 Skill too broad - may cause concept bleed)",
+        "confidence": 0.5
+      }
+    },
+    "summary": {
+      "task_id": "implementing-jsc-classes-zig",
+      "analysis_complete": true,
+      "modules_executed": [
+        "parsing",
+        "segmentation",
+        "alignment",
+        "sip_detection",
+        "quality_prediction"
+      ],
+      "dominant_sips": [
+        "surface_anchoring",
+        "edge_case_prompting",
+        "concept_bleed"
+      ],
+      "skill_utility": "neutral",
+      "skill_confidence": 0.5
+    }
+  },
+  "add-malli-schemas": {
+    "task_id": "add-malli-schemas",
+    "modules": {
+      "parsing": {
+        "traces_with_skill": 1,
+        "traces_without_skill": 1
+      },
+      "segmentation": {
+        "phased_traces_with_skill": 1,
+        "phased_traces_without_skill": 1
+      },
+      "alignment": {
+        "total_divergences": 22,
+        "divergence_statistics": {
+          "total_divergences": 22,
+          "by_type": {
+            "target_mismatch": 18,
+            "unilateral_action": 4
+          },
+          "by_phase": {
+            "orientation": 15,
+            "implementation": 2,
+            "validation": 1,
+            "finalization": 4
+          },
+          "avg_skill_similarity": 0.3046593899536224
+        }
+      },
+      "sip_detection": {
+        "total_sips": 12,
+        "sip_statistics": {
+          "total_sips": 12,
+          "by_type": {
+            "edge_case_prompting": {
+              "count": 4,
+              "avg_confidence": 0.6000000000000001,
+              "category": "constructive"
+            },
+            "redundant_exploration": {
+              "count": 1,
+              "avg_confidence": 0.5,
+              "category": "neutral"
+            },
+            "concept_bleed": {
+              "count": 7,
+              "avg_confidence": 0.6428571428571429,
+              "category": "destructive"
+            }
+          },
+          "avg_confidence": 0.6166666666666667
+        }
+      },
+      "quality_prediction": {
+        "skill_id": "add-malli-schemas",
+        "utility_class": "neutral",
+        "probability": {
+          "positive": 0.25,
+          "neutral": 0.5,
+          "negative": 0.25
+        },
+        "feature_importance": {
+          "template_specificity": 1.0,
+          "abstraction_level": 0.004530040640936036,
+          "coverage_breadth": 0.8333333333333334,
+          "document_length": 0.3016666666666667,
+          "code_to_prose_ratio": 0.6274742676167855,
+          "instruction_density": 0.7541567695961996
+        },
+        "recommendation": "\u2248 Observed \u0394P=+0.000: no measurable effect on pass rate (heuristic disagrees: \u2717 Skill too broad - may cause concept bleed)",
+        "confidence": 0.5
+      }
+    },
+    "summary": {
+      "task_id": "add-malli-schemas",
+      "analysis_complete": true,
+      "modules_executed": [
+        "parsing",
+        "segmentation",
+        "alignment",
+        "sip_detection",
+        "quality_prediction"
+      ],
+      "dominant_sips": [
+        "concept_bleed",
+        "edge_case_prompting",
+        "redundant_exploration"
+      ],
+      "skill_utility": "neutral",
+      "skill_confidence": 0.5
+    }
+  },
+  "clojure-write": {
+    "task_id": "clojure-write",
+    "modules": {
+      "parsing": {
+        "traces_with_skill": 1,
+        "traces_without_skill": 1
+      },
+      "segmentation": {
+        "phased_traces_with_skill": 1,
+        "phased_traces_without_skill": 1
+      },
+      "alignment": {
+        "total_divergences": 28,
+        "divergence_statistics": {
+          "total_divergences": 28,
+          "by_type": {
+            "target_mismatch": 18,
+            "unilateral_action": 10
+          },
+          "by_phase": {
+            "orientation": 8,
+            "implementation": 12,
+            "validation": 5,
+            "finalization": 3
+          },
+          "avg_skill_similarity": 0.27419572772076933
+        }
+      },
+      "sip_detection": {
+        "total_sips": 17,
+        "sip_statistics": {
+          "total_sips": 17,
+          "by_type": {
+            "edge_case_prompting": {
+              "count": 10,
+              "avg_confidence": 0.6199999999999999,
+              "category": "constructive"
+            },
+            "redundant_exploration": {
+              "count": 2,
+              "avg_confidence": 0.5,
+              "category": "neutral"
+            },
+            "concept_bleed": {
+              "count": 5,
+              "avg_confidence": 0.6,
+              "category": "destructive"
+            }
+          },
+          "avg_confidence": 0.6000000000000001
+        }
+      },
+      "quality_prediction": {
+        "skill_id": "clojure-write",
+        "utility_class": "neutral",
+        "probability": {
+          "positive": 0.25,
+          "neutral": 0.5,
+          "negative": 0.25
+        },
+        "feature_importance": {
+          "template_specificity": 1.0,
+          "abstraction_level": 0.0,
+          "coverage_breadth": 0.8333333333333334,
+          "document_length": 0.6733333333333335,
+          "code_to_prose_ratio": 0.7857142857142857,
+          "instruction_density": 0.6666666666666667
+        },
+        "recommendation": "\u2248 Observed \u0394P=+0.000: no measurable effect on pass rate (heuristic disagrees: \u2717 Skill too broad - may cause concept bleed)",
+        "confidence": 0.5
+      }
+    },
+    "summary": {
+      "task_id": "clojure-write",
+      "analysis_complete": true,
+      "modules_executed": [
+        "parsing",
+        "segmentation",
+        "alignment",
+        "sip_detection",
+        "quality_prediction"
+      ],
+      "dominant_sips": [
+        "edge_case_prompting",
+        "concept_bleed",
+        "redundant_exploration"
+      ],
+      "skill_utility": "neutral",
+      "skill_confidence": 0.5
+    }
+  },
+  "django-patterns": {
+    "task_id": "django-patterns",
+    "modules": {
+      "parsing": {
+        "traces_with_skill": 1,
+        "traces_without_skill": 1
+      },
+      "segmentation": {
+        "phased_traces_with_skill": 1,
+        "phased_traces_without_skill": 1
+      },
+      "alignment": {
+        "total_divergences": 17,
+        "divergence_statistics": {
+          "total_divergences": 17,
+          "by_type": {
+            "target_mismatch": 10,
+            "unilateral_action": 7
+          },
+          "by_phase": {
+            "orientation": 7,
+            "implementation": 4,
+            "validation": 4,
+            "debugging": 1,
+            "finalization": 1
+          },
+          "avg_skill_similarity": 0.19483441912292482
+        }
+      },
+      "sip_detection": {
+        "total_sips": 26,
+        "sip_statistics": {
+          "total_sips": 26,
+          "by_type": {
+            "edge_case_prompting": {
+              "count": 8,
+              "avg_confidence": 0.7437500000000001,
+              "category": "constructive"
+            },
+            "surface_anchoring": {
+              "count": 16,
+              "avg_confidence": 0.7093750000000001,
+              "category": "destructive"
+            },
+            "concept_bleed": {
+              "count": 2,
+              "avg_confidence": 0.6,
+              "category": "destructive"
+            }
+          },
+          "avg_confidence": 0.7115384615384616
+        }
+      },
+      "quality_prediction": {
+        "skill_id": "django-patterns",
+        "utility_class": "neutral",
+        "probability": {
+          "positive": 0.25,
+          "neutral": 0.5,
+          "negative": 0.25
+        },
+        "feature_importance": {
+          "template_specificity": 1.0,
+          "abstraction_level": 0.0018505556095358797,
+          "coverage_breadth": 0.8371350364963505,
+          "document_length": 0.2538193430656935,
+          "code_to_prose_ratio": 0.7550182481751826,
+          "instruction_density": 0.8302919708029198
+        },
+        "recommendation": "\u2248 Observed \u0394P=+0.000: no measurable effect on pass rate (heuristic disagrees: \u2717 Skill too broad - may cause concept bleed)",
+        "confidence": 0.5
+      }
+    },
+    "summary": {
+      "task_id": "django-patterns",
+      "analysis_complete": true,
+      "modules_executed": [
+        "parsing",
+        "segmentation",
+        "alignment",
+        "sip_detection",
+        "quality_prediction"
+      ],
+      "dominant_sips": [
+        "surface_anchoring",
+        "edge_case_prompting",
+        "concept_bleed"
+      ],
+      "skill_utility": "neutral",
+      "skill_confidence": 0.5
+    }
+  },
+  "python-background-jobs": {
+    "task_id": "python-background-jobs",
+    "modules": {
+      "parsing": {
+        "traces_with_skill": 1,
+        "traces_without_skill": 1
+      },
+      "segmentation": {
+        "phased_traces_with_skill": 1,
+        "phased_traces_without_skill": 1
+      },
+      "alignment": {
+        "total_divergences": 6,
+        "divergence_statistics": {
+          "total_divergences": 6,
+          "by_type": {
+            "target_mismatch": 6
+          },
+          "by_phase": {
+            "implementation": 6
+          },
+          "avg_skill_similarity": 0.2905682445002908
+        }
+      },
+      "sip_detection": {
+        "total_sips": 5,
+        "sip_statistics": {
+          "total_sips": 5,
+          "by_type": {
+            "edge_case_prompting": {
+              "count": 5,
+              "avg_confidence": 0.6000000000000001,
+              "category": "constructive"
+            }
+          },
+          "avg_confidence": 0.6000000000000001
+        }
+      },
+      "quality_prediction": {
+        "skill_id": "python-background-jobs",
+        "utility_class": "neutral",
+        "probability": {
+          "positive": 0.25,
+          "neutral": 0.5,
+          "negative": 0.25
+        },
+        "feature_importance": {
+          "template_specificity": 1.0,
+          "abstraction_level": 0.0020864846800576916,
+          "coverage_breadth": 0.8410138248847926,
+          "document_length": 0.45111981566820275,
+          "code_to_prose_ratio": 0.7488479262672811,
+          "instruction_density": 0.8133640552995391
+        },
+        "recommendation": "\u2248 Observed \u0394P=+0.000: no measurable effect on pass rate (heuristic disagrees: \u2717 Skill too broad - may cause concept bleed)",
+        "confidence": 0.5
+      }
+    },
+    "summary": {
+      "task_id": "python-background-jobs",
+      "analysis_complete": true,
+      "modules_executed": [
+        "parsing",
+        "segmentation",
+        "alignment",
+        "sip_detection",
+        "quality_prediction"
+      ],
+      "dominant_sips": [
+        "edge_case_prompting"
+      ],
+      "skill_utility": "neutral",
+      "skill_confidence": 0.5
+    }
+  },
+  "python-configuration": {
+    "task_id": "python-configuration",
+    "modules": {
+      "parsing": {
+        "traces_with_skill": 1,
+        "traces_without_skill": 1
+      },
+      "segmentation": {
+        "phased_traces_with_skill": 1,
+        "phased_traces_without_skill": 1
+      },
+      "alignment": {
+        "total_divergences": 12,
+        "divergence_statistics": {
+          "total_divergences": 12,
+          "by_type": {
+            "target_mismatch": 11,
+            "unilateral_action": 1
+          },
+          "by_phase": {
+            "orientation": 12
+          },
+          "avg_skill_similarity": 0.22502560955042006
+        }
+      },
+      "sip_detection": {
+        "total_sips": 4,
+        "sip_statistics": {
+          "total_sips": 4,
+          "by_type": {
+            "edge_case_prompting": {
+              "count": 1,
+              "avg_confidence": 0.55,
+              "category": "constructive"
+            },
+            "redundant_exploration": {
+              "count": 1,
+              "avg_confidence": 0.5,
+              "category": "neutral"
+            },
+            "concept_bleed": {
+              "count": 2,
+              "avg_confidence": 0.6,
+              "category": "destructive"
+            }
+          },
+          "avg_confidence": 0.5625
+        }
+      },
+      "quality_prediction": {
+        "skill_id": "python-configuration",
+        "utility_class": "neutral",
+        "probability": {
+          "positive": 0.25,
+          "neutral": 0.5,
+          "negative": 0.25
+        },
+        "feature_importance": {
+          "template_specificity": 1.0,
+          "abstraction_level": 0.0012420516866609899,
+          "coverage_breadth": 0.8853166986564299,
+          "document_length": 0.5046305182341652,
+          "code_to_prose_ratio": 0.7509596928982726,
+          "instruction_density": 0.8469289827255279
+        },
+        "recommendation": "\u2248 Observed \u0394P=+0.000: no measurable effect on pass rate (heuristic disagrees: \u2717 Skill too broad - may cause concept bleed)",
+        "confidence": 0.5
+      }
+    },
+    "summary": {
+      "task_id": "python-configuration",
+      "analysis_complete": true,
+      "modules_executed": [
+        "parsing",
+        "segmentation",
+        "alignment",
+        "sip_detection",
+        "quality_prediction"
+      ],
+      "dominant_sips": [
+        "concept_bleed",
+        "edge_case_prompting",
+        "redundant_exploration"
+      ],
+      "skill_utility": "neutral",
+      "skill_confidence": 0.5
+    }
+  },
+  "creating-financial-models": {
+    "task_id": "creating-financial-models",
+    "modules": {
+      "parsing": {
+        "traces_with_skill": 1,
+        "traces_without_skill": 1
+      },
+      "segmentation": {
+        "phased_traces_with_skill": 1,
+        "phased_traces_without_skill": 1
+      },
+      "alignment": {
+        "total_divergences": 9,
+        "divergence_statistics": {
+          "total_divergences": 9,
+          "by_type": {
+            "target_mismatch": 7,
+            "unilateral_action": 2
+          },
+          "by_phase": {
+            "orientation": 8,
+            "implementation": 1
+          },
+          "avg_skill_similarity": 0.2537964470251282
+        }
+      },
+      "sip_detection": {
+        "total_sips": 14,
+        "sip_statistics": {
+          "total_sips": 14,
+          "by_type": {
+            "procedural_scaffolding": {
+              "count": 7,
+              "avg_confidence": 0.65,
+              "category": "constructive"
+            },
+            "edge_case_prompting": {
+              "count": 2,
+              "avg_confidence": 0.6000000000000001,
+              "category": "constructive"
+            },
+            "redundant_exploration": {
+              "count": 4,
+              "avg_confidence": 0.5,
+              "category": "neutral"
+            },
+            "concept_bleed": {
+              "count": 1,
+              "avg_confidence": 0.6499999999999999,
+              "category": "destructive"
+            }
+          },
+          "avg_confidence": 0.6
+        }
+      },
+      "quality_prediction": {
+        "skill_id": "creating-financial-models",
+        "utility_class": "neutral",
+        "probability": {
+          "positive": 0.25,
+          "neutral": 0.5,
+          "negative": 0.25
+        },
+        "feature_importance": {
+          "template_specificity": 1.0,
+          "abstraction_level": 0.0,
+          "coverage_breadth": 0.8333333333333334,
+          "document_length": 0.5966666666666667,
+          "code_to_prose_ratio": 0.8333333333333334,
+          "instruction_density": 0.7854406130268199
+        },
+        "recommendation": "\u2248 Observed \u0394P=+0.000: no measurable effect on pass rate (heuristic disagrees: \u2717 Skill too broad - may cause concept bleed)",
+        "confidence": 0.5
+      }
+    },
+    "summary": {
+      "task_id": "creating-financial-models",
+      "analysis_complete": true,
+      "modules_executed": [
+        "parsing",
+        "segmentation",
+        "alignment",
+        "sip_detection",
+        "quality_prediction"
+      ],
+      "dominant_sips": [
+        "procedural_scaffolding",
+        "redundant_exploration",
+        "edge_case_prompting"
+      ],
+      "skill_utility": "neutral",
+      "skill_confidence": 0.5
+    }
+  },
+  "prompt-engineering-patterns": {
+    "task_id": "prompt-engineering-patterns",
+    "modules": {
+      "parsing": {
+        "traces_with_skill": 1,
+        "traces_without_skill": 1
+      },
+      "segmentation": {
+        "phased_traces_with_skill": 1,
+        "phased_traces_without_skill": 1
+      },
+      "alignment": {
+        "total_divergences": 9,
+        "divergence_statistics": {
+          "total_divergences": 9,
+          "by_type": {
+            "target_mismatch": 9
+          },
+          "by_phase": {
+            "implementation": 9
+          },
+          "avg_skill_similarity": 0.23249919605373817
+        }
+      },
+      "sip_detection": {
+        "total_sips": 0,
+        "sip_statistics": {
+          "total_sips": 0,
+          "by_type": {}
+        }
+      },
+      "quality_prediction": {
+        "skill_id": "prompt-engineering-patterns",
+        "utility_class": "negative",
+        "probability": {
+          "positive": 0.22499999999999998,
+          "neutral": 0.22499999999999998,
+          "negative": 0.55
+        },
+        "feature_importance": {
+          "template_specificity": 1.0,
+          "abstraction_level": 0.0012360509811062878,
+          "coverage_breadth": 0.8617747440273038,
+          "document_length": 0.5549829351535837,
+          "code_to_prose_ratio": 0.7935153583617748,
+          "instruction_density": 0.8191126279863481
+        },
+        "recommendation": "\u2717 Observed \u0394P=-0.200: skill hurts task pass rate",
+        "confidence": 0.55
+      }
+    },
+    "summary": {
+      "task_id": "prompt-engineering-patterns",
+      "analysis_complete": true,
+      "modules_executed": [
+        "parsing",
+        "segmentation",
+        "alignment",
+        "sip_detection",
+        "quality_prediction"
+      ],
+      "dominant_sips": [],
+      "skill_utility": "negative",
+      "skill_confidence": 0.55
+    }
+  },
+  "risk-metrics-calculation": {
+    "task_id": "risk-metrics-calculation",
+    "modules": {
+      "parsing": {
+        "traces_with_skill": 1,
+        "traces_without_skill": 1
+      },
+      "segmentation": {
+        "phased_traces_with_skill": 1,
+        "phased_traces_without_skill": 1
+      },
+      "alignment": {
+        "total_divergences": 14,
+        "divergence_statistics": {
+          "total_divergences": 14,
+          "by_type": {
+            "target_mismatch": 9,
+            "unilateral_action": 5
+          },
+          "by_phase": {
+            "orientation": 7,
+            "implementation": 4,
+            "validation": 1,
+            "finalization": 2
+          },
+          "avg_skill_similarity": 0.19742459065273338
+        }
+      },
+      "sip_detection": {
+        "total_sips": 21,
+        "sip_statistics": {
+          "total_sips": 21,
+          "by_type": {
+            "edge_case_prompting": {
+              "count": 6,
+              "avg_confidence": 0.6833333333333335,
+              "category": "constructive"
+            },
+            "redundant_exploration": {
+              "count": 1,
+              "avg_confidence": 0.5,
+              "category": "neutral"
+            },
+            "surface_anchoring": {
+              "count": 11,
+              "avg_confidence": 0.6227272727272729,
+              "category": "destructive"
+            },
+            "concept_bleed": {
+              "count": 3,
+              "avg_confidence": 0.6,
+              "category": "destructive"
+            }
+          },
+          "avg_confidence": 0.6309523809523809
+        }
+      },
+      "quality_prediction": {
+        "skill_id": "risk-metrics-calculation",
+        "utility_class": "neutral",
+        "probability": {
+          "positive": 0.25,
+          "neutral": 0.5,
+          "negative": 0.25
+        },
+        "feature_importance": {
+          "template_specificity": 1.0,
+          "abstraction_level": 0.0022260877957537163,
+          "coverage_breadth": 0.8485401459854015,
+          "document_length": 0.2270693430656934,
+          "code_to_prose_ratio": 0.812043795620438,
+          "instruction_density": 0.8302919708029197
+        },
+        "recommendation": "\u2248 Observed \u0394P=+0.000: no measurable effect on pass rate (heuristic disagrees: \u2717 Skill too broad - may cause concept bleed)",
+        "confidence": 0.5
+      }
+    },
+    "summary": {
+      "task_id": "risk-metrics-calculation",
+      "analysis_complete": true,
+      "modules_executed": [
+        "parsing",
+        "segmentation",
+        "alignment",
+        "sip_detection",
+        "quality_prediction"
+      ],
+      "dominant_sips": [
+        "surface_anchoring",
+        "edge_case_prompting",
+        "concept_bleed"
+      ],
+      "skill_utility": "neutral",
+      "skill_confidence": 0.5
+    }
+  },
+  "vector-index-tuning": {
+    "task_id": "vector-index-tuning",
+    "modules": {
+      "parsing": {
+        "traces_with_skill": 1,
+        "traces_without_skill": 1
+      },
+      "segmentation": {
+        "phased_traces_with_skill": 1,
+        "phased_traces_without_skill": 1
+      },
+      "alignment": {
+        "total_divergences": 23,
+        "divergence_statistics": {
+          "total_divergences": 23,
+          "by_type": {
+            "target_mismatch": 11,
+            "unilateral_action": 12
+          },
+          "by_phase": {
+            "orientation": 8,
+            "implementation": 8,
+            "validation": 1,
+            "finalization": 6
+          },
+          "avg_skill_similarity": 0.19504181958560193
+        }
+      },
+      "sip_detection": {
+        "total_sips": 40,
+        "sip_statistics": {
+          "total_sips": 40,
+          "by_type": {
+            "edge_case_prompting": {
+              "count": 21,
+              "avg_confidence": 0.7285714285714286,
+              "category": "constructive"
+            },
+            "surface_anchoring": {
+              "count": 15,
+              "avg_confidence": 0.6033333333333335,
+              "category": "destructive"
+            },
+            "concept_bleed": {
+              "count": 4,
+              "avg_confidence": 0.6,
+              "category": "destructive"
+            }
+          },
+          "avg_confidence": 0.66875
+        }
+      },
+      "quality_prediction": {
+        "skill_id": "vector-index-tuning",
+        "utility_class": "neutral",
+        "probability": {
+          "positive": 0.25,
+          "neutral": 0.5,
+          "negative": 0.25
+        },
+        "feature_importance": {
+          "template_specificity": 1.0,
+          "abstraction_level": 0.0019573302016050106,
+          "coverage_breadth": 0.8333333333333334,
+          "document_length": 0.3426666666666667,
+          "code_to_prose_ratio": 0.7951653944020357,
+          "instruction_density": 0.8174300254452926
+        },
+        "recommendation": "\u2248 Observed \u0394P=+0.000: no measurable effect on pass rate (heuristic disagrees: \u2717 Skill too broad - may cause concept bleed)",
+        "confidence": 0.5
+      }
+    },
+    "summary": {
+      "task_id": "vector-index-tuning",
+      "analysis_complete": true,
+      "modules_executed": [
+        "parsing",
+        "segmentation",
+        "alignment",
+        "sip_detection",
+        "quality_prediction"
+      ],
+      "dominant_sips": [
+        "edge_case_prompting",
+        "surface_anchoring",
+        "concept_bleed"
+      ],
+      "skill_utility": "neutral",
+      "skill_confidence": 0.5
+    }
+  },
+  "rag-implementation": {
+    "task_id": "rag-implementation",
+    "modules": {
+      "parsing": {
+        "traces_with_skill": 1,
+        "traces_without_skill": 1
+      },
+      "segmentation": {
+        "phased_traces_with_skill": 1,
+        "phased_traces_without_skill": 1
+      },
+      "alignment": {
+        "total_divergences": 12,
+        "divergence_statistics": {
+          "total_divergences": 12,
+          "by_type": {
+            "target_mismatch": 11,
+            "unilateral_action": 1
+          },
+          "by_phase": {
+            "orientation": 11,
+            "implementation": 1
+          },
+          "avg_skill_similarity": 0.2164340740951638
+        }
+      },
+      "sip_detection": {
+        "total_sips": 24,
+        "sip_statistics": {
+          "total_sips": 24,
+          "by_type": {
+            "edge_case_prompting": {
+              "count": 11,
+              "avg_confidence": 0.7772727272727273,
+              "category": "constructive"
+            },
+            "surface_anchoring": {
+              "count": 12,
+              "avg_confidence": 0.46666666666666673,
+              "category": "destructive"
+            },
+            "concept_bleed": {
+              "count": 1,
+              "avg_confidence": 0.6,
+              "category": "destructive"
+            }
+          },
+          "avg_confidence": 0.6145833333333334
+        }
+      },
+      "quality_prediction": {
+        "skill_id": "rag-implementation",
+        "utility_class": "neutral",
+        "probability": {
+          "positive": 0.25,
+          "neutral": 0.5,
+          "negative": 0.25
+        },
+        "feature_importance": {
+          "template_specificity": 1.0,
+          "abstraction_level": 0.002103437112019262,
+          "coverage_breadth": 0.8431777909037212,
+          "document_length": 0.2887040756054342,
+          "code_to_prose_ratio": 0.719137625516834,
+          "instruction_density": 0.8047844063792086
+        },
+        "recommendation": "\u2248 Observed \u0394P=+0.000: no measurable effect on pass rate (heuristic disagrees: \u2717 Skill too broad - may cause concept bleed)",
+        "confidence": 0.5
+      }
+    },
+    "summary": {
+      "task_id": "rag-implementation",
+      "analysis_complete": true,
+      "modules_executed": [
+        "parsing",
+        "segmentation",
+        "alignment",
+        "sip_detection",
+        "quality_prediction"
+      ],
+      "dominant_sips": [
+        "surface_anchoring",
+        "edge_case_prompting",
+        "concept_bleed"
+      ],
+      "skill_utility": "neutral",
+      "skill_confidence": 0.5
+    }
+  },
+  "spark-optimization": {
+    "task_id": "spark-optimization",
+    "modules": {
+      "parsing": {
+        "traces_with_skill": 1,
+        "traces_without_skill": 1
+      },
+      "segmentation": {
+        "phased_traces_with_skill": 1,
+        "phased_traces_without_skill": 1
+      },
+      "alignment": {
+        "total_divergences": 11,
+        "divergence_statistics": {
+          "total_divergences": 11,
+          "by_type": {
+            "target_mismatch": 4,
+            "unilateral_action": 7
+          },
+          "by_phase": {
+            "orientation": 5,
+            "implementation": 3,
+            "validation": 1,
+            "debugging": 1,
+            "finalization": 1
+          },
+          "avg_skill_similarity": 0.2721234602727586
+        }
+      },
+      "sip_detection": {
+        "total_sips": 15,
+        "sip_statistics": {
+          "total_sips": 15,
+          "by_type": {
+            "edge_case_prompting": {
+              "count": 7,
+              "avg_confidence": 0.8785714285714287,
+              "category": "constructive"
+            },
+            "surface_anchoring": {
+              "count": 6,
+              "avg_confidence": 0.6916666666666668,
+              "category": "destructive"
+            },
+            "concept_bleed": {
+              "count": 2,
+              "avg_confidence": 0.775,
+              "category": "destructive"
+            }
+          },
+          "avg_confidence": 0.7899999999999998
+        }
+      },
+      "quality_prediction": {
+        "skill_id": "spark-optimization",
+        "utility_class": "neutral",
+        "probability": {
+          "positive": 0.25,
+          "neutral": 0.5,
+          "negative": 0.25
+        },
+        "feature_importance": {
+          "template_specificity": 1.0,
+          "abstraction_level": 0.001405283867341203,
+          "coverage_breadth": 0.8333333333333334,
+          "document_length": 0.4093333333333333,
+          "code_to_prose_ratio": 0.7535885167464115,
+          "instruction_density": 0.7934609250398724
+        },
+        "recommendation": "\u2248 Observed \u0394P=+0.000: no measurable effect on pass rate (heuristic disagrees: \u2717 Skill too broad - may cause concept bleed)",
+        "confidence": 0.5
+      }
+    },
+    "summary": {
+      "task_id": "spark-optimization",
+      "analysis_complete": true,
+      "modules_executed": [
+        "parsing",
+        "segmentation",
+        "alignment",
+        "sip_detection",
+        "quality_prediction"
+      ],
+      "dominant_sips": [
+        "edge_case_prompting",
+        "surface_anchoring",
+        "concept_bleed"
+      ],
+      "skill_utility": "neutral",
+      "skill_confidence": 0.5
+    }
+  },
+  "similarity-search-patterns": {
+    "task_id": "similarity-search-patterns",
+    "modules": {
+      "parsing": {
+        "traces_with_skill": 1,
+        "traces_without_skill": 1
+      },
+      "segmentation": {
+        "phased_traces_with_skill": 1,
+        "phased_traces_without_skill": 1
+      },
+      "alignment": {
+        "total_divergences": 11,
+        "divergence_statistics": {
+          "total_divergences": 11,
+          "by_type": {
+            "target_mismatch": 10,
+            "unilateral_action": 1
+          },
+          "by_phase": {
+            "implementation": 11
+          },
+          "avg_skill_similarity": 0.1765284836260546
+        }
+      },
+      "sip_detection": {
+        "total_sips": 21,
+        "sip_statistics": {
+          "total_sips": 21,
+          "by_type": {
+            "edge_case_prompting": {
+              "count": 11,
+              "avg_confidence": 0.5045454545454545,
+              "category": "constructive"
+            },
+            "surface_anchoring": {
+              "count": 10,
+              "avg_confidence": 0.495,
+              "category": "destructive"
+            }
+          },
+          "avg_confidence": 0.4999999999999999
+        }
+      },
+      "quality_prediction": {
+        "skill_id": "similarity-search-patterns",
+        "utility_class": "neutral",
+        "probability": {
+          "positive": 0.25,
+          "neutral": 0.5,
+          "negative": 0.25
+        },
+        "feature_importance": {
+          "template_specificity": 1.0,
+          "abstraction_level": 0.0038016382417972033,
+          "coverage_breadth": 0.8408273381294965,
+          "document_length": 0.33498561151079137,
+          "code_to_prose_ratio": 0.8108513189448442,
+          "instruction_density": 0.8138489208633094
+        },
+        "recommendation": "\u2248 Observed \u0394P=+0.000: no measurable effect on pass rate (heuristic disagrees: \u2717 Skill too broad - may cause concept bleed)",
+        "confidence": 0.5
+      }
+    },
+    "summary": {
+      "task_id": "similarity-search-patterns",
+      "analysis_complete": true,
+      "modules_executed": [
+        "parsing",
+        "segmentation",
+        "alignment",
+        "sip_detection",
+        "quality_prediction"
+      ],
+      "dominant_sips": [
+        "edge_case_prompting",
+        "surface_anchoring"
+      ],
+      "skill_utility": "neutral",
+      "skill_confidence": 0.5
+    }
+  },
+  "llm-evaluation": {
+    "task_id": "llm-evaluation",
+    "modules": {
+      "parsing": {
+        "traces_with_skill": 1,
+        "traces_without_skill": 1
+      },
+      "segmentation": {
+        "phased_traces_with_skill": 1,
+        "phased_traces_without_skill": 1
+      },
+      "alignment": {
+        "total_divergences": 20,
+        "divergence_statistics": {
+          "total_divergences": 20,
+          "by_type": {
+            "target_mismatch": 13,
+            "unilateral_action": 7
+          },
+          "by_phase": {
+            "orientation": 8,
+            "implementation": 6,
+            "validation": 2,
+            "debugging": 3,
+            "finalization": 1
+          },
+          "avg_skill_similarity": 0.16391250741606267
+        }
+      },
+      "sip_detection": {
+        "total_sips": 16,
+        "sip_statistics": {
+          "total_sips": 16,
+          "by_type": {
+            "edge_case_prompting": {
+              "count": 8,
+              "avg_confidence": 0.55625,
+              "category": "constructive"
+            },
+            "surface_anchoring": {
+              "count": 7,
+              "avg_confidence": 0.5642857142857143,
+              "category": "destructive"
+            },
+            "concept_bleed": {
+              "count": 1,
+              "avg_confidence": 0.6,
+              "category": "destructive"
+            }
+          },
+          "avg_confidence": 0.5625
+        }
+      },
+      "quality_prediction": {
+        "skill_id": "llm-evaluation",
+        "utility_class": "neutral",
+        "probability": {
+          "positive": 0.25,
+          "neutral": 0.5,
+          "negative": 0.25
+        },
+        "feature_importance": {
+          "template_specificity": 1.0,
+          "abstraction_level": 0.0059591974395386575,
+          "coverage_breadth": 0.8475401850949831,
+          "document_length": 0.22781880175353147,
+          "code_to_prose_ratio": 0.7793472966390649,
+          "instruction_density": 0.8329274232830005
+        },
+        "recommendation": "\u2248 Observed \u0394P=+0.000: no measurable effect on pass rate (heuristic disagrees: \u2717 Skill too broad - may cause concept bleed)",
+        "confidence": 0.5
+      }
+    },
+    "summary": {
+      "task_id": "llm-evaluation",
+      "analysis_complete": true,
+      "modules_executed": [
+        "parsing",
+        "segmentation",
+        "alignment",
+        "sip_detection",
+        "quality_prediction"
+      ],
+      "dominant_sips": [
+        "edge_case_prompting",
+        "surface_anchoring",
+        "concept_bleed"
+      ],
+      "skill_utility": "neutral",
+      "skill_confidence": 0.5
+    }
+  },
+  "analyze-ci": {
+    "task_id": "analyze-ci",
+    "modules": {
+      "parsing": {
+        "traces_with_skill": 1,
+        "traces_without_skill": 1
+      },
+      "segmentation": {
+        "phased_traces_with_skill": 1,
+        "phased_traces_without_skill": 1
+      },
+      "alignment": {
+        "total_divergences": 9,
+        "divergence_statistics": {
+          "total_divergences": 9,
+          "by_type": {
+            "content_mismatch": 9
+          },
+          "by_phase": {
+            "orientation": 9
+          },
+          "avg_skill_similarity": 0.23177438670284398
+        }
+      },
+      "sip_detection": {
+        "total_sips": 0,
+        "sip_statistics": {
+          "total_sips": 0,
+          "by_type": {}
+        }
+      },
+      "quality_prediction": {
+        "skill_id": "analyze-ci",
+        "utility_class": "neutral",
+        "probability": {
+          "positive": 0.25,
+          "neutral": 0.5,
+          "negative": 0.25
+        },
+        "feature_importance": {
+          "template_specificity": 1.0,
+          "abstraction_level": 0.005241090146750524,
+          "coverage_breadth": 0.8333333333333334,
+          "document_length": 0.788,
+          "code_to_prose_ratio": 0.6666666666666667,
+          "instruction_density": 0.8333333333333334
+        },
+        "recommendation": "\u2248 Observed \u0394P=+0.000: no measurable effect on pass rate (heuristic disagrees: \u2717 Skill too broad - may cause concept bleed)",
+        "confidence": 0.5
+      }
+    },
+    "summary": {
+      "task_id": "analyze-ci",
+      "analysis_complete": true,
+      "modules_executed": [
+        "parsing",
+        "segmentation",
+        "alignment",
+        "sip_detection",
+        "quality_prediction"
+      ],
+      "dominant_sips": [],
+      "skill_utility": "neutral",
+      "skill_confidence": 0.5
+    }
+  },
+  "python-packaging": {
+    "task_id": "python-packaging",
+    "modules": {
+      "parsing": {
+        "traces_with_skill": 1,
+        "traces_without_skill": 1
+      },
+      "segmentation": {
+        "phased_traces_with_skill": 1,
+        "phased_traces_without_skill": 1
+      },
+      "alignment": {
+        "total_divergences": 7,
+        "divergence_statistics": {
+          "total_divergences": 7,
+          "by_type": {
+            "target_mismatch": 7
+          },
+          "by_phase": {
+            "orientation": 5,
+            "finalization": 2
+          },
+          "avg_skill_similarity": 0.28275714892059084
+        }
+      },
+      "sip_detection": {
+        "total_sips": 6,
+        "sip_statistics": {
+          "total_sips": 6,
+          "by_type": {
+            "redundant_exploration": {
+              "count": 1,
+              "avg_confidence": 0.5,
+              "category": "neutral"
+            },
+            "surface_anchoring": {
+              "count": 5,
+              "avg_confidence": 0.45999999999999996,
+              "category": "destructive"
+            }
+          },
+          "avg_confidence": 0.4666666666666666
+        }
+      },
+      "quality_prediction": {
+        "skill_id": "python-packaging",
+        "utility_class": "neutral",
+        "probability": {
+          "positive": 0.25,
+          "neutral": 0.5,
+          "negative": 0.25
+        },
+        "feature_importance": {
+          "template_specificity": 1.0,
+          "abstraction_level": 0.002493725336512666,
+          "coverage_breadth": 0.8607668474051123,
+          "document_length": 0.16044694035631293,
+          "code_to_prose_ratio": 0.7155305964368706,
+          "instruction_density": 0.8452749806351665
+        },
+        "recommendation": "\u2248 Observed \u0394P=+0.000: no measurable effect on pass rate (heuristic disagrees: \u2717 Skill too broad - may cause concept bleed)",
+        "confidence": 0.5
+      }
+    },
+    "summary": {
+      "task_id": "python-packaging",
+      "analysis_complete": true,
+      "modules_executed": [
+        "parsing",
+        "segmentation",
+        "alignment",
+        "sip_detection",
+        "quality_prediction"
+      ],
+      "dominant_sips": [
+        "surface_anchoring",
+        "redundant_exploration"
+      ],
+      "skill_utility": "neutral",
+      "skill_confidence": 0.5
+    }
+  },
+  "gitops-workflow": {
+    "task_id": "gitops-workflow",
+    "modules": {
+      "parsing": {
+        "traces_with_skill": 1,
+        "traces_without_skill": 1
+      },
+      "segmentation": {
+        "phased_traces_with_skill": 1,
+        "phased_traces_without_skill": 1
+      },
+      "alignment": {
+        "total_divergences": 8,
+        "divergence_statistics": {
+          "total_divergences": 8,
+          "by_type": {
+            "content_mismatch": 8
+          },
+          "by_phase": {
+            "implementation": 8
+          },
+          "avg_skill_similarity": 0.3381781654356453
+        }
+      },
+      "sip_detection": {
+        "total_sips": 0,
+        "sip_statistics": {
+          "total_sips": 0,
+          "by_type": {}
+        }
+      },
+      "quality_prediction": {
+        "skill_id": "gitops-workflow",
+        "utility_class": "neutral",
+        "probability": {
+          "positive": 0.25,
+          "neutral": 0.5,
+          "negative": 0.25
+        },
+        "feature_importance": {
+          "template_specificity": 1.0,
+          "abstraction_level": 0.001493144407659316,
+          "coverage_breadth": 0.8682634730538923,
+          "document_length": 0.6307065868263473,
+          "code_to_prose_ratio": 0.6886227544910181,
+          "instruction_density": 0.8263473053892216
+        },
+        "recommendation": "\u2248 Observed \u0394P=+0.000: no measurable effect on pass rate (heuristic disagrees: \u2717 Skill too broad - may cause concept bleed)",
+        "confidence": 0.5
+      }
+    },
+    "summary": {
+      "task_id": "gitops-workflow",
+      "analysis_complete": true,
+      "modules_executed": [
+        "parsing",
+        "segmentation",
+        "alignment",
+        "sip_detection",
+        "quality_prediction"
+      ],
+      "dominant_sips": [],
+      "skill_utility": "neutral",
+      "skill_confidence": 0.5
+    }
+  },
+  "linkerd-patterns": {
+    "task_id": "linkerd-patterns",
+    "modules": {
+      "parsing": {
+        "traces_with_skill": 1,
+        "traces_without_skill": 1
+      },
+      "segmentation": {
+        "phased_traces_with_skill": 1,
+        "phased_traces_without_skill": 1
+      },
+      "alignment": {
+        "total_divergences": 16,
+        "divergence_statistics": {
+          "total_divergences": 16,
+          "by_type": {
+            "target_mismatch": 16
+          },
+          "by_phase": {
+            "orientation": 16
+          },
+          "avg_skill_similarity": 0.2882306622008791
+        }
+      },
+      "sip_detection": {
+        "total_sips": 0,
+        "sip_statistics": {
+          "total_sips": 0,
+          "by_type": {}
+        }
+      },
+      "quality_prediction": {
+        "skill_id": "linkerd-patterns",
+        "utility_class": "neutral",
+        "probability": {
+          "positive": 0.25,
+          "neutral": 0.5,
+          "negative": 0.25
+        },
+        "feature_importance": {
+          "template_specificity": 1.0,
+          "abstraction_level": 0.00024285039108253365,
+          "coverage_breadth": 0.8904109589041096,
+          "document_length": 0.5965753424657534,
+          "code_to_prose_ratio": 0.776255707762557,
+          "instruction_density": 0.8732876712328766
+        },
+        "recommendation": "\u2248 Observed \u0394P=+0.000: no measurable effect on pass rate (heuristic disagrees: \u2717 Skill too broad - may cause concept bleed)",
+        "confidence": 0.5
+      }
+    },
+    "summary": {
+      "task_id": "linkerd-patterns",
+      "analysis_complete": true,
+      "modules_executed": [
+        "parsing",
+        "segmentation",
+        "alignment",
+        "sip_detection",
+        "quality_prediction"
+      ],
+      "dominant_sips": [],
+      "skill_utility": "neutral",
+      "skill_confidence": 0.5
+    }
+  },
+  "changelog-automation": {
+    "task_id": "changelog-automation",
+    "modules": {
+      "parsing": {
+        "traces_with_skill": 1,
+        "traces_without_skill": 1
+      },
+      "segmentation": {
+        "phased_traces_with_skill": 1,
+        "phased_traces_without_skill": 1
+      },
+      "alignment": {
+        "total_divergences": 8,
+        "divergence_statistics": {
+          "total_divergences": 8,
+          "by_type": {
+            "content_mismatch": 8
+          },
+          "by_phase": {
+            "implementation": 8
+          },
+          "avg_skill_similarity": 0.2564809820168925
+        }
+      },
+      "sip_detection": {
+        "total_sips": 0,
+        "sip_statistics": {
+          "total_sips": 0,
+          "by_type": {}
+        }
+      },
+      "quality_prediction": {
+        "skill_id": "changelog-automation",
+        "utility_class": "neutral",
+        "probability": {
+          "positive": 0.25,
+          "neutral": 0.5,
+          "negative": 0.25
+        },
+        "feature_importance": {
+          "template_specificity": 1.0,
+          "abstraction_level": 0.023453421298055336,
+          "coverage_breadth": 0.8529066353493835,
+          "document_length": 0.2661068702290077,
+          "code_to_prose_ratio": 0.764826776277158,
+          "instruction_density": 0.8323546682325309
+        },
+        "recommendation": "\u2248 Observed \u0394P=+0.000: no measurable effect on pass rate (heuristic disagrees: \u2717 Skill too broad - may cause concept bleed)",
+        "confidence": 0.5
+      }
+    },
+    "summary": {
+      "task_id": "changelog-automation",
+      "analysis_complete": true,
+      "modules_executed": [
+        "parsing",
+        "segmentation",
+        "alignment",
+        "sip_detection",
+        "quality_prediction"
+      ],
+      "dominant_sips": [],
+      "skill_utility": "neutral",
+      "skill_confidence": 0.5
+    }
+  },
+  "k8s-manifest-generator": {
+    "task_id": "k8s-manifest-generator",
+    "modules": {
+      "parsing": {
+        "traces_with_skill": 1,
+        "traces_without_skill": 1
+      },
+      "segmentation": {
+        "phased_traces_with_skill": 1,
+        "phased_traces_without_skill": 1
+      },
+      "alignment": {
+        "total_divergences": 14,
+        "divergence_statistics": {
+          "total_divergences": 14,
+          "by_type": {
+            "content_mismatch": 14
+          },
+          "by_phase": {
+            "implementation": 14
+          },
+          "avg_skill_similarity": 0.27019431103238295
+        }
+      },
+      "sip_detection": {
+        "total_sips": 16,
+        "sip_statistics": {
+          "total_sips": 16,
+          "by_type": {
+            "procedural_scaffolding": {
+              "count": 2,
+              "avg_confidence": 0.6,
+              "category": "constructive"
+            },
+            "surface_anchoring": {
+              "count": 14,
+              "avg_confidence": 0.6571428571428573,
+              "category": "destructive"
+            }
+          },
+          "avg_confidence": 0.65
+        }
+      },
+      "quality_prediction": {
+        "skill_id": "k8s-manifest-generator",
+        "utility_class": "neutral",
+        "probability": {
+          "positive": 0.25,
+          "neutral": 0.5,
+          "negative": 0.25
+        },
+        "feature_importance": {
+          "template_specificity": 1.0,
+          "abstraction_level": 0.004652533120475442,
+          "coverage_breadth": 0.8887043189368771,
+          "document_length": 0.36081395348837214,
+          "code_to_prose_ratio": 0.7956810631229236,
+          "instruction_density": 0.8156146179401994
+        },
+        "recommendation": "\u2248 Observed \u0394P=+0.000: no measurable effect on pass rate (heuristic disagrees: \u2717 Skill too broad - may cause concept bleed)",
+        "confidence": 0.5
+      }
+    },
+    "summary": {
+      "task_id": "k8s-manifest-generator",
+      "analysis_complete": true,
+      "modules_executed": [
+        "parsing",
+        "segmentation",
+        "alignment",
+        "sip_detection",
+        "quality_prediction"
+      ],
+      "dominant_sips": [
+        "surface_anchoring",
+        "procedural_scaffolding"
+      ],
+      "skill_utility": "neutral",
+      "skill_confidence": 0.5
+    }
+  },
+  "nx-workspace-patterns": {
+    "task_id": "nx-workspace-patterns",
+    "modules": {
+      "parsing": {
+        "traces_with_skill": 1,
+        "traces_without_skill": 1
+      },
+      "segmentation": {
+        "phased_traces_with_skill": 1,
+        "phased_traces_without_skill": 1
+      },
+      "alignment": {
+        "total_divergences": 13,
+        "divergence_statistics": {
+          "total_divergences": 13,
+          "by_type": {
+            "target_mismatch": 12,
+            "unilateral_action": 1
+          },
+          "by_phase": {
+            "implementation": 13
+          },
+          "avg_skill_similarity": 0.24620687618422055
+        }
+      },
+      "sip_detection": {
+        "total_sips": 13,
+        "sip_statistics": {
+          "total_sips": 13,
+          "by_type": {
+            "edge_case_prompting": {
+              "count": 1,
+              "avg_confidence": 0.55,
+              "category": "constructive"
+            },
+            "surface_anchoring": {
+              "count": 12,
+              "avg_confidence": 0.6666666666666666,
+              "category": "destructive"
+            }
+          },
+          "avg_confidence": 0.6576923076923078
+        }
+      },
+      "quality_prediction": {
+        "skill_id": "nx-workspace-patterns",
+        "utility_class": "neutral",
+        "probability": {
+          "positive": 0.25,
+          "neutral": 0.5,
+          "negative": 0.25
+        },
+        "feature_importance": {
+          "template_specificity": 1.0,
+          "abstraction_level": 0.01440443939923999,
+          "coverage_breadth": 0.8363769174579985,
+          "document_length": 0.5071789627465303,
+          "code_to_prose_ratio": 0.7779401022644266,
+          "instruction_density": 0.8217677136596054
+        },
+        "recommendation": "\u2248 Observed \u0394P=+0.000: no measurable effect on pass rate (heuristic disagrees: \u2717 Skill too broad - may cause concept bleed)",
+        "confidence": 0.5
+      }
+    },
+    "summary": {
+      "task_id": "nx-workspace-patterns",
+      "analysis_complete": true,
+      "modules_executed": [
+        "parsing",
+        "segmentation",
+        "alignment",
+        "sip_detection",
+        "quality_prediction"
+      ],
+      "dominant_sips": [
+        "surface_anchoring",
+        "edge_case_prompting"
+      ],
+      "skill_utility": "neutral",
+      "skill_confidence": 0.5
+    }
+  },
+  "bazel-build-optimization": {
+    "task_id": "bazel-build-optimization",
+    "modules": {
+      "parsing": {
+        "traces_with_skill": 1,
+        "traces_without_skill": 1
+      },
+      "segmentation": {
+        "phased_traces_with_skill": 1,
+        "phased_traces_without_skill": 1
+      },
+      "alignment": {
+        "total_divergences": 14,
+        "divergence_statistics": {
+          "total_divergences": 14,
+          "by_type": {
+            "target_mismatch": 13,
+            "unilateral_action": 1
+          },
+          "by_phase": {
+            "orientation": 13,
+            "finalization": 1
+          },
+          "avg_skill_similarity": 0.27002052039711577
+        }
+      },
+      "sip_detection": {
+        "total_sips": 10,
+        "sip_statistics": {
+          "total_sips": 10,
+          "by_type": {
+            "edge_case_prompting": {
+              "count": 1,
+              "avg_confidence": 0.7000000000000001,
+              "category": "constructive"
+            },
+            "surface_anchoring": {
+              "count": 8,
+              "avg_confidence": 0.6687500000000001,
+              "category": "destructive"
+            },
+            "concept_bleed": {
+              "count": 1,
+              "avg_confidence": 0.6,
+              "category": "destructive"
+            }
+          },
+          "avg_confidence": 0.665
+        }
+      },
+      "quality_prediction": {
+        "skill_id": "bazel-build-optimization",
+        "utility_class": "neutral",
+        "probability": {
+          "positive": 0.25,
+          "neutral": 0.5,
+          "negative": 0.25
+        },
+        "feature_importance": {
+          "template_specificity": 1.0,
+          "abstraction_level": 0.0007109645204883302,
+          "coverage_breadth": 0.8553791887125222,
+          "document_length": 0.5409417989417991,
+          "code_to_prose_ratio": 0.7760141093474427,
+          "instruction_density": 0.8333333333333335
+        },
+        "recommendation": "\u2248 Observed \u0394P=+0.000: no measurable effect on pass rate (heuristic disagrees: \u2717 Skill too broad - may cause concept bleed)",
+        "confidence": 0.5
+      }
+    },
+    "summary": {
+      "task_id": "bazel-build-optimization",
+      "analysis_complete": true,
+      "modules_executed": [
+        "parsing",
+        "segmentation",
+        "alignment",
+        "sip_detection",
+        "quality_prediction"
+      ],
+      "dominant_sips": [
+        "surface_anchoring",
+        "edge_case_prompting",
+        "concept_bleed"
+      ],
+      "skill_utility": "neutral",
+      "skill_confidence": 0.5
+    }
+  },
+  "istio-traffic-management": {
+    "task_id": "istio-traffic-management",
+    "modules": {
+      "parsing": {
+        "traces_with_skill": 1,
+        "traces_without_skill": 1
+      },
+      "segmentation": {
+        "phased_traces_with_skill": 1,
+        "phased_traces_without_skill": 1
+      },
+      "alignment": {
+        "total_divergences": 13,
+        "divergence_statistics": {
+          "total_divergences": 13,
+          "by_type": {
+            "content_mismatch": 13
+          },
+          "by_phase": {
+            "implementation": 13
+          },
+          "avg_skill_similarity": 0.2410749721241148
+        }
+      },
+      "sip_detection": {
+        "total_sips": 1,
+        "sip_statistics": {
+          "total_sips": 1,
+          "by_type": {
+            "surface_anchoring": {
+              "count": 1,
+              "avg_confidence": 0.5,
+              "category": "destructive"
+            }
+          },
+          "avg_confidence": 0.5
+        }
+      },
+      "quality_prediction": {
+        "skill_id": "istio-traffic-management",
+        "utility_class": "neutral",
+        "probability": {
+          "positive": 0.25,
+          "neutral": 0.5,
+          "negative": 0.25
+        },
+        "feature_importance": {
+          "template_specificity": 1.0,
+          "abstraction_level": 0.0,
+          "coverage_breadth": 0.9020902090209022,
+          "document_length": 0.643009900990099,
+          "code_to_prose_ratio": 0.7920792079207921,
+          "instruction_density": 0.8745874587458746
+        },
+        "recommendation": "\u2248 Observed \u0394P=+0.000: no measurable effect on pass rate (heuristic disagrees: \u2717 Skill too broad - may cause concept bleed)",
+        "confidence": 0.5
+      }
+    },
+    "summary": {
+      "task_id": "istio-traffic-management",
+      "analysis_complete": true,
+      "modules_executed": [
+        "parsing",
+        "segmentation",
+        "alignment",
+        "sip_detection",
+        "quality_prediction"
+      ],
+      "dominant_sips": [
+        "surface_anchoring"
+      ],
+      "skill_utility": "neutral",
+      "skill_confidence": 0.5
+    }
+  },
+  "bash-defensive-patterns": {
+    "task_id": "bash-defensive-patterns",
+    "modules": {
+      "parsing": {
+        "traces_with_skill": 1,
+        "traces_without_skill": 1
+      },
+      "segmentation": {
+        "phased_traces_with_skill": 1,
+        "phased_traces_without_skill": 1
+      },
+      "alignment": {
+        "total_divergences": 11,
+        "divergence_statistics": {
+          "total_divergences": 11,
+          "by_type": {
+            "target_mismatch": 9,
+            "unilateral_action": 2
+          },
+          "by_phase": {
+            "implementation": 11
+          },
+          "avg_skill_similarity": 0.26834521703216896
+        }
+      },
+      "sip_detection": {
+        "total_sips": 16,
+        "sip_statistics": {
+          "total_sips": 16,
+          "by_type": {
+            "edge_case_prompting": {
+              "count": 2,
+              "avg_confidence": 0.55,
+              "category": "constructive"
+            },
+            "redundant_exploration": {
+              "count": 1,
+              "avg_confidence": 0.5,
+              "category": "neutral"
+            },
+            "surface_anchoring": {
+              "count": 10,
+              "avg_confidence": 0.6,
+              "category": "destructive"
+            },
+            "concept_bleed": {
+              "count": 3,
+              "avg_confidence": 0.6666666666666666,
+              "category": "destructive"
+            }
+          },
+          "avg_confidence": 0.6
+        }
+      },
+      "quality_prediction": {
+        "skill_id": "bash-defensive-patterns",
+        "utility_class": "positive",
+        "probability": {
+          "positive": 0.55,
+          "neutral": 0.22499999999999998,
+          "negative": 0.22499999999999998
+        },
+        "feature_importance": {
+          "template_specificity": 1.0,
+          "abstraction_level": 0.026521591295477733,
+          "coverage_breadth": 0.8571428571428572,
+          "document_length": 0.3116571428571429,
+          "code_to_prose_ratio": 0.7492063492063493,
+          "instruction_density": 0.7968253968253969
+        },
+        "recommendation": "\u2713 Observed \u0394P=+0.182: skill improves task pass rate (heuristic disagrees: \u2717 Skill too broad - may cause concept bleed)",
+        "confidence": 0.55
+      }
+    },
+    "summary": {
+      "task_id": "bash-defensive-patterns",
+      "analysis_complete": true,
+      "modules_executed": [
+        "parsing",
+        "segmentation",
+        "alignment",
+        "sip_detection",
+        "quality_prediction"
+      ],
+      "dominant_sips": [
+        "surface_anchoring",
+        "concept_bleed",
+        "edge_case_prompting"
+      ],
+      "skill_utility": "positive",
+      "skill_confidence": 0.55
+    }
+  },
+  "gitlab-ci-patterns": {
+    "task_id": "gitlab-ci-patterns",
+    "modules": {
+      "parsing": {
+        "traces_with_skill": 1,
+        "traces_without_skill": 1
+      },
+      "segmentation": {
+        "phased_traces_with_skill": 1,
+        "phased_traces_without_skill": 1
+      },
+      "alignment": {
+        "total_divergences": 16,
+        "divergence_statistics": {
+          "total_divergences": 16,
+          "by_type": {
+            "target_mismatch": 14,
+            "unilateral_action": 2
+          },
+          "by_phase": {
+            "orientation": 12,
+            "implementation": 4
+          },
+          "avg_skill_similarity": 0.3226814371883991
+        }
+      },
+      "sip_detection": {
+        "total_sips": 13,
+        "sip_statistics": {
+          "total_sips": 13,
+          "by_type": {
+            "edge_case_prompting": {
+              "count": 2,
+              "avg_confidence": 0.65,
+              "category": "constructive"
+            },
+            "redundant_exploration": {
+              "count": 6,
+              "avg_confidence": 0.5416666666666667,
+              "category": "neutral"
+            },
+            "surface_anchoring": {
+              "count": 3,
+              "avg_confidence": 0.44999999999999996,
+              "category": "destructive"
+            },
+            "concept_bleed": {
+              "count": 2,
+              "avg_confidence": 0.6,
+              "category": "destructive"
+            }
+          },
+          "avg_confidence": 0.5461538461538462
+        }
+      },
+      "quality_prediction": {
+        "skill_id": "gitlab-ci-patterns",
+        "utility_class": "positive",
+        "probability": {
+          "positive": 0.55,
+          "neutral": 0.22499999999999998,
+          "negative": 0.22499999999999998
+        },
+        "feature_importance": {
+          "template_specificity": 1.0,
+          "abstraction_level": 0.010788273781004389,
+          "coverage_breadth": 0.8596713021491783,
+          "document_length": 0.6492237673830594,
+          "code_to_prose_ratio": 0.7711757269279395,
+          "instruction_density": 0.8217446270543617
+        },
+        "recommendation": "\u2713 Observed \u0394P=+0.143: skill improves task pass rate (heuristic disagrees: \u2717 Skill too broad - may cause concept bleed)",
+        "confidence": 0.55
+      }
+    },
+    "summary": {
+      "task_id": "gitlab-ci-patterns",
+      "analysis_complete": true,
+      "modules_executed": [
+        "parsing",
+        "segmentation",
+        "alignment",
+        "sip_detection",
+        "quality_prediction"
+      ],
+      "dominant_sips": [
+        "redundant_exploration",
+        "surface_anchoring",
+        "edge_case_prompting"
+      ],
+      "skill_utility": "positive",
+      "skill_confidence": 0.55
+    }
+  },
+  "implementing-agent-modes": {
+    "task_id": "implementing-agent-modes",
+    "modules": {
+      "parsing": {
+        "traces_with_skill": 1,
+        "traces_without_skill": 1
+      },
+      "segmentation": {
+        "phased_traces_with_skill": 1,
+        "phased_traces_without_skill": 1
+      },
+      "alignment": {
+        "total_divergences": 17,
+        "divergence_statistics": {
+          "total_divergences": 17,
+          "by_type": {
+            "target_mismatch": 11,
+            "unilateral_action": 6
+          },
+          "by_phase": {
+            "orientation": 7,
+            "implementation": 3,
+            "validation": 3,
+            "debugging": 1,
+            "finalization": 3
+          },
+          "avg_skill_similarity": 0.24372763022224178
+        }
+      },
+      "sip_detection": {
+        "total_sips": 17,
+        "sip_statistics": {
+          "total_sips": 17,
+          "by_type": {
+            "edge_case_prompting": {
+              "count": 14,
+              "avg_confidence": 0.7500000000000001,
+              "category": "constructive"
+            },
+            "concept_bleed": {
+              "count": 3,
+              "avg_confidence": 0.6,
+              "category": "destructive"
+            }
+          },
+          "avg_confidence": 0.723529411764706
+        }
+      },
+      "quality_prediction": {
+        "skill_id": "implementing-agent-modes",
+        "utility_class": "neutral",
+        "probability": {
+          "positive": 0.25,
+          "neutral": 0.5,
+          "negative": 0.25
+        },
+        "feature_importance": {
+          "template_specificity": 1.0,
+          "abstraction_level": 0.00035198873636043646,
+          "coverage_breadth": 0.8333333333333334,
+          "document_length": 0.5953333333333333,
+          "code_to_prose_ratio": 0.7113821138211383,
+          "instruction_density": 0.7113821138211383
+        },
+        "recommendation": "\u2248 Observed \u0394P=+0.000: no measurable effect on pass rate (heuristic disagrees: \u2717 Skill too broad - may cause concept bleed)",
+        "confidence": 0.5
+      }
+    },
+    "summary": {
+      "task_id": "implementing-agent-modes",
+      "analysis_complete": true,
+      "modules_executed": [
+        "parsing",
+        "segmentation",
+        "alignment",
+        "sip_detection",
+        "quality_prediction"
+      ],
+      "dominant_sips": [
+        "edge_case_prompting",
+        "concept_bleed"
+      ],
+      "skill_utility": "neutral",
+      "skill_confidence": 0.5
+    }
+  },
+  "python-observability": {
+    "task_id": "python-observability",
+    "modules": {
+      "parsing": {
+        "traces_with_skill": 1,
+        "traces_without_skill": 1
+      },
+      "segmentation": {
+        "phased_traces_with_skill": 1,
+        "phased_traces_without_skill": 1
+      },
+      "alignment": {
+        "total_divergences": 22,
+        "divergence_statistics": {
+          "total_divergences": 22,
+          "by_type": {
+            "target_mismatch": 22
+          },
+          "by_phase": {
+            "orientation": 22
+          },
+          "avg_skill_similarity": 0.2365490593562024
+        }
+      },
+      "sip_detection": {
+        "total_sips": 8,
+        "sip_statistics": {
+          "total_sips": 8,
+          "by_type": {
+            "redundant_exploration": {
+              "count": 3,
+              "avg_confidence": 0.5,
+              "category": "neutral"
+            },
+            "concept_bleed": {
+              "count": 5,
+              "avg_confidence": 0.6799999999999999,
+              "category": "destructive"
+            }
+          },
+          "avg_confidence": 0.6125
+        }
+      },
+      "quality_prediction": {
+        "skill_id": "python-observability",
+        "utility_class": "neutral",
+        "probability": {
+          "positive": 0.25,
+          "neutral": 0.5,
+          "negative": 0.25
+        },
+        "feature_importance": {
+          "template_specificity": 1.0,
+          "abstraction_level": 0.00014029180695847364,
+          "coverage_breadth": 0.8333333333333334,
+          "document_length": 0.44366666666666665,
+          "code_to_prose_ratio": 0.7418952618453866,
+          "instruction_density": 0.78761429758936
+        },
+        "recommendation": "\u2248 Observed \u0394P=+0.000: no measurable effect on pass rate (heuristic disagrees: \u2717 Skill too broad - may cause concept bleed)",
+        "confidence": 0.5
+      }
+    },
+    "summary": {
+      "task_id": "python-observability",
+      "analysis_complete": true,
+      "modules_executed": [
+        "parsing",
+        "segmentation",
+        "alignment",
+        "sip_detection",
+        "quality_prediction"
+      ],
+      "dominant_sips": [
+        "concept_bleed",
+        "redundant_exploration"
+      ],
+      "skill_utility": "neutral",
+      "skill_confidence": 0.5
+    }
+  },
+  "distributed-tracing": {
+    "task_id": "distributed-tracing",
+    "modules": {
+      "parsing": {
+        "traces_with_skill": 1,
+        "traces_without_skill": 1
+      },
+      "segmentation": {
+        "phased_traces_with_skill": 1,
+        "phased_traces_without_skill": 1
+      },
+      "alignment": {
+        "total_divergences": 19,
+        "divergence_statistics": {
+          "total_divergences": 19,
+          "by_type": {
+            "target_mismatch": 17,
+            "unilateral_action": 2
+          },
+          "by_phase": {
+            "orientation": 9,
+            "implementation": 6,
+            "debugging": 4
+          },
+          "avg_skill_similarity": 0.24905958340744344
+        }
+      },
+      "sip_detection": {
+        "total_sips": 13,
+        "sip_statistics": {
+          "total_sips": 13,
+          "by_type": {
+            "edge_case_prompting": {
+              "count": 2,
+              "avg_confidence": 0.6000000000000001,
+              "category": "constructive"
+            },
+            "surface_anchoring": {
+              "count": 8,
+              "avg_confidence": 0.675,
+              "category": "destructive"
+            },
+            "concept_bleed": {
+              "count": 3,
+              "avg_confidence": 0.6,
+              "category": "destructive"
+            }
+          },
+          "avg_confidence": 0.6461538461538462
+        }
+      },
+      "quality_prediction": {
+        "skill_id": "distributed-tracing",
+        "utility_class": "neutral",
+        "probability": {
+          "positive": 0.25,
+          "neutral": 0.5,
+          "negative": 0.25
+        },
+        "feature_importance": {
+          "template_specificity": 1.0,
+          "abstraction_level": 0.005079383507967376,
+          "coverage_breadth": 0.8650190114068442,
+          "document_length": 0.5221254752851712,
+          "code_to_prose_ratio": 0.7433460076045628,
+          "instruction_density": 0.8498098859315589
+        },
+        "recommendation": "\u2248 Observed \u0394P=+0.000: no measurable effect on pass rate (heuristic disagrees: \u2717 Skill too broad - may cause concept bleed)",
+        "confidence": 0.5
+      }
+    },
+    "summary": {
+      "task_id": "distributed-tracing",
+      "analysis_complete": true,
+      "modules_executed": [
+        "parsing",
+        "segmentation",
+        "alignment",
+        "sip_detection",
+        "quality_prediction"
+      ],
+      "dominant_sips": [
+        "surface_anchoring",
+        "concept_bleed",
+        "edge_case_prompting"
+      ],
+      "skill_utility": "neutral",
+      "skill_confidence": 0.5
+    }
+  },
+  "service-mesh-observability": {
+    "task_id": "service-mesh-observability",
+    "modules": {
+      "parsing": {
+        "traces_with_skill": 1,
+        "traces_without_skill": 1
+      },
+      "segmentation": {
+        "phased_traces_with_skill": 1,
+        "phased_traces_without_skill": 1
+      },
+      "alignment": {
+        "total_divergences": 19,
+        "divergence_statistics": {
+          "total_divergences": 19,
+          "by_type": {
+            "target_mismatch": 19
+          },
+          "by_phase": {
+            "orientation": 13,
+            "implementation": 1,
+            "finalization": 5
+          },
+          "avg_skill_similarity": 0.23547274933879725
+        }
+      },
+      "sip_detection": {
+        "total_sips": 8,
+        "sip_statistics": {
+          "total_sips": 8,
+          "by_type": {
+            "concept_bleed": {
+              "count": 8,
+              "avg_confidence": 0.6187499999999999,
+              "category": "destructive"
+            }
+          },
+          "avg_confidence": 0.6187499999999999
+        }
+      },
+      "quality_prediction": {
+        "skill_id": "service-mesh-observability",
+        "utility_class": "neutral",
+        "probability": {
+          "positive": 0.25,
+          "neutral": 0.5,
+          "negative": 0.25
+        },
+        "feature_importance": {
+          "template_specificity": 1.0,
+          "abstraction_level": 0.007075012789334887,
+          "coverage_breadth": 0.9433040078201369,
+          "document_length": 0.5754154447702835,
+          "code_to_prose_ratio": 0.8553274682306942,
+          "instruction_density": 0.9237536656891496
+        },
+        "recommendation": "\u2248 Observed \u0394P=+0.000: no measurable effect on pass rate (heuristic disagrees: \u2717 Skill too broad - may cause concept bleed)",
+        "confidence": 0.5
+      }
+    },
+    "summary": {
+      "task_id": "service-mesh-observability",
+      "analysis_complete": true,
+      "modules_executed": [
+        "parsing",
+        "segmentation",
+        "alignment",
+        "sip_detection",
+        "quality_prediction"
+      ],
+      "dominant_sips": [
+        "concept_bleed"
+      ],
+      "skill_utility": "neutral",
+      "skill_confidence": 0.5
+    }
+  },
+  "slo-implementation": {
+    "task_id": "slo-implementation",
+    "modules": {
+      "parsing": {
+        "traces_with_skill": 1,
+        "traces_without_skill": 1
+      },
+      "segmentation": {
+        "phased_traces_with_skill": 1,
+        "phased_traces_without_skill": 1
+      },
+      "alignment": {
+        "total_divergences": 12,
+        "divergence_statistics": {
+          "total_divergences": 12,
+          "by_type": {
+            "target_mismatch": 12
+          },
+          "by_phase": {
+            "orientation": 11,
+            "implementation": 1
+          },
+          "avg_skill_similarity": 0.21863238567163465
+        }
+      },
+      "sip_detection": {
+        "total_sips": 1,
+        "sip_statistics": {
+          "total_sips": 1,
+          "by_type": {
+            "redundant_exploration": {
+              "count": 1,
+              "avg_confidence": 0.55,
+              "category": "neutral"
+            }
+          },
+          "avg_confidence": 0.55
+        }
+      },
+      "quality_prediction": {
+        "skill_id": "slo-implementation",
+        "utility_class": "neutral",
+        "probability": {
+          "positive": 0.25,
+          "neutral": 0.5,
+          "negative": 0.25
+        },
+        "feature_importance": {
+          "template_specificity": 1.0,
+          "abstraction_level": 0.0037070738526630725,
+          "coverage_breadth": 0.8416087388282025,
+          "document_length": 0.5339165839126118,
+          "code_to_prose_ratio": 0.7224428997020854,
+          "instruction_density": 0.8267130089374379
+        },
+        "recommendation": "\u2248 Observed \u0394P=+0.000: no measurable effect on pass rate (heuristic disagrees: \u2717 Skill too broad - may cause concept bleed)",
+        "confidence": 0.5
+      }
+    },
+    "summary": {
+      "task_id": "slo-implementation",
+      "analysis_complete": true,
+      "modules_executed": [
+        "parsing",
+        "segmentation",
+        "alignment",
+        "sip_detection",
+        "quality_prediction"
+      ],
+      "dominant_sips": [
+        "redundant_exploration"
+      ],
+      "skill_utility": "neutral",
+      "skill_confidence": 0.5
+    }
+  },
+  "python-performance-optimization": {
+    "task_id": "python-performance-optimization",
+    "modules": {
+      "parsing": {
+        "traces_with_skill": 1,
+        "traces_without_skill": 1
+      },
+      "segmentation": {
+        "phased_traces_with_skill": 1,
+        "phased_traces_without_skill": 1
+      },
+      "alignment": {
+        "total_divergences": 9,
+        "divergence_statistics": {
+          "total_divergences": 9,
+          "by_type": {
+            "target_mismatch": 9
+          },
+          "by_phase": {
+            "implementation": 9
+          },
+          "avg_skill_similarity": 0.25909570801873816
+        }
+      },
+      "sip_detection": {
+        "total_sips": 1,
+        "sip_statistics": {
+          "total_sips": 1,
+          "by_type": {
+            "redundant_exploration": {
+              "count": 1,
+              "avg_confidence": 0.5,
+              "category": "neutral"
+            }
+          },
+          "avg_confidence": 0.5
+        }
+      },
+      "quality_prediction": {
+        "skill_id": "python-performance-optimization",
+        "utility_class": "neutral",
+        "probability": {
+          "positive": 0.25,
+          "neutral": 0.5,
+          "negative": 0.25
+        },
+        "feature_importance": {
+          "template_specificity": 1.0,
+          "abstraction_level": 0.004073261196676219,
+          "coverage_breadth": 0.8495145631067962,
+          "document_length": 0.0057766990291262385,
+          "code_to_prose_ratio": 0.7524271844660194,
+          "instruction_density": 0.8184466019417477
+        },
+        "recommendation": "\u2248 Observed \u0394P=+0.000: no measurable effect on pass rate (heuristic disagrees: \u2717 Skill too broad - may cause concept bleed)",
+        "confidence": 0.5
+      }
+    },
+    "summary": {
+      "task_id": "python-performance-optimization",
+      "analysis_complete": true,
+      "modules_executed": [
+        "parsing",
+        "segmentation",
+        "alignment",
+        "sip_detection",
+        "quality_prediction"
+      ],
+      "dominant_sips": [
+        "redundant_exploration"
+      ],
+      "skill_utility": "neutral",
+      "skill_confidence": 0.5
+    }
+  },
+  "grafana-dashboards": {
+    "task_id": "grafana-dashboards",
+    "modules": {
+      "parsing": {
+        "traces_with_skill": 1,
+        "traces_without_skill": 1
+      },
+      "segmentation": {
+        "phased_traces_with_skill": 1,
+        "phased_traces_without_skill": 1
+      },
+      "alignment": {
+        "total_divergences": 6,
+        "divergence_statistics": {
+          "total_divergences": 6,
+          "by_type": {
+            "target_mismatch": 6
+          },
+          "by_phase": {
+            "implementation": 6
+          },
+          "avg_skill_similarity": 0.3080911209699468
+        }
+      },
+      "sip_detection": {
+        "total_sips": 11,
+        "sip_statistics": {
+          "total_sips": 11,
+          "by_type": {
+            "procedural_scaffolding": {
+              "count": 1,
+              "avg_confidence": 0.55,
+              "category": "constructive"
+            },
+            "redundant_exploration": {
+              "count": 1,
+              "avg_confidence": 0.5,
+              "category": "neutral"
+            },
+            "surface_anchoring": {
+              "count": 6,
+              "avg_confidence": 0.4583333333333333,
+              "category": "destructive"
+            },
+            "concept_bleed": {
+              "count": 3,
+              "avg_confidence": 0.6499999999999999,
+              "category": "destructive"
+            }
+          },
+          "avg_confidence": 0.5227272727272727
+        }
+      },
+      "quality_prediction": {
+        "skill_id": "grafana-dashboards",
+        "utility_class": "neutral",
+        "probability": {
+          "positive": 0.25,
+          "neutral": 0.5,
+          "negative": 0.25
+        },
+        "feature_importance": {
+          "template_specificity": 1.0,
+          "abstraction_level": 0.014330856173752703,
+          "coverage_breadth": 0.8405358686257564,
+          "document_length": 0.5362618841832326,
+          "code_to_prose_ratio": 0.7368193604148662,
+          "instruction_density": 0.8146067415730338
+        },
+        "recommendation": "\u2248 Observed \u0394P=+0.000: no measurable effect on pass rate (heuristic disagrees: \u2717 Skill too broad - may cause concept bleed)",
+        "confidence": 0.5
+      }
+    },
+    "summary": {
+      "task_id": "grafana-dashboards",
+      "analysis_complete": true,
+      "modules_executed": [
+        "parsing",
+        "segmentation",
+        "alignment",
+        "sip_detection",
+        "quality_prediction"
+      ],
+      "dominant_sips": [
+        "surface_anchoring",
+        "concept_bleed",
+        "procedural_scaffolding"
+      ],
+      "skill_utility": "neutral",
+      "skill_confidence": 0.5
+    }
+  },
+  "dbt-transformation-patterns": {
+    "task_id": "dbt-transformation-patterns",
+    "modules": {
+      "parsing": {
+        "traces_with_skill": 1,
+        "traces_without_skill": 1
+      },
+      "segmentation": {
+        "phased_traces_with_skill": 1,
+        "phased_traces_without_skill": 1
+      },
+      "alignment": {
+        "total_divergences": 12,
+        "divergence_statistics": {
+          "total_divergences": 12,
+          "by_type": {
+            "target_mismatch": 11,
+            "unilateral_action": 1
+          },
+          "by_phase": {
+            "orientation": 9,
+            "validation": 1,
+            "finalization": 2
+          },
+          "avg_skill_similarity": 0.27406004191672045
+        }
+      },
+      "sip_detection": {
+        "total_sips": 24,
+        "sip_statistics": {
+          "total_sips": 24,
+          "by_type": {
+            "edge_case_prompting": {
+              "count": 10,
+              "avg_confidence": 0.785,
+              "category": "constructive"
+            },
+            "surface_anchoring": {
+              "count": 10,
+              "avg_confidence": 0.615,
+              "category": "destructive"
+            },
+            "concept_bleed": {
+              "count": 4,
+              "avg_confidence": 0.6,
+              "category": "destructive"
+            }
+          },
+          "avg_confidence": 0.6833333333333332
+        }
+      },
+      "quality_prediction": {
+        "skill_id": "dbt-transformation-patterns",
+        "utility_class": "neutral",
+        "probability": {
+          "positive": 0.25,
+          "neutral": 0.5,
+          "negative": 0.25
+        },
+        "feature_importance": {
+          "template_specificity": 1.0,
+          "abstraction_level": 0.0095318916709335,
+          "coverage_breadth": 0.8407871198568874,
+          "document_length": 0.36860107334525943,
+          "code_to_prose_ratio": 0.7632677400119261,
+          "instruction_density": 0.8228980322003578
+        },
+        "recommendation": "\u2248 Observed \u0394P=+0.000: no measurable effect on pass rate (heuristic disagrees: \u2717 Skill too broad - may cause concept bleed)",
+        "confidence": 0.5
+      }
+    },
+    "summary": {
+      "task_id": "dbt-transformation-patterns",
+      "analysis_complete": true,
+      "modules_executed": [
+        "parsing",
+        "segmentation",
+        "alignment",
+        "sip_detection",
+        "quality_prediction"
+      ],
+      "dominant_sips": [
+        "edge_case_prompting",
+        "surface_anchoring",
+        "concept_bleed"
+      ],
+      "skill_utility": "neutral",
+      "skill_confidence": 0.5
+    }
+  },
+  "langsmith-fetch": {
+    "task_id": "langsmith-fetch",
+    "modules": {
+      "parsing": {
+        "traces_with_skill": 1,
+        "traces_without_skill": 1
+      },
+      "segmentation": {
+        "phased_traces_with_skill": 1,
+        "phased_traces_without_skill": 1
+      },
+      "alignment": {
+        "total_divergences": 2,
+        "divergence_statistics": {
+          "total_divergences": 2,
+          "by_type": {
+            "target_mismatch": 2
+          },
+          "by_phase": {
+            "implementation": 2
+          },
+          "avg_skill_similarity": 0.26352309085190406
+        }
+      },
+      "sip_detection": {
+        "total_sips": 0,
+        "sip_statistics": {
+          "total_sips": 0,
+          "by_type": {}
+        }
+      },
+      "quality_prediction": {
+        "skill_id": "langsmith-fetch",
+        "utility_class": "neutral",
+        "probability": {
+          "positive": 0.25,
+          "neutral": 0.5,
+          "negative": 0.25
+        },
+        "feature_importance": {
+          "template_specificity": 1.0,
+          "abstraction_level": 0.0018853811130459903,
+          "coverage_breadth": 0.8478715980460573,
+          "document_length": 0.3367745987438939,
+          "code_to_prose_ratio": 0.6594556873691556,
+          "instruction_density": 0.799023028611305
+        },
+        "recommendation": "\u2248 Observed \u0394P=+0.000: no measurable effect on pass rate (heuristic disagrees: \u2717 Skill too broad - may cause concept bleed)",
+        "confidence": 0.5
+      }
+    },
+    "summary": {
+      "task_id": "langsmith-fetch",
+      "analysis_complete": true,
+      "modules_executed": [
+        "parsing",
+        "segmentation",
+        "alignment",
+        "sip_detection",
+        "quality_prediction"
+      ],
+      "dominant_sips": [],
+      "skill_utility": "neutral",
+      "skill_confidence": 0.5
+    }
+  },
+  "v3-performance-optimization": {
+    "task_id": "v3-performance-optimization",
+    "modules": {
+      "parsing": {
+        "traces_with_skill": 1,
+        "traces_without_skill": 1
+      },
+      "segmentation": {
+        "phased_traces_with_skill": 1,
+        "phased_traces_without_skill": 1
+      },
+      "alignment": {
+        "total_divergences": 9,
+        "divergence_statistics": {
+          "total_divergences": 9,
+          "by_type": {
+            "target_mismatch": 7,
+            "unilateral_action": 2
+          },
+          "by_phase": {
+            "orientation": 5,
+            "implementation": 4
+          },
+          "avg_skill_similarity": 0.27400881452215536
+        }
+      },
+      "sip_detection": {
+        "total_sips": 10,
+        "sip_statistics": {
+          "total_sips": 10,
+          "by_type": {
+            "edge_case_prompting": {
+              "count": 2,
+              "avg_confidence": 0.55,
+              "category": "constructive"
+            },
+            "surface_anchoring": {
+              "count": 7,
+              "avg_confidence": 0.4571428571428572,
+              "category": "destructive"
+            },
+            "concept_bleed": {
+              "count": 1,
+              "avg_confidence": 0.75,
+              "category": "destructive"
+            }
+          },
+          "avg_confidence": 0.505
+        }
+      },
+      "quality_prediction": {
+        "skill_id": "v3-performance-optimization",
+        "utility_class": "neutral",
+        "probability": {
+          "positive": 0.25,
+          "neutral": 0.5,
+          "negative": 0.25
+        },
+        "feature_importance": {
+          "template_specificity": 1.0,
+          "abstraction_level": 0.00907427775492667,
+          "coverage_breadth": 0.8369098712446352,
+          "document_length": 0.5018111587982833,
+          "code_to_prose_ratio": 0.7167381974248928,
+          "instruction_density": 0.832618025751073
+        },
+        "recommendation": "\u2248 Observed \u0394P=+0.000: no measurable effect on pass rate (heuristic disagrees: \u2717 Skill too broad - may cause concept bleed)",
+        "confidence": 0.5
+      }
+    },
+    "summary": {
+      "task_id": "v3-performance-optimization",
+      "analysis_complete": true,
+      "modules_executed": [
+        "parsing",
+        "segmentation",
+        "alignment",
+        "sip_detection",
+        "quality_prediction"
+      ],
+      "dominant_sips": [
+        "surface_anchoring",
+        "edge_case_prompting",
+        "concept_bleed"
+      ],
+      "skill_utility": "neutral",
+      "skill_confidence": 0.5
+    }
+  }
+}

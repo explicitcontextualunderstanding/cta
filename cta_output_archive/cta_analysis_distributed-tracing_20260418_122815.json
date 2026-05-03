@@ -1,0 +1,61 @@
+{
+  "task_id": "distributed-tracing",
+  "modules": {
+    "parsing": {
+      "traces_with_skill": 1,
+      "traces_without_skill": 1
+    },
+    "segmentation": {
+      "phased_traces_with_skill": 1,
+      "phased_traces_without_skill": 1
+    },
+    "alignment": {
+      "total_divergences": 7,
+      "divergence_statistics": {
+        "total_divergences": 7,
+        "by_type": {
+          "target_mismatch": 7
+        },
+        "by_phase": {
+          "implementation": 4,
+          "validation": 1,
+          "debugging": 2
+        },
+        "avg_skill_similarity": 0.5
+      }
+    },
+    "sip_detection": {
+      "total_sips": 8,
+      "sip_statistics": {
+        "total_sips": 8,
+        "by_type": {
+          "edge_case_prompting": {
+            "count": 4,
+            "avg_confidence": 0.5
+          },
+          "concept_bleed": {
+            "count": 4,
+            "avg_confidence": 0.6
+          }
+        },
+        "avg_confidence": 0.55
+      }
+    },
+    "quality_prediction": {}
+  },
+  "summary": {
+    "task_id": "distributed-tracing",
+    "analysis_complete": true,
+    "modules_executed": [
+      "parsing",
+      "segmentation",
+      "alignment",
+      "sip_detection",
+      "quality_prediction"
+    ],
+    "dominant_sips": [
+      "edge_case_prompting",
+      "concept_bleed"
+    ]
+  }
+}

@@ -1,0 +1,76 @@
+{
+  "task_id": "vector-index-tuning",
+  "modules": {
+    "parsing": {
+      "traces_with_skill": 1,
+      "traces_without_skill": 1
+    },
+    "segmentation": {
+      "phased_traces_with_skill": 1,
+      "phased_traces_without_skill": 1
+    },
+    "alignment": {
+      "total_divergences": 4,
+      "divergence_statistics": {
+        "total_divergences": 4,
+        "by_type": {
+          "target_mismatch": 4
+        },
+        "by_phase": {
+          "implementation": 1,
+          "finalization": 3
+        },
+        "avg_skill_similarity": 0.5
+      }
+    },
+    "sip_detection": {
+      "total_sips": 1,
+      "sip_statistics": {
+        "total_sips": 1,
+        "by_type": {
+          "concept_bleed": {
+            "count": 1,
+            "avg_confidence": 0.7999999999999999,
+            "category": "destructive"
+          }
+        },
+        "avg_confidence": 0.7999999999999999
+      }
+    },
+    "quality_prediction": {
+      "skill_id": "vector-index-tuning",
+      "utility_class": "neutral",
+      "probability": {
+        "positive": 0.25,
+        "neutral": 0.5,
+        "negative": 0.25
+      },
+      "feature_importance": {
+        "template_specificity": 1.0,
+        "abstraction_level": 0.0019573302016050106,
+        "coverage_breadth": 0.8333333333333334,
+        "document_length": 0.3426666666666667,
+        "code_to_prose_ratio": 0.7951653944020357,
+        "instruction_density": 0.8174300254452926
+      },
+      "recommendation": "\u2248 Observed \u0394P=+0.000: no measurable effect on pass rate (heuristic disagrees: \u2717 Skill too broad - may cause concept bleed)",
+      "confidence": 0.5
+    }
+  },
+  "summary": {
+    "task_id": "vector-index-tuning",
+    "analysis_complete": true,
+    "modules_executed": [
+      "parsing",
+      "segmentation",
+      "alignment",
+      "sip_detection",
+      "quality_prediction"
+    ],
+    "dominant_sips": [
+      "concept_bleed"
+    ],
+    "skill_utility": "neutral",
+    "skill_confidence": 0.5
+  }
+}

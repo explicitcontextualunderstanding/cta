@@ -1,0 +1,77 @@
+{
+  "task_id": "service-mesh-observability",
+  "modules": {
+    "parsing": {
+      "traces_with_skill": 1,
+      "traces_without_skill": 1
+    },
+    "segmentation": {
+      "phased_traces_with_skill": 1,
+      "phased_traces_without_skill": 1
+    },
+    "alignment": {
+      "total_divergences": 19,
+      "divergence_statistics": {
+        "total_divergences": 19,
+        "by_type": {
+          "target_mismatch": 19
+        },
+        "by_phase": {
+          "orientation": 13,
+          "implementation": 1,
+          "finalization": 5
+        },
+        "avg_skill_similarity": 0.23547274933879725
+      }
+    },
+    "sip_detection": {
+      "total_sips": 8,
+      "sip_statistics": {
+        "total_sips": 8,
+        "by_type": {
+          "concept_bleed": {
+            "count": 8,
+            "avg_confidence": 0.6187499999999999,
+            "category": "destructive"
+          }
+        },
+        "avg_confidence": 0.6187499999999999
+      }
+    },
+    "quality_prediction": {
+      "skill_id": "service-mesh-observability",
+      "utility_class": "neutral",
+      "probability": {
+        "positive": 0.25,
+        "neutral": 0.5,
+        "negative": 0.25
+      },
+      "feature_importance": {
+        "template_specificity": 1.0,
+        "abstraction_level": 0.007075012789334887,
+        "coverage_breadth": 0.9433040078201369,
+        "document_length": 0.5754154447702835,
+        "code_to_prose_ratio": 0.8553274682306942,
+        "instruction_density": 0.9237536656891496
+      },
+      "recommendation": "\u2248 Observed \u0394P=+0.000: no measurable effect on pass rate (heuristic disagrees: \u2717 Skill too broad - may cause concept bleed)",
+      "confidence": 0.5
+    }
+  },
+  "summary": {
+    "task_id": "service-mesh-observability",
+    "analysis_complete": true,
+    "modules_executed": [
+      "parsing",
+      "segmentation",
+      "alignment",
+      "sip_detection",
+      "quality_prediction"
+    ],
+    "dominant_sips": [
+      "concept_bleed"
+    ],
+    "skill_utility": "neutral",
+    "skill_confidence": 0.5
+  }
+}

@@ -160,15 +160,8 @@ class DockerManager:
         logger.info(f"Creating container: {config.name}")
         self.config = config
 
-        try:
-            # Ensure image exists
-            if not self.image_exists(config.image):
-                logger.info(f"Image {config.image} not found locally, pulling...")
-                if not self.pull_image(config.image):
-                    return False
-
-            # Create container
-            self.container = self.client.containers.create(
+        def _create() -> docker.models.containers.Container:
+            return self.client.containers.create(
                 image=config.image,
                 name=config.name,
                 working_dir=config.working_dir,
@@ -183,10 +176,55 @@ class DockerManager:
                 detach=True,
             )
 
+        try:
+            # Ensure image exists
+            if not self.image_exists(config.image):
+                logger.info(f"Image {config.image} not found locally, pulling...")
+                if not self.pull_image(config.image):
+                    return False
+
+            # Create container
+            self.container = _create()
+
             logger.info(f"Container created: {self.container.id[:12]}")
             return True
 
         except docker.errors.APIError as e:
+            # Common in batch runs when containers are intentionally preserved:
+            # the name is still in use from a previous run.
+            msg = str(e)
+            is_name_conflict = (
+                getattr(e, "status_code", None) == 409
+                or "is already in use" in msg
+                or "Conflict" in msg
+            )
+            if is_name_conflict:
+                logger.warning(
+                    f"Container name conflict for '{config.name}'. Attempting to remove existing container and retry."
+                )
+                existing = self.get_container_by_name(config.name)
+                if existing is not None:
+                    try:
+                        existing.remove(force=True)
+                        logger.info(
+                            f"Removed existing container '{config.name}' ({existing.id[:12]}). Retrying create."
+                        )
+                        self.container = _create()
+                        logger.info(
+                            f"Container created after retry: {self.container.id[:12]}"
+                        )
+                        return True
+                    except docker.errors.APIError as e2:
+                        logger.error(
+                            f"Failed to recreate container '{config.name}' after removing existing one: {e2}"
+                        )
+                        return False
+                    except Exception as e2:
+                        logger.error(
+                            f"Unexpected error while resolving container name conflict for '{config.name}': {e2}"
+                        )
+                        return False
+
             logger.error(f"Failed to create container: {e}")
             return False
 

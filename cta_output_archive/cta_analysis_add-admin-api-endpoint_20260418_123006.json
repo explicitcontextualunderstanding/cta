@@ -1,0 +1,74 @@
+{
+  "task_id": "add-admin-api-endpoint",
+  "modules": {
+    "parsing": {
+      "traces_with_skill": 1,
+      "traces_without_skill": 1
+    },
+    "segmentation": {
+      "phased_traces_with_skill": 1,
+      "phased_traces_without_skill": 1
+    },
+    "alignment": {
+      "total_divergences": 5,
+      "divergence_statistics": {
+        "total_divergences": 5,
+        "by_type": {
+          "target_mismatch": 5
+        },
+        "by_phase": {
+          "implementation": 5
+        },
+        "avg_skill_similarity": 0.5
+      }
+    },
+    "sip_detection": {
+      "total_sips": 5,
+      "sip_statistics": {
+        "total_sips": 5,
+        "by_type": {
+          "concept_bleed": {
+            "count": 5,
+            "avg_confidence": 0.6
+          }
+        },
+        "avg_confidence": 0.6
+      }
+    },
+    "quality_prediction": {
+      "skill_id": "add-admin-api-endpoint",
+      "utility_class": "neutral",
+      "probability": {
+        "positive": 0.0,
+        "neutral": 1.0,
+        "negative": 0.0
+      },
+      "feature_importance": {
+        "template_specificity": 1.0,
+        "abstraction_level": 0.0015873015873015873,
+        "coverage_breadth": 0.0,
+        "document_length": 0.7866666666666666,
+        "code_to_prose_ratio": 0.8333333333333334,
+        "instruction_density": 0.7352941176470589
+      },
+      "recommendation": "\u2248 Skill impact uncertain - consider careful evaluation",
+      "confidence": 1.0
+    }
+  },
+  "summary": {
+    "task_id": "add-admin-api-endpoint",
+    "analysis_complete": true,
+    "modules_executed": [
+      "parsing",
+      "segmentation",
+      "alignment",
+      "sip_detection",
+      "quality_prediction"
+    ],
+    "dominant_sips": [
+      "concept_bleed"
+    ],
+    "skill_utility": "neutral",
+    "skill_confidence": 1.0
+  }
+}

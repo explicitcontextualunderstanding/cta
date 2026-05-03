@@ -1,0 +1,46 @@
+{
+  "task_id": "rag-implementation",
+  "modules": {
+    "parsing": {
+      "traces_with_skill": 1,
+      "traces_without_skill": 1
+    },
+    "segmentation": {
+      "phased_traces_with_skill": 1,
+      "phased_traces_without_skill": 1
+    },
+    "alignment": {
+      "total_divergences": 1,
+      "divergence_statistics": {
+        "total_divergences": 1,
+        "by_type": {
+          "target_mismatch": 1
+        },
+        "by_phase": {
+          "implementation": 1
+        },
+        "avg_skill_similarity": 0.5
+      }
+    },
+    "sip_detection": {
+      "total_sips": 0,
+      "sip_statistics": {
+        "total_sips": 0,
+        "by_type": {}
+      }
+    },
+    "quality_prediction": {}
+  },
+  "summary": {
+    "task_id": "rag-implementation",
+    "analysis_complete": true,
+    "modules_executed": [
+      "parsing",
+      "segmentation",
+      "alignment",
+      "sip_detection",
+      "quality_prediction"
+    ],
+    "dominant_sips": []
+  }
+}

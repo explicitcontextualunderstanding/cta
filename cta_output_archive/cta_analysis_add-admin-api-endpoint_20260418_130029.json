@@ -1,0 +1,82 @@
+{
+  "task_id": "add-admin-api-endpoint",
+  "modules": {
+    "parsing": {
+      "traces_with_skill": 1,
+      "traces_without_skill": 1
+    },
+    "segmentation": {
+      "phased_traces_with_skill": 1,
+      "phased_traces_without_skill": 1
+    },
+    "alignment": {
+      "total_divergences": 13,
+      "divergence_statistics": {
+        "total_divergences": 13,
+        "by_type": {
+          "target_mismatch": 13
+        },
+        "by_phase": {
+          "implementation": 12,
+          "debugging": 1
+        },
+        "avg_skill_similarity": 0.4235779768909741
+      }
+    },
+    "sip_detection": {
+      "total_sips": 14,
+      "sip_statistics": {
+        "total_sips": 14,
+        "by_type": {
+          "redundant_exploration": {
+            "count": 1,
+            "avg_confidence": 0.5,
+            "category": "neutral"
+          },
+          "concept_bleed": {
+            "count": 13,
+            "avg_confidence": 0.7961538461538461,
+            "category": "destructive"
+          }
+        },
+        "avg_confidence": 0.775
+      }
+    },
+    "quality_prediction": {
+      "skill_id": "add-admin-api-endpoint",
+      "utility_class": "positive",
+      "probability": {
+        "positive": 0.55,
+        "neutral": 0.22499999999999998,
+        "negative": 0.22499999999999998
+      },
+      "feature_importance": {
+        "template_specificity": 1.0,
+        "abstraction_level": 0.0015873015873015873,
+        "coverage_breadth": 0.0,
+        "document_length": 0.7866666666666666,
+        "code_to_prose_ratio": 0.8333333333333334,
+        "instruction_density": 0.7352941176470589
+      },
+      "recommendation": "\u2713 Observed \u0394P=+0.040: skill improves task pass rate (heuristic disagrees: \u2248 Skill impact uncertain - consider careful evaluation)",
+      "confidence": 0.55
+    }
+  },
+  "summary": {
+    "task_id": "add-admin-api-endpoint",
+    "analysis_complete": true,
+    "modules_executed": [
+      "parsing",
+      "segmentation",
+      "alignment",
+      "sip_detection",
+      "quality_prediction"
+    ],
+    "dominant_sips": [
+      "concept_bleed",
+      "redundant_exploration"
+    ],
+    "skill_utility": "positive",
+    "skill_confidence": 0.55
+  }
+}

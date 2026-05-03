@@ -1,0 +1,75 @@
+{
+  "task_id": "python-background-jobs",
+  "modules": {
+    "parsing": {
+      "traces_with_skill": 1,
+      "traces_without_skill": 1
+    },
+    "segmentation": {
+      "phased_traces_with_skill": 1,
+      "phased_traces_without_skill": 1
+    },
+    "alignment": {
+      "total_divergences": 6,
+      "divergence_statistics": {
+        "total_divergences": 6,
+        "by_type": {
+          "target_mismatch": 6
+        },
+        "by_phase": {
+          "implementation": 6
+        },
+        "avg_skill_similarity": 0.2905682445002908
+      }
+    },
+    "sip_detection": {
+      "total_sips": 5,
+      "sip_statistics": {
+        "total_sips": 5,
+        "by_type": {
+          "edge_case_prompting": {
+            "count": 5,
+            "avg_confidence": 0.6000000000000001,
+            "category": "constructive"
+          }
+        },
+        "avg_confidence": 0.6000000000000001
+      }
+    },
+    "quality_prediction": {
+      "skill_id": "python-background-jobs",
+      "utility_class": "neutral",
+      "probability": {
+        "positive": 0.25,
+        "neutral": 0.5,
+        "negative": 0.25
+      },
+      "feature_importance": {
+        "template_specificity": 1.0,
+        "abstraction_level": 0.0020864846800576916,
+        "coverage_breadth": 0.8410138248847926,
+        "document_length": 0.45111981566820275,
+        "code_to_prose_ratio": 0.7488479262672811,
+        "instruction_density": 0.8133640552995391
+      },
+      "recommendation": "\u2248 Observed \u0394P=+0.000: no measurable effect on pass rate (heuristic disagrees: \u2717 Skill too broad - may cause concept bleed)",
+      "confidence": 0.5
+    }
+  },
+  "summary": {
+    "task_id": "python-background-jobs",
+    "analysis_complete": true,
+    "modules_executed": [
+      "parsing",
+      "segmentation",
+      "alignment",
+      "sip_detection",
+      "quality_prediction"
+    ],
+    "dominant_sips": [
+      "edge_case_prompting"
+    ],
+    "skill_utility": "neutral",
+    "skill_confidence": 0.5
+  }
+}

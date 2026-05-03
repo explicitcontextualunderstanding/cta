@@ -136,10 +136,21 @@ class SkillQualityPredictor:
 
         return combined
 
+    # Threshold below which |ΔP| is treated as neutral.
+    # Kept at 0.0 to match the labelling scheme in scripts/cta_prepare_data.py
+    # (any ΔP > 0 → positive, < 0 → negative, == 0 → neutral).
+    DELTA_NEUTRAL_THRESHOLD = 0.0
+
     def predict_utility(self, skill_doc: str, task_metadata: Dict[str, Any],
                        baseline_pass_rate: float = 0.5) -> SkillQualityScore:
         """
         Predict skill utility for a task.
+
+        When ``task_metadata`` carries observed evaluation data
+        (``pass_rate_source == "eval_report"`` and a numeric
+        ``pass_rate_delta``), the observed ΔP is used directly to label the
+        skill (positive / neutral / negative). The rule-based heuristic is
+        only used as a fallback when no evaluation data is available.
 
         Args:
             skill_doc: Skill document text
@@ -149,15 +160,33 @@ class SkillQualityPredictor:
         Returns:
             SkillQualityScore with predictions
         """
-        # Extract features
+        # Always extract features; we still surface them for downstream
+        # introspection / risk analysis even when ΔP drives the label.
         skill_features = self.extract_skill_features(skill_doc)
         project_features = self.extract_project_features(task_metadata, baseline_pass_rate)
-        combined_features = self.combine_features(skill_features, project_features)
+        self.combine_features(skill_features, project_features)
 
-        # Rule-based prediction
-        utility_class, probabilities = self._predict_utility_rules(skill_features, project_features)
+        # Heuristic outputs are kept as a fallback / secondary signal.
+        heuristic_class, heuristic_probs = self._predict_utility_rules(
+            skill_features, project_features
+        )
 
-        # Extract skill_id from metadata
+        # Prefer observed ΔP when it comes from a real eval report.
+        delta_label, delta_probs, delta_value, used_delta = self._predict_from_delta(
+            task_metadata
+        )
+
+        if used_delta:
+            utility_class = delta_label
+            probabilities = delta_probs
+            recommendation = self._generate_delta_recommendation(
+                delta_label, delta_value, heuristic_class, skill_features
+            )
+        else:
+            utility_class = heuristic_class
+            probabilities = heuristic_probs
+            recommendation = self._generate_recommendation(utility_class, skill_features)
+
         skill_id = task_metadata.get('skill_id', 'unknown')
 
         score = SkillQualityScore(
@@ -165,7 +194,7 @@ class SkillQualityPredictor:
             utility_class=utility_class,
             probability=probabilities,
             feature_importance=self._get_feature_importance(skill_features),
-            recommendation=self._generate_recommendation(utility_class, skill_features),
+            recommendation=recommendation,
             confidence=max(probabilities.values()) if probabilities else 0.0
         )
 
@@ -226,6 +255,67 @@ class SkillQualityPredictor:
             utility_class = 'neutral'
 
         return utility_class, probabilities
+
+    def _predict_from_delta(self, task_metadata: Dict[str, Any]
+                            ) -> Tuple[str, Dict[str, float], Optional[float], bool]:
+        """Derive utility label directly from observed ΔP if available.
+
+        Returns ``(label, probabilities, delta_value, used_delta)``. ``used_delta``
+        is False when metadata does not carry a real evaluation result, in
+        which case callers should fall back to the heuristic.
+        """
+        source = task_metadata.get('pass_rate_source')
+        if source != 'eval_report':
+            return 'neutral', {}, None, False
+
+        delta = task_metadata.get('pass_rate_delta')
+        if delta is None:
+            return 'neutral', {}, None, False
+
+        try:
+            delta = float(delta)
+        except (TypeError, ValueError):
+            return 'neutral', {}, None, False
+
+        threshold = self.DELTA_NEUTRAL_THRESHOLD
+        if delta > threshold:
+            label = 'positive'
+        elif delta < -threshold:
+            label = 'negative'
+        else:
+            label = 'neutral'
+
+        # Confidence scales with |ΔP|, capped at 1.0 once |ΔP| reaches 0.5.
+        confidence = min(1.0, abs(delta) / 0.5)
+        # Floor at a small value so neutral labels still report a sensible
+        # probability (e.g. ΔP=0.0 → confidence 0.5 in 'neutral').
+        if label == 'neutral':
+            confidence = max(confidence, 0.5)
+        else:
+            confidence = max(confidence, 0.55)
+
+        remainder = (1.0 - confidence) / 2.0
+        probs = {'positive': remainder, 'neutral': remainder, 'negative': remainder}
+        probs[label] = confidence
+        return label, probs, delta, True
+
+    def _generate_delta_recommendation(self, label: str, delta: Optional[float],
+                                       heuristic_class: str,
+                                       skill_features: Dict[str, float]) -> str:
+        """Recommendation text when label comes from observed ΔP."""
+        delta_str = f"{delta:+.3f}" if delta is not None else "n/a"
+        base = {
+            'positive': f"✓ Observed ΔP={delta_str}: skill improves task pass rate",
+            'negative': f"✗ Observed ΔP={delta_str}: skill hurts task pass rate",
+            'neutral':  f"≈ Observed ΔP={delta_str}: no measurable effect on pass rate",
+        }[label]
+
+        # Surface the heuristic verdict when it disagrees, so reviewers can spot
+        # potentially fragile or "lucky" skills.
+        if heuristic_class != label:
+            heuristic_hint = self._generate_recommendation(heuristic_class, skill_features)
+            base += f" (heuristic disagrees: {heuristic_hint})"
+        return base
 
     def _get_feature_importance(self, skill_features: Dict[str, float]) -> Dict[str, float]:
         """Get feature importance scores"""
@@ -344,10 +434,12 @@ class SkillQualityPredictor:
                 'score': features.get('coverage_breadth', 0)
             })
 
-        # Check for Context Displacement risk
+        # Long-document risk (in v2 SIP schema, this risk is no longer a
+        # separate SIP -- the dropped "Context Displacement" category was
+        # collapsed into the document_length feature; see plan.md §2.5.1).
         if features.get('document_length', 0) > 0.7:
             analysis['risks'].append({
-                'type': 'context_displacement',
+                'type': 'long_document',
                 'severity': 'medium',
                 'description': 'Skill document is very long - may crowd out task requirements',
                 'score': features.get('document_length', 0)

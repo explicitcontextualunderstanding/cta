@@ -1,0 +1,56 @@
+{
+  "task_id": "security-review",
+  "modules": {
+    "parsing": {
+      "traces_with_skill": 1,
+      "traces_without_skill": 1
+    },
+    "segmentation": {
+      "phased_traces_with_skill": 1,
+      "phased_traces_without_skill": 1
+    },
+    "alignment": {
+      "total_divergences": 16,
+      "divergence_statistics": {
+        "total_divergences": 16,
+        "by_type": {
+          "target_mismatch": 16
+        },
+        "by_phase": {
+          "implementation": 1,
+          "validation": 1,
+          "finalization": 14
+        },
+        "avg_skill_similarity": 0.5
+      }
+    },
+    "sip_detection": {
+      "total_sips": 2,
+      "sip_statistics": {
+        "total_sips": 2,
+        "by_type": {
+          "redundant_reiteration": {
+            "count": 2,
+            "avg_confidence": 0.75
+          }
+        },
+        "avg_confidence": 0.75
+      }
+    },
+    "quality_prediction": {}
+  },
+  "summary": {
+    "task_id": "security-review",
+    "analysis_complete": true,
+    "modules_executed": [
+      "parsing",
+      "segmentation",
+      "alignment",
+      "sip_detection",
+      "quality_prediction"
+    ],
+    "dominant_sips": [
+      "redundant_reiteration"
+    ]
+  }
+}

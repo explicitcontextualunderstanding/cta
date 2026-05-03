@@ -1,0 +1,88 @@
+{
+  "task_id": "risk-metrics-calculation",
+  "modules": {
+    "parsing": {
+      "traces_with_skill": 1,
+      "traces_without_skill": 1
+    },
+    "segmentation": {
+      "phased_traces_with_skill": 1,
+      "phased_traces_without_skill": 1
+    },
+    "alignment": {
+      "total_divergences": 3,
+      "divergence_statistics": {
+        "total_divergences": 3,
+        "by_type": {
+          "target_mismatch": 3
+        },
+        "by_phase": {
+          "implementation": 2,
+          "finalization": 1
+        },
+        "avg_skill_similarity": 0.20413267024245865
+      }
+    },
+    "sip_detection": {
+      "total_sips": 5,
+      "sip_statistics": {
+        "total_sips": 5,
+        "by_type": {
+          "edge_case_prompting": {
+            "count": 1,
+            "avg_confidence": 0.6000000000000001,
+            "category": "constructive"
+          },
+          "redundant_exploration": {
+            "count": 1,
+            "avg_confidence": 0.5,
+            "category": "neutral"
+          },
+          "concept_bleed": {
+            "count": 3,
+            "avg_confidence": 0.75,
+            "category": "destructive"
+          }
+        },
+        "avg_confidence": 0.67
+      }
+    },
+    "quality_prediction": {
+      "skill_id": "risk-metrics-calculation",
+      "utility_class": "neutral",
+      "probability": {
+        "positive": 0.25,
+        "neutral": 0.5,
+        "negative": 0.25
+      },
+      "feature_importance": {
+        "template_specificity": 1.0,
+        "abstraction_level": 0.0022260877957537163,
+        "coverage_breadth": 0.8485401459854015,
+        "document_length": 0.2270693430656934,
+        "code_to_prose_ratio": 0.812043795620438,
+        "instruction_density": 0.8302919708029197
+      },
+      "recommendation": "\u2248 Observed \u0394P=+0.000: no measurable effect on pass rate (heuristic disagrees: \u2717 Skill too broad - may cause concept bleed)",
+      "confidence": 0.5
+    }
+  },
+  "summary": {
+    "task_id": "risk-metrics-calculation",
+    "analysis_complete": true,
+    "modules_executed": [
+      "parsing",
+      "segmentation",
+      "alignment",
+      "sip_detection",
+      "quality_prediction"
+    ],
+    "dominant_sips": [
+      "concept_bleed",
+      "edge_case_prompting",
+      "redundant_exploration"
+    ],
+    "skill_utility": "neutral",
+    "skill_confidence": 0.5
+  }
+}

@@ -18,18 +18,33 @@ load_dotenv()
 
 
 def load_results(results_dir: Path) -> Dict[str, Dict]:
-    """Load all CTA analysis results from directory"""
-    results = {}
+    """Load CTA analysis results from directory.
+
+    Each pipeline run produces a timestamped file (``cta_analysis_<task>_<ts>.json``).
+    To avoid mixing results from older runs that may use a stale SIP schema,
+    we keep only the *most recent* file per task_id (by mtime).
+    """
+    files_by_task: Dict[str, Path] = {}
+    mtimes_by_task: Dict[str, float] = {}
 
     for result_file in results_dir.glob('cta_analysis_*.json'):
         try:
             with open(result_file, 'r') as f:
                 data = json.load(f)
-                task_id = data.get('task_id')
-                if task_id:
-                    results[task_id] = data
+            task_id = data.get('task_id')
+            if not task_id:
+                continue
+            mtime = result_file.stat().st_mtime
+            if task_id not in mtimes_by_task or mtime > mtimes_by_task[task_id]:
+                files_by_task[task_id] = result_file
+                mtimes_by_task[task_id] = mtime
         except Exception as e:
             print(f"Warning: Could not load {result_file}: {e}")
+
+    results: Dict[str, Dict] = {}
+    for task_id, latest_file in files_by_task.items():
+        with open(latest_file, 'r') as f:
+            results[task_id] = json.load(f)
 
     return results
 
@@ -157,10 +172,10 @@ def print_summary_report(results: Dict[str, Dict]):
     print("-" * 80)
     sip_stats = aggregate_sips(results)
 
-    # Categorize by type
-    constructive = ['procedural_scaffolding', 'constraint_narrowing', 'edge_case_prompting']
-    neutral = ['redundant_reiteration', 'parallel_exploration']
-    destructive = ['surface_anchoring', 'concept_bleed', 'context_displacement']
+    # Categorize by type (v2 schema, see plan.md §2.5.1)
+    constructive = ['procedural_scaffolding', 'edge_case_prompting']
+    neutral = ['redundant_exploration']
+    destructive = ['surface_anchoring', 'concept_bleed']
 
     print("   CONSTRUCTIVE:")
     for sip_type in constructive:

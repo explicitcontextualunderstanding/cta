@@ -1,0 +1,93 @@
+{
+  "task_id": "bash-defensive-patterns",
+  "modules": {
+    "parsing": {
+      "traces_with_skill": 1,
+      "traces_without_skill": 1
+    },
+    "segmentation": {
+      "phased_traces_with_skill": 1,
+      "phased_traces_without_skill": 1
+    },
+    "alignment": {
+      "total_divergences": 11,
+      "divergence_statistics": {
+        "total_divergences": 11,
+        "by_type": {
+          "target_mismatch": 9,
+          "unilateral_action": 2
+        },
+        "by_phase": {
+          "implementation": 11
+        },
+        "avg_skill_similarity": 0.26834521703216896
+      }
+    },
+    "sip_detection": {
+      "total_sips": 16,
+      "sip_statistics": {
+        "total_sips": 16,
+        "by_type": {
+          "edge_case_prompting": {
+            "count": 2,
+            "avg_confidence": 0.55,
+            "category": "constructive"
+          },
+          "redundant_exploration": {
+            "count": 1,
+            "avg_confidence": 0.5,
+            "category": "neutral"
+          },
+          "surface_anchoring": {
+            "count": 10,
+            "avg_confidence": 0.6,
+            "category": "destructive"
+          },
+          "concept_bleed": {
+            "count": 3,
+            "avg_confidence": 0.6666666666666666,
+            "category": "destructive"
+          }
+        },
+        "avg_confidence": 0.6
+      }
+    },
+    "quality_prediction": {
+      "skill_id": "bash-defensive-patterns",
+      "utility_class": "positive",
+      "probability": {
+        "positive": 0.55,
+        "neutral": 0.22499999999999998,
+        "negative": 0.22499999999999998
+      },
+      "feature_importance": {
+        "template_specificity": 1.0,
+        "abstraction_level": 0.026521591295477733,
+        "coverage_breadth": 0.8571428571428572,
+        "document_length": 0.3116571428571429,
+        "code_to_prose_ratio": 0.7492063492063493,
+        "instruction_density": 0.7968253968253969
+      },
+      "recommendation": "\u2713 Observed \u0394P=+0.182: skill improves task pass rate (heuristic disagrees: \u2717 Skill too broad - may cause concept bleed)",
+      "confidence": 0.55
+    }
+  },
+  "summary": {
+    "task_id": "bash-defensive-patterns",
+    "analysis_complete": true,
+    "modules_executed": [
+      "parsing",
+      "segmentation",
+      "alignment",
+      "sip_detection",
+      "quality_prediction"
+    ],
+    "dominant_sips": [
+      "surface_anchoring",
+      "concept_bleed",
+      "edge_case_prompting"
+    ],
+    "skill_utility": "positive",
+    "skill_confidence": 0.55
+  }
+}

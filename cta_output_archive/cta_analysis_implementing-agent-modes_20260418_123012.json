@@ -1,0 +1,81 @@
+{
+  "task_id": "implementing-agent-modes",
+  "modules": {
+    "parsing": {
+      "traces_with_skill": 1,
+      "traces_without_skill": 1
+    },
+    "segmentation": {
+      "phased_traces_with_skill": 1,
+      "phased_traces_without_skill": 1
+    },
+    "alignment": {
+      "total_divergences": 3,
+      "divergence_statistics": {
+        "total_divergences": 3,
+        "by_type": {
+          "target_mismatch": 3
+        },
+        "by_phase": {
+          "validation": 1,
+          "debugging": 1,
+          "finalization": 1
+        },
+        "avg_skill_similarity": 0.5
+      }
+    },
+    "sip_detection": {
+      "total_sips": 4,
+      "sip_statistics": {
+        "total_sips": 4,
+        "by_type": {
+          "edge_case_prompting": {
+            "count": 2,
+            "avg_confidence": 0.5
+          },
+          "concept_bleed": {
+            "count": 2,
+            "avg_confidence": 0.6
+          }
+        },
+        "avg_confidence": 0.55
+      }
+    },
+    "quality_prediction": {
+      "skill_id": "implementing-agent-modes",
+      "utility_class": "negative",
+      "probability": {
+        "positive": 0.0,
+        "neutral": 0.2,
+        "negative": 0.8
+      },
+      "feature_importance": {
+        "template_specificity": 1.0,
+        "abstraction_level": 0.00035198873636043646,
+        "coverage_breadth": 0.8333333333333334,
+        "document_length": 0.5953333333333333,
+        "code_to_prose_ratio": 0.7113821138211383,
+        "instruction_density": 0.7113821138211383
+      },
+      "recommendation": "\u2717 Skill too broad - may cause concept bleed",
+      "confidence": 0.8
+    }
+  },
+  "summary": {
+    "task_id": "implementing-agent-modes",
+    "analysis_complete": true,
+    "modules_executed": [
+      "parsing",
+      "segmentation",
+      "alignment",
+      "sip_detection",
+      "quality_prediction"
+    ],
+    "dominant_sips": [
+      "edge_case_prompting",
+      "concept_bleed"
+    ],
+    "skill_utility": "negative",
+    "skill_confidence": 0.8
+  }
+}

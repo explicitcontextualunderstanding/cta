@@ -1,0 +1,62 @@
+{
+  "task_id": "gitlab-ci-patterns",
+  "modules": {
+    "parsing": {
+      "traces_with_skill": 1,
+      "traces_without_skill": 1
+    },
+    "segmentation": {
+      "phased_traces_with_skill": 1,
+      "phased_traces_without_skill": 1
+    },
+    "alignment": {
+      "total_divergences": 0,
+      "divergence_statistics": {
+        "total_divergences": 0,
+        "by_type": {},
+        "by_phase": {},
+        "avg_skill_similarity": 0.0
+      }
+    },
+    "sip_detection": {
+      "total_sips": 0,
+      "sip_statistics": {
+        "total_sips": 0,
+        "by_type": {}
+      }
+    },
+    "quality_prediction": {
+      "skill_id": "gitlab-ci-patterns",
+      "utility_class": "negative",
+      "probability": {
+        "positive": 0.0,
+        "neutral": 0.3333333333333333,
+        "negative": 0.6666666666666666
+      },
+      "feature_importance": {
+        "template_specificity": 1.0,
+        "abstraction_level": 0.010788273781004389,
+        "coverage_breadth": 0.8596713021491783,
+        "document_length": 0.6492237673830594,
+        "code_to_prose_ratio": 0.7711757269279395,
+        "instruction_density": 0.8217446270543617
+      },
+      "recommendation": "\u2717 Skill too broad - may cause concept bleed",
+      "confidence": 0.6666666666666666
+    }
+  },
+  "summary": {
+    "task_id": "gitlab-ci-patterns",
+    "analysis_complete": true,
+    "modules_executed": [
+      "parsing",
+      "segmentation",
+      "alignment",
+      "sip_detection",
+      "quality_prediction"
+    ],
+    "dominant_sips": [],
+    "skill_utility": "negative",
+    "skill_confidence": 0.6666666666666666
+  }
+}
