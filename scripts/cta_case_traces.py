@@ -31,6 +31,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 TRACES_DIR = REPO_ROOT / "claude_process" / "claude-sonnet-4-5-20250929" / "batch1" / "claude_thinking"
 SKILLS_DIR = REPO_ROOT / "skills"
 OUTPUT_TEX = REPO_ROOT / "draft" / "appendix_cases.tex"
+OUTPUT_TEX.parent.mkdir(parents=True, exist_ok=True)
 
 # Hard cap on rows in the side-by-side diff so the appendix stays readable.
 MAX_ROWS_PER_CASE = 28

@@ -196,22 +196,6 @@ class PhaseSegmenter:
         """
         return [self.segment(trace) for trace in traces]
 
-    @staticmethod
-    def validate_phases(phased_trace: PhasedTrace, min_phase_f1: float = 0.85) -> float:
-        """
-        Validate phase segmentation quality.
-
-        Args:
-            phased_trace: PhasedTrace to validate
-            min_phase_f1: Minimum acceptable F1 score
-
-        Returns:
-            Validation F1 score
-        """
-        # This would compare against manually annotated phases
-        # For now, return a placeholder
-        return 0.0
-
     def get_phase_sequence(self, phased_trace: PhasedTrace) -> List[str]:
         """Get sequence of phase types"""
         return [phase.type.value for phase in phased_trace.phases]

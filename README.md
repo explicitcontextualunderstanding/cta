@@ -1,6 +1,6 @@
 # Counterfactual Trace Auditing (CTA)
 
-Reproduce the analysis and LaTeX inputs for **`draft/neurips_2026.tex`** (49-task SWE-Skills-Bench study, paired with-skill / without-skill traces).
+Reproduce the analysis and LaTeX inputs for the paper (49-task SWE-Skills-Bench study, paired with-skill / without-skill traces).
 
 **Benchmark-only usage** (HuggingFace dataset, Docker runs, pass-rate tables without CTA) lives in [`README_SWE-Skills-Bench.md`](README_SWE-Skills-Bench.md).
 
@@ -76,7 +76,7 @@ python scripts/cta_face_validity.py    # draft/face_validity_sample.{md,json} (S
 python scripts/cta_case_traces.py      # draft/appendix_cases.tex (case-study diffs + skill excerpts)
 ```
 
-Then compile `draft/neurips_2026.tex` (paths are relative to that file).
+The scripts auto-create `draft/` if it does not exist; outputs land there.
 
 ---
 

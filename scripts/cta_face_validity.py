@@ -30,6 +30,7 @@ from typing import Any, Dict, List, Tuple
 ROOT = Path(__file__).resolve().parent.parent
 ANALYSIS_DIR = ROOT / "cta_output"
 DRAFT_DIR = ROOT / "draft"
+DRAFT_DIR.mkdir(parents=True, exist_ok=True)
 
 ANALYSIS_FNAME = re.compile(r"cta_analysis_(.+)_(\d{8}_\d{6})\.json")
 
