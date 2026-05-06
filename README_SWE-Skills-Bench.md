@@ -90,24 +90,10 @@ There are two ways to use SWE-Skills-Bench depending on your goal.
 
 ---
 
-### Option A: Load via HuggingFace (quick access)
+### Option A: Load via HuggingFace
 
-Install the `datasets` library if you haven't already:
-
-```bash
-pip install datasets
-```
-
-```python
-from datasets import load_dataset
-
-ds = load_dataset("GeniusHTX/SWE-Skills-Bench", split="train")
-print(ds)
-# Dataset({features: ['skill_id', 'name', 'description', 'type',
-#                     'task_prompt', 'skill_document', 'test_code',
-#                     'repo_url', 'repo_commit', 'docker_image'],
-#          num_rows: 49})
-```
+The dataset will be released on HuggingFace upon acceptance.
+For now, please use Option B (local evaluation framework) below.
 
 ---
 
