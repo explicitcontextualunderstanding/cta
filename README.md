@@ -103,18 +103,6 @@ Then compile `draft/neurips_2026.tex` (paths are relative to that file).
 
 ---
 
-## TODOs (planned work not required for the current draft)
-
-Items below extend or validate the system beyond what **`draft/neurips_2026.tex`** currently reports. See also internal research notes in `plan.md`.
-
-- [ ] **Public release artifact:** replace the abstract placeholder (“Code link will be provided upon acceptance”) with the actual repository or archive URL.
-- [ ] **Human / LLM-as-annotator validation:** multi-judge phase labels, SIP adjudication, and gold-set agreement statistics (as sketched in `plan.md`); not part of the shipped rule-based pipeline alone.
-- [ ] **Learned SIP classifier:** optional XGBoost or LLM-as-classifier path trained on annotated divergences; current paper uses **deterministic rule-based** SIP detectors in code.
-- [ ] **Taxonomy extension:** formalize “premature closure” and other out-of-taxonomy failure modes called out in the case studies (`draft/neurips_2026.tex`, `\S` case on negative \(\Delta P\) without a destructive SIP).
-- [ ] **Sensitivity tooling:** scripted sweeps over `intent_similarity_threshold` and related knobs for appendix tables (partially ad hoc today).
-
----
-
 ## License
 
 MIT. See `LICENSE`.

@@ -1,18 +1,17 @@
 #!/usr/bin/env python3
-"""Sample N random (divergence, SIP) pairs for manual face-validity review.
+"""Sample N random (divergence, SIP) pairs for face-validity review.
 
-Per NeurIPS paper section "Detector validation": we cannot afford a full
-human-annotated gold set, so we sample 30 (divergence, SIP) pairs uniformly
-across SIP types and write a markdown sheet for the author(s) to mark
-``looks_correct: true|false``. The aggregate face-valid rate is reported in
-the paper as a minimum-effort sanity check on the rule-based detector.
+Samples (divergence, SIP) pairs uniformly across SIP types and writes a
+markdown sheet where each pair can be marked ``looks_correct: true|false``.
+The aggregate face-valid rate is reported in the paper as a sanity check
+on the rule-based detector.
 
 Usage::
 
     python scripts/cta_face_validity.py --n 30 --seed 0
 
 Writes:
-    draft/face_validity_sample.md   (author edits ``looks_correct: ?`` -> y/n)
+    draft/face_validity_sample.md   (markdown worksheet)
     draft/face_validity_sample.json (machine-readable record of the sample)
 """
 

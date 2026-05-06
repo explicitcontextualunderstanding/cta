@@ -436,7 +436,7 @@ class SkillQualityPredictor:
 
         # Long-document risk (in v2 SIP schema, this risk is no longer a
         # separate SIP -- the dropped "Context Displacement" category was
-        # collapsed into the document_length feature; see plan.md §2.5.1).
+        # collapsed into the document_length feature).
         if features.get('document_length', 0) > 0.7:
             analysis['risks'].append({
                 'type': 'long_document',

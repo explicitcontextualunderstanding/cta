@@ -51,7 +51,7 @@ class DivergenceType(Enum):
     ``bash-defensive-patterns`` prompting the agent to author a new
     ``test_scripts.bats`` that the baseline never produced. Without this
     type, those cases are silently dropped by the symmetric alignment
-    in Module 3 (see plan.md §2.4.2 "case 4: Unilateral Artifact").
+    in Module 3.
     """
     TARGET_MISMATCH = "target_mismatch"           # Different files/targets
     CONTENT_MISMATCH = "content_mismatch"         # Different code changes
@@ -62,7 +62,7 @@ class DivergenceType(Enum):
 class SIPType(Enum):
     """Skill Influence Pattern types (v2 schema, 5 categories).
 
-    Design rationale (see plan.md §2.5.1):
+    Design rationale:
         - Constructive: PS (Procedural Scaffolding), EP (Edge-case Prompting)
         - Neutral:      RE (Redundant Exploration, merges legacy RR + PE)
         - Destructive:  SA (Surface Anchoring), CB (Concept Bleed)
@@ -101,8 +101,7 @@ class SIPType(Enum):
             mapped = legacy_map[value]
             if mapped is None:
                 raise ValueError(
-                    f"SIP category '{value}' was removed in v2 schema "
-                    f"(see plan.md §2.5.1 for rationale)"
+                    f"SIP category '{value}' was removed in v2 schema"
                 )
             warnings.warn(
                 f"SIP category '{value}' is deprecated; mapping to '{mapped.value}'",

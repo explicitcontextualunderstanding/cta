@@ -172,7 +172,7 @@ def print_summary_report(results: Dict[str, Dict]):
     print("-" * 80)
     sip_stats = aggregate_sips(results)
 
-    # Categorize by type (v2 schema, see plan.md §2.5.1)
+    # Categorize by type (v2 schema)
     constructive = ['procedural_scaffolding', 'edge_case_prompting']
     neutral = ['redundant_exploration']
     destructive = ['surface_anchoring', 'concept_bleed']

@@ -5,8 +5,6 @@ Implements the v2 SIP taxonomy (5 categories):
     Constructive: PS (Procedural Scaffolding), EP (Edge-case Prompting)
     Neutral:      RE (Redundant Exploration)
     Destructive:  SA (Surface Anchoring), CB (Concept Bleed)
-
-See plan.md §2.5.1 for the design rationale and the v1 -> v2 migration notes.
 """
 
 import json
@@ -321,7 +319,7 @@ class SIPDetector:
         if is_unilateral:
             # Base evidence: the with-skill agent created an artifact on a
             # target the baseline never touched, which is the structural
-            # signature of EP / "Unilateral Artifact" (plan.md §2.4.2 case 4).
+            # signature of EP / "Unilateral Artifact".
             # The base alone clears the EP threshold (0.50) so that artifacts
             # without explicit guard-rail keywords (e.g. defensive shell
             # scripts that use `set -e` rather than try/except) still fire.
@@ -365,8 +363,7 @@ class SIPDetector:
         # ---------------- Surface Anchoring (SA) ---------------- #
         # Primary detector: literal-token / n-gram match between the *skill
         # document* and the *with-skill write events*, that does NOT appear in
-        # the without-skill writes. This is the SA signature defined in
-        # plan.md §2.5.1.
+        # the without-skill writes. This is the SA signature.
         sa_score = self._score_surface_anchoring(features)
         if sa_score > 0:
             scores[SIPType.SURFACE_ANCHORING] = min(sa_score, 0.95)
