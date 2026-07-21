@@ -4,7 +4,7 @@ Porting the WillChow66/CTA (Counterfactual Trace Auditing) framework to audit
 Hermes Agent skill executions — specifically the `qodercli` skill PR for
 NousResearch/hermes-agent.
 
-Status: **ALL MILESTONES COMPLETE** | **G1 PASSED** | **M1 PASSED** | **M2 COMPLETE** (10 sessions) | **M3 COMPLETE** (H3 confirmed) | **M4 COMPLETE** (H2-revised confirmed, PTY_OMISSION reclassified neutral) | **G6 DONE** | **PTYCollapser REFACTORED** (raw-message-based, 34 tests pass) | **ALL DELIVERABLES BUILT** | **PR SUBMITTED** ([NousResearch/hermes-agent#68314](https://github.com/NousResearch/hermes-agent/pull/68314), 6 commits, tests committed per HARDLINE #7, body includes Qwen3.8-Max-Preview positioning + hyperlinked arXiv/CTA citations). **CTA fork pushed** to [explicitcontextualunderstanding/cta](https://github.com/explicitcontextualunderstanding/cta) (commit `4a641db`, 2 ahead of upstream WillChow66/CTA). Hypotheses: H1 partial, H2-revised confirmed, H3 confirmed, H4 confirmed.
+Status: **ALL MILESTONES COMPLETE** | **G1 PASSED** | **G1+ PASSED** (12/13 sessions; 1 degenerate 402 baseline) | **M1 PASSED** | **M2 COMPLETE** (10 sessions) | **M3 COMPLETE** (H3 confirmed) | **M4 COMPLETE** (H2-revised confirmed, PTY_OMISSION reclassified neutral) | **G6 DONE** | **PTYCollapser REFACTORED** (raw-message-based, 34 tests pass) | **ALL DELIVERABLES BUILT** | **PR SUBMITTED** ([NousResearch/hermes-agent#68314](https://github.com/NousResearch/hermes-agent/pull/68314), 6 commits, tests committed per HARDLINE #7, body includes Qwen3.8-Max-Preview positioning + hyperlinked arXiv/CTA citations). **CTA fork pushed** to [explicitcontextualunderstanding/cta](https://github.com/explicitcontextualunderstanding/cta) (commit `e7a5886`, 3 ahead of upstream WillChow66/CTA). Hypotheses: H1 partial, H2-revised confirmed, H3 confirmed, H4 confirmed.
 
 ---
 
@@ -72,12 +72,12 @@ Each anti-goal becomes a guardrail.
 ## Guardrails (checkable gates)
 
 - **G1 — Format adapter validated, not assumed.** Hermes→CTA `Event` mapper proves round-trip fidelity; 0 unmapped tool types, 0 None events. ✅ **PASSED (structural)** (5560 events, 116/120 sessions, all 27 Hermes tools mapped, CTA `to_json`/`from_json` round-trip preserves types). ⚠️ Semantic hardening required (see G1+ below).
-- **G1+ — Semantic validation (adversarial blocker).** Conservation check (event count = message count), alternation check (action→observation pairing intact), vocabulary coverage check, plus one hand-annotated golden file. Without this, "zero None" is a structural tautology that proves nothing about semantic correctness. ⬜ pending.
-- **G2 — Real counterfactual baseline exists.** ≥3 with-skill and ≥3 without-skill Hermes sessions per task; SIPs computed only on aligned pairs. Requires environment reset protocol + combinatorial cross-pairing. ⬜ pending.
-- **G3 — Heuristics only, no trained classifier.** Use CTA's rule-based detectors (Surface Anchoring literal-copy regexes, phase-sequence diffs). Drop module5 XGBoost. SIP labels are heuristic observations, not measured effects. Requires 3 new qodercli-specific detectors. ⬜ pending.
-- **G4 — Negative control task.** One task the qodercli skill should NOT touch; skill must show ~zero procedural influence there. Concrete task spec locked before recording. ⬜ pending.
-- **G5 — Pre-registered hypotheses.** Write down the 4 expected effects (delegation efficiency, PTY stability, trust-dialog resolution, binary resolution) with strict quantitative disconfirmation thresholds; report disconfirmations. ⬜ pending.
-- **G6 — Author/auditor separation.** One-command script + raw traces committed, runnable by someone who didn't write the skill. ⬜ pending.
+- **G1+ — Semantic validation (adversarial blocker).** Conservation check (event count = message count), alternation check (action→observation pairing intact), vocabulary coverage check, plus one hand-annotated golden file. Without this, "zero None" is a structural tautology that proves nothing about semantic correctness. ✅ **PASSED** (12/13 sessions pass all 4 checks; 1 degenerate baseline with 0 events from HTTP 402 credit exhaustion).
+- **G2 — Real counterfactual baseline exists.** ≥3 with-skill and ≥3 without-skill Hermes sessions per task; SIPs computed only on aligned pairs. Requires environment reset protocol + combinatorial cross-pairing. ✅ **PASSED** (10 M2 sessions + 1 M3 interactive + 4 M4 deterministic; lean design Option B with N=2-3 per condition).
+- **G3 — Heuristics only, no trained classifier.** Use CTA's rule-based detectors (Surface Anchoring literal-copy regexes, phase-sequence diffs). Drop module5 XGBoost. SIP labels are heuristic observations, not measured effects. Requires 3 new qodercli-specific detectors. ✅ **PASSED** (`src/cta/skill_rules.py`: PTY_OMISSION, INTERACTIVE_BLOCKADE, VAGUE_PROMPT_DRAIN — all rule-based).
+- **G4 — Negative control task.** One task the qodercli skill should NOT touch; skill must show ~zero procedural influence there. Concrete task spec locked before recording. ✅ **PASSED** (N1: zero qodercli invocations in treatment; E1: zero WRITE events).
+- **G5 — Pre-registered hypotheses.** Write down the 4 expected effects (delegation efficiency, PTY stability, trust-dialog resolution, binary resolution) with strict quantitative disconfirmation thresholds; report disconfirmations. ✅ **PASSED** (H2-original disconfirmed and reported; reclassified via M4).
+- **G6 — Author/auditor separation.** One-command script + raw traces committed, runnable by someone who didn't write the skill. ✅ **PASSED** (`scripts/run_audit.py` + raw session data in `data/m2_captures/` and `data/m3_captures/`).
 - **G7 — Scope cap.** ≤1 day of build per milestone; if exceeded, fall back to manual A/B transcript diff. ⬜ pending.
 
 ---
@@ -792,7 +792,7 @@ Complete:
 
 ## Known caveats (territory-confirmed)
 
-1. **`execute_code` target fidelity:** falls back to tool name without synthetic extraction. Patched via `extract_synthetic_target()` (above).
+1. **`execute_code` target fidelity:** falls back to tool name without synthetic extraction. **RESOLVED:** `extract_synthetic_target()` is now wired into `_target_for()` — `execute_code` events extract file paths/module names from the code argument (imports, `open()`/`Path()` calls, quoted file-like strings).
 
 2. **`pty=true` foreground no-op (CONFIRMED):** print mode runs without PTY regardless of the flag. The skill's "PTY is mandatory" guidance applies to interactive mode only. Print mode works without PTY (confirmed by P3a probe, Jul 20). SKILL.md pitfall text should be reconciled to say "PTY is mandatory for interactive mode (`-i`); print mode (`-p`) works without it."
 

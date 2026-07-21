@@ -215,9 +215,13 @@ Audit code and raw session data: [github.com/WillChow66/CTA](https://github.com/
 python scripts/run_audit.py
 
 # Output: data/audit_report.json + data/audit_report.md
+
+# G1+ semantic validation (conservation, alternation, vocabulary, CTA mapping)
+python scripts/validate_g1_plus.py data/m2_captures/P2-treatment-1/state.db -v
+# Passes on 12/13 sessions (1 degenerate baseline: HTTP 402, 0 events)
 ```
 
-Raw session data (SQLite databases + stdout) committed in `data/m2_captures/` and `data/m3_captures/`. Capture harness in `scripts/capture_harness.py` (requires OpenRouter key + Apple Container runtime to re-run).
+Raw session data (SQLite databases + stdout) committed in `data/m2_captures/`, `data/m3_captures/`, and `data/m4_captures/`. Capture harness in `scripts/capture_harness.py` (requires OpenRouter key + Apple Container runtime to re-run).
 
 ---
 

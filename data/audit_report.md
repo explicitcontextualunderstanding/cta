@@ -61,6 +61,8 @@
 
 - **PTYCollapser** (`src/cta/pty_collapser.py`): Operates on raw Hermes messages via `extract_tool_records()`. Detects PTY parents from args (`pty=true, background=true`), collects `process()` children by `session_id`, emits composite EXECUTE events with structured JSON sub-trace. Handles interleaved non-process calls (read_file/ls between polls). 34 tests pass including M3 integration.
 - **h3_verdict()**: Evaluates H3 from collapsed PTYSession metadata. Status: CONFIRMED.
+- **G1+ Semantic Validation** (`scripts/validate_g1_plus.py`): Conservation, alternation, vocabulary coverage, and CTA mapping checks. Passes on 12/13 captured sessions (all M2 + M3 treatment). The 1 failure is the M3 interactive baseline (HTTP 402 credit exhaustion → 0 events, degenerate session).
+- **Synthetic target extraction** (`src/cta/hermes_adapter.py`): `extract_synthetic_target()` wired into `_target_for()` — `execute_code` events now produce meaningful targets (file paths, module names) instead of falling back to the tool name.
 
 ### M4 PTY Stability Counterfactual (Jul 21 2026)
 
