@@ -10,7 +10,30 @@
 
 Adds a skill that enables Hermes to delegate multi-file coding tasks to [Qoder CLI](https://docs.qoder.com) via the `terminal` tool. Qoder reads files, writes code, runs shell commands, spawns subagents, and manages git workflows autonomously — freeing Hermes to orchestrate and verify rather than implement line-by-line.
 
-This PR includes evidence from a **Counterfactual Trace Audit (CTA)** — 12 containerized sessions (10 print-mode + 2 interactive-mode) comparing Hermes behavior with and without the skill, following the methodology of [Zhou et al. (arXiv:2605.11946)](https://arxiv.org/abs/2605.11946). Audit code and session data: [github.com/WillChow66/CTA](https://github.com/WillChow66/CTA).
+This PR includes evidence from a **Counterfactual Trace Audit (CTA)** — 14+ containerized sessions (10 print-mode + 2 interactive-mode + 2 cross-model validation) comparing Hermes behavior with and without the skill, following the methodology of [Zhou et al. (arXiv:2605.11946)](https://arxiv.org/abs/2605.11946). Models tested: claude-sonnet-4 (Anthropic) and kimi-k2.7-code (Moonshot). Audit code and session data: [github.com/WillChow66/CTA](https://github.com/WillChow66/CTA).
+
+> **IN PROGRESS:** Cross-model volume expansion (kimi-k2.7-code, N=4 baseline + N=5 treatment so far). Preliminary results correct the earlier N=1 "2.5x" claim — see Cross-model validation section below. Full N=10 statistics pending batch completion.
+
+### Evidence summary (CTA, 23 containerized sessions)
+
+**Print mode (strong signal, claude-sonnet-4, N=10):**
+
+| Metric | With skill | Without skill | Ratio |
+|--------|-----------|---------------|-------|
+| Manual file writes (P2 migration) | 2 | 16 | **8x fewer** |
+| Tool calls (P2) | 38 | 62 | 1.6x fewer |
+| Messages (P2) | 66 | 113 | 1.7x fewer |
+| qodercli usable without skill? | Yes (token provided) | **No** ("Not logged in") | Auth gatekeeper |
+
+**Interactive mode (modest signal, kimi-k2.7-code, N=9 preliminary):**
+
+| Metric | With skill (N=5) | Without skill (N=4) |
+|--------|-----------------|---------------------|
+| Trust dialog resolution speed | 7.2 msgs post-launch | 8.5 msgs post-launch |
+| Stuck-session rate | **40%** (2/5) | **0%** (0/4) |
+| Clean-session efficiency | 1.4x fewer messages | Baseline |
+
+**Conclusion:** The skill's primary value is **print-mode delegation** (8x write compression, auth enablement). Interactive mode provides marginal orientation speedup but introduces a 40% stuck-polling failure mode. SKILL.md v2.2.0 restructured to print-mode-first with a delegation wrapper script (`qodercli-delegate`) that eliminates interactive monitoring entirely.
 
 ### Why this skill matters now
 
@@ -35,14 +58,14 @@ This PR includes evidence from a **Counterfactual Trace Audit (CTA)** — 12 con
 
 ---
 
-## CTA Evidence (12 sessions, containerized)
+## CTA Evidence (14+ sessions, containerized)
 
 ### Methodology
 
 Each session runs in a fresh Apple Container micro-VM (4 CPU, 2GB RAM) with:
 - Hermes v0.19.0 (commit `a41d280f`)
 - qodercli v1.1.1
-- Model: `anthropic/claude-sonnet-4` via OpenRouter
+- Models: `anthropic/claude-sonnet-4` via OpenRouter, `kimi-k2.7-code` via opencode-go
 - Identical fixture project (6 route files, models, services, db, utils, tests)
 
 **Treatment:** Skill installed + `QODER_PERSONAL_ACCESS_TOKEN` provided.
@@ -88,7 +111,7 @@ Without the skill's token guidance, qodercli is present but unusable. The model 
 |---|---|---|---|
 | H1 | Delegation Efficiency: skill collapses N file ops into 1 terminal call | **PARTIALLY CONFIRMED** | 8x write compression on P2. Not clean 1-call collapse — model adds verification loops. |
 | H2 | PTY Stability: every qodercli invocation sets `pty=true` | **RECLASSIFIED → H2-revised CONFIRMED** | M4 counterfactual: print mode PTY-agnostic (exit 0 both conditions). M3: 100% pty=true on interactive. Model discriminates correctly by mode. |
-| H3 | Interactive Blockade: model detects folder trust prompt and sends `1\n` | **CONFIRMED** | M3 trace: model detected dialog, referenced skill guidance, resolved via `process(submit, data='1')` after 2 polls. |
+| H3 | Interactive Blockade: model detects folder trust prompt and sends `1\n` | **CONFIRMED (revised)** | M3 trace: model detected dialog, referenced skill guidance, resolved via `process(submit, data='1')` after 2 polls. Cross-model (kimi-k2.7-code, N=9): baseline resolves independently at similar speed (gap 8.5 vs 7.2 msgs). Skill provides orientation speedup (launch ~10 msgs earlier), not dialog enablement. Treatment shows 40% stuck-polling risk (see below). |
 | H4 | Binary Resolution: model runs `which -a qodercli` during orientation | **CONFIRMED** | 4/6 treatment traces + M3. Consistent across all positive tasks. |
 
 ### Disconfirmation reporting (per G5 pre-registration)
@@ -153,6 +176,30 @@ msg 58: process(submit, data='1')                              ← permission pr
 ```
 
 The model explicitly referenced the skill: *"I can see qodercli is asking for folder trust confirmation. As mentioned in the skill, I need to send..."*
+
+### Cross-model validation (kimi-k2.7-code, N=4 baseline + N=5 treatment, preliminary)
+
+**Correction:** The earlier N=1 comparison (T1:56 vs B1:138 → "2.5x") was a cherry-pick. Full data:
+
+| Metric | Baseline (N=4) | Treatment ALL (N=5) | Treatment CLEAN (N=3) |
+|--------|---------------|---------------------|----------------------|
+| Mean messages | 103 | 116.6 | 71.7 |
+| Mean tool calls | 55 | 63 | 40.3 |
+| Mean wall time | 559s | 489s | 576s |
+| Trust dialog gap (msgs) | 8.5 | 7.2 | 6.0 |
+| Stuck-session rate | **0%** | **40%** | — |
+
+**Key findings:**
+
+1. **Trust dialog resolution is model-native.** Baseline resolves at gap=8.5 msgs; treatment at 7.2. Difference: 1.3 messages — not the "2.6x faster" claimed from N=1.
+
+2. **Treatment is bimodal.** 3/5 sessions are "clean" (56–81 msgs, 8–14 polls). 2/5 are "stuck" (172–196 msgs, 58–74 polls) — the model polls qodercli's spinner output endlessly, then kills it and verifies manually. Baseline has zero stuck sessions.
+
+3. **The skill accelerates orientation, not execution.** Treatment launches qodercli at msg 8–27 (T1 at msg 8). Baseline launches at msg 18–27. The skill collapses the "should I delegate?" decision, not the delegation itself.
+
+4. **New SIP: MONITORING_IMPATIENCE** (destructive, treatment-only). After trust dialog resolves, the model polls qodercli's spinner (⠋⠙⠹) 58–74 times without patience. Root cause: skill lacks monitoring duration guidance. Fix: add `process(wait, timeout=120)` guidance and "spinner means still working" documentation.
+
+**Honest summary:** The skill's primary validated value is **print-mode delegation** (M2 P2: 8x write compression). Interactive mode shows marginal orientation speedup with a 40% stuck-session risk. Full N=10 statistics pending.
 
 ---
 
@@ -227,11 +274,12 @@ Raw session data (SQLite databases + stdout) committed in `data/m2_captures/`, `
 
 ## Limitations
 
-1. **N=2-3 per condition** (lean design). Effect sizes are 3-16x, so statistical power is adequate, but rare-event SIPs may be underrepresented.
-2. **Single model** (claude-sonnet-4). Behavior may differ on other models.
+1. **N=2-3 per condition** (lean design, print mode). Effect sizes are 3-16x, so statistical power is adequate, but rare-event SIPs may be underrepresented.
+2. **Two models tested** (claude-sonnet-4, kimi-k2.7-code). Cross-model volume expansion (N=10 per condition) in progress — preliminary N=9 kimi results show modest interactive effect (1.4x clean, 40% stuck rate).
 3. **H2-original disconfirmed, H2-revised confirmed.** 73% PTY compliance overall, but 100% on interactive calls where it matters. M4 proved print mode is PTY-agnostic. Skill language scoped accordingly.
-4. **M3 baseline blocked** (credit exhaustion). Interactive-mode comparison is treatment-only.
+4. **Interactive mode effect is modest.** N=1 "2.5x efficiency" was a cherry-pick. At N=9: trust dialog resolution gap is 1.3 messages (not 2.5x). Treatment is bimodal (60% clean at 1.4x, 40% stuck at 2-3x worse). Baseline has zero stuck sessions. The skill's strong evidence is print-mode delegation (M2 P2: 8x write compression), not interactive mode.
 5. **Wall-time tradeoff.** Delegation reduces agent actions but increases total execution time (qodercli is slow). This is a tradeoff, not a pure win.
+6. **MONITORING_IMPATIENCE SIP (new).** 40% of treatment interactive sessions enter a stuck-polling loop (58-74 polls on spinner output) that never occurs in baseline. Skill lacks monitoring patience guidance. Fix proposed: `process(wait, timeout=120)` + spinner documentation.
 
 ---
 

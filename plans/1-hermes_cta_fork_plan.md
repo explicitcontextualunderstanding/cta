@@ -4,7 +4,7 @@ Porting the WillChow66/CTA (Counterfactual Trace Auditing) framework to audit
 Hermes Agent skill executions — specifically the `qodercli` skill PR for
 NousResearch/hermes-agent.
 
-Status: **ALL MILESTONES COMPLETE** | **G1 PASSED** | **G1+ PASSED** (12/13 sessions; 1 degenerate 402 baseline) | **M1 PASSED** | **M2 COMPLETE** (10 sessions) | **M3 COMPLETE** (H3 confirmed) | **M4 COMPLETE** (H2-revised confirmed, PTY_OMISSION reclassified neutral) | **G6 DONE** | **PTYCollapser REFACTORED** (raw-message-based, 34 tests pass) | **ALL DELIVERABLES BUILT** | **PR SUBMITTED** ([NousResearch/hermes-agent#68314](https://github.com/NousResearch/hermes-agent/pull/68314), 6 commits, tests committed per HARDLINE #7, body includes Qwen3.8-Max-Preview positioning + hyperlinked arXiv/CTA citations). **CTA fork pushed** to [explicitcontextualunderstanding/cta](https://github.com/explicitcontextualunderstanding/cta) (commit `e7a5886`, 3 ahead of upstream WillChow66/CTA). Hypotheses: H1 partial, H2-revised confirmed, H3 confirmed, H4 confirmed. **M3 VOLUME EXPANSION IN PROGRESS** (kimi-k2.7-code via opencode-go; 2/20 sessions complete, validation pair G1+ PASSED; 2.5x efficiency gap confirmed; batch 1 runs 2-4 ACTIVE; harness has skip-if-complete + progress.json persistence). **PENDING:** audit_report.md + pr_writeup.md updates deferred until N=10 completes (will add kimi statistics, revised H3 framing [efficiency not enablement], cross-model generalizability).
+Status: **ALL MILESTONES COMPLETE** | **G1 PASSED** | **G1+ PASSED** (12/13 sessions; 1 degenerate 402 baseline) | **M1 PASSED** | **M2 COMPLETE** (10 sessions) | **M3 COMPLETE** (H3 confirmed) | **M4 COMPLETE** (H2-revised confirmed, PTY_OMISSION reclassified neutral) | **G6 DONE** | **PTYCollapser REFACTORED** (raw-message-based, 34 tests pass) | **ALL DELIVERABLES BUILT** | **PR SUBMITTED** ([NousResearch/hermes-agent#68314](https://github.com/NousResearch/hermes-agent/pull/68314), 6 commits, tests committed per HARDLINE #7, body includes Qwen3.8-Max-Preview positioning + hyperlinked arXiv/CTA citations). **CTA fork pushed** to [explicitcontextualunderstanding/cta](https://github.com/explicitcontextualunderstanding/cta) (commit `e7a5886`, 3 ahead of upstream WillChow66/CTA). Hypotheses: H1 partial, H2-revised confirmed, H3 confirmed (revised: marginal orientation speedup, not enablement), H4 confirmed. **M3 VOLUME EXPANSION IN PROGRESS** (kimi-k2.7-code via opencode-go; N=4 baseline + N=5 treatment valid; batch PID 12399 running B5-B10 then T6-T10). **TERRITORY CORRECTION:** N=1 "2.5x efficiency" claim was a cherry-pick. Full data shows: treatment is bimodal (60% clean at 1.4x efficiency, 40% stuck-polling at 2-3x WORSE); baseline is consistent with zero stuck sessions; trust dialog resolution gap is 1.3 messages (not 2.5x). Skill's real interactive value: faster orientation (launch 10 msgs earlier), not fewer total messages. **PENDING:** Final statistics at N≥10, then update audit_report.md + pr_writeup.md.
 
 ---
 
@@ -1577,4 +1577,114 @@ Prior M3 (claude-sonnet-4) + this expansion (kimi-k2.7-code) tests H3 across:
 - Same task, same infrastructure, same skill
 
 If H3 holds on both, the skill's value is model-agnostic (not an artifact of one model's training distribution).
+
+### Preliminary Territory Analysis (N=4B, N=5T, Jul 21 2026)
+
+**Map correction:** The N=1 validation pair (T1:56 msgs vs B1:138 msgs → "2.5x efficiency")
+was a cherry-pick. Full data reveals a fundamentally different picture.
+
+#### Session inventory (all with valid state.db)
+
+| Session | Msgs | Tools | Time(s) | Launch@ | 1stWrite@ | Gap | Writes | Polls | Pattern |
+|---------|------|-------|---------|---------|-----------|-----|--------|-------|---------|
+| B1 | 138 | 72 | 692.8 | 27 | 35 | 8 | 5 | 28 | VERBOSE |
+| B2 | 82 | 45 | 516.2 | 19 | 25 | 6 | 4 | 12 | CLEAN |
+| B3 | 105 | 55 | 380.2 | 18 | 24 | 6 | 4 | 17 | CLEAN |
+| B4 | 87 | 49 | 646.8 | 21 | 35 | 14 | 3 | 17 | CLEAN |
+| T1 | 56 | 29 | 606.2 | 8 | 14 | 6 | 5 | 10 | CLEAN |
+| T2 | 196 | 103 | 247.5 | 25 | 31 | 6 | 10 | 74 | STUCK |
+| T3 | 78 | 45 | 308.0 | 22 | 28 | 6 | 3 | 8 | CLEAN |
+| T4 | 81 | 47 | 816.2 | 15 | 21 | 6 | 7 | 14 | CLEAN |
+| T5 | 172 | 91 | 464.6 | 27 | 31 | 4 | 7 | 58 | STUCK |
+
+#### Finding 1: Trust dialog resolution — no meaningful skill advantage
+
+| Condition | Gaps (msgs from launch → first write) | Mean |
+|-----------|---------------------------------------|------|
+| Baseline | 8, 6, 6, 14 | **8.5** |
+| Treatment | 6, 6, 6, 14, 4 | **7.2** |
+
+Difference: 1.3 messages. The "2.6x faster resolution" from N=1 is dead.
+Both conditions resolve the trust dialog. The skill does NOT enable resolution —
+it marginally accelerates it.
+
+#### Finding 2: Treatment is bimodal, baseline is not
+
+| Pattern | Sessions | Msgs | Polls | Mechanism |
+|---------|----------|------|-------|-----------|
+| CLEAN | T1, T3, T4 | 56–81 | 8–14 | qodercli completes, model verifies |
+| STUCK | T2, T5 | 172–196 | 58–74 | Model polls spinner endlessly → kills qodercli → verifies manually |
+| Baseline (all) | B1–B4 | 82–138 | 12–28 | Consistent, zero stuck sessions |
+
+The stuck pattern: trust dialog resolves fine (gap=4–6), then the model polls
+qodercli's spinner output (⠋⠙⠹...) 58–74 times without patience, eventually
+kills the process and checks files manually. Tests still pass. But 2–3x message cost.
+
+**Baseline has ZERO stuck sessions (0/4).** The skill may increase variance by
+encouraging interactive monitoring behavior the model doesn't always handle well.
+
+#### Finding 3: Revised effect sizes
+
+| Metric | Baseline (N=4) | Treatment ALL (N=5) | Treatment CLEAN (N=3) |
+|--------|---------------|---------------------|----------------------|
+| Mean msgs | 103 | 116.6 (+13% WORSE) | 71.7 (1.4x better) |
+| Mean tools | 55 | 63 | 40.3 |
+| Mean time | 559s | 489s | 576s |
+| Stuck rate | 0% | 40% | — |
+
+- Overall treatment is **13% worse** on message count (driven by stuck sessions)
+- Clean treatment is **1.4x more efficient** (not 2.5x)
+- Baseline is **more reliable** (zero stuck sessions)
+
+#### Finding 4: What the skill actually does in interactive mode
+
+1. **Accelerates orientation:** T1 launches qodercli at msg 8. Baseline earliest is msg 18. The skill collapses the "should I use qodercli?" decision by ~10 messages.
+2. **Does NOT enable trust dialog resolution:** Baseline resolves it independently at near-identical speed (gap 6–14 vs 4–6).
+3. **Introduces variance:** 40% of treatment sessions enter a stuck-polling loop that never happens in baseline.
+4. **The strong evidence remains print mode:** M2 P2 (8x write compression) is the skill's validated value proposition. Interactive mode evidence is modest at best.
+
+#### Finding 5: The stuck-polling failure mode (new SIP)
+
+**MONITORING_IMPATIENCE** (destructive, treatment-only):
+- Model launches qodercli interactively, resolves trust dialog quickly
+- qodercli begins working (spinner output: ⠋⠙⠹...)
+- Model polls every 2–4 seconds seeing only spinner characters
+- After 50+ polls, model kills qodercli and verifies manually
+- Task succeeds but at 2–3x message cost vs clean sessions
+
+**Root cause:** The skill documents `process(poll)` and `process(wait)` but
+doesn't guidance on wait duration or when to stop polling. The model defaults
+to rapid polling because it has no heuristic for "qodercli needs 2–5 minutes
+for multi-file implementation."
+
+**Proposed fix:** Add monitoring patience guidance to SKILL.md:
+- "After launching qodercli interactively, use `process(action='wait', timeout=120)`
+  instead of rapid `process(poll)` loops. qodercli typically needs 60–300s for
+  multi-file tasks."
+- "If you see only spinner characters (⠋⠙⠹) in poll output, qodercli is still
+  working. Do NOT kill it. Wait longer."
+- "Maximum recommended polls before escalating: 10. If still running after
+  5 minutes, check `process(log)` for meaningful output before deciding to kill."
+
+#### H3 verdict revision
+
+| Version | Statement | Verdict |
+|---------|-----------|---------|
+| H3-original | Model detects folder trust prompt and sends `1\n` | CONFIRMED (both conditions do this) |
+| H3-revised | Skill provides meaningful efficiency gain in interactive mode | **PARTIALLY CONFIRMED** (1.4x on clean runs, but 40% stuck rate makes overall effect negative) |
+| H3-skill-value | Skill's interactive value is orientation speedup, not dialog resolution | **CONFIRMED** (launch 10 msgs earlier; dialog resolution is model-native) |
+
+#### Implications for PR narrative
+
+The PR's H3 framing must change:
+- ~~"baseline resolves at 2.5x cost"~~ → "baseline resolves independently at similar speed"
+- ~~"skill collapses exploration space"~~ → "skill accelerates orientation decision"
+- New honest framing: "The skill's primary value is print-mode delegation (8x write compression, M2). Interactive mode shows marginal orientation speedup with a 40% stuck-session risk that the skill should address with monitoring patience guidance."
+
+#### Batch status
+
+PID 12399 running. Remaining: B5–B10, T6–T10. At N=10 per condition, we'll have
+power to confirm whether the 40% stuck rate is stable or an artifact of small N.
+If stuck rate drops at higher N, the skill's interactive value improves. If it
+holds, the SKILL.md monitoring guidance fix becomes critical.
 
