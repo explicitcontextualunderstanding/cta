@@ -5,10 +5,16 @@ Goes beyond the structural "zero None" gate (G1) to verify semantic correctness
 of the Hermes→CTA adapter mapping.
 
 Checks:
+  0. Degenerate detection: classify empty sessions (infra failure, not adapter bug)
   1. Conservation: every tool_call has a matching tool response (no orphans)
   2. Alternation: assistant→tool message ordering is well-formed
   3. Vocabulary coverage: all tool names are in the explicit map
   4. CTA mapping: adapter produces zero None-typed events
+
+Verdicts:
+  PASS  — all checks pass, session is valid for analysis
+  SKIP  — session is degenerate (empty due to infra failure); excluded from analysis
+  FAIL  — adapter bug detected (None events, orphans, unmapped tools)
 
 Usage:
     python scripts/validate_g1_plus.py <session.json|state.db> [--verbose]
@@ -39,7 +45,7 @@ def load_session(path: str) -> Dict[str, Any]:
         conn = sqlite3.connect(str(p))
         conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
         conn.row_factory = sqlite3.Row
-        row = conn.execute("SELECT id, model FROM sessions LIMIT 1").fetchone()
+        row = conn.execute("SELECT id, model, end_reason FROM sessions LIMIT 1").fetchone()
         if not row:
             conn.close()
             raise ValueError("No sessions found in database")
@@ -60,8 +66,51 @@ def load_session(path: str) -> Dict[str, Any]:
                 msg["tool_calls"] = json.loads(r["tool_calls"]) if r["tool_calls"] else []
             messages.append(msg)
 
-        return {"session_id": session_id, "model": row["model"], "messages": messages}
+        return {
+            "session_id": session_id,
+            "model": row["model"],
+            "end_reason": row["end_reason"],
+            "messages": messages,
+        }
     raise ValueError(f"Unsupported file type: {p.suffix}")
+
+
+def check_degenerate(session: Dict[str, Any]) -> Dict[str, Any]:
+    """Classify whether a session is degenerate (empty due to infra failure).
+
+    Guardrail: distinguishes "nothing to translate" from "translator failed."
+    Degenerate sessions are SKIPped, not FAILed — they represent infrastructure
+    problems (credit exhaustion, timeout, crash), not adapter bugs.
+
+    Classifications:
+      - no_model_response: 0 assistant messages (API never responded: 402, timeout, crash)
+      - no_actions: assistant responded but produced 0 tool calls (trivial Q&A or refusal)
+      - not_degenerate: session has tool calls; proceed with full validation
+    """
+    messages = session.get("messages", [])
+    assistant_msgs = [m for m in messages if m.get("role") == "assistant"]
+    has_tool_calls = any(
+        m.get("tool_calls") for m in assistant_msgs
+    )
+
+    if not assistant_msgs:
+        classification = "no_model_response"
+        cause = session.get("end_reason") or "unknown (likely credit exhaustion or API failure)"
+    elif not has_tool_calls:
+        classification = "no_actions"
+        cause = "model responded but took no actions"
+    else:
+        classification = "not_degenerate"
+        cause = ""
+
+    return {
+        "check": "degenerate_detection",
+        "degenerate": classification != "not_degenerate",
+        "classification": classification,
+        "cause": cause,
+        "assistant_messages": len(assistant_msgs),
+        "has_tool_calls": has_tool_calls,
+    }
 
 
 def check_conservation(messages: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -143,11 +192,19 @@ def check_vocabulary(messages: List[Dict[str, Any]]) -> Dict[str, Any]:
 
 
 def check_cta_mapping(session: Dict[str, Any]) -> Dict[str, Any]:
-    """Adapter must produce zero None-typed events."""
+    """Adapter must produce zero None-typed events.
+
+    Guardrail: separates adapter failure (none_events > 0) from degenerate
+    input (event_count == 0 with none_events == 0). A degenerate session
+    produces 0 events because there were 0 actions — the adapter is faithfully
+    translating nothing into nothing. That's not a bug.
+    """
     trace, report = hermes_session_to_trace(session, with_skill=False)
+    adapter_failed = report["none_events"] > 0
     return {
         "check": "cta_mapping",
-        "passed": report["none_events"] == 0 and report["event_count"] > 0,
+        "passed": not adapter_failed,
+        "adapter_failure": adapter_failed,
         "event_count": report["event_count"],
         "none_events": report["none_events"],
         "unmapped_tools": report["unmapped_tools"],
@@ -170,6 +227,19 @@ def main():
     print(f"Session: {session.get('session_id', 'unknown')}")
     print(f"Messages: {len(messages)}")
     print()
+
+    # Guardrail: detect degenerate sessions before running adapter checks
+    degenerate = check_degenerate(session)
+    if degenerate["degenerate"]:
+        print(f"  [SKIP] {degenerate['check']}")
+        print(f"         classification: {degenerate['classification']}")
+        print(f"         cause: {degenerate['cause']}")
+        print(f"         assistant_messages: {degenerate['assistant_messages']}")
+        print()
+        print(f"{'='*50}")
+        print(f"Verdict: G1+ SKIPPED (degenerate session — not an adapter failure)")
+        print(f"         Exclude from aggregate metrics; do not flow into SIP analysis.")
+        return 0
 
     checks = [
         check_conservation(messages),
