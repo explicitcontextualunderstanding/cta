@@ -1,0 +1,9 @@
+{
+  "run_id": "P1-interactive-baseline-1",
+  "task_id": "P1-interactive",
+  "condition": "baseline",
+  "run_num": 1,
+  "exit_code": 0,
+  "elapsed_seconds": 23.0,
+  "container_name": "cta-m3-P1-interactive-baseline-1"
+}

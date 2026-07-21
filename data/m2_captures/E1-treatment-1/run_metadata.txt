@@ -1,0 +1,5 @@
+started_at=2026-07-20T22:29:20Z
+completed_at=2026-07-20T22:29:44Z
+task_id=E1
+condition=treatment
+run_num=1

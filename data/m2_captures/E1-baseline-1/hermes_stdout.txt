@@ -1,0 +1,4 @@
+  ⚠ tirith security scanner enabled but not available — command scanning will use pattern matching only
+The project version is **2.4.1** (found on line 3 of package.json).
+
+session_id: 20260720_222811_3a2ed0

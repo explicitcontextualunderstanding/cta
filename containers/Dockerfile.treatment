@@ -1,0 +1,14 @@
+FROM registry.rossollc.com/hermes:latest
+
+# Override entrypoint for setup layer
+ENTRYPOINT []
+
+# Install qodercli (pinned for reproducibility). node/npm already present.
+RUN npm install -g @qoder-ai/qodercli@1.1.1 \
+    && npm cache clean --force
+
+# Verify binary resolution (skill Procedure step 1 passes automatically)
+RUN which qodercli && qodercli --version
+
+# Restore hermes as entrypoint
+ENTRYPOINT ["hermes"]

@@ -1,0 +1,681 @@
+{
+  "metadata": {
+    "captures_dir": "/Users/kieranlal/workspace/CTA/data/m2_captures",
+    "total_sessions": 10,
+    "valid_sessions": 10,
+    "design": "Option B (lean): 5 tasks \u00d7 2 conditions, 2-3 runs on positives"
+  },
+  "sessions": [
+    {
+      "run_id": "E1-baseline-1",
+      "session_id": "20260720_222811_3a2ed0",
+      "model": "anthropic/claude-sonnet-4",
+      "condition": "baseline",
+      "task_id": "E1",
+      "exit_code": 0,
+      "elapsed_seconds": 31.6,
+      "total_messages": 4,
+      "assistant_messages": 2,
+      "total_tool_calls": 1,
+      "tool_counts": {
+        "read_file": 1
+      },
+      "type_counts": {
+        "read": 1,
+        "reason": 1
+      },
+      "unique_tools": 1,
+      "entropy": 0.0,
+      "entropy_ratio": 0.0,
+      "manual_writes": 0,
+      "qodercli_terminal_calls": 0,
+      "qodercli_mentions": 0,
+      "skill_views": 0,
+      "binary_resolution": 0,
+      "pty_set_count": 0,
+      "pty_omitted_on_qodercli": 0,
+      "blockade_streaks": [],
+      "adapter_event_count": 2,
+      "adapter_none_events": 0,
+      "adapter_unmapped": []
+    },
+    {
+      "run_id": "E1-treatment-1",
+      "session_id": "20260720_222935_e0f887",
+      "model": "anthropic/claude-sonnet-4",
+      "condition": "treatment",
+      "task_id": "E1",
+      "exit_code": 0,
+      "elapsed_seconds": 25.7,
+      "total_messages": 4,
+      "assistant_messages": 2,
+      "total_tool_calls": 1,
+      "tool_counts": {
+        "read_file": 1
+      },
+      "type_counts": {
+        "read": 1,
+        "reason": 1
+      },
+      "unique_tools": 1,
+      "entropy": 0.0,
+      "entropy_ratio": 0.0,
+      "manual_writes": 0,
+      "qodercli_terminal_calls": 0,
+      "qodercli_mentions": 0,
+      "skill_views": 0,
+      "binary_resolution": 0,
+      "pty_set_count": 0,
+      "pty_omitted_on_qodercli": 0,
+      "blockade_streaks": [],
+      "adapter_event_count": 2,
+      "adapter_none_events": 0,
+      "adapter_unmapped": []
+    },
+    {
+      "run_id": "N1-baseline-1",
+      "session_id": "20260720_225351_1d25c3",
+      "model": "anthropic/claude-sonnet-4",
+      "condition": "baseline",
+      "task_id": "N1",
+      "exit_code": 0,
+      "elapsed_seconds": 99.8,
+      "total_messages": 38,
+      "assistant_messages": 20,
+      "total_tool_calls": 17,
+      "tool_counts": {
+        "terminal": 8,
+        "read_file": 3,
+        "search_files": 3,
+        "write_file": 2,
+        "patch": 1
+      },
+      "type_counts": {
+        "execute": 8,
+        "read": 3,
+        "write": 3,
+        "reason": 3,
+        "search": 3
+      },
+      "unique_tools": 5,
+      "entropy": 1.999,
+      "entropy_ratio": 0.861,
+      "manual_writes": 3,
+      "qodercli_terminal_calls": 0,
+      "qodercli_mentions": 0,
+      "skill_views": 0,
+      "binary_resolution": 0,
+      "pty_set_count": 0,
+      "pty_omitted_on_qodercli": 0,
+      "blockade_streaks": [],
+      "adapter_event_count": 20,
+      "adapter_none_events": 0,
+      "adapter_unmapped": []
+    },
+    {
+      "run_id": "N1-treatment-1",
+      "session_id": "20260720_225218_1399d7",
+      "model": "anthropic/claude-sonnet-4",
+      "condition": "treatment",
+      "task_id": "N1",
+      "exit_code": 0,
+      "elapsed_seconds": 91.3,
+      "total_messages": 32,
+      "assistant_messages": 17,
+      "total_tool_calls": 14,
+      "tool_counts": {
+        "terminal": 7,
+        "read_file": 4,
+        "search_files": 2,
+        "patch": 1
+      },
+      "type_counts": {
+        "execute": 7,
+        "read": 4,
+        "reason": 3,
+        "search": 2,
+        "write": 1
+      },
+      "unique_tools": 4,
+      "entropy": 1.689,
+      "entropy_ratio": 0.845,
+      "manual_writes": 1,
+      "qodercli_terminal_calls": 0,
+      "qodercli_mentions": 0,
+      "skill_views": 0,
+      "binary_resolution": 0,
+      "pty_set_count": 0,
+      "pty_omitted_on_qodercli": 0,
+      "blockade_streaks": [],
+      "adapter_event_count": 17,
+      "adapter_none_events": 0,
+      "adapter_unmapped": []
+    },
+    {
+      "run_id": "P1-baseline-1",
+      "session_id": "20260720_225551_e55327",
+      "model": "anthropic/claude-sonnet-4",
+      "condition": "baseline",
+      "task_id": "P1",
+      "exit_code": 0,
+      "elapsed_seconds": 38.1,
+      "total_messages": 4,
+      "assistant_messages": 2,
+      "total_tool_calls": 1,
+      "tool_counts": {
+        "delegate_task": 1
+      },
+      "type_counts": {
+        "tool_call": 1,
+        "reason": 1
+      },
+      "unique_tools": 1,
+      "entropy": 0.0,
+      "entropy_ratio": 0.0,
+      "manual_writes": 0,
+      "qodercli_terminal_calls": 0,
+      "qodercli_mentions": 3,
+      "skill_views": 0,
+      "binary_resolution": 0,
+      "pty_set_count": 0,
+      "pty_omitted_on_qodercli": 0,
+      "blockade_streaks": [],
+      "adapter_event_count": 2,
+      "adapter_none_events": 0,
+      "adapter_unmapped": []
+    },
+    {
+      "run_id": "P1-treatment-1",
+      "session_id": "20260720_231909_ad9270",
+      "model": "anthropic/claude-sonnet-4",
+      "condition": "treatment",
+      "task_id": "P1",
+      "exit_code": 0,
+      "elapsed_seconds": 241.4,
+      "total_messages": 87,
+      "assistant_messages": 43,
+      "total_tool_calls": 43,
+      "tool_counts": {
+        "terminal": 16,
+        "process": 15,
+        "read_file": 7,
+        "patch": 3,
+        "skill_view": 1,
+        "search_files": 1
+      },
+      "type_counts": {
+        "execute": 16,
+        "tool_call": 15,
+        "read": 7,
+        "reason": 3,
+        "write": 3,
+        "search": 1
+      },
+      "unique_tools": 6,
+      "entropy": 2.007,
+      "entropy_ratio": 0.777,
+      "manual_writes": 3,
+      "qodercli_terminal_calls": 5,
+      "qodercli_mentions": 11,
+      "skill_views": 1,
+      "binary_resolution": 2,
+      "pty_set_count": 4,
+      "pty_omitted_on_qodercli": 1,
+      "blockade_streaks": [],
+      "adapter_event_count": 45,
+      "adapter_none_events": 0,
+      "adapter_unmapped": []
+    },
+    {
+      "run_id": "P1-treatment-2",
+      "session_id": "20260720_232849_c0b56a",
+      "model": "anthropic/claude-sonnet-4",
+      "condition": "treatment",
+      "task_id": "P1",
+      "exit_code": 0,
+      "elapsed_seconds": 479.7,
+      "total_messages": 43,
+      "assistant_messages": 22,
+      "total_tool_calls": 20,
+      "tool_counts": {
+        "terminal": 9,
+        "read_file": 5,
+        "write_file": 2,
+        "search_files": 2,
+        "skill_view": 1,
+        "patch": 1
+      },
+      "type_counts": {
+        "execute": 9,
+        "read": 5,
+        "reason": 3,
+        "write": 3,
+        "search": 2
+      },
+      "unique_tools": 6,
+      "entropy": 2.115,
+      "entropy_ratio": 0.818,
+      "manual_writes": 3,
+      "qodercli_terminal_calls": 3,
+      "qodercli_mentions": 6,
+      "skill_views": 1,
+      "binary_resolution": 1,
+      "pty_set_count": 2,
+      "pty_omitted_on_qodercli": 1,
+      "blockade_streaks": [],
+      "adapter_event_count": 22,
+      "adapter_none_events": 0,
+      "adapter_unmapped": []
+    },
+    {
+      "run_id": "P2-baseline-1",
+      "session_id": "20260720_231020_9df7e1",
+      "model": "anthropic/claude-sonnet-4",
+      "condition": "baseline",
+      "task_id": "P2",
+      "exit_code": 0,
+      "elapsed_seconds": 351.5,
+      "total_messages": 113,
+      "assistant_messages": 50,
+      "total_tool_calls": 62,
+      "tool_counts": {
+        "terminal": 18,
+        "patch": 15,
+        "read_file": 14,
+        "todo": 8,
+        "search_files": 6,
+        "write_file": 1
+      },
+      "type_counts": {
+        "execute": 18,
+        "write": 16,
+        "read": 14,
+        "reason": 9,
+        "search": 6
+      },
+      "unique_tools": 6,
+      "entropy": 2.301,
+      "entropy_ratio": 0.89,
+      "manual_writes": 16,
+      "qodercli_terminal_calls": 3,
+      "qodercli_mentions": 11,
+      "skill_views": 0,
+      "binary_resolution": 1,
+      "pty_set_count": 0,
+      "pty_omitted_on_qodercli": 3,
+      "blockade_streaks": [],
+      "adapter_event_count": 63,
+      "adapter_none_events": 0,
+      "adapter_unmapped": []
+    },
+    {
+      "run_id": "P2-treatment-1",
+      "session_id": "20260720_230051_f420b0",
+      "model": "anthropic/claude-sonnet-4",
+      "condition": "treatment",
+      "task_id": "P2",
+      "exit_code": 0,
+      "elapsed_seconds": 563.8,
+      "total_messages": 63,
+      "assistant_messages": 29,
+      "total_tool_calls": 33,
+      "tool_counts": {
+        "terminal": 16,
+        "read_file": 12,
+        "search_files": 2,
+        "skill_view": 1,
+        "process": 1,
+        "patch": 1
+      },
+      "type_counts": {
+        "execute": 16,
+        "read": 12,
+        "reason": 2,
+        "search": 2,
+        "tool_call": 1,
+        "write": 1
+      },
+      "unique_tools": 6,
+      "entropy": 1.741,
+      "entropy_ratio": 0.673,
+      "manual_writes": 1,
+      "qodercli_terminal_calls": 3,
+      "qodercli_mentions": 10,
+      "skill_views": 1,
+      "binary_resolution": 1,
+      "pty_set_count": 2,
+      "pty_omitted_on_qodercli": 1,
+      "blockade_streaks": [],
+      "adapter_event_count": 34,
+      "adapter_none_events": 0,
+      "adapter_unmapped": []
+    },
+    {
+      "run_id": "P2-treatment-2",
+      "session_id": "20260720_233558_40f302",
+      "model": "anthropic/claude-sonnet-4",
+      "condition": "treatment",
+      "task_id": "P2",
+      "exit_code": 0,
+      "elapsed_seconds": 613.0,
+      "total_messages": 70,
+      "assistant_messages": 26,
+      "total_tool_calls": 43,
+      "tool_counts": {
+        "read_file": 18,
+        "terminal": 16,
+        "search_files": 5,
+        "patch": 2,
+        "skill_view": 1,
+        "write_file": 1
+      },
+      "type_counts": {
+        "read": 18,
+        "execute": 16,
+        "search": 5,
+        "reason": 3,
+        "write": 3
+      },
+      "unique_tools": 6,
+      "entropy": 1.876,
+      "entropy_ratio": 0.726,
+      "manual_writes": 3,
+      "qodercli_terminal_calls": 4,
+      "qodercli_mentions": 11,
+      "skill_views": 1,
+      "binary_resolution": 1,
+      "pty_set_count": 3,
+      "pty_omitted_on_qodercli": 1,
+      "blockade_streaks": [],
+      "adapter_event_count": 45,
+      "adapter_none_events": 0,
+      "adapter_unmapped": []
+    }
+  ],
+  "task_comparisons": {
+    "E1": {
+      "treatment_runs": 1,
+      "baseline_runs": 1,
+      "avg_messages": {
+        "treatment": 4.0,
+        "baseline": 4.0
+      },
+      "avg_tool_calls": {
+        "treatment": 1.0,
+        "baseline": 1.0
+      },
+      "avg_manual_writes": {
+        "treatment": 0.0,
+        "baseline": 0.0
+      },
+      "avg_elapsed": {
+        "treatment": 25.7,
+        "baseline": 31.6
+      },
+      "avg_entropy": {
+        "treatment": 0.0,
+        "baseline": 0.0
+      },
+      "qodercli_calls": {
+        "treatment": 0,
+        "baseline": 0
+      },
+      "compression_ratio": 1.0
+    },
+    "N1": {
+      "treatment_runs": 1,
+      "baseline_runs": 1,
+      "avg_messages": {
+        "treatment": 32.0,
+        "baseline": 38.0
+      },
+      "avg_tool_calls": {
+        "treatment": 14.0,
+        "baseline": 17.0
+      },
+      "avg_manual_writes": {
+        "treatment": 1.0,
+        "baseline": 3.0
+      },
+      "avg_elapsed": {
+        "treatment": 91.3,
+        "baseline": 99.8
+      },
+      "avg_entropy": {
+        "treatment": 1.689,
+        "baseline": 1.999
+      },
+      "qodercli_calls": {
+        "treatment": 0,
+        "baseline": 0
+      },
+      "compression_ratio": 1.21
+    },
+    "P1": {
+      "treatment_runs": 2,
+      "baseline_runs": 1,
+      "avg_messages": {
+        "treatment": 65.0,
+        "baseline": 4.0
+      },
+      "avg_tool_calls": {
+        "treatment": 31.5,
+        "baseline": 1.0
+      },
+      "avg_manual_writes": {
+        "treatment": 3.0,
+        "baseline": 0.0
+      },
+      "avg_elapsed": {
+        "treatment": 360.6,
+        "baseline": 38.1
+      },
+      "avg_entropy": {
+        "treatment": 2.061,
+        "baseline": 0.0
+      },
+      "qodercli_calls": {
+        "treatment": 8,
+        "baseline": 0
+      },
+      "compression_ratio": 0.03
+    },
+    "P2": {
+      "treatment_runs": 2,
+      "baseline_runs": 1,
+      "avg_messages": {
+        "treatment": 66.5,
+        "baseline": 113.0
+      },
+      "avg_tool_calls": {
+        "treatment": 38.0,
+        "baseline": 62.0
+      },
+      "avg_manual_writes": {
+        "treatment": 2.0,
+        "baseline": 16.0
+      },
+      "avg_elapsed": {
+        "treatment": 588.4,
+        "baseline": 351.5
+      },
+      "avg_entropy": {
+        "treatment": 1.808,
+        "baseline": 2.301
+      },
+      "qodercli_calls": {
+        "treatment": 7,
+        "baseline": 3
+      },
+      "compression_ratio": 1.63
+    }
+  },
+  "hypotheses": {
+    "H1": {
+      "hypothesis": "Delegation Efficiency",
+      "status": "PARTIALLY CONFIRMED",
+      "evidence": {
+        "avg_treatment_tool_calls": 34.8,
+        "avg_baseline_tool_calls": 31.5,
+        "compression_ratio": 0.91,
+        "avg_treatment_writes": 2.5,
+        "avg_baseline_writes": 8.0,
+        "write_compression": 3.2,
+        "disconfirmation_threshold": "treatment \u226520% more tool calls than baseline"
+      }
+    },
+    "H2": {
+      "hypothesis": "PTY Execution Stability",
+      "status": "DISCONFIRMED",
+      "evidence": {
+        "pty_set_count": 11,
+        "pty_omissions_on_qodercli": 4
+      }
+    },
+    "H3": {
+      "hypothesis": "Interactive Blockade Resolution",
+      "status": "UNTESTABLE",
+      "evidence": {
+        "reason": "Print mode only; no process() calls observed",
+        "total_blockade_streaks": 0
+      }
+    },
+    "H4": {
+      "hypothesis": "Binary Resolution Validation",
+      "status": "CONFIRMED",
+      "evidence": {
+        "treatments_with_binary_resolution": 4,
+        "total_treatments": 6,
+        "threshold": "\u22652/3 treatment traces"
+      }
+    }
+  },
+  "sips": [
+    {
+      "type": "PTY_OMISSION",
+      "valence": "destructive",
+      "run_id": "P1-treatment-1",
+      "count": 1,
+      "description": "qodercli invoked without pty=true"
+    },
+    {
+      "type": "PROCEDURAL_SCAFFOLDING",
+      "valence": "constructive",
+      "run_id": "P1-treatment-1",
+      "description": "Skill loaded \u2192 binary resolution \u2192 structured delegation"
+    },
+    {
+      "type": "DELEGATION_REDIRECT",
+      "valence": "constructive",
+      "run_id": "P1-treatment-1",
+      "count": 5,
+      "description": "Delegation redirected to qodercli (vs native delegate_task)"
+    },
+    {
+      "type": "PTY_OMISSION",
+      "valence": "destructive",
+      "run_id": "P1-treatment-2",
+      "count": 1,
+      "description": "qodercli invoked without pty=true"
+    },
+    {
+      "type": "PROCEDURAL_SCAFFOLDING",
+      "valence": "constructive",
+      "run_id": "P1-treatment-2",
+      "description": "Skill loaded \u2192 binary resolution \u2192 structured delegation"
+    },
+    {
+      "type": "DELEGATION_REDIRECT",
+      "valence": "constructive",
+      "run_id": "P1-treatment-2",
+      "count": 3,
+      "description": "Delegation redirected to qodercli (vs native delegate_task)"
+    },
+    {
+      "type": "PTY_OMISSION",
+      "valence": "destructive",
+      "run_id": "P2-treatment-1",
+      "count": 1,
+      "description": "qodercli invoked without pty=true"
+    },
+    {
+      "type": "PROCEDURAL_SCAFFOLDING",
+      "valence": "constructive",
+      "run_id": "P2-treatment-1",
+      "description": "Skill loaded \u2192 binary resolution \u2192 structured delegation"
+    },
+    {
+      "type": "DELEGATION_REDIRECT",
+      "valence": "constructive",
+      "run_id": "P2-treatment-1",
+      "count": 3,
+      "description": "Delegation redirected to qodercli (vs native delegate_task)"
+    },
+    {
+      "type": "PTY_OMISSION",
+      "valence": "destructive",
+      "run_id": "P2-treatment-2",
+      "count": 1,
+      "description": "qodercli invoked without pty=true"
+    },
+    {
+      "type": "PROCEDURAL_SCAFFOLDING",
+      "valence": "constructive",
+      "run_id": "P2-treatment-2",
+      "description": "Skill loaded \u2192 binary resolution \u2192 structured delegation"
+    },
+    {
+      "type": "DELEGATION_REDIRECT",
+      "valence": "constructive",
+      "run_id": "P2-treatment-2",
+      "count": 4,
+      "description": "Delegation redirected to qodercli (vs native delegate_task)"
+    }
+  ],
+  "variance": {
+    "P1": {
+      "tool_calls": [
+        43,
+        20
+      ],
+      "messages": [
+        87,
+        43
+      ],
+      "elapsed": [
+        241.4,
+        479.7
+      ],
+      "manual_writes": [
+        3,
+        3
+      ],
+      "qodercli_calls": [
+        5,
+        3
+      ]
+    },
+    "P2": {
+      "tool_calls": [
+        33,
+        43
+      ],
+      "messages": [
+        63,
+        70
+      ],
+      "elapsed": [
+        563.8,
+        613.0
+      ],
+      "manual_writes": [
+        1,
+        3
+      ],
+      "qodercli_calls": [
+        3,
+        4
+      ]
+    }
+  }
+}

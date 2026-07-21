@@ -1,0 +1,9 @@
+{
+  "run_id": "P2-baseline-1",
+  "task_id": "P2",
+  "condition": "baseline",
+  "run_num": 1,
+  "exit_code": 0,
+  "elapsed_seconds": 351.5,
+  "container_name": "cta-m2-P2-baseline-1"
+}

@@ -1,0 +1,11 @@
+{
+  "total_runs": 1,
+  "passed": 1,
+  "failed": 0,
+  "results": [
+    {
+      "run_id": "P1-treatment-2",
+      "success": true
+    }
+  ]
+}

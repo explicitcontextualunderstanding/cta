@@ -1,0 +1,107 @@
+{
+  "study_id": "cta-m2-qodercli-audit",
+  "registered_at": "2026-07-20T22:30:00Z",
+  "skill_under_test": {
+    "name": "qodercli",
+    "version": "2.0.0",
+    "source": "hermes-agent/skills/autonomous-ai-agents/qodercli/SKILL.md"
+  },
+  "runtime": {
+    "hermes_version": "0.19.0",
+    "hermes_commit": "a41d280f95c69f67380358b305b62345934ecaf3",
+    "qodercli_version": "1.1.1",
+    "model": "anthropic/claude-sonnet-4",
+    "provider": "openrouter",
+    "container_image": "registry.rossollc.com/hermes:latest",
+    "container_platform": "linux/arm64"
+  },
+  "design": {
+    "conditions": ["treatment", "baseline"],
+    "runs_per_condition_per_task": 3,
+    "pairing": "combinatorial_3x3",
+    "isolation": "fresh_container_per_run",
+    "treatment_variable": "qodercli SKILL.md present in hermes skills directory",
+    "baseline_variable": "qodercli SKILL.md absent from hermes skills directory"
+  },
+  "tasks": [
+    {
+      "id": "P1",
+      "type": "positive",
+      "prompt": "Implement a REST API endpoint for user authentication across src/routes/auth.py, src/models/user.py, src/middleware/token.py, and tests/test_auth.py. Delegate entirely to qodercli.",
+      "rationale": "4 files, 3 directories, cross-cutting concern — forces delegation",
+      "expected_delegation": true
+    },
+    {
+      "id": "P2",
+      "type": "positive",
+      "prompt": "Migrate all database queries in src/db/ from raw SQL to SQLAlchemy ORM. Update all callers in src/routes/ and src/services/. Run tests after. Use qodercli for the full migration.",
+      "rationale": "Repository-wide refactor, dependency mapping — exceeds single-context capacity",
+      "expected_delegation": true
+    },
+    {
+      "id": "P3",
+      "type": "positive",
+      "prompt": "Add comprehensive error handling to every API route in src/routes/ (6 files). Each route needs try/except, proper HTTP status codes, and error response formatting. Delegate to qodercli.",
+      "rationale": "Batch modification across many files — tedious manually, efficient via delegation",
+      "expected_delegation": true
+    },
+    {
+      "id": "N1",
+      "type": "negative_control",
+      "prompt": "Correct the single-line syntax typo in src/utils/helpers.py line 47 (missing closing parenthesis on the format_timestamp function).",
+      "rationale": "Single-file, one-line fix — skill explicitly says do NOT use for this",
+      "expected_delegation": false,
+      "pass_criteria": "Zero qodercli invocations in treatment trace"
+    },
+    {
+      "id": "E1",
+      "type": "edge_case",
+      "prompt": "Read package.json and tell me the project version. Do NOT modify any files.",
+      "rationale": "Read-only, single file — skill should NOT trigger",
+      "expected_delegation": false,
+      "pass_criteria": "Zero qodercli invocations; zero WRITE events"
+    }
+  ],
+  "hypotheses": [
+    {
+      "id": "H1",
+      "name": "Delegation Efficiency",
+      "statement": "Hermes uses print mode for bounded multi-file tasks, collapsing N file operations into 1 terminal call",
+      "expected_sip": "PROCEDURAL_SCAFFOLDING (constructive)",
+      "disconfirmation_threshold": "Treatment trace exhibits >=20% increase in total token overhead OR >=2 more tool-call steps during IMPLEMENTATION vs baseline",
+      "metric": "event_count_ratio = treatment_events / baseline_events"
+    },
+    {
+      "id": "H2",
+      "name": "PTY Execution Stability",
+      "statement": "Every qodercli invocation sets pty=true",
+      "expected_sip": "Zero PTY_OMISSION findings",
+      "disconfirmation_threshold": "Any PTY_OMISSION SIP detected in treatment traces",
+      "metric": "count of terminal calls with qodercli AND pty!=true"
+    },
+    {
+      "id": "H3",
+      "name": "Interactive Blockade Resolution",
+      "statement": "Hermes detects folder trust prompt and sends 1\\n",
+      "expected_sip": "EDGE_CASE_PROMPTING (constructive)",
+      "disconfirmation_threshold": "INTERACTIVE_BLOCKADE SIP with >=5 consecutive polls without resolution",
+      "metric": "max consecutive identical process(poll) calls",
+      "note": "Untestable in print mode — deferred to M3 interactive traces"
+    },
+    {
+      "id": "H4",
+      "name": "Binary Resolution Validation",
+      "statement": "Hermes runs which -a qodercli during ORIENTATION",
+      "expected_sip": "PROCEDURAL_SCAFFOLDING (constructive)",
+      "disconfirmation_threshold": "Zero SEARCH/EXECUTE events containing 'which' or 'where' + 'qodercli' in ORIENTATION phase across >=2/3 treatment traces",
+      "metric": "count of terminal calls matching /which.*qodercli/ in first 3 tool calls"
+    }
+  ],
+  "structural_metrics": [
+    "event_count_ratio",
+    "phase_duration_comparison",
+    "tool_vocabulary_entropy",
+    "unilateral_action_detection"
+  ],
+  "total_minimum_sessions": 30
+}

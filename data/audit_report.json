@@ -1,0 +1,377 @@
+{
+  "audit_version": "1.0.0",
+  "design": "Option B lean (10 sessions)",
+  "sessions": [
+    {
+      "run_id": "E1-baseline-1",
+      "task_id": "E1",
+      "condition": "baseline",
+      "session_id": "20260720_222811_3a2ed0",
+      "model": "anthropic/claude-sonnet-4",
+      "exit_code": 0,
+      "elapsed_seconds": 31.6,
+      "messages": 4,
+      "tool_calls": 1,
+      "unique_tools": 1,
+      "tool_counts": {
+        "read_file": 1
+      },
+      "entropy": -0.0,
+      "manual_writes": 0,
+      "qodercli_calls": 0,
+      "skill_views": 0,
+      "binary_resolution": 0,
+      "pty_set": 0,
+      "pty_missing": 0,
+      "adapter_events": 2,
+      "adapter_unmapped": []
+    },
+    {
+      "run_id": "E1-treatment-1",
+      "task_id": "E1",
+      "condition": "treatment",
+      "session_id": "20260720_222935_e0f887",
+      "model": "anthropic/claude-sonnet-4",
+      "exit_code": 0,
+      "elapsed_seconds": 25.7,
+      "messages": 4,
+      "tool_calls": 1,
+      "unique_tools": 1,
+      "tool_counts": {
+        "read_file": 1
+      },
+      "entropy": -0.0,
+      "manual_writes": 0,
+      "qodercli_calls": 0,
+      "skill_views": 0,
+      "binary_resolution": 0,
+      "pty_set": 0,
+      "pty_missing": 0,
+      "adapter_events": 2,
+      "adapter_unmapped": []
+    },
+    {
+      "run_id": "N1-baseline-1",
+      "task_id": "N1",
+      "condition": "baseline",
+      "session_id": "20260720_225351_1d25c3",
+      "model": "anthropic/claude-sonnet-4",
+      "exit_code": 0,
+      "elapsed_seconds": 99.8,
+      "messages": 38,
+      "tool_calls": 17,
+      "unique_tools": 5,
+      "tool_counts": {
+        "terminal": 8,
+        "read_file": 3,
+        "search_files": 3,
+        "write_file": 2,
+        "patch": 1
+      },
+      "entropy": 1.999,
+      "manual_writes": 3,
+      "qodercli_calls": 0,
+      "skill_views": 0,
+      "binary_resolution": 0,
+      "pty_set": 0,
+      "pty_missing": 0,
+      "adapter_events": 20,
+      "adapter_unmapped": []
+    },
+    {
+      "run_id": "N1-treatment-1",
+      "task_id": "N1",
+      "condition": "treatment",
+      "session_id": "20260720_225218_1399d7",
+      "model": "anthropic/claude-sonnet-4",
+      "exit_code": 0,
+      "elapsed_seconds": 91.3,
+      "messages": 32,
+      "tool_calls": 14,
+      "unique_tools": 4,
+      "tool_counts": {
+        "terminal": 7,
+        "read_file": 4,
+        "search_files": 2,
+        "patch": 1
+      },
+      "entropy": 1.689,
+      "manual_writes": 1,
+      "qodercli_calls": 0,
+      "skill_views": 0,
+      "binary_resolution": 0,
+      "pty_set": 0,
+      "pty_missing": 0,
+      "adapter_events": 17,
+      "adapter_unmapped": []
+    },
+    {
+      "run_id": "P1-baseline-1",
+      "task_id": "P1",
+      "condition": "baseline",
+      "session_id": "20260720_225551_e55327",
+      "model": "anthropic/claude-sonnet-4",
+      "exit_code": 0,
+      "elapsed_seconds": 38.1,
+      "messages": 4,
+      "tool_calls": 1,
+      "unique_tools": 1,
+      "tool_counts": {
+        "delegate_task": 1
+      },
+      "entropy": -0.0,
+      "manual_writes": 0,
+      "qodercli_calls": 0,
+      "skill_views": 0,
+      "binary_resolution": 0,
+      "pty_set": 0,
+      "pty_missing": 0,
+      "adapter_events": 2,
+      "adapter_unmapped": []
+    },
+    {
+      "run_id": "P1-treatment-1",
+      "task_id": "P1",
+      "condition": "treatment",
+      "session_id": "20260720_231909_ad9270",
+      "model": "anthropic/claude-sonnet-4",
+      "exit_code": 0,
+      "elapsed_seconds": 241.4,
+      "messages": 87,
+      "tool_calls": 43,
+      "unique_tools": 6,
+      "tool_counts": {
+        "terminal": 16,
+        "process": 15,
+        "read_file": 7,
+        "patch": 3,
+        "skill_view": 1,
+        "search_files": 1
+      },
+      "entropy": 2.007,
+      "manual_writes": 3,
+      "qodercli_calls": 5,
+      "skill_views": 1,
+      "binary_resolution": 2,
+      "pty_set": 4,
+      "pty_missing": 1,
+      "adapter_events": 45,
+      "adapter_unmapped": []
+    },
+    {
+      "run_id": "P1-treatment-2",
+      "task_id": "P1",
+      "condition": "treatment",
+      "session_id": "20260720_232849_c0b56a",
+      "model": "anthropic/claude-sonnet-4",
+      "exit_code": 0,
+      "elapsed_seconds": 479.7,
+      "messages": 43,
+      "tool_calls": 20,
+      "unique_tools": 6,
+      "tool_counts": {
+        "terminal": 9,
+        "read_file": 5,
+        "write_file": 2,
+        "search_files": 2,
+        "skill_view": 1,
+        "patch": 1
+      },
+      "entropy": 2.115,
+      "manual_writes": 3,
+      "qodercli_calls": 3,
+      "skill_views": 1,
+      "binary_resolution": 1,
+      "pty_set": 2,
+      "pty_missing": 1,
+      "adapter_events": 22,
+      "adapter_unmapped": []
+    },
+    {
+      "run_id": "P2-baseline-1",
+      "task_id": "P2",
+      "condition": "baseline",
+      "session_id": "20260720_231020_9df7e1",
+      "model": "anthropic/claude-sonnet-4",
+      "exit_code": 0,
+      "elapsed_seconds": 351.5,
+      "messages": 113,
+      "tool_calls": 62,
+      "unique_tools": 6,
+      "tool_counts": {
+        "terminal": 18,
+        "patch": 15,
+        "read_file": 14,
+        "todo": 8,
+        "search_files": 6,
+        "write_file": 1
+      },
+      "entropy": 2.301,
+      "manual_writes": 16,
+      "qodercli_calls": 3,
+      "skill_views": 0,
+      "binary_resolution": 1,
+      "pty_set": 0,
+      "pty_missing": 3,
+      "adapter_events": 63,
+      "adapter_unmapped": []
+    },
+    {
+      "run_id": "P2-treatment-1",
+      "task_id": "P2",
+      "condition": "treatment",
+      "session_id": "20260720_230051_f420b0",
+      "model": "anthropic/claude-sonnet-4",
+      "exit_code": 0,
+      "elapsed_seconds": 563.8,
+      "messages": 63,
+      "tool_calls": 33,
+      "unique_tools": 6,
+      "tool_counts": {
+        "terminal": 16,
+        "read_file": 12,
+        "search_files": 2,
+        "skill_view": 1,
+        "process": 1,
+        "patch": 1
+      },
+      "entropy": 1.741,
+      "manual_writes": 1,
+      "qodercli_calls": 3,
+      "skill_views": 1,
+      "binary_resolution": 1,
+      "pty_set": 2,
+      "pty_missing": 1,
+      "adapter_events": 34,
+      "adapter_unmapped": []
+    },
+    {
+      "run_id": "P2-treatment-2",
+      "task_id": "P2",
+      "condition": "treatment",
+      "session_id": "20260720_233558_40f302",
+      "model": "anthropic/claude-sonnet-4",
+      "exit_code": 0,
+      "elapsed_seconds": 613.0,
+      "messages": 70,
+      "tool_calls": 43,
+      "unique_tools": 6,
+      "tool_counts": {
+        "read_file": 18,
+        "terminal": 16,
+        "search_files": 5,
+        "patch": 2,
+        "skill_view": 1,
+        "write_file": 1
+      },
+      "entropy": 1.876,
+      "manual_writes": 3,
+      "qodercli_calls": 4,
+      "skill_views": 1,
+      "binary_resolution": 1,
+      "pty_set": 3,
+      "pty_missing": 1,
+      "adapter_events": 45,
+      "adapter_unmapped": []
+    }
+  ],
+  "hypotheses": {
+    "H1_delegation_efficiency": {
+      "status": "PARTIALLY CONFIRMED",
+      "evidence": {
+        "treatment_tool_calls": 34.8,
+        "baseline_tool_calls": 31.5,
+        "write_compression": "3.2x",
+        "note": "P1 baseline used native delegate_task (anomalous); P2 is valid comparison"
+      }
+    },
+    "H2_pty_stability": {
+      "status": "DISCONFIRMED",
+      "evidence": {
+        "pty_set": 11,
+        "pty_missing": 4
+      }
+    },
+    "H3_interactive_blockade": {
+      "status": "UNTESTABLE (print mode only; deferred to M3)"
+    },
+    "H4_binary_resolution": {
+      "status": "CONFIRMED",
+      "evidence": {
+        "traces_with_resolution": 4,
+        "total_treatments": 6
+      }
+    }
+  },
+  "sips": [
+    {
+      "type": "PROCEDURAL_SCAFFOLDING",
+      "valence": "constructive",
+      "run": "P1-treatment-1"
+    },
+    {
+      "type": "DELEGATION_REDIRECT",
+      "valence": "constructive",
+      "run": "P1-treatment-1"
+    },
+    {
+      "type": "PTY_OMISSION",
+      "valence": "destructive",
+      "run": "P1-treatment-1",
+      "count": 1
+    },
+    {
+      "type": "PROCEDURAL_SCAFFOLDING",
+      "valence": "constructive",
+      "run": "P1-treatment-2"
+    },
+    {
+      "type": "DELEGATION_REDIRECT",
+      "valence": "constructive",
+      "run": "P1-treatment-2"
+    },
+    {
+      "type": "PTY_OMISSION",
+      "valence": "destructive",
+      "run": "P1-treatment-2",
+      "count": 1
+    },
+    {
+      "type": "PROCEDURAL_SCAFFOLDING",
+      "valence": "constructive",
+      "run": "P2-treatment-1"
+    },
+    {
+      "type": "DELEGATION_REDIRECT",
+      "valence": "constructive",
+      "run": "P2-treatment-1"
+    },
+    {
+      "type": "PTY_OMISSION",
+      "valence": "destructive",
+      "run": "P2-treatment-1",
+      "count": 1
+    },
+    {
+      "type": "PROCEDURAL_SCAFFOLDING",
+      "valence": "constructive",
+      "run": "P2-treatment-2"
+    },
+    {
+      "type": "DELEGATION_REDIRECT",
+      "valence": "constructive",
+      "run": "P2-treatment-2"
+    },
+    {
+      "type": "PTY_OMISSION",
+      "valence": "destructive",
+      "run": "P2-treatment-2",
+      "count": 1
+    }
+  ],
+  "controls": {
+    "N1_zero_qodercli": true,
+    "E1_zero_writes": true,
+    "metric_not_trivially_constructive": true
+  }
+}

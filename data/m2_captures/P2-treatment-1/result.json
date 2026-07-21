@@ -1,0 +1,9 @@
+{
+  "run_id": "P2-treatment-1",
+  "task_id": "P2",
+  "condition": "treatment",
+  "run_num": 1,
+  "exit_code": 0,
+  "elapsed_seconds": 563.8,
+  "container_name": "cta-m2-P2-treatment-1"
+}

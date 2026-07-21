@@ -1,0 +1,5 @@
+started_at=2026-07-20T23:10:01Z
+completed_at=2026-07-20T23:15:51Z
+task_id=P2
+condition=baseline
+run_num=1

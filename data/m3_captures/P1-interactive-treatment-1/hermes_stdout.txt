@@ -1,0 +1,4 @@
+  ⚠ tirith security scanner enabled but not available — command scanning will use pattern matching only
+HTTP 402: This request requires more credits, or fewer max_tokens. You requested up to 64000 tokens, but can only afford 63029. To increase, visit https://openrouter.ai/workspaces/default/keys/78926790ef90dc8f794766deb3cd475030da7628401f75e4813843b1ee54c69c and adjust the key's weekly limit
+
+session_id: 20260721_005609_0fb7f3

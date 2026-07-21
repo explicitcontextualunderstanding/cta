@@ -1,0 +1,5 @@
+started_at=2026-07-21T00:55:50Z
+completed_at=2026-07-21T01:00:31Z
+task_id=P1-interactive
+condition=treatment
+run_num=1
