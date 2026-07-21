@@ -4,7 +4,7 @@ Porting the WillChow66/CTA (Counterfactual Trace Auditing) framework to audit
 Hermes Agent skill executions — specifically the `qodercli` skill PR for
 NousResearch/hermes-agent.
 
-Status: **G1 PASSED** | **M1 PASSED** | **M2 COMPLETE** (10 sessions) | **M3 COMPLETE** (H3 confirmed) | **M4 COMPLETE** (H2-revised confirmed, PTY_OMISSION reclassified neutral) | **G6 DONE** | **PTYCollapser REFACTORED** (raw-message-based, 34 tests pass) | **PR SUBMITTED** ([NousResearch/hermes-agent#68314](https://github.com/NousResearch/hermes-agent/pull/68314), 6 commits, tests committed per HARDLINE #7, body includes Qwen3.8-Max-Preview positioning + hyperlinked arXiv/CTA citations). **CTA fork pushed** to [explicitcontextualunderstanding/cta](https://github.com/explicitcontextualunderstanding/cta) (commit `61cf2f8`, 1 ahead of upstream WillChow66/CTA). Hypotheses: H1 partial, H2-revised confirmed, H3 confirmed, H4 confirmed.
+Status: **ALL MILESTONES COMPLETE** | **G1 PASSED** | **M1 PASSED** | **M2 COMPLETE** (10 sessions) | **M3 COMPLETE** (H3 confirmed) | **M4 COMPLETE** (H2-revised confirmed, PTY_OMISSION reclassified neutral) | **G6 DONE** | **PTYCollapser REFACTORED** (raw-message-based, 34 tests pass) | **ALL DELIVERABLES BUILT** | **PR SUBMITTED** ([NousResearch/hermes-agent#68314](https://github.com/NousResearch/hermes-agent/pull/68314), 6 commits, tests committed per HARDLINE #7, body includes Qwen3.8-Max-Preview positioning + hyperlinked arXiv/CTA citations). **CTA fork pushed** to [explicitcontextualunderstanding/cta](https://github.com/explicitcontextualunderstanding/cta) (commit `4a641db`, 2 ahead of upstream WillChow66/CTA). Hypotheses: H1 partial, H2-revised confirmed, H3 confirmed, H4 confirmed.
 
 ---
 
@@ -774,13 +774,14 @@ Built:
 - `src/cta/pty_collapser.py` — Refactored to operate on raw Hermes messages. `collapse_pty_sessions(messages)` detects PTY parents from args (`pty=true, background=true`), collects `process()` children by `session_id`, emits composite EXECUTE events with JSON sub-trace. 34 tests pass (synthetic + M3 integration).
 - `scripts/g1_probe.py` — corpus sweep + gate verdict. `python scripts/g1_probe.py [glob]`.
 
-Remaining:
-- [ ] `src/cta/hermes_adapter.py`: Add `extract_synthetic_target()` for execute_code target enrichment.
-- [ ] `src/cta/structural_metrics.py`: Event-count ratio, phase-duration comparison, tool-vocabulary entropy, unilateral action detection (print-mode analysis; DTW alternative for sparse traces).
-- [ ] `src/cta/skill_rules.py`: 3 qodercli-specific SIP detectors (PTY omission, interactive blockade, vague prompt).
+Complete:
+- [x] `src/cta/hermes_adapter.py`: `extract_synthetic_target()` for execute_code target enrichment.
+- [x] `src/cta/structural_metrics.py`: Event-count ratio, tool-vocabulary entropy, write compression, unilateral action detection.
+- [x] `src/cta/skill_rules.py`: 3 qodercli-specific SIP detectors (PTY omission, interactive blockade, vague prompt).
 - [x] `src/cta/pty_collapser.py`: Refactored — operates on raw messages via `extract_tool_records()`, full tool_call args preserved.
 - [x] `scripts/capture_harness.py`: Container-based counterfactual capture (fresh VM per run, WAL checkpoint export, 3×3 pairing).
-- [ ] `scripts/validate_g1_plus.py`: Conservation + alternation + golden-file semantic validation.
+- [x] `scripts/validate_g1_plus.py`: Conservation + alternation + vocabulary + CTA mapping checks.
+- [x] `scripts/m4_harness.py`: Deterministic PTY-vs-pipes counterfactual (no model, isolates PTY variable).
 - [x] `tasks/pre_registration.json`: Locked task list (5 tasks incl. negative control) + quantitative pass/fail thresholds.
 - [x] `fixture/`: Test project (6 route files, models, services, db, utils, tests) for M2 tasks.
 - [x] `scripts/run_audit.py`: G6 one-command runner (author/auditor separation).

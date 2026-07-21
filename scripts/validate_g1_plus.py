@@ -38,13 +38,29 @@ def load_session(path: str) -> Dict[str, Any]:
     if p.suffix == ".db" or p.name == "state.db":
         conn = sqlite3.connect(str(p))
         conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
-        row = conn.execute(
-            "SELECT data FROM sessions ORDER BY id DESC LIMIT 1"
-        ).fetchone()
+        conn.row_factory = sqlite3.Row
+        row = conn.execute("SELECT id, model FROM sessions LIMIT 1").fetchone()
+        if not row:
+            conn.close()
+            raise ValueError("No sessions found in database")
+        session_id = row["id"]
+        rows = conn.execute(
+            """SELECT id, role, content, tool_call_id, tool_calls, tool_name,
+                      reasoning, reasoning_content, finish_reason
+               FROM messages WHERE session_id=? AND active=1 AND compacted=0 ORDER BY id""",
+            (session_id,),
+        ).fetchall()
         conn.close()
-        if row:
-            return json.loads(row[0])
-        raise ValueError("No sessions found in database")
+
+        messages = []
+        for r in rows:
+            msg = {"role": r["role"], "content": r["content"] or "", "tool_call_id": r["tool_call_id"]}
+            if r["role"] == "assistant":
+                msg["reasoning"] = r["reasoning"] or r["reasoning_content"] or ""
+                msg["tool_calls"] = json.loads(r["tool_calls"]) if r["tool_calls"] else []
+            messages.append(msg)
+
+        return {"session_id": session_id, "model": row["model"], "messages": messages}
     raise ValueError(f"Unsupported file type: {p.suffix}")
 
 

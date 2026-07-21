@@ -1,0 +1,15 @@
+{
+  "name": "cta-fixture-project",
+  "version": "2.4.1",
+  "description": "Fixture project for CTA M2 counterfactual capture",
+  "main": "src/app.py",
+  "scripts": {
+    "test": "pytest tests/ -x -q",
+    "start": "python src/app.py"
+  },
+  "dependencies": {
+    "flask": "^3.0",
+    "sqlalchemy": "^2.0",
+    "pytest": "^8.0"
+  }
+}

@@ -103,6 +103,10 @@ def _target_for(name: str, args: Dict[str, Any]) -> str:
         val = args.get(key)
         if isinstance(val, str) and val:
             return val
+    if name == "execute_code":
+        code = args.get("code") or args.get("_raw") or ""
+        if isinstance(code, str) and code:
+            return extract_synthetic_target(code)
     return name
 
 
