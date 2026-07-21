@@ -1,0 +1,141 @@
+{
+  "pairs": [
+    {
+      "treatment": "data/m3_captures/P1-interactive-kimi-treatment-1/state.db",
+      "baseline": "data/m3_captures/P1-interactive-kimi-baseline-1/state.db",
+      "treatment_model": "kimi-k2.7-code",
+      "baseline_model": "kimi-k2.7-code",
+      "treatment_messages": 56,
+      "baseline_messages": 138,
+      "metrics": {
+        "event_count_ratio": 0.40540540540540543,
+        "tool_vocabulary_entropy_treatment": 1.6648530979805174,
+        "tool_vocabulary_entropy_baseline": 2.0809081965417096,
+        "entropy_ratio": 0.8000608103458673,
+        "write_compression": 3.0,
+        "unilateral_actions": [
+          "package.json",
+          "src/utils/helpers.py"
+        ],
+        "summary": {
+          "treatment_events": 30,
+          "baseline_events": 74,
+          "treatment_writes": 0,
+          "baseline_writes": 3,
+          "treatment_unique_tools": 4,
+          "baseline_unique_tools": 6
+        }
+      }
+    },
+    {
+      "treatment": "data/m3_captures/P1-interactive-kimi-treatment-2/state.db",
+      "baseline": "data/m3_captures/P1-interactive-kimi-baseline-2/state.db",
+      "treatment_model": "kimi-k2.7-code",
+      "baseline_model": "kimi-k2.7-code",
+      "treatment_messages": 196,
+      "baseline_messages": 82,
+      "metrics": {
+        "event_count_ratio": 2.2127659574468086,
+        "tool_vocabulary_entropy_treatment": 1.0296387679431152,
+        "tool_vocabulary_entropy_baseline": 2.1018046852791907,
+        "entropy_ratio": 0.48988318236922396,
+        "write_compression": 1.0,
+        "unilateral_actions": [
+          "/root/workspace/src/utils/helpers.py"
+        ],
+        "summary": {
+          "treatment_events": 104,
+          "baseline_events": 47,
+          "treatment_writes": 0,
+          "baseline_writes": 1,
+          "treatment_unique_tools": 5,
+          "baseline_unique_tools": 6
+        }
+      }
+    },
+    {
+      "treatment": "data/m3_captures/P1-interactive-kimi-treatment-3/state.db",
+      "baseline": "data/m3_captures/P1-interactive-kimi-baseline-3/state.db",
+      "treatment_model": "kimi-k2.7-code",
+      "baseline_model": "kimi-k2.7-code",
+      "treatment_messages": 78,
+      "baseline_messages": 105,
+      "metrics": {
+        "event_count_ratio": 0.8245614035087719,
+        "tool_vocabulary_entropy_treatment": 2.331951345887734,
+        "tool_vocabulary_entropy_baseline": 2.241482724871589,
+        "entropy_ratio": 1.0403610610121155,
+        "write_compression": 5.0,
+        "unilateral_actions": [
+          "/root/workspace/pytest.ini",
+          "/root/workspace/src/app.py",
+          "/root/workspace/src/middleware/token.py",
+          "/root/workspace/src/routes/auth.py"
+        ],
+        "summary": {
+          "treatment_events": 47,
+          "baseline_events": 57,
+          "treatment_writes": 1,
+          "baseline_writes": 5,
+          "treatment_unique_tools": 6,
+          "baseline_unique_tools": 6
+        }
+      }
+    },
+    {
+      "treatment": "data/m3_captures/P1-interactive-kimi-treatment-4/state.db",
+      "baseline": "data/m3_captures/P1-interactive-kimi-baseline-4/state.db",
+      "treatment_model": "kimi-k2.7-code",
+      "baseline_model": "kimi-k2.7-code",
+      "treatment_messages": 81,
+      "baseline_messages": 87,
+      "metrics": {
+        "event_count_ratio": 0.94,
+        "tool_vocabulary_entropy_treatment": 1.7819302613968886,
+        "tool_vocabulary_entropy_baseline": 1.9237905043504866,
+        "entropy_ratio": 0.9262600357820702,
+        "write_compression": 1.0,
+        "unilateral_actions": [],
+        "summary": {
+          "treatment_events": 47,
+          "baseline_events": 50,
+          "treatment_writes": 0,
+          "baseline_writes": 0,
+          "treatment_unique_tools": 5,
+          "baseline_unique_tools": 5
+        }
+      }
+    },
+    {
+      "treatment": "data/m3_captures/P1-interactive-treatment-1/state.db",
+      "baseline": "data/m3_captures/P1-interactive-baseline-1/state.db",
+      "treatment_model": "anthropic/claude-sonnet-4",
+      "baseline_model": "anthropic/claude-sonnet-4",
+      "treatment_messages": 59,
+      "baseline_messages": 1,
+      "metrics": {
+        "event_count_ratio": 31.0,
+        "tool_vocabulary_entropy_treatment": 1.4758079802516535,
+        "tool_vocabulary_entropy_baseline": 0.0,
+        "entropy_ratio": 1.0,
+        "write_compression": 1.0,
+        "unilateral_actions": [],
+        "summary": {
+          "treatment_events": 31,
+          "baseline_events": 0,
+          "treatment_writes": 0,
+          "baseline_writes": 0,
+          "treatment_unique_tools": 4,
+          "baseline_unique_tools": 0
+        }
+      }
+    }
+  ],
+  "count": 5,
+  "aggregate": {
+    "mean_ecr": 7.076546553272197,
+    "mean_wc": 2.2,
+    "min_ecr": 0.40540540540540543,
+    "max_ecr": 31.0
+  }
+}

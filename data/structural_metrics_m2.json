@@ -1,0 +1,123 @@
+{
+  "pairs": [
+    {
+      "treatment": "data/m2_captures/E1-treatment-1/state.db",
+      "baseline": "data/m2_captures/E1-baseline-1/state.db",
+      "treatment_model": "anthropic/claude-sonnet-4",
+      "baseline_model": "anthropic/claude-sonnet-4",
+      "treatment_messages": 4,
+      "baseline_messages": 4,
+      "metrics": {
+        "event_count_ratio": 1.0,
+        "tool_vocabulary_entropy_treatment": 1.0,
+        "tool_vocabulary_entropy_baseline": 1.0,
+        "entropy_ratio": 1.0,
+        "write_compression": 1.0,
+        "unilateral_actions": [],
+        "summary": {
+          "treatment_events": 2,
+          "baseline_events": 2,
+          "treatment_writes": 0,
+          "baseline_writes": 0,
+          "treatment_unique_tools": 2,
+          "baseline_unique_tools": 2
+        }
+      }
+    },
+    {
+      "treatment": "data/m2_captures/N1-treatment-1/state.db",
+      "baseline": "data/m2_captures/N1-baseline-1/state.db",
+      "treatment_model": "anthropic/claude-sonnet-4",
+      "baseline_model": "anthropic/claude-sonnet-4",
+      "treatment_messages": 32,
+      "baseline_messages": 38,
+      "metrics": {
+        "event_count_ratio": 0.85,
+        "tool_vocabulary_entropy_treatment": 2.063558608511122,
+        "tool_vocabulary_entropy_baseline": 2.170950594454668,
+        "entropy_ratio": 0.950532275484361,
+        "write_compression": 3.0,
+        "unilateral_actions": [
+          "src/__init__.py",
+          "src/utils/__init__.py"
+        ],
+        "summary": {
+          "treatment_events": 17,
+          "baseline_events": 20,
+          "treatment_writes": 1,
+          "baseline_writes": 3,
+          "treatment_unique_tools": 5,
+          "baseline_unique_tools": 5
+        }
+      }
+    },
+    {
+      "treatment": "data/m2_captures/P1-treatment-1/state.db",
+      "baseline": "data/m2_captures/P1-baseline-1/state.db",
+      "treatment_model": "anthropic/claude-sonnet-4",
+      "baseline_model": "anthropic/claude-sonnet-4",
+      "treatment_messages": 87,
+      "baseline_messages": 4,
+      "metrics": {
+        "event_count_ratio": 22.5,
+        "tool_vocabulary_entropy_treatment": 2.1193060209328314,
+        "tool_vocabulary_entropy_baseline": 1.0,
+        "entropy_ratio": 2.1193060209328314,
+        "write_compression": 0.0,
+        "unilateral_actions": [],
+        "summary": {
+          "treatment_events": 45,
+          "baseline_events": 2,
+          "treatment_writes": 3,
+          "baseline_writes": 0,
+          "treatment_unique_tools": 6,
+          "baseline_unique_tools": 2
+        }
+      }
+    },
+    {
+      "treatment": "data/m2_captures/P2-treatment-1/state.db",
+      "baseline": "data/m2_captures/P2-baseline-1/state.db",
+      "treatment_model": "anthropic/claude-sonnet-4",
+      "baseline_model": "anthropic/claude-sonnet-4",
+      "treatment_messages": 63,
+      "baseline_messages": 113,
+      "metrics": {
+        "event_count_ratio": 0.5396825396825397,
+        "tool_vocabulary_entropy_treatment": 1.8221819586428722,
+        "tool_vocabulary_entropy_baseline": 2.2248875591812527,
+        "entropy_ratio": 0.818999571966426,
+        "write_compression": 16.0,
+        "unilateral_actions": [
+          "src/app.py",
+          "src/db/queries.py",
+          "src/models/database.py",
+          "src/models/user.py",
+          "src/routes/inventory.py",
+          "src/routes/notifications.py",
+          "src/routes/orders.py",
+          "src/routes/payments.py",
+          "src/routes/products.py",
+          "src/routes/reports.py",
+          "src/routes/users.py",
+          "src/services/user_service.py"
+        ],
+        "summary": {
+          "treatment_events": 34,
+          "baseline_events": 63,
+          "treatment_writes": 1,
+          "baseline_writes": 16,
+          "treatment_unique_tools": 6,
+          "baseline_unique_tools": 5
+        }
+      }
+    }
+  ],
+  "count": 4,
+  "aggregate": {
+    "mean_ecr": 6.222420634920635,
+    "mean_wc": 5.0,
+    "min_ecr": 0.5396825396825397,
+    "max_ecr": 22.5
+  }
+}

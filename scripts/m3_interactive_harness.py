@@ -401,6 +401,15 @@ def run_container(condition: str, run_num: int, secrets: dict, timeout: int, dry
         print(f"  command: {' '.join(cmd[:10])}...")
         return True
 
+    sys.path.insert(0, str(PROJECT_ROOT / "src"))
+    from cta.preflight import run_preflight
+    preflight = run_preflight(run_dir)
+    if not preflight.all_passed:
+        print(f"[M3] ABORT {run_id}: preflight pollution check failed:")
+        for c in preflight.failures:
+            print(f"  - {c.name}: {c.detail}")
+        return False
+
     elts, headroom = check_kalloc_headroom()
     if headroom >= 0 and headroom < KALLOC_MIN_HEADROOM:
         print(f"[M3] ABORT {run_id}: kalloc.1024 headroom {headroom} < {KALLOC_MIN_HEADROOM} (reboot imminent)")
@@ -476,6 +485,7 @@ def run_container(condition: str, run_num: int, secrets: dict, timeout: int, dry
 
 
 def main():
+    global OUTPUT_DIR
     parser = argparse.ArgumentParser(description="M3 Interactive-Mode Capture")
     parser.add_argument("--condition", choices=["treatment", "baseline", "both"], default="both")
     parser.add_argument("--runs", type=int, default=1)
@@ -509,6 +519,8 @@ def main():
         sys.path.insert(0, str(PROJECT_ROOT / "src"))
         from cta.audit_config import load_config
         cfg = load_config(Path(args.config))
+        OUTPUT_DIR = PROJECT_ROOT / cfg.captures_dir
+        OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
         if args.task:
             match = [t for t in cfg.tasks if t.id == args.task]
             if not match:

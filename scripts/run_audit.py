@@ -102,7 +102,10 @@ def analyze_run(run_dir: Path, config: AuditConfig) -> dict:
         return {"run_id": run_dir.name, "error": "empty database"}
 
     result_file = run_dir / "result.json"
-    result = json.loads(result_file.read_text()) if result_file.exists() else {}
+    try:
+        result = json.loads(result_file.read_text()) if result_file.exists() else {}
+    except (json.JSONDecodeError, ValueError):
+        result = {}
 
     messages = session["messages"]
     calls = extract_tool_calls(messages)
@@ -290,11 +293,11 @@ def validate_controls(runs: list, config: AuditConfig) -> dict:
         else:
             results[f"{tid}_pass"] = None
 
-    # Meta-check: metric not trivially constructive
-    neg_pass = all(v for k, v in results.items() if "delegation" in k and v is not None)
-    edge_pass = all(v for k, v in results.items() if "writes" in k and v is not None)
-    if neg_pass is not None and edge_pass is not None:
-        results["metric_not_trivially_constructive"] = neg_pass and edge_pass
+    # Meta-check: metric not trivially constructive (only if controls were actually validated)
+    neg_results = [v for k, v in results.items() if "delegation" in k and v is not None]
+    edge_results = [v for k, v in results.items() if "writes" in k and v is not None]
+    if neg_results or edge_results:
+        results["metric_not_trivially_constructive"] = all(neg_results) and all(edge_results)
 
     return results
 

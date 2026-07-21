@@ -1,304 +1,481 @@
 {
-  "audit_version": "1.0.0",
-  "design": "Option B lean (10 sessions)",
+  "audit_version": "2.0.0",
+  "skill": "qodercli",
+  "skill_version": "2.1.0",
+  "design": "Option B lean",
   "sessions": [
     {
-      "run_id": "E1-baseline-1",
-      "task_id": "E1",
+      "run_id": "P1-interactive-baseline-1",
+      "task_id": "P1-interactive",
       "condition": "baseline",
-      "session_id": "20260720_222811_3a2ed0",
+      "session_id": "20260721_185002_34ec60",
       "model": "anthropic/claude-sonnet-4",
       "exit_code": 0,
-      "elapsed_seconds": 31.6,
-      "messages": 4,
-      "tool_calls": 1,
-      "unique_tools": 1,
-      "tool_counts": {
-        "read_file": 1
-      },
-      "entropy": -0.0,
+      "elapsed_seconds": 59.3,
+      "messages": 1,
+      "tool_calls": 0,
+      "unique_tools": 0,
+      "tool_counts": {},
+      "entropy": 0.0,
       "manual_writes": 0,
-      "qodercli_calls": 0,
+      "delegation_calls": 0,
       "skill_views": 0,
       "binary_resolution": 0,
       "pty_set": 0,
       "pty_missing": 0,
-      "adapter_events": 2,
+      "adapter_events": 0,
       "adapter_unmapped": []
     },
     {
-      "run_id": "E1-treatment-1",
-      "task_id": "E1",
-      "condition": "treatment",
-      "session_id": "20260720_222935_e0f887",
+      "run_id": "P1-interactive-baseline-1-degenerate-402",
+      "task_id": "P1-interactive",
+      "condition": "baseline",
+      "session_id": "20260721_011211_145b86",
       "model": "anthropic/claude-sonnet-4",
       "exit_code": 0,
-      "elapsed_seconds": 25.7,
-      "messages": 4,
-      "tool_calls": 1,
-      "unique_tools": 1,
-      "tool_counts": {
-        "read_file": 1
-      },
-      "entropy": -0.0,
+      "elapsed_seconds": 23.0,
+      "messages": 1,
+      "tool_calls": 0,
+      "unique_tools": 0,
+      "tool_counts": {},
+      "entropy": 0.0,
       "manual_writes": 0,
-      "qodercli_calls": 0,
+      "delegation_calls": 0,
       "skill_views": 0,
       "binary_resolution": 0,
       "pty_set": 0,
       "pty_missing": 0,
-      "adapter_events": 2,
+      "adapter_events": 0,
       "adapter_unmapped": []
     },
     {
-      "run_id": "N1-baseline-1",
-      "task_id": "N1",
+      "run_id": "P1-interactive-baseline-2",
+      "task_id": "P1-interactive",
       "condition": "baseline",
-      "session_id": "20260720_225351_1d25c3",
+      "session_id": "20260721_185029_6b24ae",
       "model": "anthropic/claude-sonnet-4",
       "exit_code": 0,
-      "elapsed_seconds": 99.8,
-      "messages": 38,
-      "tool_calls": 17,
+      "elapsed_seconds": 27.3,
+      "messages": 1,
+      "tool_calls": 0,
+      "unique_tools": 0,
+      "tool_counts": {},
+      "entropy": 0.0,
+      "manual_writes": 0,
+      "delegation_calls": 0,
+      "skill_views": 0,
+      "binary_resolution": 0,
+      "pty_set": 0,
+      "pty_missing": 0,
+      "adapter_events": 0,
+      "adapter_unmapped": []
+    },
+    {
+      "run_id": "P1-interactive-kimi-baseline-1",
+      "task_id": "P1-interactive",
+      "condition": "baseline",
+      "session_id": "20260721_193912_809525",
+      "model": "kimi-k2.7-code",
+      "exit_code": 0,
+      "elapsed_seconds": 692.8,
+      "messages": 138,
+      "tool_calls": 72,
+      "unique_tools": 6,
+      "tool_counts": {
+        "process": 35,
+        "terminal": 15,
+        "read_file": 12,
+        "search_files": 4,
+        "todo": 3,
+        "patch": 3
+      },
+      "entropy": 2.022,
+      "manual_writes": 3,
+      "delegation_calls": 2,
+      "skill_views": 0,
+      "binary_resolution": 1,
+      "pty_set": 1,
+      "pty_missing": 1,
+      "adapter_events": 74,
+      "adapter_unmapped": []
+    },
+    {
+      "run_id": "P1-interactive-kimi-baseline-10",
+      "error": "missing state.db"
+    },
+    {
+      "run_id": "P1-interactive-kimi-baseline-2",
+      "task_id": "P1-interactive",
+      "condition": "baseline",
+      "session_id": "20260721_215801_8e631d",
+      "model": "kimi-k2.7-code",
+      "exit_code": 0,
+      "elapsed_seconds": 516.2,
+      "messages": 82,
+      "tool_calls": 45,
       "unique_tools": 5,
       "tool_counts": {
-        "terminal": 8,
-        "read_file": 3,
+        "process": 17,
+        "terminal": 12,
+        "read_file": 12,
         "search_files": 3,
-        "write_file": 2,
         "patch": 1
       },
-      "entropy": 1.999,
-      "manual_writes": 3,
-      "qodercli_calls": 0,
+      "entropy": 1.93,
+      "manual_writes": 1,
+      "delegation_calls": 2,
       "skill_views": 0,
-      "binary_resolution": 0,
-      "pty_set": 0,
-      "pty_missing": 0,
-      "adapter_events": 20,
+      "binary_resolution": 1,
+      "pty_set": 1,
+      "pty_missing": 1,
+      "adapter_events": 47,
       "adapter_unmapped": []
     },
     {
-      "run_id": "N1-treatment-1",
-      "task_id": "N1",
-      "condition": "treatment",
-      "session_id": "20260720_225218_1399d7",
-      "model": "anthropic/claude-sonnet-4",
+      "run_id": "P1-interactive-kimi-baseline-3",
+      "task_id": "P1-interactive",
+      "condition": "baseline",
+      "session_id": "20260721_203205_09487a",
+      "model": "kimi-k2.7-code",
       "exit_code": 0,
-      "elapsed_seconds": 91.3,
-      "messages": 32,
-      "tool_calls": 14,
+      "elapsed_seconds": 380.2,
+      "messages": 105,
+      "tool_calls": 55,
+      "unique_tools": 7,
+      "tool_counts": {
+        "process": 23,
+        "terminal": 12,
+        "read_file": 9,
+        "todo": 4,
+        "write_file": 3,
+        "search_files": 2,
+        "patch": 2
+      },
+      "entropy": 2.284,
+      "manual_writes": 5,
+      "delegation_calls": 3,
+      "skill_views": 0,
+      "binary_resolution": 1,
+      "pty_set": 1,
+      "pty_missing": 2,
+      "adapter_events": 57,
+      "adapter_unmapped": []
+    },
+    {
+      "run_id": "P1-interactive-kimi-baseline-4",
+      "task_id": "P1-interactive",
+      "condition": "baseline",
+      "session_id": "20260721_220545_48012a",
+      "model": "kimi-k2.7-code",
+      "exit_code": 0,
+      "elapsed_seconds": 646.8,
+      "messages": 87,
+      "tool_calls": 49,
+      "unique_tools": 6,
+      "tool_counts": {
+        "process": 21,
+        "read_file": 15,
+        "terminal": 6,
+        "todo": 5,
+        "search_files": 1,
+        "clarify": 1
+      },
+      "entropy": 1.983,
+      "manual_writes": 0,
+      "delegation_calls": 4,
+      "skill_views": 0,
+      "binary_resolution": 2,
+      "pty_set": 2,
+      "pty_missing": 2,
+      "adapter_events": 50,
+      "adapter_unmapped": []
+    },
+    {
+      "run_id": "P1-interactive-kimi-baseline-5",
+      "error": "missing state.db"
+    },
+    {
+      "run_id": "P1-interactive-kimi-baseline-6",
+      "task_id": "P1-interactive",
+      "condition": "baseline",
+      "session_id": "20260721_223703_7e51a1",
+      "model": "kimi-k2.7-code",
+      "exit_code": 0,
+      "elapsed_seconds": 1064.2,
+      "messages": 127,
+      "tool_calls": 68,
+      "unique_tools": 8,
+      "tool_counts": {
+        "terminal": 23,
+        "process": 10,
+        "patch": 10,
+        "read_file": 9,
+        "search_files": 5,
+        "execute_code": 4,
+        "write_file": 4,
+        "todo": 3
+      },
+      "entropy": 2.685,
+      "manual_writes": 14,
+      "delegation_calls": 7,
+      "skill_views": 0,
+      "binary_resolution": 1,
+      "pty_set": 2,
+      "pty_missing": 5,
+      "adapter_events": 70,
+      "adapter_unmapped": []
+    },
+    {
+      "run_id": "P1-interactive-kimi-baseline-7",
+      "task_id": "P1-interactive",
+      "condition": "baseline",
+      "session_id": "20260721_225448_75accc",
+      "model": "kimi-k2.7-code",
+      "exit_code": 0,
+      "elapsed_seconds": 398.8,
+      "messages": 189,
+      "tool_calls": 97,
+      "unique_tools": 7,
+      "tool_counts": {
+        "process": 56,
+        "terminal": 21,
+        "read_file": 11,
+        "search_files": 3,
+        "todo": 3,
+        "patch": 2,
+        "write_file": 1
+      },
+      "entropy": 1.785,
+      "manual_writes": 3,
+      "delegation_calls": 4,
+      "skill_views": 0,
+      "binary_resolution": 1,
+      "pty_set": 2,
+      "pty_missing": 2,
+      "adapter_events": 99,
+      "adapter_unmapped": []
+    },
+    {
+      "run_id": "P1-interactive-kimi-baseline-8",
+      "error": "missing state.db"
+    },
+    {
+      "run_id": "P1-interactive-kimi-baseline-9",
+      "error": "missing state.db"
+    },
+    {
+      "run_id": "P1-interactive-kimi-treatment-1",
+      "task_id": "P1-interactive",
+      "condition": "treatment",
+      "session_id": "20260721_192303_6c4c38",
+      "model": "kimi-k2.7-code",
+      "exit_code": 0,
+      "elapsed_seconds": 606.2,
+      "messages": 56,
+      "tool_calls": 29,
       "unique_tools": 4,
       "tool_counts": {
-        "terminal": 7,
-        "read_file": 4,
-        "search_files": 2,
-        "patch": 1
-      },
-      "entropy": 1.689,
-      "manual_writes": 1,
-      "qodercli_calls": 0,
-      "skill_views": 0,
-      "binary_resolution": 0,
-      "pty_set": 0,
-      "pty_missing": 0,
-      "adapter_events": 17,
-      "adapter_unmapped": []
-    },
-    {
-      "run_id": "P1-baseline-1",
-      "task_id": "P1",
-      "condition": "baseline",
-      "session_id": "20260720_225551_e55327",
-      "model": "anthropic/claude-sonnet-4",
-      "exit_code": 0,
-      "elapsed_seconds": 38.1,
-      "messages": 4,
-      "tool_calls": 1,
-      "unique_tools": 1,
-      "tool_counts": {
-        "delegate_task": 1
-      },
-      "entropy": -0.0,
-      "manual_writes": 0,
-      "qodercli_calls": 0,
-      "skill_views": 0,
-      "binary_resolution": 0,
-      "pty_set": 0,
-      "pty_missing": 0,
-      "adapter_events": 2,
-      "adapter_unmapped": []
-    },
-    {
-      "run_id": "P1-treatment-1",
-      "task_id": "P1",
-      "condition": "treatment",
-      "session_id": "20260720_231909_ad9270",
-      "model": "anthropic/claude-sonnet-4",
-      "exit_code": 0,
-      "elapsed_seconds": 241.4,
-      "messages": 87,
-      "tool_calls": 43,
-      "unique_tools": 6,
-      "tool_counts": {
-        "terminal": 16,
-        "process": 15,
+        "process": 16,
         "read_file": 7,
-        "patch": 3,
-        "skill_view": 1,
-        "search_files": 1
+        "terminal": 5,
+        "skill_view": 1
       },
-      "entropy": 2.007,
-      "manual_writes": 3,
-      "qodercli_calls": 5,
-      "skill_views": 1,
-      "binary_resolution": 2,
-      "pty_set": 4,
-      "pty_missing": 1,
-      "adapter_events": 45,
-      "adapter_unmapped": []
-    },
-    {
-      "run_id": "P1-treatment-2",
-      "task_id": "P1",
-      "condition": "treatment",
-      "session_id": "20260720_232849_c0b56a",
-      "model": "anthropic/claude-sonnet-4",
-      "exit_code": 0,
-      "elapsed_seconds": 479.7,
-      "messages": 43,
-      "tool_calls": 20,
-      "unique_tools": 6,
-      "tool_counts": {
-        "terminal": 9,
-        "read_file": 5,
-        "write_file": 2,
-        "search_files": 2,
-        "skill_view": 1,
-        "patch": 1
-      },
-      "entropy": 2.115,
-      "manual_writes": 3,
-      "qodercli_calls": 3,
+      "entropy": 1.573,
+      "manual_writes": 0,
+      "delegation_calls": 3,
       "skill_views": 1,
       "binary_resolution": 1,
       "pty_set": 2,
       "pty_missing": 1,
-      "adapter_events": 22,
+      "adapter_events": 30,
       "adapter_unmapped": []
     },
     {
-      "run_id": "P2-baseline-1",
-      "task_id": "P2",
-      "condition": "baseline",
-      "session_id": "20260720_231020_9df7e1",
-      "model": "anthropic/claude-sonnet-4",
-      "exit_code": 0,
-      "elapsed_seconds": 351.5,
-      "messages": 113,
-      "tool_calls": 62,
-      "unique_tools": 6,
-      "tool_counts": {
-        "terminal": 18,
-        "patch": 15,
-        "read_file": 14,
-        "todo": 8,
-        "search_files": 6,
-        "write_file": 1
-      },
-      "entropy": 2.301,
-      "manual_writes": 16,
-      "qodercli_calls": 3,
-      "skill_views": 0,
-      "binary_resolution": 1,
-      "pty_set": 0,
-      "pty_missing": 3,
-      "adapter_events": 63,
-      "adapter_unmapped": []
+      "run_id": "P1-interactive-kimi-treatment-10",
+      "error": "missing state.db"
     },
     {
-      "run_id": "P2-treatment-1",
-      "task_id": "P2",
+      "run_id": "P1-interactive-kimi-treatment-2",
+      "task_id": "P1-interactive",
       "condition": "treatment",
-      "session_id": "20260720_230051_f420b0",
-      "model": "anthropic/claude-sonnet-4",
+      "session_id": "20260721_195356_a8d918",
+      "model": "kimi-k2.7-code",
       "exit_code": 0,
-      "elapsed_seconds": 563.8,
-      "messages": 63,
-      "tool_calls": 33,
-      "unique_tools": 6,
+      "elapsed_seconds": 247.5,
+      "messages": 196,
+      "tool_calls": 103,
+      "unique_tools": 5,
       "tool_counts": {
-        "terminal": 16,
-        "read_file": 12,
-        "search_files": 2,
-        "skill_view": 1,
-        "process": 1,
-        "patch": 1
+        "process": 84,
+        "read_file": 11,
+        "search_files": 4,
+        "terminal": 3,
+        "skill_view": 1
       },
-      "entropy": 1.741,
-      "manual_writes": 1,
-      "qodercli_calls": 3,
+      "entropy": 0.98,
+      "manual_writes": 0,
+      "delegation_calls": 2,
       "skill_views": 1,
       "binary_resolution": 1,
-      "pty_set": 2,
+      "pty_set": 1,
       "pty_missing": 1,
-      "adapter_events": 34,
+      "adapter_events": 104,
       "adapter_unmapped": []
     },
     {
-      "run_id": "P2-treatment-2",
-      "task_id": "P2",
+      "run_id": "P1-interactive-kimi-treatment-3",
+      "task_id": "P1-interactive",
       "condition": "treatment",
-      "session_id": "20260720_233558_40f302",
-      "model": "anthropic/claude-sonnet-4",
+      "session_id": "20260721_195804_579f86",
+      "model": "kimi-k2.7-code",
       "exit_code": 0,
-      "elapsed_seconds": 613.0,
-      "messages": 70,
-      "tool_calls": 43,
-      "unique_tools": 6,
+      "elapsed_seconds": 308.0,
+      "messages": 78,
+      "tool_calls": 45,
+      "unique_tools": 7,
       "tool_counts": {
-        "read_file": 18,
-        "terminal": 16,
+        "read_file": 13,
+        "process": 12,
+        "terminal": 10,
         "search_files": 5,
-        "patch": 2,
+        "todo": 3,
         "skill_view": 1,
-        "write_file": 1
+        "patch": 1
       },
-      "entropy": 1.876,
-      "manual_writes": 3,
-      "qodercli_calls": 4,
+      "entropy": 2.365,
+      "manual_writes": 1,
+      "delegation_calls": 2,
       "skill_views": 1,
       "binary_resolution": 1,
-      "pty_set": 3,
+      "pty_set": 1,
       "pty_missing": 1,
-      "adapter_events": 45,
+      "adapter_events": 47,
+      "adapter_unmapped": []
+    },
+    {
+      "run_id": "P1-interactive-kimi-treatment-4",
+      "task_id": "P1-interactive",
+      "condition": "treatment",
+      "session_id": "20260721_200317_c629d1",
+      "model": "kimi-k2.7-code",
+      "exit_code": 0,
+      "elapsed_seconds": 816.2,
+      "messages": 81,
+      "tool_calls": 47,
+      "unique_tools": 6,
+      "tool_counts": {
+        "process": 23,
+        "read_file": 11,
+        "terminal": 10,
+        "skill_view": 1,
+        "search_files": 1,
+        "todo": 1
+      },
+      "entropy": 1.824,
+      "manual_writes": 0,
+      "delegation_calls": 5,
+      "skill_views": 1,
+      "binary_resolution": 1,
+      "pty_set": 2,
+      "pty_missing": 3,
+      "adapter_events": 47,
+      "adapter_unmapped": []
+    },
+    {
+      "run_id": "P1-interactive-kimi-treatment-5",
+      "task_id": "P1-interactive",
+      "condition": "treatment",
+      "session_id": "20260721_210720_788a9c",
+      "model": "kimi-k2.7-code",
+      "exit_code": 0,
+      "elapsed_seconds": 464.6,
+      "messages": 172,
+      "tool_calls": 91,
+      "unique_tools": 5,
+      "tool_counts": {
+        "process": 66,
+        "read_file": 14,
+        "terminal": 7,
+        "search_files": 3,
+        "skill_view": 1
+      },
+      "entropy": 1.27,
+      "manual_writes": 0,
+      "delegation_calls": 2,
+      "skill_views": 1,
+      "binary_resolution": 1,
+      "pty_set": 1,
+      "pty_missing": 1,
+      "adapter_events": 92,
+      "adapter_unmapped": []
+    },
+    {
+      "run_id": "P1-interactive-kimi-treatment-6",
+      "error": "missing state.db"
+    },
+    {
+      "run_id": "P1-interactive-kimi-treatment-7",
+      "error": "missing state.db"
+    },
+    {
+      "run_id": "P1-interactive-kimi-treatment-8",
+      "error": "missing state.db"
+    },
+    {
+      "run_id": "P1-interactive-kimi-treatment-9",
+      "error": "missing state.db"
+    },
+    {
+      "run_id": "P1-interactive-treatment-1",
+      "task_id": "P1-interactive",
+      "condition": "treatment",
+      "session_id": "20260721_005609_0fb7f3",
+      "model": "anthropic/claude-sonnet-4",
+      "exit_code": 0,
+      "elapsed_seconds": 283.7,
+      "messages": 59,
+      "tool_calls": 31,
+      "unique_tools": 4,
+      "tool_counts": {
+        "process": 19,
+        "terminal": 6,
+        "read_file": 5,
+        "skill_view": 1
+      },
+      "entropy": 1.476,
+      "manual_writes": 0,
+      "delegation_calls": 2,
+      "skill_views": 1,
+      "binary_resolution": 1,
+      "pty_set": 1,
+      "pty_missing": 1,
+      "adapter_events": 31,
       "adapter_unmapped": []
     }
   ],
   "hypotheses": {
     "H1_delegation_efficiency": {
-      "status": "PARTIALLY CONFIRMED",
+      "status": "DISCONFIRMED",
       "evidence": {
-        "treatment_tool_calls": 34.8,
-        "baseline_tool_calls": 31.5,
-        "write_compression": "3.2x",
-        "note": "P1 baseline used native delegate_task (anomalous); P2 is valid comparison"
+        "treatment_tool_calls": 57.7,
+        "baseline_tool_calls": 42.9,
+        "write_compression": "17.3x"
       }
     },
     "H2_pty_stability": {
       "status": "DISCONFIRMED",
       "evidence": {
-        "pty_set": 11,
-        "pty_missing": 4
+        "pty_set": 8,
+        "pty_missing": 8
       }
     },
-    "H3_interactive_blockade": {
-      "status": "UNTESTABLE (print mode only; deferred to M3)"
+    "H3_interactive_blockade_resolution": {
+      "status": "UNTESTABLE (Untestable in print mode; deferred to M3 interactive traces)"
     },
     "H4_binary_resolution": {
       "status": "CONFIRMED",
       "evidence": {
-        "traces_with_resolution": 4,
+        "traces_with_resolution": 6,
         "total_treatments": 6
       }
     }
@@ -307,71 +484,253 @@
     {
       "type": "PROCEDURAL_SCAFFOLDING",
       "valence": "constructive",
-      "run": "P1-treatment-1"
+      "run": "P1-interactive-kimi-treatment-1"
     },
     {
       "type": "DELEGATION_REDIRECT",
       "valence": "constructive",
-      "run": "P1-treatment-1"
+      "run": "P1-interactive-kimi-treatment-1"
     },
     {
       "type": "PTY_OMISSION",
-      "valence": "destructive",
-      "run": "P1-treatment-1",
-      "count": 1
+      "valence": "neutral",
+      "run": "P1-interactive-kimi-treatment-1",
+      "count": 3
     },
     {
       "type": "PROCEDURAL_SCAFFOLDING",
       "valence": "constructive",
-      "run": "P1-treatment-2"
+      "run": "P1-interactive-kimi-treatment-2"
     },
     {
       "type": "DELEGATION_REDIRECT",
       "valence": "constructive",
-      "run": "P1-treatment-2"
+      "run": "P1-interactive-kimi-treatment-2"
     },
     {
       "type": "PTY_OMISSION",
-      "valence": "destructive",
-      "run": "P1-treatment-2",
-      "count": 1
+      "valence": "neutral",
+      "run": "P1-interactive-kimi-treatment-2",
+      "count": 2
     },
     {
       "type": "PROCEDURAL_SCAFFOLDING",
       "valence": "constructive",
-      "run": "P2-treatment-1"
+      "run": "P1-interactive-kimi-treatment-3"
     },
     {
       "type": "DELEGATION_REDIRECT",
       "valence": "constructive",
-      "run": "P2-treatment-1"
+      "run": "P1-interactive-kimi-treatment-3"
     },
     {
       "type": "PTY_OMISSION",
-      "valence": "destructive",
-      "run": "P2-treatment-1",
-      "count": 1
+      "valence": "neutral",
+      "run": "P1-interactive-kimi-treatment-3",
+      "count": 2
     },
     {
       "type": "PROCEDURAL_SCAFFOLDING",
       "valence": "constructive",
-      "run": "P2-treatment-2"
+      "run": "P1-interactive-kimi-treatment-4"
     },
     {
       "type": "DELEGATION_REDIRECT",
       "valence": "constructive",
-      "run": "P2-treatment-2"
+      "run": "P1-interactive-kimi-treatment-4"
     },
     {
       "type": "PTY_OMISSION",
-      "valence": "destructive",
-      "run": "P2-treatment-2",
-      "count": 1
+      "valence": "neutral",
+      "run": "P1-interactive-kimi-treatment-4",
+      "count": 5
+    },
+    {
+      "type": "PROCEDURAL_SCAFFOLDING",
+      "valence": "constructive",
+      "run": "P1-interactive-kimi-treatment-5"
+    },
+    {
+      "type": "DELEGATION_REDIRECT",
+      "valence": "constructive",
+      "run": "P1-interactive-kimi-treatment-5"
+    },
+    {
+      "type": "PTY_OMISSION",
+      "valence": "neutral",
+      "run": "P1-interactive-kimi-treatment-5",
+      "count": 2
+    },
+    {
+      "type": "PROCEDURAL_SCAFFOLDING",
+      "valence": "constructive",
+      "run": "P1-interactive-treatment-1"
+    },
+    {
+      "type": "DELEGATION_REDIRECT",
+      "valence": "constructive",
+      "run": "P1-interactive-treatment-1"
+    },
+    {
+      "type": "PTY_OMISSION",
+      "valence": "neutral",
+      "run": "P1-interactive-treatment-1",
+      "count": 2
     }
   ],
   "controls": {
-    "N1_zero_qodercli": true,
-    "E1_zero_writes": true,
-    "metric_not_trivially_constructive": true
+    "N1_zero_delegation": null,
+    "E1_zero_writes": null
+  },
+  "structural_metrics": {
+    "pairs": [
+      {
+        "treatment": "/Users/kieranlal/workspace/CTA/data/m3_captures/P1-interactive-kimi-treatment-1/state.db",
+        "baseline": "/Users/kieranlal/workspace/CTA/data/m3_captures/P1-interactive-kimi-baseline-1/state.db",
+        "treatment_model": "kimi-k2.7-code",
+        "baseline_model": "kimi-k2.7-code",
+        "treatment_messages": 56,
+        "baseline_messages": 138,
+        "metrics": {
+          "event_count_ratio": 0.40540540540540543,
+          "tool_vocabulary_entropy_treatment": 1.6648530979805174,
+          "tool_vocabulary_entropy_baseline": 2.0809081965417096,
+          "entropy_ratio": 0.8000608103458673,
+          "write_compression": 3.0,
+          "unilateral_actions": [
+            "package.json",
+            "src/utils/helpers.py"
+          ],
+          "summary": {
+            "treatment_events": 30,
+            "baseline_events": 74,
+            "treatment_writes": 0,
+            "baseline_writes": 3,
+            "treatment_unique_tools": 4,
+            "baseline_unique_tools": 6
+          }
+        }
+      },
+      {
+        "treatment": "/Users/kieranlal/workspace/CTA/data/m3_captures/P1-interactive-kimi-treatment-2/state.db",
+        "baseline": "/Users/kieranlal/workspace/CTA/data/m3_captures/P1-interactive-kimi-baseline-2/state.db",
+        "treatment_model": "kimi-k2.7-code",
+        "baseline_model": "kimi-k2.7-code",
+        "treatment_messages": 196,
+        "baseline_messages": 82,
+        "metrics": {
+          "event_count_ratio": 2.2127659574468086,
+          "tool_vocabulary_entropy_treatment": 1.0296387679431152,
+          "tool_vocabulary_entropy_baseline": 2.1018046852791907,
+          "entropy_ratio": 0.48988318236922396,
+          "write_compression": 1.0,
+          "unilateral_actions": [
+            "/root/workspace/src/utils/helpers.py"
+          ],
+          "summary": {
+            "treatment_events": 104,
+            "baseline_events": 47,
+            "treatment_writes": 0,
+            "baseline_writes": 1,
+            "treatment_unique_tools": 5,
+            "baseline_unique_tools": 6
+          }
+        }
+      },
+      {
+        "treatment": "/Users/kieranlal/workspace/CTA/data/m3_captures/P1-interactive-kimi-treatment-3/state.db",
+        "baseline": "/Users/kieranlal/workspace/CTA/data/m3_captures/P1-interactive-kimi-baseline-3/state.db",
+        "treatment_model": "kimi-k2.7-code",
+        "baseline_model": "kimi-k2.7-code",
+        "treatment_messages": 78,
+        "baseline_messages": 105,
+        "metrics": {
+          "event_count_ratio": 0.8245614035087719,
+          "tool_vocabulary_entropy_treatment": 2.331951345887734,
+          "tool_vocabulary_entropy_baseline": 2.241482724871589,
+          "entropy_ratio": 1.0403610610121155,
+          "write_compression": 5.0,
+          "unilateral_actions": [
+            "/root/workspace/pytest.ini",
+            "/root/workspace/src/app.py",
+            "/root/workspace/src/middleware/token.py",
+            "/root/workspace/src/routes/auth.py"
+          ],
+          "summary": {
+            "treatment_events": 47,
+            "baseline_events": 57,
+            "treatment_writes": 1,
+            "baseline_writes": 5,
+            "treatment_unique_tools": 6,
+            "baseline_unique_tools": 6
+          }
+        }
+      },
+      {
+        "treatment": "/Users/kieranlal/workspace/CTA/data/m3_captures/P1-interactive-kimi-treatment-4/state.db",
+        "baseline": "/Users/kieranlal/workspace/CTA/data/m3_captures/P1-interactive-kimi-baseline-4/state.db",
+        "treatment_model": "kimi-k2.7-code",
+        "baseline_model": "kimi-k2.7-code",
+        "treatment_messages": 81,
+        "baseline_messages": 87,
+        "metrics": {
+          "event_count_ratio": 0.94,
+          "tool_vocabulary_entropy_treatment": 1.7819302613968886,
+          "tool_vocabulary_entropy_baseline": 1.9237905043504866,
+          "entropy_ratio": 0.9262600357820702,
+          "write_compression": 1.0,
+          "unilateral_actions": [],
+          "summary": {
+            "treatment_events": 47,
+            "baseline_events": 50,
+            "treatment_writes": 0,
+            "baseline_writes": 0,
+            "treatment_unique_tools": 5,
+            "baseline_unique_tools": 5
+          }
+        }
+      },
+      {
+        "treatment": "/Users/kieranlal/workspace/CTA/data/m3_captures/P1-interactive-treatment-1/state.db",
+        "baseline": "/Users/kieranlal/workspace/CTA/data/m3_captures/P1-interactive-baseline-1/state.db",
+        "treatment_model": "anthropic/claude-sonnet-4",
+        "baseline_model": "anthropic/claude-sonnet-4",
+        "treatment_messages": 59,
+        "baseline_messages": 1,
+        "metrics": {
+          "event_count_ratio": 31.0,
+          "tool_vocabulary_entropy_treatment": 1.4758079802516535,
+          "tool_vocabulary_entropy_baseline": 0.0,
+          "entropy_ratio": 1.0,
+          "write_compression": 1.0,
+          "unilateral_actions": [],
+          "summary": {
+            "treatment_events": 31,
+            "baseline_events": 0,
+            "treatment_writes": 0,
+            "baseline_writes": 0,
+            "treatment_unique_tools": 4,
+            "baseline_unique_tools": 0
+          }
+        }
+      }
+    ],
+    "valid_pairs": 5,
+    "aggregate": {
+      "valid_pairs": 5,
+      "event_count_ratio": {
+        "mean": 7.076546553272197,
+        "min": 0.40540540540540543,
+        "max": 31.0
+      },
+      "write_compression": {
+        "mean": 2.2,
+        "min": 1.0,
+        "max": 5.0
+      },
+      "entropy_ratio": {
+        "mean": 0.8513130179018553
+      }
+    }
   }
 }

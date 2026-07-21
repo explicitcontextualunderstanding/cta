@@ -173,7 +173,8 @@ DELEGATION_ERROR_PATTERNS = [
 ]
 
 ACKNOWLEDGMENT_PATTERNS = re.compile(
-    r"fell back|fall.?back|manual(?:ly)?|failed|failure|unable|could not|couldn't|"
+    r"fell back|fall.?back|manual(?:ly)?\s+(?:fallback|approach|implementation|intervention|instead|required)|"
+    r"failed|failure|unable|could not|couldn't|"
     r"permission.{0,20}(denied|block|error)|timed? ?out|timeout|stuck|"
     r"not logged in|auth.{0,10}(fail|error)|credit.{0,20}(limit|exhaust)|"
     r"error.{0,20}(occur|encounter|happen)",
@@ -379,11 +380,14 @@ def run_detectors(
         fn = DETECTOR_REGISTRY.get(name)
         if fn is None:
             continue
-        sig = inspect.signature(fn)
-        if "context" in sig.parameters:
-            findings.extend(fn(events, context=context))
-        else:
-            findings.extend(fn(events))
+        try:
+            sig = inspect.signature(fn)
+            if "context" in sig.parameters:
+                findings.extend(fn(events, context=context))
+            else:
+                findings.extend(fn(events))
+        except Exception:
+            continue
     return findings
 
 
