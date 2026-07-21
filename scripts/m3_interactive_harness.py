@@ -254,7 +254,7 @@ def recover_from_stdout(run_dir: Path) -> dict | None:
     return recovered
 
 
-def generate_run_script(condition: str, run_num: int, model: str = DEFAULT_MODEL, provider: str = DEFAULT_PROVIDER, tag: str = "") -> str:
+def generate_run_script(condition: str, run_num: int, model: str = DEFAULT_MODEL, provider: str = DEFAULT_PROVIDER, tag: str = "", prompt: str = "") -> str:
     run_label = f"P1-interactive-{tag}-{condition}-{run_num}" if tag else f"P1-interactive-{condition}-{run_num}"
     skill_setup = ""
     if condition == "treatment":
@@ -269,7 +269,8 @@ echo '=== Baseline: no skill installed ==='
 rm -rf /home/hermes/.hermes/skills/autonomous-ai-agents/qodercli 2>/dev/null || true
 """
 
-    prompt_escaped = M3_PROMPT.replace("'", "'\\''")
+    effective_prompt = prompt or M3_PROMPT
+    prompt_escaped = effective_prompt.replace("'", "'\\''")
 
     return f"""#!/bin/sh
 set -e
@@ -332,7 +333,7 @@ echo '=== RUN COMPLETE ==='
 """
 
 
-def run_container(condition: str, run_num: int, secrets: dict, timeout: int, dry_run: bool, provide_token: bool = True, model: str = DEFAULT_MODEL, provider: str = DEFAULT_PROVIDER, tag: str = "") -> bool:
+def run_container(condition: str, run_num: int, secrets: dict, timeout: int, dry_run: bool, provide_token: bool = True, model: str = DEFAULT_MODEL, provider: str = DEFAULT_PROVIDER, tag: str = "", prompt: str = "") -> bool:
     run_id = f"P1-interactive-{tag}-{condition}-{run_num}" if tag else f"P1-interactive-{condition}-{run_num}"
     container_name = f"cta-m3-{run_id}"
     run_dir = OUTPUT_DIR / run_id
@@ -369,7 +370,7 @@ def run_container(condition: str, run_num: int, secrets: dict, timeout: int, dry
                  "GIT_COMMITTER_NAME": "CTA", "GIT_COMMITTER_EMAIL": "cta@local"},
         )
 
-    script = generate_run_script(condition, run_num, model=model, provider=provider, tag=tag)
+    script = generate_run_script(condition, run_num, model=model, provider=provider, tag=tag, prompt=prompt)
     script_path = run_dir / "run.sh"
     script_path.write_text(script)
     script_path.chmod(0o755)
@@ -494,11 +495,33 @@ def main():
                         help="Max sessions per invocation before forcing a health check pause (default: 3)")
     parser.add_argument("--skip-preflight", action="store_true",
                         help="Skip the API preflight check (for dry runs or when provider is known-good)")
+    parser.add_argument("--config", type=str, default="",
+                        help="Path to YAML/JSON audit config (pulls task prompts from tasks: block)")
+    parser.add_argument("--task", type=str, default="",
+                        help="Task ID from config tasks: block to use as the prompt (e.g. P1, N1)")
     args = parser.parse_args()
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     secrets = load_secrets()
 
+    config_prompt = ""
+    if args.config:
+        sys.path.insert(0, str(PROJECT_ROOT / "src"))
+        from cta.audit_config import load_config
+        cfg = load_config(Path(args.config))
+        if args.task:
+            match = [t for t in cfg.tasks if t.id == args.task]
+            if not match:
+                print(f"[ERROR] Task '{args.task}' not found in {args.config}")
+                print(f"  Available: {[t.id for t in cfg.tasks]}")
+                sys.exit(1)
+            config_prompt = match[0].prompt.replace("{skill}", cfg.skill_name)
+            print(f"[CONFIG] Using task {args.task} from {args.config}")
+        elif cfg.tasks:
+            config_prompt = cfg.tasks[0].prompt.replace("{skill}", cfg.skill_name)
+            print(f"[CONFIG] Using first task ({cfg.tasks[0].id}) from {args.config}")
+
+    effective_prompt = config_prompt or M3_PROMPT
     conditions = ["treatment", "baseline"] if args.condition == "both" else [args.condition]
 
     print(f"M3 Interactive-Mode Capture")
@@ -510,7 +533,7 @@ def main():
     print(f"  Output: {OUTPUT_DIR}")
     print(f"  Tag: {args.tag or '(none)'}")
     print(f"  Baseline token: {'YES (Option B)' if args.baseline_token else 'NO (Option A)'}")
-    print(f"  Prompt: {M3_PROMPT[:80]}...")
+    print(f"  Prompt: {effective_prompt[:80]}...")
     print()
 
     # GUARDRAIL: Pre-flight API health check
@@ -555,7 +578,7 @@ def main():
 
             provide_token = True if condition == "treatment" else args.baseline_token
             ok = run_container(condition, run_num, secrets, args.timeout, args.dry_run, provide_token,
-                               model=args.model, provider=args.provider, tag=args.tag)
+                               model=args.model, provider=args.provider, tag=args.tag, prompt=effective_prompt)
             results.append({"condition": condition, "run": run_num, "success": ok})
             progress_file.write_text(json.dumps(results, indent=2))
             sessions_this_batch += 1

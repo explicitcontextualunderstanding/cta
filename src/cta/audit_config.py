@@ -58,6 +58,14 @@ class ControlsConfig:
 
 
 @dataclass
+class TaskConfig:
+    id: str
+    prompt: str
+    expect: str = ""
+    category: str = "positive"
+
+
+@dataclass
 class ReportConfig:
     title: str = "CTA Skill Audit: {skill_name}"
     model: str = ""
@@ -76,6 +84,9 @@ class AuditConfig:
     controls: ControlsConfig
     report: ReportConfig
     metrics: List[str] = field(default_factory=list)
+    tasks: List[TaskConfig] = field(default_factory=list)
+    fixture: str = "fixture/"
+    runs_per_condition: int = 3
 
 
 def load_config(path: Path, captures_dir_override: Optional[Path] = None) -> AuditConfig:
@@ -128,6 +139,17 @@ def load_config(path: Path, captures_dir_override: Optional[Path] = None) -> Aud
 
     captures_dir = captures_dir_override or Path(raw.get("captures_dir", "data/m2_captures"))
 
+    tasks: List[TaskConfig] = []
+    tasks_raw = raw.get("tasks", {})
+    for category, task_list in tasks_raw.items():
+        for t in task_list or []:
+            tasks.append(TaskConfig(
+                id=t["id"],
+                prompt=t["prompt"],
+                expect=t.get("expect", ""),
+                category=category,
+            ))
+
     return AuditConfig(
         skill_name=skill["name"],
         skill_version=skill.get("version", ""),
@@ -139,4 +161,7 @@ def load_config(path: Path, captures_dir_override: Optional[Path] = None) -> Aud
         controls=controls,
         report=report,
         metrics=raw.get("metrics", []),
+        tasks=tasks,
+        fixture=raw.get("fixture", "fixture/"),
+        runs_per_condition=raw.get("runs_per_condition", 3),
     )
