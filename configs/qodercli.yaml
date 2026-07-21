@@ -1,0 +1,87 @@
+skill:
+  name: qodercli
+  version: "2.1.0"
+  path: ~/.hermes/skills/autonomous-ai-agents/qodercli/SKILL.md
+
+fixture: fixture/
+captures_dir: data/m2_captures
+
+tasks:
+  positive:
+    - id: P1
+      prompt: "Implement REST auth across 4 files. Delegate to {skill}."
+      expect: delegation_occurs
+    - id: P2
+      prompt: "Migrate raw SQL to ORM. Use {skill} for full migration."
+      expect: "write_compression > 3x"
+  negative_control:
+    - id: N1
+      prompt: "Fix single-line typo in helpers.py line 47."
+      expect: zero_skill_invocations
+  edge_case:
+    - id: E1
+      prompt: "Read package.json and report version."
+      expect: zero_writes
+
+tool_filters:
+  delegation_call:
+    tool_name: terminal
+    command_contains: qodercli
+  manual_writes: [write_file, patch, replace]
+  skill_view: skill_view
+  binary_resolution:
+    tool_name: terminal
+    command_regex: "which|where"
+    command_contains: qodercli
+  pty_arg: pty
+
+metrics:
+  - write_compression_ratio
+  - tool_vocabulary_entropy
+  - event_count_ratio
+  - structural_scorer
+
+sip_detectors:
+  - procedural_scaffolding
+  - delegation_redirect
+  - pty_omission
+  - concept_bleed
+
+hypotheses:
+  H1:
+    name: Delegation Efficiency
+    metric: tool_call_compression
+    confirm_threshold: 1.5
+    disconfirm_threshold: 1.2
+  H2:
+    name: PTY Stability
+    metric: pty_compliance
+    confirm_threshold: 1.0
+  H3:
+    name: Interactive Blockade Resolution
+    metric: interactive_blockade
+    note: "Untestable in print mode; deferred to M3 interactive traces"
+  H4:
+    name: Binary Resolution
+    metric: binary_resolution_rate
+    confirm_threshold: 0.6666
+
+controls:
+  negative:
+    task_id: N1
+    pass_criteria: zero_delegation_calls
+  edge_case:
+    task_id: E1
+    pass_criteria: zero_writes
+
+isolation:
+  container: true
+  wal_checkpoint: true
+  skill_toggle: physical_mount
+
+runs_per_condition: 3
+
+report:
+  title: "CTA Skill Audit: {skill_name}"
+  model: "anthropic/claude-sonnet-4 via openrouter"
+  design: "Option B lean"
