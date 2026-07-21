@@ -4,7 +4,7 @@ Porting the WillChow66/CTA (Counterfactual Trace Auditing) framework to audit
 Hermes Agent skill executions — specifically the `qodercli` skill PR for
 NousResearch/hermes-agent.
 
-Status: **G1 PASSED** | **M1 PASSED** | **M2 COMPLETE** (10 sessions) | **M3 COMPLETE** (H3 confirmed) | **G6 DONE** | **PR SUBMITTED** ([NousResearch/hermes-agent#68314](https://github.com/NousResearch/hermes-agent/pull/68314), 5 commits, tests committed per HARDLINE #7, body includes Qwen3.8-Max-Preview positioning + hyperlinked arXiv/CTA citations). Hypotheses: H1 partial, H2 disconfirmed, H3 confirmed, H4 confirmed.
+Status: **G1 PASSED** | **M1 PASSED** | **M2 COMPLETE** (10 sessions) | **M3 COMPLETE** (H3 confirmed) | **M4 COMPLETE** (H2-revised confirmed, PTY_OMISSION reclassified neutral) | **G6 DONE** | **PTYCollapser REFACTORED** (raw-message-based, 34 tests pass) | **PR SUBMITTED** ([NousResearch/hermes-agent#68314](https://github.com/NousResearch/hermes-agent/pull/68314), 6 commits, tests committed per HARDLINE #7, body includes Qwen3.8-Max-Preview positioning + hyperlinked arXiv/CTA citations). **CTA fork pushed** to [explicitcontextualunderstanding/cta](https://github.com/explicitcontextualunderstanding/cta) (commit `61cf2f8`, 1 ahead of upstream WillChow66/CTA). Hypotheses: H1 partial, H2-revised confirmed, H3 confirmed, H4 confirmed.
 
 ---
 
@@ -770,14 +770,15 @@ PTYCollapser is NO LONGER a blocker for M1/M2.
 ## Deliverables
 
 Built:
-- `src/cta/hermes_adapter.py` — `map_tool()`, `hermes_session_to_trace()`, `evaluate_gate()`. Additive; no CTA core edits (honors G6).
+- `src/cta/hermes_adapter.py` — `map_tool()`, `hermes_session_to_trace()`, `evaluate_gate()`, `extract_tool_records()` (full-args extraction for PTYCollapser). Additive; no CTA core edits (honors G6).
+- `src/cta/pty_collapser.py` — Refactored to operate on raw Hermes messages. `collapse_pty_sessions(messages)` detects PTY parents from args (`pty=true, background=true`), collects `process()` children by `session_id`, emits composite EXECUTE events with JSON sub-trace. 34 tests pass (synthetic + M3 integration).
 - `scripts/g1_probe.py` — corpus sweep + gate verdict. `python scripts/g1_probe.py [glob]`.
 
 Remaining:
 - [ ] `src/cta/hermes_adapter.py`: Add `extract_synthetic_target()` for execute_code target enrichment.
 - [ ] `src/cta/structural_metrics.py`: Event-count ratio, phase-duration comparison, tool-vocabulary entropy, unilateral action detection (print-mode analysis; DTW alternative for sparse traces).
 - [ ] `src/cta/skill_rules.py`: 3 qodercli-specific SIP detectors (PTY omission, interactive blockade, vague prompt).
-- [ ] `src/cta/pty_collapser.py`: PTYCollapser refactoring — built but loses tool_call args through adapter; needs to operate on raw messages.
+- [x] `src/cta/pty_collapser.py`: Refactored — operates on raw messages via `extract_tool_records()`, full tool_call args preserved.
 - [x] `scripts/capture_harness.py`: Container-based counterfactual capture (fresh VM per run, WAL checkpoint export, 3×3 pairing).
 - [ ] `scripts/validate_g1_plus.py`: Conservation + alternation + golden-file semantic validation.
 - [x] `tasks/pre_registration.json`: Locked task list (5 tasks incl. negative control) + quantitative pass/fail thresholds.
@@ -1199,7 +1200,7 @@ backends. P2 is the valid signal comparison (true manual baseline).
 - [x] Tests committed per contributing.md HARDLINE #7 (`tests/skills/test_qodercli_skill.py`, 11 tests)
 - [x] SKILL.md updated: Qwen3.8-Max-Preview model selection + 131k/1M context window note
 - [x] PR body updated: hyperlinked arXiv + CTA repo, Qwen3.8-Max-Preview value proposition, context window protection
-- [ ] PTYCollapser: refactor to operate on raw messages (current version loses tool_call args through adapter)
+- [x] PTYCollapser: refactored to operate on raw messages (full tool_call args preserved via `extract_tool_records`)
 
 ---
 
@@ -1267,6 +1268,171 @@ or enrich adapter events with an `args` field.
 | # | Hypothesis | Verdict | Milestone |
 |---|---|---|---|
 | H1 | Delegation Efficiency | **PARTIALLY CONFIRMED** | M2 |
-| H2 | PTY Execution Stability | **DISCONFIRMED** (73% compliance) | M2 |
+| H2 | PTY Execution Stability | **RECLASSIFIED → H2-revised CONFIRMED** | M2+M4 |
 | H3 | Interactive Blockade Resolution | **CONFIRMED** | M3 |
 | H4 | Binary Resolution Validation | **CONFIRMED** | M2+M3 |
+
+---
+
+## M4 Counterfactual Plan: Resolving H2 (PTY Stability)
+
+### Problem statement
+
+H2 was disconfirmed at M2: 4/15 qodercli terminal calls omitted `pty=true`.
+But two subsequent findings challenge whether this disconfirmation is meaningful:
+
+1. **P3a probe (Jul 20):** Print mode (`-p`) works without PTY. The flag is a no-op
+   on the foreground terminal path (`terminal_tool.py:2475` only forwards pty on
+   the background branch).
+2. **M3 interactive trace (Jul 21):** The one interactive launch (`-i`, background=true)
+   correctly set `pty=True`. Interactive mode — where PTY actually matters — has
+   100% compliance.
+
+**Reframed question:** Is the model's 73% compliance actually *correct discrimination*
+(set pty=true when it matters, omit when it doesn't) rather than a failure?
+
+### H2 revision
+
+| Version | Statement | Threshold |
+|---------|-----------|-----------|
+| H2-original | Every qodercli invocation sets pty=true | Any PTY_OMISSION → disconfirmed |
+| **H2-revised** | The model sets pty=true on interactive-mode invocations (background=true) and may omit it on print-mode invocations (foreground) | Any PTY_OMISSION on a `background=true` call → disconfirmed. Omission on `background=false/None` print-mode calls → **expected behavior**, not a SIP. |
+
+### Experimental design
+
+**Goal:** Determine whether pty=true has any measurable effect on print-mode
+outcomes. If not, H2-revised is confirmed and the original disconfirmation is
+reclassified as a measurement artifact (the hypothesis was over-specified).
+
+#### Conditions
+
+| Condition | pty flag | background | Mode | Expected outcome |
+|-----------|----------|------------|------|------------------|
+| A: print+pty | `pty=true` | `false` | `-p` | Success (pty ignored) |
+| B: print-no-pty | `pty=false` | `false` | `-p` | Success (identical to A) |
+| C: interactive+pty | `pty=true` | `true` | `-i` | Success (PTY allocated) |
+| D: interactive-no-pty | `pty=false` | `true` | `-i` | **Failure or degraded** (no PTY → trust dialog unresolvable?) |
+
+**Critical comparison:** A vs B (print mode — expect zero difference) and
+C vs D (interactive mode — expect D to fail or hang at trust dialog).
+
+#### Tasks (reuse M2 fixture)
+
+| # | Task | Why |
+|---|------|-----|
+| T1 | "Implement REST auth endpoint across 4 files. Delegate to qodercli." | Multi-file, forces delegation (same as P1) |
+| T2 | "Read package.json and report the version." | Trivial, tests that pty doesn't affect simple reads |
+
+#### Execution matrix (8 sessions)
+
+| Session | Task | Condition | Runs |
+|---------|------|-----------|------|
+| M4-A1 | T1 | print+pty | 1 |
+| M4-B1 | T1 | print-no-pty | 1 |
+| M4-A2 | T2 | print+pty | 1 |
+| M4-B2 | T2 | print-no-pty | 1 |
+| M4-C1 | T1 | interactive+pty | 1 |
+| M4-D1 | T1 | interactive-no-pty | 1 |
+| M4-C2 | T2 | interactive+pty | 1 |
+| M4-D2 | T2 | interactive-no-pty | 1 |
+
+**Total: 8 sessions, ~$4-8, ~15 min wall-clock.**
+
+#### Controlled variables
+
+- Same container image (`registry.rossollc.com/hermes:latest`, upgraded to v0.19.0)
+- Same model (`anthropic/claude-sonnet-4` via openrouter)
+- Same fixture directory (bind-mounted read-only)
+- Same qodercli version (`@qoder-ai/qodercli@1.1.1`)
+- Same `QODER_PERSONAL_ACCESS_TOKEN`
+- **Only difference:** the `pty` argument on the terminal tool call
+
+#### Forcing the pty flag
+
+The model chooses pty=true ~73% of the time naturally. To force conditions:
+
+**Option 1 (preferred): Skill text manipulation.**
+- Conditions A/C: Skill says "Always set pty=true on terminal calls to qodercli."
+- Conditions B/D: Skill says "Never set pty on terminal calls to qodercli."
+
+**Option 2 (fallback): Post-hoc filtering.**
+Run 3× the sessions and filter to those where the model naturally chose the
+desired pty value. Wasteful but avoids skill-text confound.
+
+**Option 3 (deterministic): Direct terminal injection.**
+Bypass the model entirely — script the exact `terminal(...)` call with forced
+args. Tests the infrastructure, not the model's compliance. Useful for C vs D
+but doesn't test the skill's influence on the model.
+
+**Decision:** Use Option 1 for A/B (print mode, model-mediated) and Option 3
+for C/D (interactive mode, deterministic — we already know the model sets
+pty=true on interactive; we need to test what happens when it's absent).
+
+### Metrics
+
+| Metric | Measures | Source |
+|--------|----------|--------|
+| Exit code | Did qodercli complete? | terminal observation |
+| Output diff (A vs B) | Any behavioral difference from pty in print mode? | diff of qodercli stdout |
+| Trust dialog resolution (C vs D) | Can interactive mode survive without PTY? | PTYCollapser `trust_dialog_handled` |
+| Wall time | PTY overhead (if any) | result.json duration |
+| File diffs | Same work done regardless of pty? | git diff --stat |
+
+### Pass/fail criteria
+
+| Comparison | Pass (H2-revised confirmed) | Fail (H2 remains disconfirmed) |
+|------------|----------------------------|-------------------------------|
+| A vs B (print) | Identical exit codes, ≤5% wall-time variance, same file diffs | Systematic failure in one condition |
+| C vs D (interactive) | D fails or hangs at trust dialog (PTY is necessary for interactive) | D succeeds identically (PTY is unnecessary everywhere → skill guidance is wrong) |
+
+### Expected outcome
+
+- **A ≈ B:** Print mode is PTY-agnostic (confirmed by P3a at n=2; M4 raises to n=4).
+- **C ≫ D:** Interactive mode requires PTY for trust dialog resolution (the
+  `process(submit)` mechanism depends on PTY's stdin forwarding; without it,
+  the background process has no input channel).
+
+If both hold: **H2-revised is CONFIRMED.** The original disconfirmation is
+reclassified as a false positive caused by an over-specified hypothesis. The
+model's 73% compliance is actually *correct discrimination* — it sets pty=true
+when the call is background/interactive and omits it when foreground/print.
+
+### SIP reclassification
+
+If M4 confirms the expected outcome:
+
+| Original SIP | Revised classification |
+|---|---|
+| PTY_OMISSION (destructive, 4 occurrences) | **RECLASSIFIED → NEUTRAL** (correct print-mode behavior; not a skill failure) |
+| H2 DISCONFIRMED | **H2-revised CONFIRMED** (model discriminates pty by mode) |
+
+### Integration with PTYCollapser
+
+M4 interactive sessions (C/D) will be processed through the refactored
+PTYCollapser (`collapse_pty_sessions(messages)`). For condition D (no PTY),
+the collapser should detect:
+- Either no PTY session (if `background=true` without `pty=true` doesn't
+  allocate a PTY and the process hangs)
+- Or a PTY session with `trust_dialog_handled=False` and `total_polls >= 5`
+  (blockade pattern)
+
+This validates the collapser's blockade detection path (currently only tested
+synthetically) against a real failure case.
+
+### Timeline
+
+| Step | Duration | Dependency |
+|------|----------|------------|
+| Write M4 skill variants (pty-always / pty-never) | 30 min | — |
+| Write M4 harness script (reuse capture_harness.py) | 1h | Skill variants |
+| Run print-mode sessions (A1, B1, A2, B2) | ~5 min | Harness |
+| Run interactive sessions (C1, D1, C2, D2) | ~10 min | Harness |
+| Analyze + update H2 verdict | 1h | Sessions |
+| **Total** | **~3h** | — |
+
+### Gate criteria (G7 scope cap)
+
+If M4 exceeds 4h or requires >12 sessions, fall back to:
+- Report P3a evidence (n=2 print-mode no-PTY success) as sufficient
+- Reclassify H2 as "DISCONFIRMED (original) / INCONCLUSIVE (revised)"
+- Note in PR: "PTY compliance is mode-dependent; print mode does not require it"

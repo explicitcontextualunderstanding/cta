@@ -23,6 +23,8 @@ CTA target (src/cta/data_models.py):
 from __future__ import annotations
 
 import json
+import re
+from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
 from .data_models import Event, EventType, EventOutcome, Trace
@@ -102,6 +104,25 @@ def _target_for(name: str, args: Dict[str, Any]) -> str:
         if isinstance(val, str) and val:
             return val
     return name
+
+
+def extract_synthetic_target(code_string: str) -> str:
+    """Extract file paths or module names from execute_code arguments.
+
+    Provides a meaningful target for EXECUTE events whose raw target would
+    otherwise fall back to the tool name, breaking TF-IDF intent matching.
+    """
+    targets = []
+    for match in re.finditer(r'(?:from|import)\s+([\w.]+)', code_string):
+        targets.append(match.group(1))
+    for match in re.finditer(r'(?:open|Path)\s*\(\s*["\']([^"\']+)["\']', code_string):
+        targets.append(match.group(1))
+    for match in re.finditer(r'["\']([\w/.-]+\.\w{1,4})["\']', code_string):
+        targets.append(match.group(1))
+
+    if targets:
+        return ",".join(sorted(set(targets))[:3])
+    return "execute_code"
 
 
 # --------------------------------------------------------------------------- #
@@ -241,6 +262,71 @@ def _type_counts(events: List[Event]) -> Dict[str, int]:
         key = e.type.value if e.type is not None else "NONE"
         counts[key] = counts.get(key, 0) + 1
     return dict(sorted(counts.items(), key=lambda kv: -kv[1]))
+
+
+# --------------------------------------------------------------------------- #
+# Full-args extraction (for PTYCollapser and other raw-message consumers)
+# --------------------------------------------------------------------------- #
+
+@dataclass
+class ToolCallRecord:
+    """A single tool call with full arguments preserved."""
+    name: str
+    args: Dict[str, Any]
+    observation: str
+    call_id: str
+    event: Event
+
+
+def extract_tool_records(messages: List[Dict[str, Any]]) -> List[ToolCallRecord]:
+    """Extract tool call records with full args from raw Hermes messages.
+
+    Unlike hermes_session_to_trace (which flattens args into a single target
+    string), this preserves the complete arguments dict for each tool call.
+    Pure-reasoning turns (no tool_calls) are excluded.
+    """
+    tool_results = _index_tool_results(messages)
+    records: List[ToolCallRecord] = []
+    event_id = 0
+
+    for msg in messages:
+        if msg.get("role") != "assistant":
+            continue
+        tool_calls = msg.get("tool_calls") or []
+        if not tool_calls:
+            continue
+
+        reasoning = (msg.get("reasoning") or "").strip()
+        first = True
+        for tc in tool_calls:
+            fn = tc.get("function", {}) or {}
+            name = fn.get("name", "") or ""
+            args = _parse_arguments(fn.get("arguments"))
+            cid = tc.get("id") or tc.get("call_id") or ""
+
+            observation = tool_results.get(cid, "")
+            etype = map_tool(name)
+            outcome = _infer_outcome(observation)
+
+            event = Event(
+                event_id=event_id,
+                type=etype,
+                target=_target_for(name, args),
+                content=observation,
+                reasoning=reasoning if first else "",
+                outcome=outcome,
+            )
+            records.append(ToolCallRecord(
+                name=name,
+                args=args,
+                observation=observation,
+                call_id=cid,
+                event=event,
+            ))
+            event_id += 1
+            first = False
+
+    return records
 
 
 # --------------------------------------------------------------------------- #
