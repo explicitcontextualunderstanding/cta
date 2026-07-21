@@ -2,7 +2,7 @@
 
 **Target:** `NousResearch/hermes-agent` → `skills/autonomous-ai-agents/qodercli/SKILL.md`
 **Author:** explicitcontextualunderstanding
-**Skill version:** 2.0.0
+**Skill version:** 2.2.0
 
 ---
 
@@ -10,9 +10,9 @@
 
 Adds a skill that enables Hermes to delegate multi-file coding tasks to [Qoder CLI](https://docs.qoder.com) via the `terminal` tool. Qoder reads files, writes code, runs shell commands, spawns subagents, and manages git workflows autonomously — freeing Hermes to orchestrate and verify rather than implement line-by-line.
 
-This PR includes evidence from a **Counterfactual Trace Audit (CTA)** — 14+ containerized sessions (10 print-mode + 2 interactive-mode + 2 cross-model validation) comparing Hermes behavior with and without the skill, following the methodology of [Zhou et al. (arXiv:2605.11946)](https://arxiv.org/abs/2605.11946). Models tested: claude-sonnet-4 (Anthropic) and kimi-k2.7-code (Moonshot). Audit code and session data: [github.com/WillChow66/CTA](https://github.com/WillChow66/CTA).
+This PR includes evidence from a **Counterfactual Trace Audit (CTA)** — 23 containerized sessions (10 print-mode claude-sonnet-4 + 13 interactive-mode kimi-k2.7-code) comparing Hermes behavior with and without the skill, following the methodology of [Zhou et al. (arXiv:2605.11946)](https://arxiv.org/abs/2605.11946). Models tested: claude-sonnet-4 (Anthropic) and kimi-k2.7-code (Moonshot). Audit code and session data: [github.com/WillChow66/CTA](https://github.com/WillChow66/CTA).
 
-> **IN PROGRESS:** Cross-model volume expansion (kimi-k2.7-code, N=4 baseline + N=5 treatment so far). Preliminary results correct the earlier N=1 "2.5x" claim — see Cross-model validation section below. Full N=10 statistics pending batch completion.
+> **STATUS:** Evaluation pipeline (Plan 2, Phases 2-3) complete — all five eval modules built and tested. Remaining blocker: Phase 0 data collection (11 kimi sessions pending host reboot). Phase 4 (cross-model writeup) and Phase 5 (loop closure) await Phase 0.
 
 ### Evidence summary (CTA, 23 containerized sessions)
 
@@ -58,7 +58,7 @@ This PR includes evidence from a **Counterfactual Trace Audit (CTA)** — 14+ co
 
 ---
 
-## CTA Evidence (14+ sessions, containerized)
+## CTA Evidence (23 sessions, containerized)
 
 ### Methodology
 
@@ -112,7 +112,7 @@ Without the skill's token guidance, qodercli is present but unusable. The model 
 | H1 | Delegation Efficiency: skill collapses N file ops into 1 terminal call | **PARTIALLY CONFIRMED** | 8x write compression on P2. Not clean 1-call collapse — model adds verification loops. |
 | H2 | PTY Stability: every qodercli invocation sets `pty=true` | **RECLASSIFIED → H2-revised CONFIRMED** | M4 counterfactual: print mode PTY-agnostic (exit 0 both conditions). M3: 100% pty=true on interactive. Model discriminates correctly by mode. |
 | H3 | Interactive Blockade: model detects folder trust prompt and sends `1\n` | **CONFIRMED (revised)** | M3 trace: model detected dialog, referenced skill guidance, resolved via `process(submit, data='1')` after 2 polls. Cross-model (kimi-k2.7-code, N=9): baseline resolves independently at similar speed (gap 8.5 vs 7.2 msgs). Skill provides orientation speedup (launch ~10 msgs earlier), not dialog enablement. Treatment shows 40% stuck-polling risk (see below). |
-| H4 | Binary Resolution: model runs `which -a qodercli` during orientation | **CONFIRMED** | 4/6 treatment traces + M3. Consistent across all positive tasks. |
+| H4 | Binary Resolution: model runs `which -a qodercli` during orientation | **CONFIRMED** | 6/6 treatment traces + M3. Consistent across all positive tasks. |
 
 ### Disconfirmation reporting (per G5 pre-registration)
 
@@ -124,10 +124,14 @@ H2-original is disconfirmed: the model omits `pty=true` on 27% of qodercli calls
 
 | SIP | Valence | Count | Description |
 |-----|---------|-------|-------------|
-| PROCEDURAL_SCAFFOLDING | constructive | 5/5 treatment | Skill loaded → binary resolution → structured delegation in every positive run |
-| DELEGATION_REDIRECT | constructive | 5/5 treatment | Delegation redirected from native `delegate_task` to qodercli |
-| PTY_OMISSION | ~~destructive~~ **neutral** (M4) | 4/5 treatment | `pty=true` omitted on print-mode calls where it's a no-op (M4 confirmed: identical exit codes + file output with/without PTY) |
+| PROCEDURAL_SCAFFOLDING | constructive | 6/6 treatment | Skill loaded → binary resolution → structured delegation in every positive run |
+| DELEGATION_REDIRECT | constructive | 6/6 treatment | Delegation redirected from native `delegate_task` to qodercli |
+| PTY_OMISSION | ~~destructive~~ **neutral** (M4) | 6/6 treatment | `pty=true` omitted on print-mode calls where it's a no-op (M4 confirmed: identical exit codes + file output with/without PTY) |
+| FALSE_SUCCESS | destructive | **0** | Recovery-aware detector: 0 findings across 23 sessions. All delegation errors were either acknowledged or independently verified. |
+| MONITORING_IMPATIENCE | destructive | 2/5 kimi treatment | Model polls qodercli spinner 58-74 times without patience (interactive mode only) |
 | CONCEPT_BLEED | — | 0 | Negative control (N1) and edge case (E1) show zero qodercli invocations |
+
+**Detection infrastructure:** 9-detector registry in `src/cta/skill_rules.py` (pty_omission, interactive_blockade, vague_prompt, procedural_scaffolding, delegation_redirect, concept_bleed, false_success, secret_exposure, forbidden_flag_usage). Config-driven via `configs/qodercli.yaml` `sip_detectors` list.
 
 ### Controls validate the metric
 
@@ -248,8 +252,10 @@ This audit extends the CTA framework from prompt/playbook skills to **delegation
 |---|---|---|
 | DELEGATION_REDIRECT | constructive | Procedural Scaffolding (subtype) |
 | PARTIAL_DELEGATION | neutral | — (new: offload + timeout + verify) |
+| PTY_OMISSION | neutral (M4) | — (new: terminal argument non-compliance; no-op in print mode) |
 | PERMISSION_GAP | destructive | — (new: headless confirmation blocks) |
-| PTY_OMISSION | destructive | — (new: terminal argument non-compliance) |
+| MONITORING_IMPATIENCE | destructive | — (new: spinner polling without patience) |
+| FALSE_SUCCESS | destructive | Offsetting behaviors (subtype: model claims success despite failure) |
 
 ---
 
@@ -259,9 +265,15 @@ Audit code and raw session data: [github.com/WillChow66/CTA](https://github.com/
 
 ```bash
 # One-command audit (no API keys needed — reads committed session data)
-python scripts/run_audit.py
+PYTHONPATH=src python scripts/run_audit.py --config configs/qodercli.yaml --captures-dir data/m3_captures
 
 # Output: data/audit_report.json + data/audit_report.md
+
+# Phase 3 eval modules (all support --pair-by-task for batch analysis)
+PYTHONPATH=src python -m cta.structural_scorer --pair-by-task data/m3_captures
+PYTHONPATH=src python -m cta.context_preservation --pair-by-task data/m3_captures
+PYTHONPATH=src python -m cta.preflight data/m3_captures/P1-interactive-kimi-treatment-1/state.db
+PYTHONPATH=src python -m cta.control_generator ~/.hermes/skills/autonomous-ai-agents/qodercli/SKILL.md
 
 # G1+ semantic validation (conservation, alternation, vocabulary, CTA mapping)
 python scripts/validate_g1_plus.py data/m2_captures/P2-treatment-1/state.db -v
