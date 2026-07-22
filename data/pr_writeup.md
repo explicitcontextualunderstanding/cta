@@ -42,7 +42,7 @@ This PR includes evidence from a **Counterfactual Trace Audit (CTA)** — 23 con
 
 - **Exclusive Model Access**: Provides Hermes with native access to **Qwen3.8-Max-Preview** (Alibaba Cloud's 2.4T-parameter flagship model), which is available exclusively through Alibaba Cloud and Qoder CLI/QoderWork platforms.
 - **10x Cost Leverage**: Qoder CLI currently offers `Qwen3.8-Max-Preview` at a 90% credit discount, allowing Hermes to delegate heavy multi-file refactoring and subagent loops at a fraction of standard API costs.
-- **Context Window Protection**: `Qwen3.8-Max-Preview` operates with a default **131k token context window** (scalable to 1M). Offloading multi-file migrations to `qodercli` keeps file-ingestion bloat inside Qoder's execution environment, preventing Hermes's context window from truncating during long multi-turn sessions.
+- **Context Window Protection (unvalidated)**: `Qwen3.8-Max-Preview` operates with a default **131k token context window** (scalable to 1M). Offloading multi-file migrations to `qodercli` *aims to* keep file-ingestion bloat inside Qoder's execution environment. However, context preservation is not yet confirmed: CPI Type S=40.9% at N=4 (sign uncertain). The mechanism is plausible; the magnitude is [EXPLORATORY].
 
 ---
 
@@ -93,7 +93,7 @@ Each session runs in a fresh Apple Container micro-VM (4 CPU, 2GB RAM) with:
 | E1 | 4 | 4 | 1 | 1 | 0 | 0 | — |
 | N1 | 32 | 38 | 14 | 17 | 1 | 3 | 3x |
 | P1 | 65 | 4* | 32 | 1* | 3 | 0* | — |
-| P2 | 66 | 113 | 38 | 62 | **2** | **16** | **8x** |
+| P2 | 66 | 113 | 38 | 62 | 2 | 16 | 8x [EXPLORATORY, N=1] |
 
 *P1 baseline used Hermes's native `delegate_task` (opaque subagent), not manual work. P2 is the valid comparison.
 
