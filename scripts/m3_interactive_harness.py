@@ -254,7 +254,7 @@ def recover_from_stdout(run_dir: Path) -> dict | None:
     return recovered
 
 
-def generate_run_script(condition: str, run_num: int, model: str = DEFAULT_MODEL, provider: str = DEFAULT_PROVIDER, tag: str = "", prompt: str = "") -> str:
+def generate_run_script(condition: str, run_num: int, model: str = DEFAULT_MODEL, provider: str = DEFAULT_PROVIDER, tag: str = "", prompt: str = "", tools_overlay: bool = False) -> str:
     run_label = f"P1-interactive-{tag}-{condition}-{run_num}" if tag else f"P1-interactive-{condition}-{run_num}"
     skill_setup = ""
     if condition == "treatment":
@@ -267,6 +267,13 @@ cp /root/skill/SKILL.md /home/hermes/.hermes/skills/autonomous-ai-agents/qodercl
         skill_setup = """
 echo '=== Baseline: no skill installed ==='
 rm -rf /home/hermes/.hermes/skills/autonomous-ai-agents/qodercli 2>/dev/null || true
+"""
+
+    overlay_step = ""
+    if tools_overlay:
+        overlay_step = """
+echo '=== Applying tools overlay (NDJSON patch) ==='
+cp /root/tools_overlay/*.py /opt/hermes/tools/
 """
 
     effective_prompt = prompt or M3_PROMPT
@@ -282,7 +289,7 @@ echo '=== Upgrading hermes to v0.19.0 ==='
 cd /opt/hermes
 git fetch origin {HERMES_COMMIT} --depth=1 2>/dev/null
 git checkout -f {HERMES_COMMIT} 2>/dev/null
-uv pip install . --python /opt/hermes/.venv/bin/python3 --quiet 2>/dev/null
+{overlay_step}uv pip install . --python /opt/hermes/.venv/bin/python3 --quiet 2>/dev/null
 hermes --version
 
 echo '=== Configuring model: {provider}/{model} ==='
@@ -333,7 +340,7 @@ echo '=== RUN COMPLETE ==='
 """
 
 
-def run_container(condition: str, run_num: int, secrets: dict, timeout: int, dry_run: bool, provide_token: bool = True, model: str = DEFAULT_MODEL, provider: str = DEFAULT_PROVIDER, tag: str = "", prompt: str = "") -> bool:
+def run_container(condition: str, run_num: int, secrets: dict, timeout: int, dry_run: bool, provide_token: bool = True, model: str = DEFAULT_MODEL, provider: str = DEFAULT_PROVIDER, tag: str = "", prompt: str = "", tools_overlay: str = "") -> bool:
     run_id = f"P1-interactive-{tag}-{condition}-{run_num}" if tag else f"P1-interactive-{condition}-{run_num}"
     container_name = f"cta-m3-{run_id}"
     run_dir = OUTPUT_DIR / run_id
@@ -370,7 +377,7 @@ def run_container(condition: str, run_num: int, secrets: dict, timeout: int, dry
                  "GIT_COMMITTER_NAME": "CTA", "GIT_COMMITTER_EMAIL": "cta@local"},
         )
 
-    script = generate_run_script(condition, run_num, model=model, provider=provider, tag=tag, prompt=prompt)
+    script = generate_run_script(condition, run_num, model=model, provider=provider, tag=tag, prompt=prompt, tools_overlay=bool(tools_overlay))
     script_path = run_dir / "run.sh"
     script_path.write_text(script)
     script_path.chmod(0o755)
@@ -391,6 +398,8 @@ def run_container(condition: str, run_num: int, secrets: dict, timeout: int, dry
     if condition == "treatment":
         resolved_skill = SKILL_PATH.resolve()
         cmd += ["--mount", f"type=bind,source={resolved_skill.parent},target=/root/skill,readonly"]
+    if tools_overlay:
+        cmd += ["--mount", f"type=bind,source={Path(tools_overlay).resolve()},target=/root/tools_overlay,readonly"]
 
     cmd += ["--entrypoint", "/bin/sh", CONTAINER_IMAGE, "/root/output/run.sh"]
 
@@ -509,6 +518,8 @@ def main():
                         help="Path to YAML/JSON audit config (pulls task prompts from tasks: block)")
     parser.add_argument("--task", type=str, default="",
                         help="Task ID from config tasks: block to use as the prompt (e.g. P1, N1)")
+    parser.add_argument("--tools-overlay", type=str, default="",
+                        help="Directory containing patched Hermes tool .py files to overlay into the container (e.g. NDJSON-modified terminal_tool.py + process_registry.py)")
     args = parser.parse_args()
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -590,7 +601,8 @@ def main():
 
             provide_token = True if condition == "treatment" else args.baseline_token
             ok = run_container(condition, run_num, secrets, args.timeout, args.dry_run, provide_token,
-                               model=args.model, provider=args.provider, tag=args.tag, prompt=effective_prompt)
+                               model=args.model, provider=args.provider, tag=args.tag, prompt=effective_prompt,
+                               tools_overlay=args.tools_overlay)
             results.append({"condition": condition, "run": run_num, "success": ok})
             progress_file.write_text(json.dumps(results, indent=2))
             sessions_this_batch += 1
