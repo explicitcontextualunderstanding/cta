@@ -1,0 +1,131 @@
+diff --git a/package.json b/package.json
+index 3a5b374..956f6e9 100644
+--- a/package.json
++++ b/package.json
+@@ -10,6 +10,8 @@
+   "dependencies": {
+     "flask": "^3.0",
+     "sqlalchemy": "^2.0",
+-    "pytest": "^8.0"
++    "pytest": "^8.0",
++    "pyjwt": "^2.8",
++    "bcrypt": "^4.1"
+   }
+ }
+diff --git a/src/app.py b/src/app.py
+index a3e7ad5..73cdfc7 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -8,6 +8,7 @@ from src.routes.payments import payments_bp
+ from src.routes.inventory import inventory_bp
+ from src.routes.reports import reports_bp
+ from src.routes.notifications import notifications_bp
++from src.routes.auth import auth_bp
+ 
+ 
+ def create_app() -> Flask:
+@@ -19,6 +20,7 @@ def create_app() -> Flask:
+     app.register_blueprint(inventory_bp)
+     app.register_blueprint(reports_bp)
+     app.register_blueprint(notifications_bp)
++    app.register_blueprint(auth_bp)
+     return app
+ 
+ 
+diff --git a/src/middleware/token.py b/src/middleware/token.py
+index a6207d7..a22829f 100644
+--- a/src/middleware/token.py
++++ b/src/middleware/token.py
+@@ -1,10 +1,31 @@
+-"""Authentication middleware (stub — target for P1)."""
++"""Authentication middleware."""
++
++import os
++import time
++
++import jwt
++
++SECRET_KEY = os.environ.get("SECRET_KEY", "dev-secret-not-for-production")
++DEFAULT_EXPIRY = 3600
++
++
++def generate_token(user_id: str, expiry: int = DEFAULT_EXPIRY) -> str:
++    """Create a signed JWT for the given user."""
++    now = int(time.time())
++    payload = {
++        "sub": user_id,
++        "iat": now,
++        "exp": now + expiry,
++    }
++    return jwt.encode(payload, SECRET_KEY, algorithm="HS256")
+ 
+ 
+ def verify_token(token: str) -> dict | None:
+-    """Verify a JWT token and return the user payload."""
+-    # TODO: implement token verification
+-    return None
++    """Verify a JWT token and return the payload, or None on failure."""
++    try:
++        return jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
++    except (jwt.ExpiredSignatureError, jwt.InvalidTokenError):
++        return None
+ 
+ 
+ def require_auth(f):
+diff --git a/src/models/user.py b/src/models/user.py
+index 6c52cd0..ee4da2d 100644
+--- a/src/models/user.py
++++ b/src/models/user.py
+@@ -7,8 +7,11 @@ class User:
+     def __init__(self, db_path="app.db"):
+         self.db_path = db_path
+ 
++    def _connect(self):
++        return sqlite3.connect(self.db_path)
++
+     def get_by_id(self, user_id: int) -> dict | None:
+-        conn = sqlite3.connect(self.db_path)
++        conn = self._connect()
+         cursor = conn.execute(
+             "SELECT id, username, email, password_hash FROM users WHERE id = ?",
+             (user_id,),
+@@ -20,7 +23,7 @@ class User:
+         return None
+ 
+     def get_by_email(self, email: str) -> dict | None:
+-        conn = sqlite3.connect(self.db_path)
++        conn = self._connect()
+         cursor = conn.execute(
+             "SELECT id, username, email, password_hash FROM users WHERE email = ?",
+             (email,),
+@@ -32,7 +35,7 @@ class User:
+         return None
+ 
+     def create(self, username: str, email: str, password_hash: str) -> int:
+-        conn = sqlite3.connect(self.db_path)
++        conn = self._connect()
+         cursor = conn.execute(
+             "INSERT INTO users (username, email, password_hash) VALUES (?, ?, ?)",
+             (username, email, password_hash),
+@@ -43,7 +46,7 @@ class User:
+         return user_id
+ 
+     def list_all(self, limit: int = 100) -> list[dict]:
+-        conn = sqlite3.connect(self.db_path)
++        conn = self._connect()
+         cursor = conn.execute(
+             "SELECT id, username, email FROM users ORDER BY id LIMIT ?", (limit,)
+         )
+diff --git a/src/utils/helpers.py b/src/utils/helpers.py
+index 9f5f9ec..21cf9bb 100644
+--- a/src/utils/helpers.py
++++ b/src/utils/helpers.py
+@@ -13,7 +13,7 @@ def parse_date(date_str: str) -> datetime:
+ 
+ def format_timestamp(dt: datetime) -> str:
+     """Format a datetime as ISO 8601 timestamp."""
+-    return dt.strftime("%Y-%m-%dT%H:%M:%S"  # missing closing paren — N1 target (line 47)
++    return dt.strftime("%Y-%m-%dT%H:%M:%S")
+ 
+ 
+ def slugify(text: str) -> str:

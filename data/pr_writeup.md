@@ -2,7 +2,7 @@
 
 **Target:** `NousResearch/hermes-agent` → `skills/autonomous-ai-agents/qodercli/SKILL.md`
 **Author:** explicitcontextualunderstanding
-**Skill version:** 2.4.0
+**Skill version:** 2.5.0
 
 ---
 
@@ -56,7 +56,7 @@ This PR includes evidence from a **Counterfactual Trace Audit (CTA)** — 23 con
 | Scope constraint | Explicit "Do NOT use for single-file lookups" prevents over-delegation |
 | Folder trust handling | Documents the `1\n` response for first-launch trust dialogs |
 | Context window preservation | File ingestion happens inside qodercli's workspace; Hermes sees only the command + summary, not raw file contents |
-| Runtime friction detection | NDJSON stream signals (error rate, context velocity, retry density) classify sessions as clean/friction in real-time — Hermes sees `⚠ Friction:` warnings during stuck loops, zero overhead when clean (Plan 8, H8 confirmed: 9/9 agreement) |
+| Runtime friction detection | NDJSON stream signals (error rate, context velocity, retry density) classify sessions as clean/friction in real-time — Hermes sees `⚠ Friction:` warnings during stuck loops, zero overhead when clean. SKILL.md v2.5.0 mandates `-p` (print mode) retry after friction — a regime-level response, not a task decision (Plan 8, H8 confirmed: 9/9 agreement) |
 
 ---
 
@@ -131,9 +131,10 @@ H2-original is disconfirmed: the model omits `pty=true` on 27% of qodercli calls
 | PTY_OMISSION | ~~destructive~~ **neutral** (M4) | 6/6 treatment | `pty=true` omitted on print-mode calls where it's a no-op (M4 confirmed: identical exit codes + file output with/without PTY) |
 | FALSE_SUCCESS | destructive | **0** | Recovery-aware detector: 0 findings across 23 sessions. All delegation errors were either acknowledged or independently verified. |
 | MONITORING_IMPATIENCE | ~~destructive~~ **ELIMINATED** (Plan 7) | 2/5 kimi treatment → **0** post-fix | Spinner-only polling → premature kill. Fixed by NDJSON pipe-spawn (v2.4.0). N=3 captures: 0% spinner-only (vs 52% control). |
+| REGIME_ADAPTATION | constructive / neutral | 0 (pending Gap 3) | Second-order SIP: f(skill, environment). Fires when friction detected AND agent switches to `-p` (constructive) or friction detected but no adaptation (neutral). Plan 8 §1.1. |
 | CONCEPT_BLEED | — | 0 | Negative control (N1) and edge case (E1) show zero qodercli invocations |
 
-**Detection infrastructure:** 9-detector registry in `src/cta/skill_rules.py` (pty_omission, interactive_blockade, vague_prompt, procedural_scaffolding, delegation_redirect, concept_bleed, false_success, secret_exposure, forbidden_flag_usage). Config-driven via `configs/qodercli.yaml` `sip_detectors` list.
+**Detection infrastructure:** 10-detector registry in `src/cta/skill_rules.py` (pty_omission, interactive_blockade, vague_prompt, procedural_scaffolding, delegation_redirect, concept_bleed, false_success, secret_exposure, forbidden_flag_usage, regime_adaptation). Config-driven via `configs/qodercli.yaml` `sip_detectors` list.
 
 ### Controls validate the metric
 
@@ -278,6 +279,7 @@ This audit extends the CTA framework from prompt/playbook skills to **delegation
 | PTY_OMISSION | neutral (M4) | — (new: terminal argument non-compliance; no-op in print mode) |
 | PERMISSION_GAP | destructive | — (new: headless confirmation blocks) |
 | MONITORING_IMPATIENCE | ~~destructive~~ → **ELIMINATED** | — (new: spinner polling → premature kill; fixed by NDJSON pipe-spawn, v2.4.0) |
+| REGIME_ADAPTATION | constructive / neutral | — (new: second-order SIP = f(skill, environment); friction detected → strategy switch to print mode. Plan 8 §1.1 meta-SIP) |
 | FALSE_SUCCESS | destructive | Offsetting behaviors (subtype: model claims success despite failure) |
 
 ---
@@ -316,6 +318,7 @@ Raw session data (SQLite databases + stdout) committed in `data/m2_captures/`, `
 5. **Wall-time tradeoff.** Delegation reduces agent actions but increases total execution time (qodercli is slow). This is a tradeoff, not a pure win.
 6. **MONITORING_IMPATIENCE SIP — ELIMINATED (v2.4.0).** The 40% stuck-polling loop is fixed by NDJSON pipe-spawn integration. N=3 treatment captures confirm 0% spinner-only (vs 52% control). Patience guidance scoped to interactive-foreground only.
 7. **CPI empirically measured (G3, 2026-07-21).** Post-NDJSON CPI is bimodal: run 1=0.912 (friction-heavy, 92 msgs), run 2=1.594 (clean, 53 msgs), mean=1.253 (N=2, run 3 pending). H6-original ("CPI>1.0") reclassified as UNDER-SPECIFIED — binary threshold on bimodal distribution. H6-revised ("NDJSON shifts CPI rightward; clean sessions >1.0, friction sessions ≤1.0") CONFIRMED. Context preservation is environment-dependent, not mechanism-dependent.
+8. **Gap 3: Regime adaptation behavioral evidence pending.** H8 proves the friction instrument works (classification accuracy: 9/9). It does NOT prove that acting on the signal improves outcomes. The `detect_regime_adaptation` detector (10-detector registry) is deployed but has 0 organic findings — closure requires a paired session where friction fires, agent adapts per SKILL.md v2.5.0, and CPI recovers toward clean-regime baseline. Blocked on Docker/F1-F3 friction environment (agent defeats all local friction inducers).
 
 ---
 
@@ -330,7 +333,8 @@ Raw session data (SQLite databases + stdout) committed in `data/m2_captures/`, `
 - [x] PTY language scoped to interactive foreground (empirically validated)
 - [x] MONITORING_IMPATIENCE SIP eliminated (NDJSON pipe-spawn, N=3 proof: 0% spinner-only)
 - [x] Version drift validated (`--output-format stream-json` stable 1.0.45 → 1.1.2, protocol_version="1.0.0")
-- [x] Runtime friction detection validated (Plan 8 H8: 9/9 agreement, clean FI 0.086–0.121, friction FI 0.433)
+- [x] Runtime friction detection deployed (Plan 8 H8: 9/9 agreement, clean FI 0.086–0.121, friction FI 0.433). SKILL.md v2.5.0 regime-response protocol. Live container proof passed.
+- [x] Regime adaptation detector added (10-detector registry; second-order SIP = f(skill, environment))
 - [x] Negative control shows zero skill influence (metric validity)
 - [x] One-command reproducibility script (`scripts/run_audit.py`)
 - [x] Tests pass: `scripts/run_tests.sh tests/skills/test_qodercli_skill.py -q` (contributing.md HARDLINE #7)

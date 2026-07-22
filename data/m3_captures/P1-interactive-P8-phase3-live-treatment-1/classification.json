@@ -1,0 +1,6 @@
+{
+  "validity": "valid",
+  "reason": "80 messages, no failure patterns",
+  "msg_count": 80,
+  "recoverable": false
+}

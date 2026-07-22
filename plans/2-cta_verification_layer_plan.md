@@ -80,6 +80,16 @@ Five harness-level upgrades extracted from the Hermes audit:
 - kalloc headroom check before each container launch (200k minimum)
 - Preflight validator gates every run (Phase 3D)
 - WAL checkpoint protects state.db across crashes
+- Host-side workspace bind mount (file modifications survive any exit path)
+- Session classification + skip logic (valid sessions never re-run)
+- stdout recovery (extract evidence when state.db is missing)
+- 2-attempt retry with 1.5x timeout on transient failures
+- API health probe (1-token request catches 401/402/429 before full spend)
+- Batch splitting with reboot cycles (`--start-run` namespacing)
+
+**Persistence evolution:** M2 (ephemeral, crash = total loss) → M3 (crash-tolerant,
+9 resilience mechanisms) → P8 (NDJSON-only, no container/SQLite dependency).
+Full reference: [`docs/container_mounts_and_secrets.md`](../docs/container_mounts_and_secrets.md).
 
 ---
 
@@ -637,7 +647,12 @@ CTA classify sessions into clean/friction regimes *during execution* rather than
 post-hoc trace analysis.
 
 See [Plan 8: plans/8-runtime_friction_detection.md](plans/8-runtime_friction_detection.md).
-Status: DRAFT. Blocking assumption: `context_usage_ratio` presence in stream (K2).
+Status: **v0.3.1 — FUNCTIONAL.** H8 CONFIRMED (9/9=100% agreement). Gap 2 CLOSED
+(friction display proven across CLEAN/MILD/HEAVY regimes). K2 resolved
+(`context_usage_ratio` present on complete assistant events). `detect_regime_adaptation()`
+registered in 10-detector registry (6 integration tests pass). SKILL.md v2.5.0 has
+explicit `-p` mandate aligned with detector's `STRATEGY_SWITCH_PATTERNS`.
+Remaining: in-container poll-loop proof (exit-42 `-i`→`-p` fallback).
 
 **Errors observed (run 1 only, all resolved):**
 - exit 42 on `-i` attempts: expected pipe-spawn conflict, correct fallback to `-p`

@@ -1,9 +1,9 @@
 ## CTA Skill Audit: qodercli (Cross-Model Counterfactual Evidence)
 
-**Sessions:** 23 containerized + 3 NDJSON treatment captures (Plan 7)
+**Sessions:** 23 containerized + 3 NDJSON treatment captures (Plan 7) + 1 Phase 3 live proof
 **Design:** Option B lean | **Models:** anthropic/claude-sonnet-4, kimi-k2.7-code (opencode-go)
-**Pipeline:** Plan 2 Phases 1-5 COMPLETE | Plan 7 CLOSED (MONITORING_IMPATIENCE ELIMINATED) | Plan 8 H8 CONFIRMED (runtime friction detection)
-**Status:** Early-stopping justified (Phase 0 cancelled) | SKILL.md v2.4.0
+**Pipeline:** Plan 2 Phases 1-5 COMPLETE | Plan 7 CLOSED (MONITORING_IMPATIENCE ELIMINATED) | Plan 8 Phase 3 DEPLOYED (friction index + regime adaptation protocol)
+**Status:** Early-stopping justified (Phase 0 cancelled) | SKILL.md v2.5.0
 
 ---
 
@@ -73,7 +73,7 @@
 
 ---
 
-### Skill Influence Patterns (9-detector registry)
+### Skill Influence Patterns (10-detector registry)
 
 | SIP | Valence | Count | Detector |
 |-----|---------|-------|----------|
@@ -86,6 +86,7 @@
 | SECRET_EXPOSURE | destructive | 0 | secret_exposure |
 | FORBIDDEN_FLAG_USAGE | destructive | 0 | forbidden_flag_usage |
 | VAGUE_PROMPT_DRAIN | destructive | 0 | vague_prompt |
+| REGIME_ADAPTATION | constructive / neutral | 0 (pending Gap 3) | regime_adaptation (Plan 8 §1.1: second-order SIP = f(skill, environment)) |
 
 ---
 
@@ -153,9 +154,11 @@
 
 ---
 
-### Plan 8: Runtime Friction Detection (H8 CONFIRMED)
+### Plan 8: Runtime Friction Detection (Phase 3 DEPLOYED)
 
-**Status:** PHASE 2 COMPLETE — H8 CONFIRMED (9/9 = 100% agreement). Phase 3 (integration) unblocked.
+**Status:** PHASE 3 IN PROGRESS — H8 CONFIRMED (9/9 = 100%). Deployed to hermes-agent fork. SKILL.md v2.5.0. Live container proof passed.
+
+**Causal role (v0.3.0):** Friction is a **moderator** (stratification instrument), not a treatment. Core decomposition: `observed_outcome = skill_effect + environment_effect + noise`. The friction index separates `environment_effect` from `skill_effect` before SIP labeling. SKILL.md's friction protocol is a **meta-SIP**: a second-order intervention that treats the regime signal, not the task. SIPs are now `f(skill, task, regime)`.
 
 **Problem:** The bimodal CPI finding (Plan 2 Phase 6) showed clean sessions achieve CPI>1.0 while friction-heavy sessions stay ≤1.0. But this regime classification was only available post-hoc. Hermes had no runtime signal for which regime a background qodercli session was in.
 
@@ -175,11 +178,19 @@
 
 **Separation:** Clean max (0.121) to friction (0.433) = 0.312 gap. E1 gate (≥0.25) passed.
 
-**Limitations:** 8/9 sessions clean; only 1 friction (synthetic reconstruction from G3 run 1). Docker unavailable for organic friction capture. Phase 3 integration pending.
+**Phase 3 deployment (2026-07-21):**
+- Friction index deployed to `hermes-agent/tools/process_registry.py` (commit `4d3623106`)
+- SKILL.md v2.5.0: regime-response protocol (step 5 mandates `-p` retry, prohibits `-i`/background re-entry)
+- Live container proof: `P1-interactive-P8-phase3-friction-treatment-1` (valid, exit 0, 57.8s, overlay + persistent mount + skill all functional)
+- `detect_regime_adaptation()` added to `skill_rules.py` (10-detector registry): fires constructive when friction detected AND agent switches to print mode; neutral when friction detected but no adaptation
+
+**Gap 3 (honest boundary):** H8 proves the **instrument** works (classification accuracy). It does NOT prove the **treatment** works (that acting on the signal improves outcomes). Closure requires: same task, same friction regime, ±adaptation paired design. Blocked on Docker/F1-F3 friction environment (agent defeats all local friction).
+
+**Limitations:** 8/9 sessions clean; only 1 friction (synthetic reconstruction from G3 run 1). Docker unavailable for organic friction capture.
 
 **Infrastructure:** `_move_to_finished()` auto-dumps raw NDJSON for offline scoring. `scripts/score_friction.py` validates captured streams.
 
-**Evidence:** `data/m3_captures/P8-phase2-prospective/`, `data/m3_captures/P8-synthetic-friction-g3run1/`
+**Evidence:** `data/m3_captures/P8-phase2-prospective/`, `data/m3_captures/P8-synthetic-friction-g3run1/`, `data/m3_captures/P1-interactive-P8-phase3-friction-treatment-1/`
 
 ---
 

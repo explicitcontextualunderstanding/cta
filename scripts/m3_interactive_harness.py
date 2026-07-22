@@ -148,8 +148,25 @@ def classify_session(run_dir: Path) -> dict:
       recoverable: bool — whether stdout contains usable evidence
     """
     state_db = run_dir / "state.db"
+    hermes_home_db = run_dir / "hermes_home" / "state.db"
     stdout_file = run_dir / "hermes_stdout.txt"
     result_file = run_dir / "result.json"
+
+    # Crash recovery: if the WAL checkpoint export never ran, the persistent
+    # hermes_home mount still has state.db + state.db-wal on the host.
+    if not state_db.exists() and hermes_home_db.exists():
+        wal_file = hermes_home_db.parent / "state.db-wal"
+        if wal_file.exists() and wal_file.stat().st_size > 0:
+            try:
+                import sqlite3 as _sql
+                conn = _sql.connect(str(hermes_home_db))
+                conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+                conn.close()
+            except Exception:
+                pass
+        if hermes_home_db.stat().st_size > 4096:
+            import shutil as _shutil
+            _shutil.copy2(hermes_home_db, state_db)
 
     result = {"validity": "incomplete", "reason": "", "msg_count": 0, "recoverable": False}
 
@@ -377,6 +394,11 @@ def run_container(condition: str, run_num: int, secrets: dict, timeout: int, dry
                  "GIT_COMMITTER_NAME": "CTA", "GIT_COMMITTER_EMAIL": "cta@local"},
         )
 
+    hermes_home_dir = run_dir / "hermes_home"
+    hermes_home_dir.mkdir(parents=True, exist_ok=True)
+    for stale in hermes_home_dir.glob("state.db*"):
+        stale.unlink()
+
     script = generate_run_script(condition, run_num, model=model, provider=provider, tag=tag, prompt=prompt, tools_overlay=bool(tools_overlay))
     script_path = run_dir / "run.sh"
     script_path.write_text(script)
@@ -394,6 +416,7 @@ def run_container(condition: str, run_num: int, secrets: dict, timeout: int, dry
         "--mount", f"type=bind,source={FIXTURE_DIR},target=/root/fixture,readonly",
         "--mount", f"type=bind,source={run_dir},target=/root/output",
         "--mount", f"type=bind,source={workspace_dir},target=/root/workspace",
+        "--mount", f"type=bind,source={hermes_home_dir},target=/home/hermes/.hermes",
     ]
     if condition == "treatment":
         resolved_skill = SKILL_PATH.resolve()
@@ -520,6 +543,8 @@ def main():
                         help="Task ID from config tasks: block to use as the prompt (e.g. P1, N1)")
     parser.add_argument("--tools-overlay", type=str, default="",
                         help="Directory containing patched Hermes tool .py files to overlay into the container (e.g. NDJSON-modified terminal_tool.py + process_registry.py)")
+    parser.add_argument("--prompt", type=str, default="",
+                        help="Override the default M3 task prompt")
     args = parser.parse_args()
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -544,7 +569,7 @@ def main():
             config_prompt = cfg.tasks[0].prompt.replace("{skill}", cfg.skill_name)
             print(f"[CONFIG] Using first task ({cfg.tasks[0].id}) from {args.config}")
 
-    effective_prompt = config_prompt or M3_PROMPT
+    effective_prompt = args.prompt or config_prompt or M3_PROMPT
     conditions = ["treatment", "baseline"] if args.condition == "both" else [args.condition]
 
     print(f"M3 Interactive-Mode Capture")

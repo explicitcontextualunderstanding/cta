@@ -1,0 +1,6 @@
+ package.json            |  4 +++-
+ src/app.py              |  2 ++
+ src/middleware/token.py | 29 +++++++++++++++++++++++++----
+ src/models/user.py      | 11 +++++++----
+ src/utils/helpers.py    |  2 +-
+ 5 files changed, 38 insertions(+), 10 deletions(-)

@@ -3,15 +3,5 @@
     "condition": "treatment",
     "run": 1,
     "success": true
-  },
-  {
-    "condition": "treatment",
-    "run": 2,
-    "success": true
-  },
-  {
-    "condition": "treatment",
-    "run": 3,
-    "success": false
   }
 ]

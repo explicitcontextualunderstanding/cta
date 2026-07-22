@@ -1,7 +1,18 @@
 """qodercli-specific SIP detectors (G3: rule-based, no trained classifier).
 
-Three deterministic detectors for failure modes unique to delegation-via-PTY
+Deterministic detectors for failure modes unique to delegation-via-PTY
 that native CTA heuristics cannot see.
+
+Detector taxonomy:
+  First-order (skill behavior): PTY_OMISSION, INTERACTIVE_BLOCKADE, VAGUE_PROMPT_DRAIN
+  Second-order (skill × environment): REGIME_ADAPTATION
+  Context-dependent: PROCEDURAL_SCAFFOLDING, DELEGATION_REDIRECT, CONCEPT_BLEED,
+                     FALSE_SUCCESS, SECRET_EXPOSURE, FORBIDDEN_FLAG_USAGE
+
+REGIME_ADAPTATION is structurally different: SIP = f(skill, task, regime).
+It fires when the skill detects environment friction and switches strategy
+(e.g., background→print mode). This is a meta-SIP — the skill treating the
+regime signal, not the task. See Plan 8 §1.1.
 """
 
 from __future__ import annotations
@@ -356,6 +367,105 @@ def detect_forbidden_flag_usage(events: List[Event], context: Dict[str, Any] | N
     return findings
 
 
+# Matches the friction display string emitted by _format_ndjson_progress() when
+# friction_index >= 0.40. These appear in process(poll) output as:
+#   "⚠ Friction: HIGH-ERROR (4/6) | CTX-VELOCITY +3.1%/ev | RETRY Bash x4"
+# Also matches raw friction_index mentions for context-injected detection.
+FRICTION_SIGNAL_PATTERN = re.compile(
+    r"\u26a0\s*Friction:|friction_index|HIGH-ERROR|CTX-VELOCITY|RETRY\s+\w+\s+x\d+",
+    re.IGNORECASE,
+)
+
+# Strategy switches are actions the agent takes IN RESPONSE to friction.
+# They do NOT include the initial background/interactive launch (that's the
+# thing being adapted FROM, not the adaptation itself).
+#   switched_to_print: agent re-invokes qodercli with -p (one-shot, no monitoring)
+#   killed_session: agent kills the stalled background process before retrying
+STRATEGY_SWITCH_PATTERNS = [
+    (r"qodercli\s+-p\b", "switched_to_print"),
+    (r"(?:process|action).{0,20}kill|kill.{0,20}session", "killed_session"),
+]
+
+
+def detect_regime_adaptation(events: List[Event], context: Dict[str, Any] | None = None) -> List[SIPFinding]:
+    """Flag sessions where friction was detected AND the agent switched strategy.
+
+    Second-order SIP: SIP = f(skill, task, regime). Unlike first-order detectors
+    (PTY_OMISSION, INTERACTIVE_BLOCKADE) which label skill behavior in isolation,
+    this detector labels the skill × environment interaction. The skill correctly
+    identified the regime and adapted — a meta-SIP per Plan 8 §1.1.
+
+    Two-phase detection:
+      Phase 1 — Friction signal: context["friction_detected"] is True, OR any
+        EXECUTE/TOOL_CALL event content matches FRICTION_SIGNAL_PATTERN (the
+        "⚠ Friction:" string from _format_ndjson_progress).
+      Phase 2 — Strategy switch: a SUBSEQUENT event (event_id > friction event)
+        shows the agent killing the stalled session or re-invoking qodercli in
+        print mode. The initial background launch is NOT a switch.
+
+    Valence semantics:
+      constructive — friction detected AND agent adapted (kill/print switch).
+        The skill treated the regime signal, not the task.
+      neutral — friction detected (FI >= 0.40) but no strategy switch observed.
+        The agent missed or ignored the signal. Not destructive (the friction
+        is the environment's fault), but the adaptation didn't happen.
+
+    Context keys (optional, from harness or runtime):
+      friction_detected: bool — skip Phase 1 event scan if True
+      friction_index: float — used for the neutral-valence fallback
+    """
+    context = context or {}
+    findings = []
+
+    friction_detected = context.get("friction_detected", False)
+    friction_event_id = 0
+
+    if not friction_detected:
+        for e in events:
+            if e.type in (EventType.EXECUTE, EventType.TOOL_CALL) and e.content:
+                if FRICTION_SIGNAL_PATTERN.search(e.content):
+                    friction_detected = True
+                    friction_event_id = e.event_id
+                    break
+
+    if not friction_detected:
+        return []
+
+    for e in events:
+        if e.event_id <= friction_event_id:
+            continue
+        if e.type not in (EventType.EXECUTE, EventType.TOOL_CALL):
+            continue
+        combined = f"{e.target or ''} {e.content or ''}"
+        for pattern, switch_type in STRATEGY_SWITCH_PATTERNS:
+            if switch_type == "switched_to_print" and "qodercli" not in combined:
+                continue
+            if re.search(pattern, combined):
+                findings.append(SIPFinding(
+                    sip_type="REGIME_ADAPTATION",
+                    valence="constructive",
+                    event_id=e.event_id,
+                    description=f"Friction detected; agent adapted strategy ({switch_type})",
+                    evidence={
+                        "friction_event_id": friction_event_id,
+                        "switch_type": switch_type,
+                        "snippet": combined[:120],
+                    },
+                ))
+                return findings
+
+    if friction_detected and context.get("friction_index", 0) >= 0.40:
+        findings.append(SIPFinding(
+            sip_type="REGIME_ADAPTATION",
+            valence="neutral",
+            event_id=friction_event_id,
+            description="Friction detected but no strategy switch observed",
+            evidence={"friction_index": context.get("friction_index")},
+        ))
+
+    return findings
+
+
 DETECTOR_REGISTRY: Dict[str, Any] = {
     "pty_omission": detect_pty_omission,
     "interactive_blockade": detect_interactive_blockade,
@@ -366,6 +476,7 @@ DETECTOR_REGISTRY: Dict[str, Any] = {
     "false_success": detect_false_success,
     "secret_exposure": detect_secret_exposure,
     "forbidden_flag_usage": detect_forbidden_flag_usage,
+    "regime_adaptation": detect_regime_adaptation,
 }
 
 

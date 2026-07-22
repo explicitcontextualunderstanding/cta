@@ -6,6 +6,7 @@ Parent:
   - 1: plans/1-hermes_cta_fork_plan.md (MONITORING_IMPATIENCE SIP, lines 1614–1668)
 Related:
   - 4: plans/4-upstream_pty_collapser.md (PTY observation field)
+  - 8: plans/8-runtime_friction_detection.md (successor — friction index extends `_format_ndjson_progress()`, v0.3.1 FUNCTIONAL)
 
 ---
 
@@ -902,6 +903,14 @@ not on the monitoring mechanism.
 | #4 Print-mode N thin | OPEN | Needs 2 more pairs on different model (requires Hermes runtime) |
 | #5 Multi-turn NDJSON | OPEN (low priority) | Full SDK mode untested |
 | #6 PR body stale | **CLOSED** | PR #68314 updated with Plan 7 evidence, v2.4.0, NDJSON section |
+
+**Persistence impact:** Plan 7's NDJSON pipe-spawn (`--output-format stream-json`)
+enabled the lightest persistence pattern in the CTA harness evolution. NDJSON streams
+are written line-by-line — inherently crash-safe, no WAL checkpoint, no SQLite
+dependency, no container required. This eliminates the kalloc.1024 vulnerability for
+new captures. The `P8-phase2-prospective/` directory (6 NDJSON sessions, 14-30KB each)
+demonstrates this pattern in production. Full persistence evolution (M2→M3→P8):
+[`docs/container_mounts_and_secrets.md`](../docs/container_mounts_and_secrets.md).
 
 ---
 

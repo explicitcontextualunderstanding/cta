@@ -787,6 +787,7 @@ Complete:
 - [x] `scripts/run_audit.py`: G6 one-command runner (author/auditor separation).
 - [x] `data/pr_writeup.md`: PR description synced with live GitHub PR body (Qwen3.8-Max-Preview positioning, hyperlinked citations).
 - [x] PR submitted: [NousResearch/hermes-agent#68314](https://github.com/NousResearch/hermes-agent/pull/68314) (5 commits incl. HARDLINE #7 tests).
+- [x] `docs/container_mounts_and_secrets.md`: Container persistence reference — mount tables, secret injection, crash-resilience evolution (M2→M3→P8), session classification, stopped container inventory, recovery procedures.
 
 ---
 
@@ -807,6 +808,15 @@ Complete:
 7. **Interactive mode is untested territory (NEW):** Zero `process()` calls in 191 sessions. H3 (trust dialog resolution) and the PTYCollapser are untestable until interactive sessions are deliberately generated. Deferred to M3.
 
 8. **Container workspace persistence (RESOLVED, Jul 21):** Previously, `/root/workspace` lived on the container's VM disk image — file modifications were lost on crash/timeout because the git-diff export at the end of run.sh never ran. **Fix:** workspace is now bind-mounted from host (`run_dir/workspace/`), pre-initialized with git baseline commit. File modifications survive any exit path. Post-exit `git diff --stat` runs on the host as fallback when the in-container export is skipped. Containers themselves hold no unique data and are safe to delete (see cleanup script §2c/2d).
+
+   **Persistence evolution (M2 → M3 → P8):**
+   - **M2 (capture_harness.py):** Ephemeral. Workspace created in-container, lost on crash. No retry, no preflight, no recovery. Any kalloc.1024 crash = total evidence loss.
+   - **M3 (m3_interactive_harness.py):** Crash-tolerant. Host-side workspace bind mount + 9 resilience mechanisms: kalloc headroom check (abort < 200k), session classification (skip valid/behavioral_failure), stdout recovery, 2-attempt retry (1.5x timeout), preflight pollution check (5 checks), API health probe (1-token), batch splitting with reboot cycles, WAL checkpoint, `--start-run` namespacing.
+   - **P8 (NDJSON-only):** Lightest pattern. `qodercli --output-format stream-json` writes NDJSON line-by-line — inherently crash-safe, no SQLite/WAL dependency, no container required. See `data/m3_captures/P8-phase2-prospective/` (6 sessions, 14-30KB each).
+
+   **Root cause:** Apple Container leaks ~100k `data.kalloc.1024` elements per start/stop. After ~20 containers the kernel zone fills (threshold 3M) → exit 128. Only fix: host reboot. Evidence: 8/20 kimi sessions failed this way (Plan 2 Phase 0).
+
+   **Canonical reference:** [`docs/container_mounts_and_secrets.md`](../docs/container_mounts_and_secrets.md) — full mount tables, secret injection logic, session classification flowchart, stopped container inventory, recovery procedures.
 
 ---
 
@@ -1751,7 +1761,7 @@ any verdict but would strengthen the evidence base against external challenge
 | ~~G4~~ | ~~Plan 7 treatment N=1~~ | ~~3~~ | ~~≥3~~ | ~~CLOSED (2026-07-21):~~ N=3 captures (v1.0.45 + v1.1.2×2), ALL 0% spinner-only, 100% structured, natural exit (4-5 turns, 14-24s). Defensible against "luck" challenge. | — | DONE | 7 |
 | ~~G5~~ | ~~Version drift on `--output-format stream-json`~~ | ~~1~~ | ~~1~~ | ~~CLOSED (2026-07-21):~~ Tested on 1.1.2 (major bump from 1.0.45). Same events, `protocol_version: "1.0.0"` in init. NDJSON contract survived 1.0→1.1. | — | DONE | 7 |
 | G6 | Multi-turn NDJSON untested | 0 | 1 | Full SDK mode never exercised. | See [Plan 7 §14 E3](plans/7-subagent_progress_observation.md). | LOW | 7 |
-| G7 | Runtime friction detection unimplemented | Sketch | Prototype | Bimodal CPI (G3) shows environment friction is the CPI driver. NDJSON stream contains discriminating signals (tool_result errors, context_usage_ratio velocity, retry patterns). A friction index in process() poll output makes the regime visible at runtime. | Extend `_format_ndjson_progress()` in process_registry.py. See [Plan 8](plans/8-runtime_friction_detection.md). | LOW (post-merge) | 8 |
+| G7 | Runtime friction detection | Sketch | **FUNCTIONAL** | **Plan 8 v0.3.1:** H8 CONFIRMED (9/9=100%). Gap 2 CLOSED (friction display proven CLEAN/MILD/HEAVY). `detect_regime_adaptation()` registered (6 tests pass). SKILL.md v2.5.0 has explicit `-p` mandate. K2 resolved (`context_usage_ratio` present). Remaining: in-container poll-loop proof. | See [Plan 8](plans/8-runtime_friction_detection.md). | LOW (post-merge) | 8 |
 
 ### Priority ordering
 
@@ -1761,7 +1771,7 @@ any verdict but would strengthen the evidence base against external challenge
 4. **G1 (print-mode N)** — tightens the strongest claim.
 5. ~~**G5 (version drift)**~~ — **CLOSED.** Wire protocol versioned (`protocol_version: "1.0.0"`), survived major bump.
 6. **G6 (multi-turn)** — defer until multi-turn is a real need.
-7. **G7 (runtime friction detection)** — post-merge enhancement. See [Plan 8](plans/8-runtime_friction_detection.md). Blocked on K2 verification (context_usage_ratio presence in stream).
+7. **G7 (runtime friction detection)** — **FUNCTIONAL.** Plan 8 v0.3.1: H8 confirmed, Gap 2 closed, detector registered. Remaining: in-container poll-loop proof. See [Plan 8](plans/8-runtime_friction_detection.md).
 
 ### Relationship to Plan 2
 
