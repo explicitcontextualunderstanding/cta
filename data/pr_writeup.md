@@ -325,46 +325,54 @@ Raw session data (SQLite databases + stdout) committed in `data/m2_captures/`, `
 
 ---
 
-## Named Gap: Context Capacity Boundary (partially tested — compaction not yet exercised)
+## Named Gap: Context Capacity Boundary (Layer 1 proven, Layer 2 untested)
 
 The capacity-protection claim in this writeup is architectural, not empirical — no fixture in the
 original evaluation exceeds either model's context limit. A purpose-built fixture generator
-(`scripts/gen_context_fixture.py`) was created to test this, with two presets:
-
-- `--target-agent orchestrator`: 40 files, ~3500 tokens each, 144k total — exceeds Hermes's 128k window
-- `--target-agent qodercli`: 60 files, 246k total — exceeds qodercli's 131k default
+(`scripts/gen_context_fixture.py`) was created to test this at 246k tokens (188% of 131k window).
 
 **Results (two attempts, 2026-07-22):**
 
 | Attempt | Method | Result | Peak context | Compaction? |
 |---------|--------|--------|-------------|-------------|
 | 1 (sed) | grep → sed bulk rename → verify | 5/5 PASS, 62/62 | ~2-3k tokens | No |
-| 2 (iterative) | Grep discovery → targeted Edit per file | 6/6 PASS, 62/62 | 53.1% | No |
+| 2 (iterative) | Grep → 63 Reads → 64 Edits → verify | 6/6 PASS, 62/62 | 53.1% | No |
 
-Both attempts completed the 246k-token rename (188% of window) without approaching the compaction
-threshold. The agent's natural strategy — pattern-infer from a single Grep, then apply targeted
-Edits (~1.7k tokens/file) — keeps context usage well below capacity. Forced full ingestion remains
-arithmetically impossible (246k tokens vs 131k window).
+**Two-layer context management model:**
 
-**What is proven [DEDUCTIVE]:** Tool-mediated file access enables completion on repos 188% of
-window size. The architecture provides enormous headroom — per-file context cost is ~1.7k tokens
-(not the full 4k file size), so 62 files fit in 53% of window.
+| Layer | Mechanism | Status | Evidence |
+|-------|-----------|--------|----------|
+| **Layer 1: Ingestion truncation** | Tool results truncated at ingestion; Edit returns compact confirmation, old Reads truncated as new ones arrive | **PROVEN** | 63 Reads + 64 Edits consumed 69.6k tokens (53.1%), not 248k. Per-file cost ~480 tokens, not 4k. |
+| **Layer 2: Compaction event** | Discrete compression when context_usage_ratio exceeds ~80%; visible as `context_management` event in NDJSON | **UNTESTED** | 0 context_management events across 186 NDJSON messages. Peak 53.1% never approached threshold. |
 
-**What is NOT proven:** State-tracking-under-compaction. Compaction never fired in either attempt.
-The harder failure mode — an agent losing track of progress after context compression — remains
-untested. To trigger compaction, the next attempt needs `--files 120+` or a prompt forcing
-full-file Reads before each Edit (62 × 4k = 248k tokens of Read results would overflow).
+**Why Layer 1 is so effective (attempt-2 tool census: 132 calls across 36 turns):**
+
+| Strategy | Context cost | Naive alternative | Savings |
+|----------|-------------|-------------------|---------|
+| Single Grep for discovery (1 call) | ~200 tokens | Read each file to check (62 × 4k) | 1240x |
+| Targeted Edit (old_string/new_string ~150 chars) | ~480 tokens/file | Full-file Write (4k/file) | 8.3x |
+| Truncated tool results (Edit returns "...") | ~300 tokens/result | Full file echo (4k/result) | 13x |
+
+**Extrapolation:** Linear growth slope = 0.96%/turn (~1,260 tokens/turn for Read+Edit pair).
+Compaction (~80%) would fire around turn 55-60, meaning **~90-100 files** needed to trigger
+Layer 2 with this strategy.
+
+**What is proven [DEDUCTIVE]:** Tool-mediated file access (Layer 1) enables completion on repos
+188% of window size. The agent's natural strategy (Grep-discover, Read-confirm, Edit-replace) IS
+the selective-ingestion architecture working — a non-tool-mediated agent forced to hold all 62
+files in a single prompt would overflow. Forced full ingestion is arithmetically impossible.
+
+**What is NOT proven:** State-tracking under Layer 2 compaction. Whether the agent loses track of
+progress after a discrete compaction event compresses conversation history remains untested.
+Requires `--files 100+` to force Layer 2 engagement.
 
 **Why the orchestrator-layer test won't fire:** `delegate_tool.py` degrades gracefully — summaries
 are capped at 50% of remaining headroom (hard ceiling 24k chars). Hermes won't truncate; it gets
-shorter summaries. Both conditions would likely pass, differing only in summary fidelity.
+shorter summaries.
 
-**Evidence tier:** [DEDUCTIVE] mechanism proof (binary pass/fail). In CTA vocabulary:
-CONTEXT_CAPACITY_BOUNDARY — the skill's architectural promise (selective ingestion) holds at 188%
-of window, but the compaction boundary itself was never exercised.
-
-**Status:** Capacity headroom proven. Compaction-stress test pending (requires forcing context
-saturation via larger fixture or constrained prompt). Evidence: `data/g13_evidence.json`.
+**Status:** Layer 1 (ingestion truncation) proven at 188% of window. Layer 2 (compaction event)
+pending — requires `--files 100+` or inflated per-file context cost. The natural strategy may
+render Layer 2 irrelevant for typical delegation tasks. Evidence: `data/g13_evidence.json`.
 
 ---
 

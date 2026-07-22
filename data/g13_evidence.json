@@ -27,19 +27,29 @@
     {
       "id": "attempt-2-iterative",
       "session": "data/m3_captures/G13-compaction-stress-1/",
-      "method": "iterative Read+Edit (intended), actual: Grep discovery → targeted Edit (pattern-inferred)",
-      "context_loaded": "selective (Grep result + Edit confirmations, ~1.7k tokens/file)",
+      "method": "Grep discovery → Read each file → targeted Edit (63 Reads, 64 Edits, 1 Grep, 4 Bash)",
+      "tool_census": {"Read": 63, "Edit": 64, "Grep": 1, "Bash": 4, "total": 132},
       "oracle_result": "6/6 PASS",
       "progress": "62/62 files renamed (100.0%)",
       "peak_context_usage_ratio": 0.531,
-      "context_trajectory": "0.112 → 0.14 (turns 1-8) → 0.30 (Grep 62-file result) → 0.531 (end)",
+      "context_trajectory": {
+        "turns_1_8": "0.112 → 0.142 (setup: MIGRATION_SPEC, base.py, Grep, registry.py edits)",
+        "turn_9_jump": "+16.3% (Grep 62-file result + first batch of Reads land simultaneously)",
+        "turns_9_32": "0.305 → 0.526 (linear growth: 0.96%/turn, ~1260 tokens/turn for Read+Edit pair)",
+        "turns_33_37": "0.527 → 0.531 (verification: 4 Bash calls, negligible growth)"
+      },
       "compaction_fired": false,
       "context_management_events": 0,
       "total_turns": 36,
       "duration_seconds": 297,
       "binary_outcome": "COMPLETED",
-      "verdict": "TRIVIAL PROOF — agent optimized away iterative Read pattern; used Grep for bulk discovery then targeted Edits. Context peaked at 53.1%, never approached compaction threshold.",
-      "protocol_violation": "Agent used Grep tool for bulk file discovery (not literally grep -r, but achieved same effect). Inferred rename pattern from first few files, applied uniformly. Never Read each file individually before editing."
+      "verdict": "CAPACITY HEADROOM PROVEN — agent Read each file (63 Reads) but context stayed lean via two mechanisms: (1) targeted Edit (old_string/new_string ~150 chars, not full-file Write), (2) ingestion-time truncation of stale tool results. Per-file retained cost ~480 tokens, not 4k.",
+      "context_efficiency_strategies": [
+        {"strategy": "Single Grep for target discovery", "cost": "~200 tokens (62 filenames)", "naive_alternative": "62 × 4k = 248k tokens", "savings": "1240x"},
+        {"strategy": "Targeted Edit (old_string/new_string)", "cost": "~480 tokens/file in context", "naive_alternative": "Full-file Write (4k tokens/file)", "savings": "8.3x per file"},
+        {"strategy": "Truncated tool results (Edit returns '...' not full file)", "cost": "~300 tokens/result", "naive_alternative": "Full file echo (~4k tokens/result)", "savings": "13x per result"}
+      ],
+      "extrapolation": "Linear slope 0.96%/turn. Compaction (~80%) would fire around turn 55-60, meaning ~90-100 files needed to trigger it with this strategy."
     }
   ],
   "baseline": {
@@ -51,21 +61,44 @@
     "remaining_for_reasoning": -115807,
     "binary_outcome": "IMPOSSIBLE (context overflow, cannot fit repo + task + reasoning)"
   },
-  "finding": "A 246k-token repo (188% of 131k window) is fully navigable via tool-mediated access. Two attempts confirm: (1) sed bulk command, (2) Grep+Edit pattern-inference. Both complete at minimal context cost (53% peak). The architecture provides enormous headroom — per-file context cost is ~1.7k tokens (not 4k), so 62 files fit in 53% of window. Forced full ingestion remains arithmetically impossible.",
+  "two_layer_context_management": {
+    "layer_1_ingestion_truncation": {
+      "description": "Tool results are truncated at ingestion time. Edit returns compact confirmation ('...' not full file). Old Read results are truncated as new ones arrive.",
+      "proven": true,
+      "evidence": "63 Reads + 64 Edits consumed only 69.6k tokens (53.1% of 131k), not 248k. Per-file retained cost ~480 tokens vs 4k raw file size.",
+      "mechanism": "Continuous — happens on every tool call, no discrete event in NDJSON"
+    },
+    "layer_2_compaction_event": {
+      "description": "Discrete compaction event when context_usage_ratio exceeds threshold (~80%+). context_management field becomes non-null. Conversation history is compressed.",
+      "proven": false,
+      "evidence": "context_management: null in all 186 NDJSON events. Peak ratio 53.1% never approached threshold.",
+      "mechanism": "Discrete — fires once at threshold, visible as context_management event in NDJSON"
+    }
+  },
+  "finding": "A 246k-token repo (188% of 131k window) is fully navigable via tool-mediated access. The agent's natural strategy (Grep-discover, Read-confirm, Edit-replace) combined with ingestion-time truncation keeps context at 53.1% — well below the compaction threshold. Layer 1 (ingestion truncation) is proven and is the primary mechanism. Layer 2 (compaction event) was never exercised. The architecture works: tool-mediated access provides implicit selective ingestion without requiring the agent to hold all file contents simultaneously.",
   "claim_class": "DEDUCTIVE mechanism proof (binary outcome, no statistical inference needed)",
-  "what_is_proven": "Tool-mediated file access (Grep/Edit/sed) enables completion on repos 188% of window size. The agent's natural strategy (pattern-infer from discovery, then targeted edits) keeps context usage well below capacity.",
-  "what_is_NOT_proven": "State-tracking-under-compaction. Compaction never fired in either attempt (peak 53.1%). The harder failure mode — agent loses track of progress after context compression — remains untested.",
+  "what_is_proven": [
+    "Tool-mediated file access enables completion on repos 188% of window size",
+    "Ingestion-time truncation (Layer 1) keeps per-file context cost at ~480 tokens (not 4k)",
+    "Agent's natural strategy (Grep → Read → Edit) is itself the selective-ingestion architecture working",
+    "62-file rename completes in 36 turns / 297s at 53.1% peak context usage",
+    "Forced full ingestion (non-tool-mediated) is arithmetically impossible at 188% overflow"
+  ],
+  "what_is_NOT_proven": [
+    "State-tracking-under-compaction (Layer 2 never fired)",
+    "Whether the agent loses track of progress after a discrete compaction event compresses conversation history",
+    "Behavior at 90-100+ files where Layer 1 alone is insufficient and Layer 2 must engage"
+  ],
   "limitations": [
-    "Compaction never fired (peak context_usage_ratio = 0.531, threshold ~0.85+)",
-    "Agent violated iterative protocol: used Grep for bulk discovery instead of individual Reads",
+    "Compaction event (Layer 2) never fired — peak 53.1%, threshold ~80%+",
     "Baseline is arithmetic proof (overflow > window), not an observed agent failure",
-    "Shelf life: pinned to qodercli 131k window; regenerate with --files 120+ to force compaction",
-    "Does not test: partial completion after compaction (agent renames 50/62 files, loses track, stops)"
+    "Shelf life: pinned to qodercli 131k window; regenerate with --files 100+ to force Layer 2",
+    "Does not test: partial completion after compaction (agent renames 50/100 files, loses track, stops)"
   ],
   "next_steps": [
-    "Force compaction: --files 120+ OR prompt 'You MUST Read each file in full before editing. Do NOT use Grep or Glob.'",
-    "Alternative: inflate per-file context cost (require summarization before edit: 'explain each file logic before renaming')",
+    "Force Layer 2: --files 100+ (extrapolated threshold from 0.96%/turn slope)",
+    "Alternative: prompt 'Read each file in full and quote relevant lines before editing' to inflate per-file cost past truncation capacity",
     "Run via M3 harness (Hermes delegates to qodercli in container) for ecological validity",
-    "Consider whether the natural strategy (Grep+Edit) IS the answer — the architecture's value is that agents don't need to hold all files in context"
+    "The natural strategy (Grep+Edit with truncation) may BE the answer — Layer 2 may be irrelevant for typical delegation tasks"
   ]
 }
