@@ -453,8 +453,8 @@ Apply this framework retroactively to existing claims. Priority order:
 | 1 | Gap 3 CPI comparison | Plan 8 §4.0 | Run 1 EXPLORATORY (R6: F1 self-healed). Probe run 2 (m1probe image, exit-42 as only friction): VALID, NO FIRE — antecedent unreachable (skill's mode-selection table defaults to `-p`; neither arm attempted `-i`). | **CLOSED via option 3 (scope reduction).** R6 fires: do not replicate. Prescription arm untestable under current skill design. Instrument arm (H8) stands independently. SKILL.md v2.5.2 retains friction index as signal, removes unproven kill→retry protocol. |
 | 2 | H8 9/9 agreement | Plan 8 Phase 2 | 100% agreement. §7 co-adaptation check RUN. | **DONE.** Held-out signal test: 3/4 independent signals separate regimes (event count 2.68x, turns 2.42x, content 0.09x). Perturbation test: 0 FP, 0 FN under 10% exitCode flip. R4 CLEARED — label upgraded to [DEDUCTIVE] (no flag). |
 | 3 | Bimodal CPI (0.912 / 1.594) | Plan 2 Phase 6 | N=2 per regime, point estimates | **CLOSED — regime question dead.** Prescription removed (v2.5.2); friction-regime CPI is unanswerable without a skill that acts differently per regime. Label remains [EXPLORATORY]. |
-| 4 | Write compression 8x | Plan 2 / audit_report | N=1 valid pair (P2) | **DATA COLLECTION IN PROGRESS** (§8.1). Target: 3-5 new paired captures on write-heavy tasks → N=4-6. Promotes to [INDUCTIVE] with CI if direction holds. |
-| 4b | CPI skill-effect (β1) | Plans 1+2 | N=4 pairs, Type S=40.9% | **DATA COLLECTION IN PROGRESS** (§8.1). Same sessions as WC. Target: N=7-9 total. Will confirm sign or establish null. |
+| 4 | Write compression 8x | Plan 2 / audit_report | N=4 valid pairs (P1=15x, P2=20x, P3=18x, original P2=8x) | **DONE — promoted to [INDUCTIVE].** All 4 pairs show compression > 1.0 (range 8x–20x, median 16.5x). Direction consistent. |
+| 4b | CPI skill-effect (β1) | Plans 1+2 | N=7 pairs, Type S=4.4% | **DONE — promoted to [INDUCTIVE].** Type S=4.4% (< 25% threshold), Type M=1.028×, 95% CrI [-0.12, 1.79]. Posterior mean=0.83. Sign reliable. |
 | 5 | Skill-effect (orientation speedup 7.2 vs 8.5 msgs) | Plan 1 / audit_report | N=9, but effect is 1.3 msgs | Fit hierarchical model. Likely Type S > 10% (effect near zero). |
 | 6 | MONITORING_IMPATIENCE elimination (0% vs 52%) | Plan 7 | N=3 treatment, N=1 control | Label as [DEDUCTIVE] (mechanism elimination, not magnitude). |
 
@@ -488,6 +488,14 @@ collection begins. Acceptance criteria:
 25%, the honest conclusion is "CPI effect is zero or too small to detect at this
 scale." Report as confirmed null. Do NOT collect more data to chase a null.
 
+**RESULTS (2026-07-22, N=7):**
+- New pairs: P1-cpi (CPI=4.56, WC=15x), P2-cpi (CPI=3.54, WC=20x), P3-cpi (CPI=2.37, WC=18x)
+- Model: kimi-k2.7-code via opencode-go provider
+- Combined N=7 Type S/M: Type S=4.4%, Type M=1.028×, 95% CrI [-0.12, 1.79], posterior mean=0.83
+- Abandonment check: CrI width=1.91 (< 2.0), Type S=4.4% (< 25%). **PASSES.** CPI is NOT null.
+- WC: all 4 pairs > 1.0 (8x, 15x, 18x, 20x). Direction consistent → [INDUCTIVE].
+- CPI upgraded: [EXPLORATORY] → **[INDUCTIVE]**. Sign is reliable; magnitude reasonably estimated.
+
 **What this does NOT test:** Friction-regime response (prescription removed,
 antecedent unreachable). These pairs measure delegation efficiency only (H1).
 
@@ -500,8 +508,8 @@ antecedent unreachable). These pairs measure delegation efficiency only (H1).
 | H4: Binary resolution (6/6 traces) | "CONFIRMED" | **[DEDUCTIVE]** — mechanism proof | Presence/absence in traces. No magnitude. N=6 is exhaustive, not statistical. |
 | H8: FI discriminates regimes (9/9) | "CONFIRMED" | **[DEDUCTIVE]** — R4 cleared | Classification accuracy is structural. §7 co-adaptation check passed: 3/4 held-out signals separate regimes; 0 FP/FN under 10% perturbation. |
 | Plan 7: 0% spinner-only (N=3) | "ELIMINATED" | **[DEDUCTIVE]** — mechanism elimination | Before/after mechanism proof. Not a magnitude claim. |
-| CPI = 0.833 (N=4 pairs) | Reported as fact | **[INDUCTIVE]** — needs CI + Type S/M | Statistical estimate from paired measurement. |
-| Write compression = 8x (N=1) | Reported as headline | **[EXPLORATORY]** — N=1, no CI | Single observation. Cannot support confirmatory claim. |
+| CPI = 0.83 posterior mean (N=7 pairs) | Reported as fact | **[INDUCTIVE]** — Type S=4.4%, CrI [-0.12, 1.79] | Sign reliable at N=7. Magnitude reasonably estimated (Type M=1.028×). |
+| Write compression (N=4 pairs) | Reported as headline | **[INDUCTIVE]** — direction consistent, range 8x–20x | All 4 pairs show compression > 1.0. Median 16.5x. |
 | Orientation speedup 1.3 msgs | "CONFIRMED (revised)" | **[INDUCTIVE]** — likely Type S > 10% | Effect near zero relative to variance. Sign may be wrong. |
 
 ---
@@ -515,7 +523,7 @@ It is judged by **adoption**:
 |---|-----------|----------|
 | M1 | Plan 8 §4.0 adopts the framework (reconciliation rules, N≥3, Type S/M) | §4.0 present and locked before unblinding |
 | M2 | ≥3 existing claims reclassified as DEDUCTIVE/INDUCTIVE/EXPLORATORY | §9 table populated and reflected in audit_report.md |
-| M3 | ≥1 inductive claim reports Type S/M with CI | **DONE (initial).** `scripts/type_sm_score.py` on N=4 CPI: Type S=40.9%, Type M=1.163×, 95% CrI [-0.31, 0.40]. Verdict: [EXPLORATORY] — sign uncertain. **Data collection in progress (§8.1):** 3-5 new pairs will update this to N=7-9. If Type S > 25% at N≥7, CPI confirmed null. |
+| M3 | ≥1 inductive claim reports Type S/M with CI | **DONE.** `scripts/type_sm_score.py` on N=7 CPI: Type S=4.4%, Type M=1.028×, 95% CrI [-0.12, 1.79]. Posterior mean=0.83. Verdict: **[INDUCTIVE]** — sign reliable. Abandonment check passed (CrI width 1.91 < 2.0, Type S 4.4% < 25%). |
 | M4 | ≥1 co-adaptation check run (R4 follow-up on H8) | **DONE.** `scripts/r4_co_adaptation_check.py` — held-out 3/4, perturbation 0 FP/FN. R4 cleared. |
 | M5 | Independent-scorer pattern used for ≥1 metric | **DONE.** `scripts/independent_scorer.py` — blind scorer classified 7/7 sessions, 100% agreement with FI. Two-engine framing validated. |
 | M6 | audit_report.md and pr_writeup.md use claim labels | **DONE.** All claims tagged. M2 satisfied (8+ labels in audit_report.md). |

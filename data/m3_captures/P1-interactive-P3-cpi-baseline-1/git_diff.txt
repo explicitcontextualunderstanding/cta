@@ -1,0 +1,10 @@
+ src/app.py                  | 18 ++-------
+ src/routes/inventory.py     | 58 ++++++++++++++++----------
+ src/routes/notifications.py | 67 ++++++++++++++++++++----------
+ src/routes/orders.py        | 93 ++++++++++++++++++++++++++++++------------
+ src/routes/payments.py      | 77 +++++++++++++++++++++++++----------
+ src/routes/products.py      | 83 ++++++++++++++++++++++++-------------
+ src/routes/reports.py       | 46 ++++++++++++---------
+ src/routes/users.py         | 99 +++++++++++++++++++++++++++++++--------------
+ src/utils/helpers.py        |  2 +-
+ 9 files changed, 361 insertions(+), 182 deletions(-)

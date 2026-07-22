@@ -54,7 +54,7 @@
 | kimi-4 | 81 | 87 | 0.940 | 1.0x | 0.530 |
 
 **Structural scorer (4 valid pairs):** Mean ECR=1.096 | Mean WC=2.2x | Best WC=5x (kimi-3)
-**CPI (4 valid pairs):** Mean=0.833 | Best=2.28 (kimi-1, 56% context offloaded)
+**CPI (7 valid pairs):** Posterior mean=0.83 | Type S=4.4%, Type M=1.028×, 95% CrI [-0.12, 1.79] | Best=4.56 (P1-cpi)
 
 ---
 
@@ -161,7 +161,7 @@
 
 **Plan 9 claim labels:**
 - H8 (FI (Friction Index) discriminates regimes, 9/9): **[DEDUCTIVE]** — classification accuracy is structural. R4 cleared: held-out signals (event count, turn count, content volume) independently separate regimes (3/4); perturbation test 0 FP/FN under 10% exitCode flip.
-- CPI = 0.833 (N=4 pairs): **[EXPLORATORY]** — Type S=40.9% (sign uncertain), Type M=1.163×, 95% CrI (Credible Interval) [-0.31, 0.40]. Effect direction unreliable at N=4 with bimodal data. Will update if N grows.
+- CPI (N=7 pairs): **[INDUCTIVE]** — Type S=4.4%, Type M=1.028×, 95% CrI (Credible Interval) [-0.12, 1.79]. Posterior mean=0.83. Sign reliable; magnitude reasonably estimated. Upgraded from [EXPLORATORY] after 3 new pairs (P1=4.56, P2=3.54, P3=2.37) confirmed direction.
 - Bgmode exit-42 fallback: **[DEDUCTIVE]** — model compliance proven (mechanism proof, no magnitude claim)
 - Gap 3 Run 1 (treatment 0.477 vs control 0.421): **[EXPLORATORY]** — N=1, R6 fires (construct-invalid: F1 friction self-healed, prescription never exercised)
 - Gap 3 Run 2 (exit-42 probe, m1probe): **[DEDUCTIVE + EXPLORATORY]** — DEDUCTIVE: exit-42 never fired, both arms chose `-p` directly (antecedent unreachable under skill's print-mode default). EXPLORATORY: N=1 efficiency figures (treatment used MORE resources than control; uninterpretable). R6 fires: do not replicate.

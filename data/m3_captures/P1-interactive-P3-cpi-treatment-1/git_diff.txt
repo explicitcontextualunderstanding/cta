@@ -1,0 +1,9 @@
+ src/routes/inventory.py     | 43 ++++++++++++++++++--------
+ src/routes/notifications.py | 46 ++++++++++++++++++++--------
+ src/routes/orders.py        | 54 ++++++++++++++++++++++++---------
+ src/routes/payments.py      | 44 +++++++++++++++++++--------
+ src/routes/products.py      | 74 ++++++++++++++++++++++++++++++++-------------
+ src/routes/reports.py       | 27 +++++++++++------
+ src/routes/users.py         | 60 +++++++++++++++++++++++++-----------
+ src/utils/helpers.py        |  2 +-
+ 8 files changed, 247 insertions(+), 103 deletions(-)

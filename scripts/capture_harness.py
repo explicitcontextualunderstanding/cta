@@ -1,8 +1,16 @@
 #!/usr/bin/env python3
 """M2 Counterfactual Capture Harness.
 
-Orchestrates treatment (with skill) and baseline (without skill) container runs
-for the qodercli CTA audit. Each run is a fresh Apple Container micro-VM.
+DEPRECATED: Use scripts/m3_interactive_harness.py for all new captures.
+M3 provides: opencode-go provider, kalloc preflight, API health check,
+hermes_home bind mount (crash-resilient state.db), skip logic, and retry.
+M2 lacks all of these — a kalloc crash loses the session record entirely.
+
+Retained for reproducibility of existing m2_captures (P1/P2/N1/E1 runs).
+Do NOT use for new data collection.
+
+Original purpose: Orchestrates treatment (with skill) and baseline (without
+skill) container runs for the qodercli CTA audit.
 
 Usage:
     python scripts/capture_harness.py --task P1 --condition treatment --run 1
@@ -35,7 +43,7 @@ ENCLAVE = Path.home() / ".enclave"
 
 def load_secrets() -> dict:
     return {
-        "OPENROUTER_API_KEY": (ENCLAVE / "openrouter_key.txt").read_text().strip(),
+        "OPENCODE_GO_API_KEY": (ENCLAVE / "opencode_primary.txt").read_text().strip(),
         "QODER_PERSONAL_ACCESS_TOKEN": (ENCLAVE / "qoder.txt").read_text().strip(),
     }
 
@@ -87,6 +95,17 @@ qodercli --version
 
 {skill_setup}
 
+echo '=== Configuring model: opencode-go/kimi-k2.7-code ==='
+mkdir -p /home/hermes/.hermes
+cat > /home/hermes/.hermes/config.yaml << 'HERMESCFG'
+model:
+  default: kimi-k2.7-code
+  provider: opencode-go
+  base_url: https://opencode.ai/zen/go/v1
+  api_mode: chat_completions
+HERMESCFG
+chown -R hermes:hermes /home/hermes/.hermes 2>/dev/null || true
+
 echo '=== Setting up workspace ==='
 cp -r /root/fixture /root/workspace
 cd /root/workspace
@@ -95,7 +114,7 @@ git add -A
 git commit -q -m "fixture baseline" --allow-empty 2>/dev/null || true
 
 echo '=== Running task ==='
-hermes chat -q '{prompt_escaped}' -Q --yolo --provider openrouter -m anthropic/claude-sonnet-4 2>&1 | tee /root/output/hermes_stdout.txt
+hermes chat -q '{prompt_escaped}' -Q --yolo -m kimi-k2.7-code 2>&1 | tee /root/output/hermes_stdout.txt || true
 
 echo '=== Exporting session ==='
 python3 -c "
@@ -109,6 +128,8 @@ echo "completed_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> /root/output/run_metadata.
 echo "task_id={task["id"]}" >> /root/output/run_metadata.txt
 echo "condition={condition}" >> /root/output/run_metadata.txt
 echo "run_num={run_num}" >> /root/output/run_metadata.txt
+echo "model=kimi-k2.7-code" >> /root/output/run_metadata.txt
+echo "provider=opencode-go" >> /root/output/run_metadata.txt
 echo '=== RUN COMPLETE ==='
 """
     return script
@@ -133,7 +154,7 @@ def run_container(task_id: str, condition: str, run_num: int, task: dict, secret
         "--name", container_name,
         "-c", "4",
         "-m", "2G",
-        "-e", f"OPENROUTER_API_KEY={secrets['OPENROUTER_API_KEY']}",
+        "-e", f"OPENCODE_GO_API_KEY={secrets['OPENCODE_GO_API_KEY']}",
     ]
 
     if condition == "treatment":

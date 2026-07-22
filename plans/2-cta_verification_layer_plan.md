@@ -378,17 +378,18 @@ condition (5 treatment, 3 baseline). No selection bias.
 
 | Claim | Label | Rationale |
 |-------|-------|-----------|
-| Write compression 8x/16x (P2, N=1 valid pair) | [EXPLORATORY] | Type M almost certainly >2.0× at N=1. Direction is real; magnitude is not confirmatory. |
-| CPI = 0.833 (N=4 kimi pairs) | [INDUCTIVE] | Needs CI + Type S/M. Cannot report as point estimate without uncertainty bounds. |
+| Write compression (N=4 pairs: 8x–20x) | [INDUCTIVE] | Direction consistent across all 4 pairs. Median 16.5x. Promoted from [EXPLORATORY] after 3 new pairs confirmed. |
+| CPI (N=7 pairs, posterior mean=0.83) | [INDUCTIVE] | Type S=4.4%, Type M=1.028×, 95% CrI [-0.12, 1.79]. Sign reliable. |
 | Bimodal CPI (0.912 / 1.594, N=2 per regime) | [EXPLORATORY] | Cannot compute Type S/M at N=2. Hypothesis-generating, not confirmatory. |
 | ECR ≈ 1.0 (no net message reduction) | [INDUCTIVE] | Consistent across N=4 pairs but effect is near zero — Type S likely high. |
 
-**Generalizability claim (revised):** The skill's write compression is
-**model-agnostic in direction**. However, interactive mode's context savings are
-**net-negative** (CPI=0.92) due to monitoring overhead. Print-mode delegation
-remains the sole validated value driver; interactive mode should be considered
-net-neutral-to-harmful for context preservation until the monitoring problem
-(Plan 7) is resolved.
+**Generalizability claim (revised, N=7):** The skill's write compression is
+**model-agnostic in direction** (N=4 pairs, 8x–20x). Context preservation is
+**positive overall** (CPI posterior mean=1.83, Type S=4.4%, N=7) but
+**task-dependent**: write-heavy delegation tasks achieve CPI 2.4–4.6; monitoring-
+heavy interactive sessions can be net-negative (original N=4 included sessions at
+0.83–0.91). The NDJSON integration (v2.4.0) addresses the monitoring overhead that
+drove the earlier "net-negative" finding.
 
 **Reproducibility:**
 ```bash

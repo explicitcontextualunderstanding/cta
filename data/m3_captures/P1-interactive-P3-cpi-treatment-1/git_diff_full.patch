@@ -1,0 +1,529 @@
+diff --git a/src/routes/inventory.py b/src/routes/inventory.py
+index a956b1c..0a95b6e 100644
+--- a/src/routes/inventory.py
++++ b/src/routes/inventory.py
+@@ -1,30 +1,47 @@
+-"""Inventory routes (no error handling — target for P3)."""
++"""Inventory routes."""
+ 
+ from flask import Blueprint, request, jsonify
+ from src.db.queries import execute_query, execute_write
++from src.routes.errors import bad_request, not_found, unprocessable, internal_error
+ 
+ inventory_bp = Blueprint("inventory", __name__)
+ 
+ 
+ @inventory_bp.route("/inventory", methods=["GET"])
+ def list_inventory():
+-    rows = execute_query("SELECT p.id, p.name, p.stock, w.location FROM products p JOIN warehouse w ON p.id = w.product_id")
+-    return jsonify(rows)
++    try:
++        rows = execute_query(
++            "SELECT p.id, p.name, p.stock, w.location FROM products p JOIN warehouse w ON p.id = w.product_id"
++        )
++        return jsonify(rows)
++    except Exception as exc:
++        return internal_error(exc)
+ 
+ 
+ @inventory_bp.route("/inventory/<int:product_id>", methods=["GET"])
+ def get_inventory(product_id):
+-    rows = execute_query("SELECT * FROM warehouse WHERE product_id = ?", (product_id,))
+-    if not rows:
+-        return jsonify({"error": "not found"}), 404
+-    return jsonify(rows[0])
++    try:
++        rows = execute_query("SELECT * FROM warehouse WHERE product_id = ?", (product_id,))
++        if not rows:
++            return not_found("inventory item")
++        return jsonify(rows[0])
++    except Exception as exc:
++        return internal_error(exc)
+ 
+ 
+ @inventory_bp.route("/inventory/adjust", methods=["POST"])
+ def adjust_stock():
+-    data = request.get_json()
+-    execute_write(
+-        "UPDATE products SET stock = stock + ? WHERE id = ?",
+-        (data["delta"], data["product_id"]),
+-    )
+-    return jsonify({"adjusted": data["product_id"], "delta": data["delta"]})
++    try:
++        data = request.get_json(silent=True)
++        if not data:
++            return bad_request("Request body must be valid JSON")
++        missing = [f for f in ("product_id", "delta") if f not in data]
++        if missing:
++            return unprocessable(f"Missing required fields: {', '.join(missing)}")
++        execute_write(
++            "UPDATE products SET stock = stock + ? WHERE id = ?",
++            (data["delta"], data["product_id"]),
++        )
++        return jsonify({"adjusted": data["product_id"], "delta": data["delta"]})
++    except Exception as exc:
++        return internal_error(exc)
+diff --git a/src/routes/notifications.py b/src/routes/notifications.py
+index f9de8dd..be49f82 100644
+--- a/src/routes/notifications.py
++++ b/src/routes/notifications.py
+@@ -1,29 +1,51 @@
+-"""Notification routes (no error handling — target for P3)."""
++"""Notification routes."""
+ 
+ from flask import Blueprint, request, jsonify
+ from src.db.queries import execute_query, execute_write
++from src.routes.errors import bad_request, not_found, unprocessable, internal_error
+ 
+ notifications_bp = Blueprint("notifications", __name__)
+ 
+ 
+ @notifications_bp.route("/notifications", methods=["GET"])
+ def list_notifications():
+-    user_id = request.args.get("user_id", type=int)
+-    rows = execute_query("SELECT * FROM notifications WHERE user_id = ? ORDER BY id DESC", (user_id,))
+-    return jsonify(rows)
++    try:
++        user_id = request.args.get("user_id", type=int)
++        if user_id is None:
++            return bad_request("Query parameter 'user_id' is required and must be an integer")
++        rows = execute_query(
++            "SELECT * FROM notifications WHERE user_id = ? ORDER BY id DESC", (user_id,)
++        )
++        return jsonify(rows)
++    except Exception as exc:
++        return internal_error(exc)
+ 
+ 
+ @notifications_bp.route("/notifications", methods=["POST"])
+ def create_notification():
+-    data = request.get_json()
+-    notif_id = execute_write(
+-        "INSERT INTO notifications (user_id, message, read) VALUES (?, ?, 0)",
+-        (data["user_id"], data["message"]),
+-    )
+-    return jsonify({"id": notif_id}), 201
++    try:
++        data = request.get_json(silent=True)
++        if not data:
++            return bad_request("Request body must be valid JSON")
++        missing = [f for f in ("user_id", "message") if f not in data]
++        if missing:
++            return unprocessable(f"Missing required fields: {', '.join(missing)}")
++        notif_id = execute_write(
++            "INSERT INTO notifications (user_id, message, read) VALUES (?, ?, 0)",
++            (data["user_id"], data["message"]),
++        )
++        return jsonify({"id": notif_id}), 201
++    except Exception as exc:
++        return internal_error(exc)
+ 
+ 
+ @notifications_bp.route("/notifications/<int:notif_id>/read", methods=["PUT"])
+ def mark_read(notif_id):
+-    execute_write("UPDATE notifications SET read = 1 WHERE id = ?", (notif_id,))
+-    return jsonify({"marked_read": notif_id})
++    try:
++        rows = execute_query("SELECT id FROM notifications WHERE id = ?", (notif_id,))
++        if not rows:
++            return not_found("notification")
++        execute_write("UPDATE notifications SET read = 1 WHERE id = ?", (notif_id,))
++        return jsonify({"marked_read": notif_id})
++    except Exception as exc:
++        return internal_error(exc)
+diff --git a/src/routes/orders.py b/src/routes/orders.py
+index a894a68..16e2043 100644
+--- a/src/routes/orders.py
++++ b/src/routes/orders.py
+@@ -1,36 +1,60 @@
+-"""Order routes (no error handling — target for P3)."""
++"""Order routes."""
+ 
++import sqlite3
+ from flask import Blueprint, request, jsonify
+ from src.db.queries import execute_query, execute_write
++from src.routes.errors import bad_request, not_found, unprocessable, internal_error
+ 
+ orders_bp = Blueprint("orders", __name__)
+ 
+ 
+ @orders_bp.route("/orders", methods=["GET"])
+ def list_orders():
+-    rows = execute_query("SELECT id, user_id, total, status FROM orders ORDER BY id DESC")
+-    return jsonify(rows)
++    try:
++        rows = execute_query("SELECT id, user_id, total, status FROM orders ORDER BY id DESC")
++        return jsonify(rows)
++    except Exception as exc:
++        return internal_error(exc)
+ 
+ 
+ @orders_bp.route("/orders/<int:order_id>", methods=["GET"])
+ def get_order(order_id):
+-    rows = execute_query("SELECT * FROM orders WHERE id = ?", (order_id,))
+-    if not rows:
+-        return jsonify({"error": "not found"}), 404
+-    return jsonify(rows[0])
++    try:
++        rows = execute_query("SELECT * FROM orders WHERE id = ?", (order_id,))
++        if not rows:
++            return not_found("order")
++        return jsonify(rows[0])
++    except Exception as exc:
++        return internal_error(exc)
+ 
+ 
+ @orders_bp.route("/orders", methods=["POST"])
+ def create_order():
+-    data = request.get_json()
+-    order_id = execute_write(
+-        "INSERT INTO orders (user_id, total, status) VALUES (?, ?, ?)",
+-        (data["user_id"], data["total"], "pending"),
+-    )
+-    return jsonify({"id": order_id}), 201
++    try:
++        data = request.get_json(silent=True)
++        if not data:
++            return bad_request("Request body must be valid JSON")
++        missing = [f for f in ("user_id", "total") if f not in data]
++        if missing:
++            return unprocessable(f"Missing required fields: {', '.join(missing)}")
++        order_id = execute_write(
++            "INSERT INTO orders (user_id, total, status) VALUES (?, ?, ?)",
++            (data["user_id"], data["total"], "pending"),
++        )
++        return jsonify({"id": order_id}), 201
++    except sqlite3.IntegrityError as exc:
++        return bad_request(f"Integrity constraint violated: {exc}")
++    except Exception as exc:
++        return internal_error(exc)
+ 
+ 
+ @orders_bp.route("/orders/<int:order_id>/cancel", methods=["POST"])
+ def cancel_order(order_id):
+-    execute_write("UPDATE orders SET status = 'cancelled' WHERE id = ?", (order_id,))
+-    return jsonify({"cancelled": order_id})
++    try:
++        rows = execute_query("SELECT id FROM orders WHERE id = ?", (order_id,))
++        if not rows:
++            return not_found("order")
++        execute_write("UPDATE orders SET status = 'cancelled' WHERE id = ?", (order_id,))
++        return jsonify({"cancelled": order_id})
++    except Exception as exc:
++        return internal_error(exc)
+diff --git a/src/routes/payments.py b/src/routes/payments.py
+index d004fdf..3eafe43 100644
+--- a/src/routes/payments.py
++++ b/src/routes/payments.py
+@@ -1,30 +1,48 @@
+-"""Payment routes (no error handling — target for P3)."""
++"""Payment routes."""
+ 
++import sqlite3
+ from flask import Blueprint, request, jsonify
+ from src.db.queries import execute_query, execute_write
++from src.routes.errors import bad_request, not_found, unprocessable, internal_error
+ 
+ payments_bp = Blueprint("payments", __name__)
+ 
+ 
+ @payments_bp.route("/payments", methods=["GET"])
+ def list_payments():
+-    rows = execute_query("SELECT id, order_id, amount, method, status FROM payments")
+-    return jsonify(rows)
++    try:
++        rows = execute_query("SELECT id, order_id, amount, method, status FROM payments")
++        return jsonify(rows)
++    except Exception as exc:
++        return internal_error(exc)
+ 
+ 
+ @payments_bp.route("/payments/<int:payment_id>", methods=["GET"])
+ def get_payment(payment_id):
+-    rows = execute_query("SELECT * FROM payments WHERE id = ?", (payment_id,))
+-    if not rows:
+-        return jsonify({"error": "not found"}), 404
+-    return jsonify(rows[0])
++    try:
++        rows = execute_query("SELECT * FROM payments WHERE id = ?", (payment_id,))
++        if not rows:
++            return not_found("payment")
++        return jsonify(rows[0])
++    except Exception as exc:
++        return internal_error(exc)
+ 
+ 
+ @payments_bp.route("/payments", methods=["POST"])
+ def process_payment():
+-    data = request.get_json()
+-    payment_id = execute_write(
+-        "INSERT INTO payments (order_id, amount, method, status) VALUES (?, ?, ?, ?)",
+-        (data["order_id"], data["amount"], data["method"], "completed"),
+-    )
+-    return jsonify({"id": payment_id}), 201
++    try:
++        data = request.get_json(silent=True)
++        if not data:
++            return bad_request("Request body must be valid JSON")
++        missing = [f for f in ("order_id", "amount", "method") if f not in data]
++        if missing:
++            return unprocessable(f"Missing required fields: {', '.join(missing)}")
++        payment_id = execute_write(
++            "INSERT INTO payments (order_id, amount, method, status) VALUES (?, ?, ?, ?)",
++            (data["order_id"], data["amount"], data["method"], "completed"),
++        )
++        return jsonify({"id": payment_id}), 201
++    except sqlite3.IntegrityError as exc:
++        return bad_request(f"Integrity constraint violated: {exc}")
++    except Exception as exc:
++        return internal_error(exc)
+diff --git a/src/routes/products.py b/src/routes/products.py
+index 3f3c8b8..27f263c 100644
+--- a/src/routes/products.py
++++ b/src/routes/products.py
+@@ -1,46 +1,78 @@
+-"""Product routes (no error handling — target for P3)."""
++"""Product routes."""
+ 
++import sqlite3
+ from flask import Blueprint, request, jsonify
+ from src.db.queries import execute_query, execute_write
++from src.routes.errors import bad_request, not_found, unprocessable, internal_error
+ 
+ products_bp = Blueprint("products", __name__)
+ 
+ 
+ @products_bp.route("/products", methods=["GET"])
+ def list_products():
+-    rows = execute_query("SELECT id, name, price, stock FROM products ORDER BY name")
+-    return jsonify(rows)
++    try:
++        rows = execute_query("SELECT id, name, price, stock FROM products ORDER BY name")
++        return jsonify(rows)
++    except Exception as exc:
++        return internal_error(exc)
+ 
+ 
+ @products_bp.route("/products/<int:product_id>", methods=["GET"])
+ def get_product(product_id):
+-    rows = execute_query("SELECT * FROM products WHERE id = ?", (product_id,))
+-    if not rows:
+-        return jsonify({"error": "not found"}), 404
+-    return jsonify(rows[0])
++    try:
++        rows = execute_query("SELECT * FROM products WHERE id = ?", (product_id,))
++        if not rows:
++            return not_found("product")
++        return jsonify(rows[0])
++    except Exception as exc:
++        return internal_error(exc)
+ 
+ 
+ @products_bp.route("/products", methods=["POST"])
+ def create_product():
+-    data = request.get_json()
+-    product_id = execute_write(
+-        "INSERT INTO products (name, price, stock) VALUES (?, ?, ?)",
+-        (data["name"], data["price"], data["stock"]),
+-    )
+-    return jsonify({"id": product_id}), 201
++    try:
++        data = request.get_json(silent=True)
++        if not data:
++            return bad_request("Request body must be valid JSON")
++        missing = [f for f in ("name", "price", "stock") if f not in data]
++        if missing:
++            return unprocessable(f"Missing required fields: {', '.join(missing)}")
++        product_id = execute_write(
++            "INSERT INTO products (name, price, stock) VALUES (?, ?, ?)",
++            (data["name"], data["price"], data["stock"]),
++        )
++        return jsonify({"id": product_id}), 201
++    except sqlite3.IntegrityError as exc:
++        return bad_request(f"Integrity constraint violated: {exc}")
++    except Exception as exc:
++        return internal_error(exc)
+ 
+ 
+ @products_bp.route("/products/<int:product_id>", methods=["PUT"])
+ def update_product(product_id):
+-    data = request.get_json()
+-    execute_write(
+-        "UPDATE products SET name = ?, price = ?, stock = ? WHERE id = ?",
+-        (data["name"], data["price"], data["stock"], product_id),
+-    )
+-    return jsonify({"updated": product_id})
++    try:
++        data = request.get_json(silent=True)
++        if not data:
++            return bad_request("Request body must be valid JSON")
++        missing = [f for f in ("name", "price", "stock") if f not in data]
++        if missing:
++            return unprocessable(f"Missing required fields: {', '.join(missing)}")
++        rows = execute_query("SELECT id FROM products WHERE id = ?", (product_id,))
++        if not rows:
++            return not_found("product")
++        execute_write(
++            "UPDATE products SET name = ?, price = ?, stock = ? WHERE id = ?",
++            (data["name"], data["price"], data["stock"], product_id),
++        )
++        return jsonify({"updated": product_id})
++    except Exception as exc:
++        return internal_error(exc)
+ 
+ 
+ @products_bp.route("/products/<int:product_id>", methods=["DELETE"])
+ def delete_product(product_id):
+-    execute_write("DELETE FROM products WHERE id = ?", (product_id,))
+-    return "", 204
++    try:
++        execute_write("DELETE FROM products WHERE id = ?", (product_id,))
++        return "", 204
++    except Exception as exc:
++        return internal_error(exc)
+diff --git a/src/routes/reports.py b/src/routes/reports.py
+index eab1dea..e8503aa 100644
+--- a/src/routes/reports.py
++++ b/src/routes/reports.py
+@@ -1,23 +1,30 @@
+-"""Report routes (no error handling — target for P3)."""
++"""Report routes."""
+ 
+ from flask import Blueprint, request, jsonify
+ from src.db.queries import execute_query
++from src.routes.errors import internal_error
+ 
+ reports_bp = Blueprint("reports", __name__)
+ 
+ 
+ @reports_bp.route("/reports/sales", methods=["GET"])
+ def sales_report():
+-    period = request.args.get("period", "monthly")
+-    rows = execute_query(
+-        "SELECT strftime('%Y-%m', timestamp) as period, SUM(total) as revenue FROM orders GROUP BY period ORDER BY period DESC LIMIT 12"
+-    )
+-    return jsonify({"period": period, "data": rows})
++    try:
++        period = request.args.get("period", "monthly")
++        rows = execute_query(
++            "SELECT strftime('%Y-%m', timestamp) as period, SUM(total) as revenue FROM orders GROUP BY period ORDER BY period DESC LIMIT 12"
++        )
++        return jsonify({"period": period, "data": rows})
++    except Exception as exc:
++        return internal_error(exc)
+ 
+ 
+ @reports_bp.route("/reports/users", methods=["GET"])
+ def user_report():
+-    rows = execute_query(
+-        "SELECT COUNT(*) as total, strftime('%Y-%m', timestamp) as cohort FROM users GROUP BY cohort"
+-    )
+-    return jsonify(rows)
++    try:
++        rows = execute_query(
++            "SELECT COUNT(*) as total, strftime('%Y-%m', timestamp) as cohort FROM users GROUP BY cohort"
++        )
++        return jsonify(rows)
++    except Exception as exc:
++        return internal_error(exc)
+diff --git a/src/routes/users.py b/src/routes/users.py
+index 7d3f82a..6513330 100644
+--- a/src/routes/users.py
++++ b/src/routes/users.py
+@@ -1,8 +1,10 @@
+-"""User management routes (no error handling — target for P3)."""
++"""User management routes."""
+ 
++import sqlite3
+ from flask import Blueprint, request, jsonify
+ from src.models.user import User
+ from src.db.queries import execute_query
++from src.routes.errors import bad_request, not_found, unprocessable, internal_error
+ 
+ users_bp = Blueprint("users", __name__)
+ user_model = User()
+@@ -10,32 +12,54 @@ user_model = User()
+ 
+ @users_bp.route("/users", methods=["GET"])
+ def list_users():
+-    limit = request.args.get("limit", 100, type=int)
+-    users = user_model.list_all(limit=limit)
+-    return jsonify(users)
++    try:
++        limit = request.args.get("limit", 100, type=int)
++        users = user_model.list_all(limit=limit)
++        return jsonify(users)
++    except Exception as exc:
++        return internal_error(exc)
+ 
+ 
+ @users_bp.route("/users/<int:user_id>", methods=["GET"])
+ def get_user(user_id):
+-    user = user_model.get_by_id(user_id)
+-    if user is None:
+-        return jsonify({"error": "not found"}), 404
+-    return jsonify(user)
++    try:
++        user = user_model.get_by_id(user_id)
++        if user is None:
++            return not_found("user")
++        return jsonify(user)
++    except Exception as exc:
++        return internal_error(exc)
+ 
+ 
+ @users_bp.route("/users", methods=["POST"])
+ def create_user():
+-    data = request.get_json()
+-    user_id = user_model.create(
+-        username=data["username"],
+-        email=data["email"],
+-        password_hash=data["password_hash"],
+-    )
+-    return jsonify({"id": user_id}), 201
++    try:
++        data = request.get_json(silent=True)
++        if not data:
++            return bad_request("Request body must be valid JSON")
++        missing = [f for f in ("username", "email", "password_hash") if f not in data]
++        if missing:
++            return unprocessable(f"Missing required fields: {', '.join(missing)}")
++        user_id = user_model.create(
++            username=data["username"],
++            email=data["email"],
++            password_hash=data["password_hash"],
++        )
++        return jsonify({"id": user_id}), 201
++    except sqlite3.IntegrityError as exc:
++        return bad_request(f"Integrity constraint violated: {exc}")
++    except Exception as exc:
++        return internal_error(exc)
+ 
+ 
+ @users_bp.route("/users/search", methods=["GET"])
+ def search_users():
+-    email = request.args.get("email")
+-    rows = execute_query("SELECT id, username, email FROM users WHERE email LIKE ?", (f"%{email}%",))
+-    return jsonify(rows)
++    try:
++        email = request.args.get("email", "")
++        rows = execute_query(
++            "SELECT id, username, email FROM users WHERE email LIKE ?",
++            (f"%{email}%",),
++        )
++        return jsonify(rows)
++    except Exception as exc:
++        return internal_error(exc)
+diff --git a/src/utils/helpers.py b/src/utils/helpers.py
+index 9f5f9ec..21cf9bb 100644
+--- a/src/utils/helpers.py
++++ b/src/utils/helpers.py
+@@ -13,7 +13,7 @@ def parse_date(date_str: str) -> datetime:
+ 
+ def format_timestamp(dt: datetime) -> str:
+     """Format a datetime as ISO 8601 timestamp."""
+-    return dt.strftime("%Y-%m-%dT%H:%M:%S"  # missing closing paren — N1 target (line 47)
++    return dt.strftime("%Y-%m-%dT%H:%M:%S")
+ 
+ 
+ def slugify(text: str) -> str:

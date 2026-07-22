@@ -1,0 +1,11 @@
+{
+  "run_id": "P1-interactive-P3-cpi-treatment-1",
+  "task_id": "P1-interactive",
+  "condition": "treatment",
+  "run_num": 1,
+  "exit_code": 0,
+  "elapsed_seconds": 224.1,
+  "container_name": "cta-m3-P1-interactive-P3-cpi-treatment-1",
+  "failure_type": null,
+  "attempts": 1
+}

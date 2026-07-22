@@ -1,0 +1,12 @@
+ src/db/queries.py            | 55 ++++-----------------------
+ src/models/user.py           | 90 ++++++++++++++++++++++++--------------------
+ src/routes/inventory.py      | 44 ++++++++++++++++------
+ src/routes/notifications.py  | 44 +++++++++++++++++-----
+ src/routes/orders.py         | 48 ++++++++++++++++-------
+ src/routes/payments.py       | 43 +++++++++++++++------
+ src/routes/products.py       | 59 +++++++++++++++++++----------
+ src/routes/reports.py        | 32 +++++++++++-----
+ src/routes/users.py          | 15 ++++++--
+ src/services/user_service.py | 43 +++++++++++++++++----
+ src/utils/helpers.py         |  2 +-
+ 11 files changed, 300 insertions(+), 175 deletions(-)

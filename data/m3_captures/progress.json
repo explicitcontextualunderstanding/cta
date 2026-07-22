@@ -3,5 +3,10 @@
     "condition": "treatment",
     "run": 1,
     "success": true
+  },
+  {
+    "condition": "baseline",
+    "run": 1,
+    "success": true
   }
 ]

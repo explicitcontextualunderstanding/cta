@@ -1,0 +1,693 @@
+diff --git a/src/db/queries.py b/src/db/queries.py
+index 33f43fe..1d01b18 100644
+--- a/src/db/queries.py
++++ b/src/db/queries.py
+@@ -1,53 +1,14 @@
+-"""Database connection and raw query helpers (pre-migration state for P2)."""
++"""Database helpers backed by SQLAlchemy ORM (post-migration state for P2)."""
+ 
+-import sqlite3
++from src.db.database import engine, Base, SessionLocal
++from src.db import models  # noqa: F401  # registers ORM models with Base metadata
+ 
+-DB_PATH = "app.db"
+ 
+-
+-def get_connection() -> sqlite3.Connection:
+-    conn = sqlite3.connect(DB_PATH)
+-    conn.row_factory = sqlite3.Row
+-    return conn
+-
+-
+-def execute_query(sql: str, params: tuple = ()) -> list[dict]:
+-    conn = get_connection()
+-    cursor = conn.execute(sql, params)
+-    rows = [dict(row) for row in cursor.fetchall()]
+-    conn.close()
+-    return rows
+-
+-
+-def execute_write(sql: str, params: tuple = ()) -> int:
+-    conn = get_connection()
+-    cursor = conn.execute(sql, params)
+-    conn.commit()
+-    last_id = cursor.lastrowid
+-    conn.close()
+-    return last_id
++def get_session():
++    """Return a new SQLAlchemy ORM session."""
++    return SessionLocal()
+ 
+ 
+ def init_db():
+-    conn = get_connection()
+-    conn.executescript("""
+-        CREATE TABLE IF NOT EXISTS users (
+-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+-            username TEXT UNIQUE NOT NULL,
+-            email TEXT UNIQUE NOT NULL,
+-            password_hash TEXT NOT NULL
+-        );
+-        CREATE TABLE IF NOT EXISTS sessions (
+-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+-            user_id INTEGER REFERENCES users(id),
+-            token TEXT UNIQUE NOT NULL,
+-            expires_at TIMESTAMP NOT NULL
+-        );
+-        CREATE TABLE IF NOT EXISTS audit_log (
+-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+-            user_id INTEGER,
+-            action TEXT NOT NULL,
+-            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+-        );
+-    """)
+-    conn.close()
++    """Create all tables defined by the ORM models."""
++    Base.metadata.create_all(bind=engine)
+diff --git a/src/models/user.py b/src/models/user.py
+index 6c52cd0..2334ba8 100644
+--- a/src/models/user.py
++++ b/src/models/user.py
+@@ -1,52 +1,62 @@
+-"""User model with raw SQL queries (pre-migration state for P2)."""
++"""User model public API backed by SQLAlchemy ORM (post-migration state for P2)."""
+ 
+-import sqlite3
++from sqlalchemy import select
++from sqlalchemy.orm import Session
++from src.db.database import SessionLocal
++from src.db.models import User as UserORM
+ 
+ 
+ class User:
+-    def __init__(self, db_path="app.db"):
+-        self.db_path = db_path
++    """Public User API used by routes and services."""
++
++    def __init__(self, db_path: str | None = None):
++        # db_path is accepted for backward compatibility but ignored; the ORM
++        # uses the shared engine configured in src.db.database.
++        pass
++
++    def _session(self) -> Session:
++        return SessionLocal()
+ 
+     def get_by_id(self, user_id: int) -> dict | None:
+-        conn = sqlite3.connect(self.db_path)
+-        cursor = conn.execute(
+-            "SELECT id, username, email, password_hash FROM users WHERE id = ?",
+-            (user_id,),
+-        )
+-        row = cursor.fetchone()
+-        conn.close()
+-        if row:
+-            return {"id": row[0], "username": row[1], "email": row[2], "password_hash": row[3]}
+-        return None
++        with self._session() as session:
++            user = session.get(UserORM, user_id)
++            if user is None:
++                return None
++            return {
++                "id": user.id,
++                "username": user.username,
++                "email": user.email,
++                "password_hash": user.password_hash,
++            }
+ 
+     def get_by_email(self, email: str) -> dict | None:
+-        conn = sqlite3.connect(self.db_path)
+-        cursor = conn.execute(
+-            "SELECT id, username, email, password_hash FROM users WHERE email = ?",
+-            (email,),
+-        )
+-        row = cursor.fetchone()
+-        conn.close()
+-        if row:
+-            return {"id": row[0], "username": row[1], "email": row[2], "password_hash": row[3]}
+-        return None
++        with self._session() as session:
++            user = session.execute(
++                select(UserORM).where(UserORM.email == email)
++            ).scalar_one_or_none()
++            if user is None:
++                return None
++            return {
++                "id": user.id,
++                "username": user.username,
++                "email": user.email,
++                "password_hash": user.password_hash,
++            }
+ 
+     def create(self, username: str, email: str, password_hash: str) -> int:
+-        conn = sqlite3.connect(self.db_path)
+-        cursor = conn.execute(
+-            "INSERT INTO users (username, email, password_hash) VALUES (?, ?, ?)",
+-            (username, email, password_hash),
+-        )
+-        conn.commit()
+-        user_id = cursor.lastrowid
+-        conn.close()
+-        return user_id
++        with self._session() as session:
++            user = UserORM(username=username, email=email, password_hash=password_hash)
++            session.add(user)
++            session.commit()
++            session.refresh(user)
++            return user.id
+ 
+     def list_all(self, limit: int = 100) -> list[dict]:
+-        conn = sqlite3.connect(self.db_path)
+-        cursor = conn.execute(
+-            "SELECT id, username, email FROM users ORDER BY id LIMIT ?", (limit,)
+-        )
+-        rows = cursor.fetchall()
+-        conn.close()
+-        return [{"id": r[0], "username": r[1], "email": r[2]} for r in rows]
++        with self._session() as session:
++            users = session.execute(
++                select(UserORM).order_by(UserORM.id).limit(limit)
++            ).scalars().all()
++            return [
++                {"id": u.id, "username": u.username, "email": u.email}
++                for u in users
++            ]
+diff --git a/src/routes/inventory.py b/src/routes/inventory.py
+index a956b1c..998015e 100644
+--- a/src/routes/inventory.py
++++ b/src/routes/inventory.py
+@@ -1,30 +1,50 @@
+ """Inventory routes (no error handling — target for P3)."""
+ 
+ from flask import Blueprint, request, jsonify
+-from src.db.queries import execute_query, execute_write
++from sqlalchemy import select
++from src.db.database import SessionLocal
++from src.db.models import Product, Warehouse
+ 
+ inventory_bp = Blueprint("inventory", __name__)
+ 
+ 
+ @inventory_bp.route("/inventory", methods=["GET"])
+ def list_inventory():
+-    rows = execute_query("SELECT p.id, p.name, p.stock, w.location FROM products p JOIN warehouse w ON p.id = w.product_id")
+-    return jsonify(rows)
++    with SessionLocal() as session:
++        rows = session.execute(
++            select(
++                Product.id,
++                Product.name,
++                Product.stock,
++                Warehouse.location,
++            ).join(Warehouse, Product.id == Warehouse.product_id)
++        ).mappings().all()
++        return jsonify([dict(r) for r in rows])
+ 
+ 
+ @inventory_bp.route("/inventory/<int:product_id>", methods=["GET"])
+ def get_inventory(product_id):
+-    rows = execute_query("SELECT * FROM warehouse WHERE product_id = ?", (product_id,))
+-    if not rows:
+-        return jsonify({"error": "not found"}), 404
+-    return jsonify(rows[0])
++    with SessionLocal() as session:
++        warehouse = session.execute(
++            select(Warehouse).where(Warehouse.product_id == product_id)
++        ).scalar_one_or_none()
++        if warehouse is None:
++            return jsonify({"error": "not found"}), 404
++        return jsonify(
++            {
++                "id": warehouse.id,
++                "product_id": warehouse.product_id,
++                "location": warehouse.location,
++                "quantity": warehouse.quantity,
++            }
++        )
+ 
+ 
+ @inventory_bp.route("/inventory/adjust", methods=["POST"])
+ def adjust_stock():
+     data = request.get_json()
+-    execute_write(
+-        "UPDATE products SET stock = stock + ? WHERE id = ?",
+-        (data["delta"], data["product_id"]),
+-    )
+-    return jsonify({"adjusted": data["product_id"], "delta": data["delta"]})
++    with SessionLocal() as session:
++        product = session.get(Product, data["product_id"])
++        product.stock = product.stock + data["delta"]
++        session.commit()
++        return jsonify({"adjusted": data["product_id"], "delta": data["delta"]})
+diff --git a/src/routes/notifications.py b/src/routes/notifications.py
+index f9de8dd..988b47d 100644
+--- a/src/routes/notifications.py
++++ b/src/routes/notifications.py
+@@ -1,7 +1,9 @@
+ """Notification routes (no error handling — target for P3)."""
+ 
+ from flask import Blueprint, request, jsonify
+-from src.db.queries import execute_query, execute_write
++from sqlalchemy import select
++from src.db.database import SessionLocal
++from src.db.models import Notification
+ 
+ notifications_bp = Blueprint("notifications", __name__)
+ 
+@@ -9,21 +11,43 @@ notifications_bp = Blueprint("notifications", __name__)
+ @notifications_bp.route("/notifications", methods=["GET"])
+ def list_notifications():
+     user_id = request.args.get("user_id", type=int)
+-    rows = execute_query("SELECT * FROM notifications WHERE user_id = ? ORDER BY id DESC", (user_id,))
+-    return jsonify(rows)
++    with SessionLocal() as session:
++        notifications = session.execute(
++            select(Notification)
++            .where(Notification.user_id == user_id)
++            .order_by(Notification.id.desc())
++        ).scalars().all()
++        return jsonify(
++            [
++                {
++                    "id": n.id,
++                    "user_id": n.user_id,
++                    "message": n.message,
++                    "read": n.read,
++                }
++                for n in notifications
++            ]
++        )
+ 
+ 
+ @notifications_bp.route("/notifications", methods=["POST"])
+ def create_notification():
+     data = request.get_json()
+-    notif_id = execute_write(
+-        "INSERT INTO notifications (user_id, message, read) VALUES (?, ?, 0)",
+-        (data["user_id"], data["message"]),
+-    )
+-    return jsonify({"id": notif_id}), 201
++    with SessionLocal() as session:
++        notification = Notification(
++            user_id=data["user_id"],
++            message=data["message"],
++        )
++        session.add(notification)
++        session.commit()
++        session.refresh(notification)
++        return jsonify({"id": notification.id}), 201
+ 
+ 
+ @notifications_bp.route("/notifications/<int:notif_id>/read", methods=["PUT"])
+ def mark_read(notif_id):
+-    execute_write("UPDATE notifications SET read = 1 WHERE id = ?", (notif_id,))
+-    return jsonify({"marked_read": notif_id})
++    with SessionLocal() as session:
++        notification = session.get(Notification, notif_id)
++        notification.read = True
++        session.commit()
++        return jsonify({"marked_read": notif_id})
+diff --git a/src/routes/orders.py b/src/routes/orders.py
+index a894a68..a7c600d 100644
+--- a/src/routes/orders.py
++++ b/src/routes/orders.py
+@@ -1,36 +1,56 @@
+ """Order routes (no error handling — target for P3)."""
+ 
+ from flask import Blueprint, request, jsonify
+-from src.db.queries import execute_query, execute_write
++from sqlalchemy import select
++from src.db.database import SessionLocal
++from src.db.models import Order
+ 
+ orders_bp = Blueprint("orders", __name__)
+ 
+ 
+ @orders_bp.route("/orders", methods=["GET"])
+ def list_orders():
+-    rows = execute_query("SELECT id, user_id, total, status FROM orders ORDER BY id DESC")
+-    return jsonify(rows)
++    with SessionLocal() as session:
++        orders = session.execute(
++            select(Order.id, Order.user_id, Order.total, Order.status).order_by(
++                Order.id.desc()
++            )
++        ).mappings().all()
++        return jsonify([dict(o) for o in orders])
+ 
+ 
+ @orders_bp.route("/orders/<int:order_id>", methods=["GET"])
+ def get_order(order_id):
+-    rows = execute_query("SELECT * FROM orders WHERE id = ?", (order_id,))
+-    if not rows:
+-        return jsonify({"error": "not found"}), 404
+-    return jsonify(rows[0])
++    with SessionLocal() as session:
++        order = session.get(Order, order_id)
++        if order is None:
++            return jsonify({"error": "not found"}), 404
++        return jsonify(
++            {
++                "id": order.id,
++                "user_id": order.user_id,
++                "total": order.total,
++                "status": order.status,
++                "timestamp": order.timestamp.isoformat() if order.timestamp else None,
++            }
++        )
+ 
+ 
+ @orders_bp.route("/orders", methods=["POST"])
+ def create_order():
+     data = request.get_json()
+-    order_id = execute_write(
+-        "INSERT INTO orders (user_id, total, status) VALUES (?, ?, ?)",
+-        (data["user_id"], data["total"], "pending"),
+-    )
+-    return jsonify({"id": order_id}), 201
++    with SessionLocal() as session:
++        order = Order(user_id=data["user_id"], total=data["total"])
++        session.add(order)
++        session.commit()
++        session.refresh(order)
++        return jsonify({"id": order.id}), 201
+ 
+ 
+ @orders_bp.route("/orders/<int:order_id>/cancel", methods=["POST"])
+ def cancel_order(order_id):
+-    execute_write("UPDATE orders SET status = 'cancelled' WHERE id = ?", (order_id,))
+-    return jsonify({"cancelled": order_id})
++    with SessionLocal() as session:
++        order = session.get(Order, order_id)
++        order.status = "cancelled"
++        session.commit()
++        return jsonify({"cancelled": order_id})
+diff --git a/src/routes/payments.py b/src/routes/payments.py
+index d004fdf..3a59ea2 100644
+--- a/src/routes/payments.py
++++ b/src/routes/payments.py
+@@ -1,30 +1,49 @@
+ """Payment routes (no error handling — target for P3)."""
+ 
+ from flask import Blueprint, request, jsonify
+-from src.db.queries import execute_query, execute_write
++from sqlalchemy import select
++from src.db.database import SessionLocal
++from src.db.models import Payment
+ 
+ payments_bp = Blueprint("payments", __name__)
+ 
+ 
+ @payments_bp.route("/payments", methods=["GET"])
+ def list_payments():
+-    rows = execute_query("SELECT id, order_id, amount, method, status FROM payments")
+-    return jsonify(rows)
++    with SessionLocal() as session:
++        payments = session.execute(
++            select(Payment.id, Payment.order_id, Payment.amount, Payment.method, Payment.status)
++        ).mappings().all()
++        return jsonify([dict(p) for p in payments])
+ 
+ 
+ @payments_bp.route("/payments/<int:payment_id>", methods=["GET"])
+ def get_payment(payment_id):
+-    rows = execute_query("SELECT * FROM payments WHERE id = ?", (payment_id,))
+-    if not rows:
+-        return jsonify({"error": "not found"}), 404
+-    return jsonify(rows[0])
++    with SessionLocal() as session:
++        payment = session.get(Payment, payment_id)
++        if payment is None:
++            return jsonify({"error": "not found"}), 404
++        return jsonify(
++            {
++                "id": payment.id,
++                "order_id": payment.order_id,
++                "amount": payment.amount,
++                "method": payment.method,
++                "status": payment.status,
++            }
++        )
+ 
+ 
+ @payments_bp.route("/payments", methods=["POST"])
+ def process_payment():
+     data = request.get_json()
+-    payment_id = execute_write(
+-        "INSERT INTO payments (order_id, amount, method, status) VALUES (?, ?, ?, ?)",
+-        (data["order_id"], data["amount"], data["method"], "completed"),
+-    )
+-    return jsonify({"id": payment_id}), 201
++    with SessionLocal() as session:
++        payment = Payment(
++            order_id=data["order_id"],
++            amount=data["amount"],
++            method=data["method"],
++        )
++        session.add(payment)
++        session.commit()
++        session.refresh(payment)
++        return jsonify({"id": payment.id}), 201
+diff --git a/src/routes/products.py b/src/routes/products.py
+index 3f3c8b8..3c2a739 100644
+--- a/src/routes/products.py
++++ b/src/routes/products.py
+@@ -1,46 +1,67 @@
+ """Product routes (no error handling — target for P3)."""
+ 
+ from flask import Blueprint, request, jsonify
+-from src.db.queries import execute_query, execute_write
++from sqlalchemy import select
++from src.db.database import SessionLocal
++from src.db.models import Product
+ 
+ products_bp = Blueprint("products", __name__)
+ 
+ 
++def _product_to_dict(product):
++    return {
++        "id": product.id,
++        "name": product.name,
++        "price": product.price,
++        "stock": product.stock,
++    }
++
++
+ @products_bp.route("/products", methods=["GET"])
+ def list_products():
+-    rows = execute_query("SELECT id, name, price, stock FROM products ORDER BY name")
+-    return jsonify(rows)
++    with SessionLocal() as session:
++        products = session.execute(
++            select(Product).order_by(Product.name)
++        ).scalars().all()
++        return jsonify([_product_to_dict(p) for p in products])
+ 
+ 
+ @products_bp.route("/products/<int:product_id>", methods=["GET"])
+ def get_product(product_id):
+-    rows = execute_query("SELECT * FROM products WHERE id = ?", (product_id,))
+-    if not rows:
+-        return jsonify({"error": "not found"}), 404
+-    return jsonify(rows[0])
++    with SessionLocal() as session:
++        product = session.get(Product, product_id)
++        if product is None:
++            return jsonify({"error": "not found"}), 404
++        return jsonify(_product_to_dict(product))
+ 
+ 
+ @products_bp.route("/products", methods=["POST"])
+ def create_product():
+     data = request.get_json()
+-    product_id = execute_write(
+-        "INSERT INTO products (name, price, stock) VALUES (?, ?, ?)",
+-        (data["name"], data["price"], data["stock"]),
+-    )
+-    return jsonify({"id": product_id}), 201
++    with SessionLocal() as session:
++        product = Product(name=data["name"], price=data["price"], stock=data["stock"])
++        session.add(product)
++        session.commit()
++        session.refresh(product)
++        return jsonify({"id": product.id}), 201
+ 
+ 
+ @products_bp.route("/products/<int:product_id>", methods=["PUT"])
+ def update_product(product_id):
+     data = request.get_json()
+-    execute_write(
+-        "UPDATE products SET name = ?, price = ?, stock = ? WHERE id = ?",
+-        (data["name"], data["price"], data["stock"], product_id),
+-    )
+-    return jsonify({"updated": product_id})
++    with SessionLocal() as session:
++        product = session.get(Product, product_id)
++        product.name = data["name"]
++        product.price = data["price"]
++        product.stock = data["stock"]
++        session.commit()
++        return jsonify({"updated": product_id})
+ 
+ 
+ @products_bp.route("/products/<int:product_id>", methods=["DELETE"])
+ def delete_product(product_id):
+-    execute_write("DELETE FROM products WHERE id = ?", (product_id,))
+-    return "", 204
++    with SessionLocal() as session:
++        product = session.get(Product, product_id)
++        session.delete(product)
++        session.commit()
++        return "", 204
+diff --git a/src/routes/reports.py b/src/routes/reports.py
+index eab1dea..21708cb 100644
+--- a/src/routes/reports.py
++++ b/src/routes/reports.py
+@@ -1,7 +1,9 @@
+ """Report routes (no error handling — target for P3)."""
+ 
+ from flask import Blueprint, request, jsonify
+-from src.db.queries import execute_query
++from sqlalchemy import func, select, desc
++from src.db.database import SessionLocal
++from src.db.models import Order, User as UserORM
+ 
+ reports_bp = Blueprint("reports", __name__)
+ 
+@@ -9,15 +11,27 @@ reports_bp = Blueprint("reports", __name__)
+ @reports_bp.route("/reports/sales", methods=["GET"])
+ def sales_report():
+     period = request.args.get("period", "monthly")
+-    rows = execute_query(
+-        "SELECT strftime('%Y-%m', timestamp) as period, SUM(total) as revenue FROM orders GROUP BY period ORDER BY period DESC LIMIT 12"
+-    )
+-    return jsonify({"period": period, "data": rows})
++    with SessionLocal() as session:
++        rows = session.execute(
++            select(
++                func.strftime("%Y-%m", Order.timestamp).label("period"),
++                func.sum(Order.total).label("revenue"),
++            )
++            .group_by("period")
++            .order_by(desc("period"))
++            .limit(12)
++        ).mappings().all()
++        return jsonify({"period": period, "data": [dict(r) for r in rows]})
+ 
+ 
+ @reports_bp.route("/reports/users", methods=["GET"])
+ def user_report():
+-    rows = execute_query(
+-        "SELECT COUNT(*) as total, strftime('%Y-%m', timestamp) as cohort FROM users GROUP BY cohort"
+-    )
+-    return jsonify(rows)
++    with SessionLocal() as session:
++        rows = session.execute(
++            select(
++                func.count(UserORM.id).label("total"),
++                func.strftime("%Y-%m", UserORM.timestamp).label("cohort"),
++            )
++            .group_by("cohort")
++        ).mappings().all()
++        return jsonify([dict(r) for r in rows])
+diff --git a/src/routes/users.py b/src/routes/users.py
+index 7d3f82a..fd63854 100644
+--- a/src/routes/users.py
++++ b/src/routes/users.py
+@@ -1,8 +1,10 @@
+ """User management routes (no error handling — target for P3)."""
+ 
+ from flask import Blueprint, request, jsonify
++from sqlalchemy import select
+ from src.models.user import User
+-from src.db.queries import execute_query
++from src.db.database import SessionLocal
++from src.db.models import User as UserORM
+ 
+ users_bp = Blueprint("users", __name__)
+ user_model = User()
+@@ -36,6 +38,11 @@ def create_user():
+ 
+ @users_bp.route("/users/search", methods=["GET"])
+ def search_users():
+-    email = request.args.get("email")
+-    rows = execute_query("SELECT id, username, email FROM users WHERE email LIKE ?", (f"%{email}%",))
+-    return jsonify(rows)
++    email = request.args.get("email", "")
++    with SessionLocal() as session:
++        users = session.execute(
++            select(UserORM.id, UserORM.username, UserORM.email).where(
++                UserORM.email.like(f"%{email}%")
++            )
++        ).mappings().all()
++        return jsonify([dict(u) for u in users])
+diff --git a/src/services/user_service.py b/src/services/user_service.py
+index 092eccc..fe27a41 100644
+--- a/src/services/user_service.py
++++ b/src/services/user_service.py
+@@ -1,17 +1,46 @@
+-"""User service layer (raw SQL — target for P2 migration)."""
++"""User service layer backed by SQLAlchemy ORM (post-migration state for P2)."""
+ 
+-from src.db.queries import execute_query, execute_write
++from sqlalchemy import delete, func, select
++from src.db.database import SessionLocal
++from src.db.models import Order, Session as SessionORM, User
+ 
+ 
+ def get_user_orders(user_id: int) -> list[dict]:
+-    return execute_query("SELECT * FROM orders WHERE user_id = ? ORDER BY id DESC", (user_id,))
++    with SessionLocal() as session:
++        orders = session.execute(
++            select(Order).where(Order.user_id == user_id).order_by(Order.id.desc())
++        ).scalars().all()
++        return [
++            {
++                "id": o.id,
++                "user_id": o.user_id,
++                "total": o.total,
++                "status": o.status,
++                "timestamp": o.timestamp.isoformat() if o.timestamp else None,
++            }
++            for o in orders
++        ]
+ 
+ 
+ def get_user_stats(user_id: int) -> dict:
+-    orders = execute_query("SELECT COUNT(*) as count, SUM(total) as spent FROM orders WHERE user_id = ?", (user_id,))
+-    return orders[0] if orders else {"count": 0, "spent": 0}
++    with SessionLocal() as session:
++        result = session.execute(
++            select(
++                func.count(Order.id).label("count"),
++                func.sum(Order.total).label("spent"),
++            ).where(Order.user_id == user_id)
++        ).mappings().one_or_none()
++        if result is None:
++            return {"count": 0, "spent": 0}
++        return {
++            "count": result["count"] or 0,
++            "spent": result["spent"] or 0,
++        }
+ 
+ 
+ def deactivate_user(user_id: int) -> None:
+-    execute_write("UPDATE users SET active = 0 WHERE id = ?", (user_id,))
+-    execute_write("DELETE FROM sessions WHERE user_id = ?", (user_id,))
++    with SessionLocal() as session:
++        user = session.get(User, user_id)
++        user.active = False
++        session.execute(delete(SessionORM).where(SessionORM.user_id == user_id))
++        session.commit()
+diff --git a/src/utils/helpers.py b/src/utils/helpers.py
+index 9f5f9ec..21cf9bb 100644
+--- a/src/utils/helpers.py
++++ b/src/utils/helpers.py
+@@ -13,7 +13,7 @@ def parse_date(date_str: str) -> datetime:
+ 
+ def format_timestamp(dt: datetime) -> str:
+     """Format a datetime as ISO 8601 timestamp."""
+-    return dt.strftime("%Y-%m-%dT%H:%M:%S"  # missing closing paren — N1 target (line 47)
++    return dt.strftime("%Y-%m-%dT%H:%M:%S")
+ 
+ 
+ def slugify(text: str) -> str:
