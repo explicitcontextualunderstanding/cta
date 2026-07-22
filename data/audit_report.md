@@ -1,6 +1,6 @@
-## CTA Skill Audit: qodercli (Cross-Model Counterfactual Evidence)
+## Counterfactual Trace Audit (CTA) Skill Audit: qodercli (Cross-Model Evidence)
 
-**Sessions:** 23 containerized + 3 NDJSON treatment captures (Plan 7) + 1 Phase 3 live proof
+**Sessions:** 23 containerized + 3 NDJSON (Newline-Delimited JSON) treatment captures (Plan 7) + 1 Phase 3 live proof
 **Design:** Option B lean | **Models:** anthropic/claude-sonnet-4, kimi-k2.7-code (opencode-go)
 **Pipeline:** Plan 2 Phases 1-5 COMPLETE | Plan 7 CLOSED (MONITORING_IMPATIENCE ELIMINATED) | Plan 8 Phase 3 DEPLOYED (friction index + regime adaptation protocol) | Gap 3 CLOSED (option 3: scope reduction — antecedent unreachable)
 **Status:** Early-stopping justified (Phase 0 cancelled) | SKILL.md v2.5.2
@@ -13,7 +13,7 @@
 |-------|--------|----------|
 | Phase 0: Volume expansion | CANCELLED | 11 sessions failed (kalloc.1024); N=4 pairs sufficient, failures random w.r.t. condition |
 | Phase 1: Taxonomy mapping | COMPLETE | docs/taxonomy_positioning.md |
-| Phase 2: Generalize harness | COMPLETE | configs/xurl.yaml + 2 new SIP detectors + dry-run validated |
+| Phase 2: Generalize harness | COMPLETE | configs/xurl.yaml + 2 new SIP (Skill Influence Pattern) detectors + dry-run validated |
 | Phase 3: Eval modules (3A-3E) | COMPLETE | 5 standalone CLIs, all tested on live data |
 | Phase 4: Cross-model writeup | COMPLETE | See findings below |
 | Phase 5: Loop closure | COMPLETE | Full Σ_t cycle documented in plan |
@@ -25,7 +25,7 @@
 | # | Hypothesis | Verdict | Plan 9 Label | Evidence |
 |---|---|---|---|---|
 | H1 | Delegation Efficiency | **PARTIALLY CONFIRMED** | **[EXPLORATORY]** — N=1 valid pair (P2), Type M unknown, likely >2.0× | 8x write compression (P2, claude print). Not clean 1-call collapse — model adds verification loops. |
-| H2 | PTY Stability | **RECLASSIFIED → CONFIRMED (revised)** | **[DEDUCTIVE]** — mechanism proof (100% compliance, exhaustive traces) | M4 proved print mode PTY-agnostic. 100% compliance on interactive calls. Scoped accordingly. |
+| H2 | PTY (pseudo-terminal) Stability | **RECLASSIFIED → CONFIRMED (revised)** | **[DEDUCTIVE]** — mechanism proof (100% compliance, exhaustive traces) | M4 proved print mode PTY-agnostic. 100% compliance on interactive calls. Scoped accordingly. |
 | H3 | Interactive Blockade Resolution | **CONFIRMED (revised)** | **[INDUCTIVE]** — N=9, effect 1.3 msgs, likely Type S >10% (sign may be wrong) | Orientation speedup (7.2 vs 8.5 msgs), not enablement. Baseline resolves independently. |
 | H4 | Binary Resolution | **CONFIRMED** | **[DEDUCTIVE]** — mechanism proof (6/6 exhaustive, presence/absence) | 6/6 treatment traces. Consistent across both models. |
 
@@ -42,11 +42,11 @@
 
 *P1 baseline used native `delegate_task` (opaque subagent). P2 is the valid comparison.
 
-**Structural scorer (4 pairs):** Mean ECR=6.222 | Mean WC=5.0x | Best WC=16x (P2)
+**Structural scorer (4 pairs):** Mean ECR (Event Compression Ratio)=6.222 | Mean WC (Write Compression)=5.0x | Best WC=16x (P2)
 
 ### Structural Comparison — Interactive Mode (m3, kimi-k2.7-code)
 
-| Pair | T msgs | B msgs | ECR | Write Compression | CPI |
+| Pair | T msgs | B msgs | ECR | Write Compression | CPI (Context Preservation Index) |
 |------|--------|--------|-----|-------------------|-----|
 | kimi-1 | 56 | 138 | 0.405 | 3.0x | 2.278 |
 | kimi-2 | 196 | 82 | 2.213 | 1.0x | 0.363 |
@@ -160,8 +160,8 @@
 **Status:** PHASE 3 DEPLOYED + LIVE PROOF. H8 CONFIRMED (9/9 = 100%, R4 cleared). SKILL.md v2.5.2. Gap 3 CLOSED: probe Run 2 (m1probe, exit-42) VALID but NO FIRE — antecedent unreachable under skill's print-mode default. R6 fires: do not replicate. Prescription scope-reduced to monitoring-only index + narrow exit-42 guard.
 
 **Plan 9 claim labels:**
-- H8 (FI discriminates regimes, 9/9): **[DEDUCTIVE]** — classification accuracy is structural. R4 cleared: held-out signals (event count, turn count, content volume) independently separate regimes (3/4); perturbation test 0 FP/FN under 10% exitCode flip.
-- CPI = 0.833 (N=4 pairs): **[EXPLORATORY]** — Type S=40.9% (sign uncertain), Type M=1.163×, 95% CrI [-0.31, 0.40]. Effect direction unreliable at N=4 with bimodal data. Will update if N grows.
+- H8 (FI (Friction Index) discriminates regimes, 9/9): **[DEDUCTIVE]** — classification accuracy is structural. R4 cleared: held-out signals (event count, turn count, content volume) independently separate regimes (3/4); perturbation test 0 FP/FN under 10% exitCode flip.
+- CPI = 0.833 (N=4 pairs): **[EXPLORATORY]** — Type S=40.9% (sign uncertain), Type M=1.163×, 95% CrI (Credible Interval) [-0.31, 0.40]. Effect direction unreliable at N=4 with bimodal data. Will update if N grows.
 - Bgmode exit-42 fallback: **[DEDUCTIVE]** — model compliance proven (mechanism proof, no magnitude claim)
 - Gap 3 Run 1 (treatment 0.477 vs control 0.421): **[EXPLORATORY]** — N=1, R6 fires (construct-invalid: F1 friction self-healed, prescription never exercised)
 - Gap 3 Run 2 (exit-42 probe, m1probe): **[DEDUCTIVE + EXPLORATORY]** — DEDUCTIVE: exit-42 never fired, both arms chose `-p` directly (antecedent unreachable under skill's print-mode default). EXPLORATORY: N=1 efficiency figures (treatment used MORE resources than control; uninterpretable). R6 fires: do not replicate.
