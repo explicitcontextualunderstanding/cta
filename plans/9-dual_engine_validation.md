@@ -1,7 +1,7 @@
 # Plan 9 — Dual-Engine Validation Framework
 
 Status: **DRAFT** — methodology plan (not a feature plan; judged by adoption, not deployment)
-Version: 0.4.0 (2026-07-22)
+Version: 0.5.0 (2026-07-22)
 Parent:
   - 8: plans/8-runtime_friction_detection.md (§4.0 Gap 3 pre-registration is the first consumer)
   - 2: plans/2-cta_verification_layer_plan.md (CPI claims need Type S/M backfill)
@@ -452,14 +452,44 @@ Apply this framework retroactively to existing claims. Priority order:
 |----------|-------|------|---------------|--------|
 | 1 | Gap 3 CPI comparison | Plan 8 §4.0 | Run 1 EXPLORATORY (R6: F1 self-healed). Probe run 2 (m1probe image, exit-42 as only friction): VALID, NO FIRE — antecedent unreachable (skill's mode-selection table defaults to `-p`; neither arm attempted `-i`). | **CLOSED via option 3 (scope reduction).** R6 fires: do not replicate. Prescription arm untestable under current skill design. Instrument arm (H8) stands independently. SKILL.md v2.5.2 retains friction index as signal, removes unproven kill→retry protocol. |
 | 2 | H8 9/9 agreement | Plan 8 Phase 2 | 100% agreement. §7 co-adaptation check RUN. | **DONE.** Held-out signal test: 3/4 independent signals separate regimes (event count 2.68x, turns 2.42x, content 0.09x). Perturbation test: 0 FP, 0 FN under 10% exitCode flip. R4 CLEARED — label upgraded to [DEDUCTIVE] (no flag). |
-| 3 | Bimodal CPI (0.912 / 1.594) | Plan 2 Phase 6 | N=2 per regime, point estimates | Label as [EXPLORATORY]. Cannot compute Type S/M at N=2. |
-| 4 | Write compression 8x | Plan 2 / audit_report | N=1 valid pair (P2) | Label as [EXPLORATORY]. Type M almost certainly >2.0x at N=1. |
+| 3 | Bimodal CPI (0.912 / 1.594) | Plan 2 Phase 6 | N=2 per regime, point estimates | **CLOSED — regime question dead.** Prescription removed (v2.5.2); friction-regime CPI is unanswerable without a skill that acts differently per regime. Label remains [EXPLORATORY]. |
+| 4 | Write compression 8x | Plan 2 / audit_report | N=1 valid pair (P2) | **DATA COLLECTION IN PROGRESS** (§8.1). Target: 3-5 new paired captures on write-heavy tasks → N=4-6. Promotes to [INDUCTIVE] with CI if direction holds. |
+| 4b | CPI skill-effect (β1) | Plans 1+2 | N=4 pairs, Type S=40.9% | **DATA COLLECTION IN PROGRESS** (§8.1). Same sessions as WC. Target: N=7-9 total. Will confirm sign or establish null. |
 | 5 | Skill-effect (orientation speedup 7.2 vs 8.5 msgs) | Plan 1 / audit_report | N=9, but effect is 1.3 msgs | Fit hierarchical model. Likely Type S > 10% (effect near zero). |
 | 6 | MONITORING_IMPATIENCE elimination (0% vs 52%) | Plan 7 | N=3 treatment, N=1 control | Label as [DEDUCTIVE] (mechanism elimination, not magnitude). |
 
 **Rule:** Backfill does NOT invalidate existing claims. It adds honest uncertainty
 labels. "8x write compression [EXPLORATORY, N=1, Type M unknown]" is still
 evidence — it's just honestly labeled evidence.
+
+### §8.1 NEW DATA COLLECTION (N=3-5 paired captures)
+
+**Goal:** Grow N for CPI and write compression from [EXPLORATORY] to [INDUCTIVE]
+with computable CI and Type S/M.
+
+**Design:**
+- **Arms:** Treatment (SKILL.md v2.5.2) vs Baseline (no skill / v2.4.0)
+- **Tasks:** Multi-file write tasks (migration, refactor) — same task both arms
+- **Image:** `registry.rossollc.com/hermes:latest`
+- **Model:** claude-sonnet-4 (primary); kimi-k2.7-code if cross-model desired
+- **Pairs:** 3-5 new (→ total N=7-9 for CPI, N=4-6 for WC)
+- **Harness:** `scripts/capture_harness.py` or `scripts/m3_interactive_harness.py`
+- **Metrics extracted:** CPI (token-delegation ratio), write compression (baseline
+  writes / treatment writes), message count, tool call count
+
+**Pre-registration (R5):** This collection protocol is committed BEFORE data
+collection begins. Acceptance criteria:
+- CPI: report β1 with 95% CrI from §3 minimal model (N=3-4) or full model (N≥5).
+  Type S and Type M mandatory. If Type S > 25% at N≥7, CPI is confirmed null.
+- WC: report median + range across pairs. If direction consistent (all pairs show
+  compression > 1.0), promote to [INDUCTIVE]. If mixed signs, remains [EXPLORATORY].
+
+**Abandonment check (§10):** After N=7, if CrI width > 2.0 CPI units OR Type S >
+25%, the honest conclusion is "CPI effect is zero or too small to detect at this
+scale." Report as confirmed null. Do NOT collect more data to chase a null.
+
+**What this does NOT test:** Friction-regime response (prescription removed,
+antecedent unreachable). These pairs measure delegation efficiency only (H1).
 
 ---
 
@@ -485,7 +515,7 @@ It is judged by **adoption**:
 |---|-----------|----------|
 | M1 | Plan 8 §4.0 adopts the framework (reconciliation rules, N≥3, Type S/M) | §4.0 present and locked before unblinding |
 | M2 | ≥3 existing claims reclassified as DEDUCTIVE/INDUCTIVE/EXPLORATORY | §9 table populated and reflected in audit_report.md |
-| M3 | ≥1 inductive claim reports Type S/M with CI | **DONE.** `scripts/type_sm_score.py` on N=4 CPI: Type S=40.9%, Type M=1.163×, 95% CrI [-0.31, 0.40]. Verdict: [EXPLORATORY] — sign uncertain. Will update if N grows. |
+| M3 | ≥1 inductive claim reports Type S/M with CI | **DONE (initial).** `scripts/type_sm_score.py` on N=4 CPI: Type S=40.9%, Type M=1.163×, 95% CrI [-0.31, 0.40]. Verdict: [EXPLORATORY] — sign uncertain. **Data collection in progress (§8.1):** 3-5 new pairs will update this to N=7-9. If Type S > 25% at N≥7, CPI confirmed null. |
 | M4 | ≥1 co-adaptation check run (R4 follow-up on H8) | **DONE.** `scripts/r4_co_adaptation_check.py` — held-out 3/4, perturbation 0 FP/FN. R4 cleared. |
 | M5 | Independent-scorer pattern used for ≥1 metric | **DONE.** `scripts/independent_scorer.py` — blind scorer classified 7/7 sessions, 100% agreement with FI. Two-engine framing validated. |
 | M6 | audit_report.md and pr_writeup.md use claim labels | **DONE.** All claims tagged. M2 satisfied (8+ labels in audit_report.md). |
@@ -721,6 +751,7 @@ label. No change ships without evidence. No evidence is over-claimed.
 
 | Version | Date | Change |
 |---------|------|--------|
+| 0.5.0 | 2026-07-22 | §8.1 added — new data collection plan (3-5 paired captures for CPI/WC). §8 rows 3-4b updated: bimodal CPI CLOSED (regime question dead), WC and CPI skill-effect marked DATA COLLECTION IN PROGRESS. M3 updated: initial result stands, will update at N=7-9. Pre-registration (R5) committed before collection begins. Abandonment criteria pre-committed. |
 | 0.4.0 | 2026-07-22 | Structural realignment per sibling reflection: (1) §0 reframed — construct validity is CTA's primary failure mode, not statistical power. (2) §1 reframed as "aspirational discipline" — CTA has one engine looking at data two ways, not a literal dual-engine system. (3) §1.1 allows mixed labels [DEDUCTIVE + EXPLORATORY]. (4) R4 fixed — objection is shared input, not perfect agreement per se. (5) R5 honestly stated as honor-system (disciplines attention, not tamper-proof). (6) M5 (independent-scorer) promoted from stretch to required. (7) §14 added — framework tiering (MVP always-apply vs Cathedral aspirational). (8) §15 added — SKILL.md evaluation methodology (lessons from Gap 3 Runs 1-2). Probe run 2 result: native adaptation, SKILL.md v2.5.2 scope-reduced. |
 | 0.3.0 | 2026-07-22 | Added §1.3 (measurement integrity / abduction stage). Fixed §3 Stan model (declared K, added N=3-4 minimal model). Reframed §4 as circuit breakers (sequential mandatory checkpoint). Added §4.1 (R5 pre-registration proof mechanism). Added §4.2 (R6 concrete example — Gap 3 Run 1). Refined §10 with quantitative "uninformative posterior" thresholds. Added §13 (limitations and named gaps). |
 | 0.2.0 | 2026-07-22 | Added §1.2 (construct validity — "extinguisher had no fire" lesson from Gap 3 Run 1). Added R6 (construct-validity reconciliation rule). Updated §8 backfill: Gap 3 Run 1 is construct-invalid (R6 fires), N≥3 blocked pending probe with Hermes-visible friction. Probe-before-replication principle established. |
