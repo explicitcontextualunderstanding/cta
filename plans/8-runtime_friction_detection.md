@@ -1,7 +1,7 @@
 # Plan 8 — Runtime Friction Detection
 
 Status: **PHASE 0 COMPLETE** — K2 resolved (K2a), proceeding to Phase 1
-Version: 0.2.1 (2026-07-21)
+Version: 0.2.2 (2026-07-21)
 Parent:
   - 7: plans/7-subagent_progress_observation.md (NDJSON wire protocol substrate)
   - 2: plans/2-cta_verification_layer_plan.md (Phase 6 bimodal CPI finding)
@@ -461,6 +461,106 @@ friction session can be captured, construct a realistic NDJSON stream from
 G3 run 1's outer conversation (tool calls, exit codes, timing are visible in
 state.db). This is a proxy, not a true capture — document as limitation.
 
+#### Friction-inducing environment configurations
+
+Three container configurations designed to produce *unsolvable* environmental
+friction. The agent cannot escape these — friction is guaranteed by removing
+the tools needed to fix the problem.
+
+**Signal budget (modeled vs clean baseline):**
+
+| Config | error_rate | ctx_velocity_norm | retry_density | friction_index | Δ from clean |
+|--------|-----------|-------------------|---------------|----------------|--------------|
+| Clean baseline (P7) | 0.00 | 0.03 | 0.22 | 0.086 | — |
+| F1: No pip + missing deps | 0.75 | 0.80 | 0.50 | 0.683 | +0.597 |
+| F2: Read-only FS + broken import | 0.60 | 0.50 | 0.45 | 0.517 | +0.431 |
+| F3: Network isolation + no pip | 0.85 | 0.90 | 0.65 | 0.800 | +0.714 |
+
+All three exceed the 0.40 threshold and the 0.25 separation gate.
+
+**F1: No pip + missing dependencies (recommended first attempt)**
+
+```dockerfile
+FROM python:3.11-slim
+
+# Remove pip entirely — agent cannot install anything
+RUN rm -f /usr/local/bin/pip /usr/local/bin/pip3 \
+    && rm -rf /usr/local/lib/python3.11/ensurepip
+
+# Remove flask and pyjwt if present
+RUN python3 -c "import flask" 2>/dev/null && pip uninstall -y flask || true
+RUN python3 -c "import jwt" 2>/dev/null && pip uninstall -y pyjwt || true
+
+# Workspace with a task that requires flask + pyjwt
+WORKDIR /workspace
+COPY src/ /workspace/src/
+COPY tests/ /workspace/tests/
+COPY requirements.txt /workspace/
+
+# Anti-escape: remove apt/dpkg so system packages can't be installed
+RUN rm -f /usr/bin/apt-get /usr/bin/apt /usr/bin/dpkg
+
+# Anti-escape: remove curl/wget so pip can't be re-downloaded
+RUN rm -f /usr/bin/curl /usr/bin/wget
+
+RUN git init /workspace && cd /workspace && git add -A && git commit -m "baseline"
+```
+
+Expected failure cascade:
+1. Agent reads task → attempts `import flask` → `ModuleNotFoundError`
+2. Agent tries `pip install flask` → `command not found`
+3. Agent tries `python -m pip install flask` → `No module named pip`
+4. Agent tries `python -m ensurepip` → removed
+5. Agent retries variations (pip3, apt-get) → all fail
+6. Each retry is a distinct tool call with non-zero exit → error_rate climbs
+7. Context fills with error output → ctx_velocity climbs
+8. Repeated Bash calls with similar commands → retry_density climbs
+
+**F3: Network isolation + missing system lib (fallback if F1 insufficient)**
+
+```dockerfile
+FROM python:3.11-slim
+
+# Remove pip
+RUN rm -f /usr/local/bin/pip /usr/local/bin/pip3 \
+    && rm -rf /usr/local/lib/python3.11/ensurepip
+
+# Remove flask/pyjwt from site-packages
+RUN rm -rf /usr/local/lib/python3.11/site-packages/flask* \
+    && rm -rf /usr/local/lib/python3.11/site-packages/jwt*
+
+# Replace pip with error script (in case agent finds alternate path)
+RUN printf '#!/bin/sh\necho "pip: command not found"\nexit 127\n' > /usr/local/bin/pip \
+    && chmod +x /usr/local/bin/pip
+
+# Remove package managers and download tools
+RUN rm -f /usr/bin/apt-get /usr/bin/apt /usr/bin/dpkg \
+    && rm -f /usr/bin/curl /usr/bin/wget
+
+WORKDIR /workspace
+COPY src/ /workspace/src/
+COPY tests/ /workspace/tests/
+RUN git init /workspace && cd /workspace && git add -A && git commit -m "baseline"
+```
+
+Run with: `docker run --network=none ...`
+
+Network isolation ensures even creative workarounds (downloading get-pip.py,
+using python's urllib) cannot succeed. This is the highest-reliability config.
+
+**Anti-escape measures (applied to all configs):**
+- Remove `pip`, `pip3`, `ensurepip` — no package installation
+- Remove `apt-get`, `dpkg` — no system packages
+- Remove `curl`, `wget` — no downloading
+- F3 adds `--network=none` — no network access at all
+- Task requires flask+pyjwt — cannot be implemented without them
+- Tests import flask — cannot pass without the package
+
+**Recommendation:** Start with F1. If the agent gives up early (< 10 tool
+calls, friction_index < 0.40), escalate to F3. F2 is omitted from initial
+testing because read-only FS may cause the agent to abandon the task entirely
+rather than retry, producing low event counts.
+
 ### Phase 2: Prospective validation (requires Hermes runtime)
 
 Run 6+ sessions through the existing harness with friction index logging enabled.
@@ -620,6 +720,7 @@ If Plan 8 is abandoned (E1 fails or H8 rejected):
 
 | Version | Date | Change |
 |---------|------|--------|
+| 0.2.2 | 2026-07-21 | Phase 1b friction environments: added F1 (no pip + missing deps, fi=0.683), F2 (read-only FS, fi=0.517), F3 (network isolation, fi=0.800) with Dockerfiles, signal budget table, anti-escape measures, expected failure cascade, and escalation recommendation (F1→F3). |
 | 0.2.1 | 2026-07-21 | Consistency fixes + implementation: (1) BUG FIX — `tool_use_result` accessed from top-level user event, not inside tool_result block. (2) Implementation aligned with §3.2 composite formula (was using per-signal thresholds). (3) Signature extraction broadened to cover Agent/WebFetch/generic tools. (4) §3.2 documents 0.02 normalization constant and S4 display-only role. (5) Implementation deployed to `data/ndjson_overlay/process_registry.py`. (6) Phase 1a validated: P7-2/P7-3 score 0.086 (clean), synthetic friction scores 0.833 (HIGH). E3/E4 constraints verified. |
 | 0.2 | 2026-07-21 | Phase 0 COMPLETE. K2a confirmed (context_usage_ratio on every complete assistant event). K1 verified (tool_result present, exitCode for Bash). K4 verified (varied inputs ≠ retries, signature approach correct). A3 resolved. New findings: A6 (G3 run 1 inner NDJSON not preserved — Phase 1 retrospective blocked), A7 (naive name-only retry matching causes false positives). Clean calibration: P7-3=0.093. Execution order updated: Phase 1 split into 1a (clean sanity, immediate) + 1b (friction capture, requires Hermes runtime). |
 | 0.1 | 2026-07-21 | Initial draft. 3-lens review complete. K2 blocking. |
