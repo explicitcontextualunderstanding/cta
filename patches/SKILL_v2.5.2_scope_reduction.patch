@@ -1,0 +1,106 @@
+# SKILL.md v2.5.2 — Scope-Reduction Patch (Gap 3 option 3)
+#
+# SCOPE: Probe-contingent friction-block restructuring. Apply AFTER the
+#        v2.5.1 evidence-labels patch (both target the v2.5.1 base; this one
+#        bumps the frontmatter to 2.5.2).
+#
+# TRIGGER: Plan 8 §4.1 exit-42 probe (Run 2) resolved → option 3 (scope reduction).
+#
+# Evidence (Plan 9 labels):
+#   - Run 1 (F1 friction) [DEDUCTIVE]: inner qodercli self-healed missing deps at
+#     the code layer (stdlib jwt_compat.py); nothing surfaced to Hermes. Environment
+#     friction does not reach the detection layer.
+#   - Run 2 (exit-42 probe) [DEDUCTIVE + EXPLORATORY]: both arms chose `-p` directly
+#     per the skill's own print-mode default; `-i` was never attempted, so exit-42
+#     never fired. The prescription's antecedent is UNREACHABLE under the shipped
+#     skill's design. (N=1 efficiency figures are EXPLORATORY context only.)
+#
+# MECHANISM LABEL — IMPORTANT (discrepancy with Plan 9 §15.3):
+#   Run 2 is the THIRD no-fire mechanism — "antecedent unreachable under the skill's
+#   own design" — NOT sub-case (b) "native adaptation." In native adaptation the
+#   control attempts `-i` then abandons it; in Run 2 neither arm attempted `-i` at
+#   all. Plan 9 §15.3 currently labels v2.5.2 "native adaptation"; that should be
+#   corrected to "antecedent-unreachable." The substantive action (remove the 5-step
+#   protocol, keep instrument + exit-42 guard) is the same under both labels, but the
+#   claim differs: native adaptation → "prescription is dead weight"; antecedent-
+#   unreachable → "prescription is a redundant edge-case guard the print-mode default
+#   already preempts." This patch implements the latter framing.
+#
+# Changes:
+#   1. Frontmatter version 2.5.1 → 2.5.2.
+#   2. REMOVE the 5-step kill → diagnose → fix-environment → retry-`-p` protocol.
+#      Rationale: it has no valid domain. Environment friction self-heals below the
+#      detection layer (Run 1); and where the environment genuinely cannot be fixed
+#      from inside the session, "fix the environment then retry in the same container"
+#      is structurally impossible (Plan 8 §4.1.3). Shipping it would be unproven guidance.
+#   3. KEEP the friction index, reframed as a MONITORING instrument only (observability,
+#      not a call to action). Separates the proven instrument (H8 detection) from the
+#      removed prescription. Removes the "missing packages, broken imports, permission
+#      errors" trigger examples (Run 1: these don't surface).
+#   4. KEEP exit-42 → `-p` as a NARROW edge-case guard (proven: bgmode test, model
+#      complies [DEDUCTIVE]). Notes that the print-mode default makes it an edge case.
+#
+# Status: The sibling committed the v2.5.2 change as CTA-repo commit c5f9538 (verified:
+#   `git show c5f9538` in /Users/kieranlal/workspace/CTA). HOWEVER c5f9538 modified the
+#   SKILL.md INSIDE a capture directory:
+#     data/m3_captures/P1-interactive-P8-phase3-bgmode-treatment-1/hermes_home/skills/
+#       autonomous-ai-agents/qodercli/SKILL.md
+#   This is an EVIDENCE-INTEGRITY CONCERN:
+#     (a) Both this patch and SKILL_v2.5.1_evidence_labels.patch state captures are
+#         immutable ("Do NOT apply to: capture directories"). c5f9538 did exactly that.
+#     (b) That path is the gap3 harness's SKILL_TREATMENT source. The probe (Run 2) ran
+#         with v2.5.1 (5-step protocol present); c5f9538 overwrote it to v2.5.2, so the
+#         capture no longer matches the skill text actually tested. (Run 2's CONCLUSION —
+#         no fire, both arms chose -p — is robust to this, since the print-mode default and
+#         exit-42 note are in both versions; but the evidence record is corrupted.)
+#     (c) The fork's canonical SKILL.md (/Users/kieranlal/workspace/hermes-agent) is still
+#         v2.5.1 (HEAD 00591faa6) — so v2.5.2 currently lives only in a capture dir, backwards.
+#   RECOMMENDED FIX: restore the capture-dir SKILL.md to the v2.5.1 the probe ran with
+#   (git checkout the pre-c5f9538 content), and land v2.5.2 in the fork's canonical skill
+#   path instead. This patch file documents the agreed v2.5.2 change + rationale for that
+#   fork edit; it is a reference diff, not guaranteed byte-identical to c5f9538.
+# Applies to: the canonical fork SKILL.md (hermes-agent/skills/autonomous-ai-agents/qodercli/SKILL.md).
+# Do NOT apply to: capture directories (evidence integrity — captures are immutable).
+
+--- a/skills/autonomous-ai-agents/qodercli/SKILL.md
++++ b/skills/autonomous-ai-agents/qodercli/SKILL.md
+@@ -1,7 +1,7 @@
+ ---
+ name: qodercli
+ description: "Delegate coding to Qoder CLI (features, PRs, refactors)."
+-version: 2.5.1
++version: 2.5.2
+ author: explicitcontextualunderstanding
+ license: MIT
+ platforms: [linux, macos, windows]
+@@ -119,24 +119,13 @@
+ **NDJSON progress (automatic):** Background qodercli tasks are automatically spawned in pipe mode with `--output-format stream-json`. `process(poll)` returns structured progress like `Tools used: Read (src/auth.py), Edit (src/routes.ts) | Thinking... (2400 chars)` instead of spinner glyphs. You will see exactly which tool qodercli is using — no patience guessing needed.
+ 
+-**Environment friction detection:** Poll output includes a runtime friction index computed from the NDJSON stream (error rate, context velocity, retry density). When the background session hits environment problems (missing packages, broken imports, permission errors), you will see:
+-
+-- `errors: N/M` — mild friction (some tool calls failing). Monitor — the session may self-recover. No action needed unless it escalates to heavy friction.
+-- `⚠ Friction: HIGH-ERROR (N/M) | RETRY Bash x4` — heavy friction (session is stuck in fix→fail loops). Act immediately.
+-
+-**When you see `⚠ Friction` — this is a regime response, not a task decision:**
+-
+-The friction signal means the *environment* is broken, not the task or the skill. Your response should treat the regime signal: change how you interact with qodercli, not what you ask it to do.
+-
+-1. The session is burning context on remediation loops — it will likely timeout or produce incomplete work.
+-2. Kill it: `process(action="kill", session_id="<id>")`
+-3. Diagnose: check `process(action="log")` output for the specific errors (ModuleNotFoundError, Permission denied, etc.)
+-4. Fix the environment (install missing deps, fix permissions) BEFORE retrying.
+-5. **Retry with `-p` (print mode).** Do NOT retry with `-i` or `background=true` — that re-enters the same monitoring loop that friction broke. Print mode is one-shot: no polling, no NDJSON stream, no friction accumulation.
+-
+-```
+-terminal(command="qodercli -p '<same task, tighter scope>' --permission-mode bypass_permissions", workdir="~/project", pty=true, timeout=300)
+-```
+-
+-**Exit-42 pipe conflict:** If qodercli exits with code 42, it means `-i` (interactive) was rejected because stdin is piped. This is expected in background/pipe mode. Fall back to `-p` immediately — do NOT retry with `-i` in a different configuration. The task and prompt are fine; only the mode flag needs changing.
++**Runtime friction index (monitoring only):** Poll output includes a runtime friction index computed from the NDJSON stream (error rate, context velocity, retry density) — a monitoring signal that discriminates healthy from stressed sessions. It is observability, not a call to action: there is no prescribed kill-and-retry response to it.
++
++- `errors: N/M` — some tool calls failing. Usually self-recovering: a capable qodercli session resolves its own missing-import and dependency problems at the code level. Monitor only.
++- `⚠ Friction: HIGH-ERROR (N/M) | RETRY Bash x4` — heavy retry load; the session is burning context. Note it, check `process(action="log")` if it persists, and prefer print mode (`-p`) for any re-run.
++
++**Exit-42 pipe conflict (narrow guard):** If qodercli exits with code 42, `-i` (interactive) was rejected because stdin is piped — expected in background/pipe mode. Fall back to `-p` immediately; do NOT retry `-i` in a different configuration. The task and prompt are fine; only the mode flag needs changing. The print-mode default above means `-i` is rarely attempted, so this is an edge case, not a routine path.
+ 
+ Clean sessions show zero friction overhead — no indicator appears when the environment is healthy.
