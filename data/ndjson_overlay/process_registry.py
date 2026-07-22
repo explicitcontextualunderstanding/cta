@@ -1290,6 +1290,21 @@ class ProcessRegistry:
                 "started_at": session.started_at,
             })
 
+        # Persist raw NDJSON stream for offline friction analysis (Plan 8 §4 Phase 2)
+        if was_running and session.ndjson_mode and session.output_buffer:
+            try:
+                out_dir = "/root/output"
+                os.makedirs(out_dir, exist_ok=True)
+                out_path = os.path.join(out_dir, f"raw_{session.id}.ndjson")
+                with open(out_path, "w") as f:
+                    f.write(session.output_buffer)
+                logging.getLogger(__name__).info(
+                    "Persisted raw NDJSON stream: %s (%d chars)",
+                    out_path, len(session.output_buffer),
+                )
+            except OSError:
+                pass
+
     # ----- Query Methods -----
 
     def is_completion_consumed(self, session_id: str) -> bool:
