@@ -641,6 +641,46 @@ test but more systematic — a regression suite, not a one-off check.
 version. Full mutation testing is a stretch goal for when the metric codebase
 stabilizes.
 
+### G13 — No context-capacity boundary test (CONTEXT_CAPACITY_BOUNDARY)
+
+No existing CTA metric tests whether a task/repo exceeds a model's context window
+capacity. The two context-related concepts in the CTA vocabulary measure different
+things:
+
+- **CPI** (Context Preservation Index): a ratio (baseline_tokens /
+  treatment_primary_tokens). Measures delegation *efficiency* — how much context
+  burden moved elsewhere. Does not test whether the task would overflow a window.
+- **CONTEXT_DISPLACEMENT** (retired v1 SIP, collapsed into module5_predictor.py
+  document_length feature): measured the *skill document* crowding out task content.
+  About the skill's size, not the repo's size.
+
+**What's absent:** Neither concept tests the failure mode that the delegation
+architecture is designed to prevent — a task where a non-delegating agent would
+actually hit context truncation. The `delegate_tool.py` headroom mechanism
+(_SUMMARY_HEADROOM_FRACTION = 0.5, 24k char ceiling) means Hermes degrades
+gracefully (shorter summaries) rather than truncating, making binary pass/fail
+hard to trigger at the orchestrator layer.
+
+**Proposed instrument:** `scripts/gen_context_fixture.py` generates synthetic repos
+where a cross-file protocol rename requires awareness of all modules simultaneously:
+- `--target-agent orchestrator`: 144k tokens (40 files), exceeds 128k Hermes window
+- `--target-agent qodercli`: 246k tokens (60 files), exceeds 131k executor window
+
+The oracle (test_consistency.py) provides binary pass/fail plus a progress diagnostic
+reporting exact file-level completion %. The qodercli preset tests
+state-tracking-under-compaction: can the executor track rename progress across
+context boundaries?
+
+**Claim class:** This would be a new SIP type or hypothesis class —
+CONTEXT_CAPACITY_BOUNDARY — testing whether the skill's architectural property
+(delegation to a selective-ingestion executor) produces a binary pass/fail
+divergence at the capacity threshold. Closer to a construct validity check
+(§1.2 "does the instrument measure what it claims?") than a treatment-effect claim.
+
+**Status:** Instrument built and verified (26a583f). No capture data yet.
+Shelf-life concern: pin to named model+version; regenerate with --files 80+ if
+orchestrator window grows to 256k.
+
 ### Summary of named gaps
 
 | Gap | Severity | Mitigation | Timeline |
@@ -649,6 +689,7 @@ stabilizes.
 | G10 No PPC | Medium (model validation) | Simulate-from-posterior sanity check at first N≥3 | When first N≥3 analysis runs |
 | G11 No automation | Medium (human error) | §4.1 git-commit proof now; `check_claim.py` later | Incremental |
 | G12 No mutation testing | Low (code stability) | §7 perturbation test as minimum | When metrics stabilize |
+| G13 No capacity boundary test | Medium (construct validity) | `gen_context_fixture.py` instrument built; capture pending | Next capture session |
 
 **Operating principle (from compose-pkl):** "These gaps do not invalidate the
 mechanism — but they define the compliance boundary. Claims beyond that boundary

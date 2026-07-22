@@ -42,7 +42,7 @@ This PR includes evidence from a **Counterfactual Trace Audit (CTA)** — 23 con
 
 - **Exclusive Model Access**: Provides Hermes with native access to **Qwen3.8-Max-Preview** (Alibaba Cloud's 2.4T-parameter flagship model), which is available exclusively through Alibaba Cloud and Qoder CLI/QoderWork platforms.
 - **10x Cost Leverage**: Qoder CLI currently offers `Qwen3.8-Max-Preview` at a 90% credit discount, allowing Hermes to delegate heavy multi-file refactoring and subagent loops at a fraction of standard API costs.
-- **Context Window Protection (validated)**: `Qwen3.8-Max-Preview` operates with a default **131k token context window** (scalable to 1M). Offloading multi-file migrations to `qodercli` keeps file-ingestion bloat inside Qoder's execution environment. Context preservation confirmed: CPI Type S=4.4% at N=7 (sign reliable), posterior mean=0.83, 95% CrI [-0.12, 1.79]. Treatment sessions use 3x–4.5x less context than baselines on write-heavy tasks.
+- **Context Offload at the Orchestration Layer (measured)**: Delegation reduces Hermes's own context load by 3x–4.5x on write-heavy tasks (CPI posterior mean=0.83, Type S=4.4%, N=7, 95% CrI [-0.12, 1.79]). `Qwen3.8-Max-Preview` operates with a **131k token context window** (scalable to 1M), so multi-file ingestion happens inside Qoder's execution environment rather than Hermes's. The capacity-protection benefit (avoiding truncation on repos that exceed the orchestrator's window) is an architectural property of this design, not empirically tested at scale — no fixture in the evaluation exceeds either model's context limit.
 
 ---
 
@@ -322,6 +322,39 @@ Raw session data (SQLite databases + stdout) committed in `data/m2_captures/`, `
 6. **MONITORING_IMPATIENCE SIP — ELIMINATED (v2.4.0).** The 40% stuck-polling loop is fixed by NDJSON pipe-spawn integration. N=3 treatment captures confirm 0% spinner-only (vs 52% control). Patience guidance scoped to interactive-foreground only.
 7. **CPI empirically measured (G3, 2026-07-21).** Post-NDJSON CPI is bimodal: run 1=0.912 (friction-heavy, 92 msgs), run 2=1.594 (clean, 53 msgs), mean=1.253 (N=2, run 3 pending). H6-original ("CPI>1.0") reclassified as UNDER-SPECIFIED — binary threshold on bimodal distribution. H6-revised ("NDJSON shifts CPI rightward; clean sessions >1.0, friction sessions ≤1.0") CONFIRMED. Context preservation is environment-dependent, not mechanism-dependent.
 8. **Gap 3: Regime adaptation prescription closed (option 3 — scope reduction).** H8 proves the friction instrument works (classification accuracy: 9/9). The prescription (kill → retry `-p`) was tested in two paired probes: Run 1 (F1 friction) — inner agent self-healed, friction never surfaced to Hermes; Run 2 (exit-42, m1probe) — both arms chose `-p` directly per the skill's print-mode default, exit-42 never fired. The prescription's antecedent is unreachable under the shipped skill's design. R6 fires: do not replicate. SKILL.md v2.5.2 retains the friction index as a monitoring instrument and exit-42 as a narrow edge-case guard; the 5-step kill→retry protocol is removed. The instrument (H8) is the durable deliverable.
+
+---
+
+## Named Gap: Context Capacity Boundary (designed, not yet executed)
+
+The capacity-protection claim in this writeup is architectural, not empirical — no fixture in the
+evaluation exceeds either model's context limit. A purpose-built fixture generator now exists
+(`scripts/gen_context_fixture.py`) with two presets:
+
+- `--target-agent orchestrator`: 40 files, ~3500 tokens each, 144k total — exceeds Hermes's 128k window
+- `--target-agent qodercli`: 60 files, 246k total — exceeds qodercli's 131k default, forces compaction
+
+Both produce strict-DAG Python repos with non-guessable identifiers and a binary oracle
+(`test_consistency.py`) plus a progress-diagnostic mode reporting exact file-level completion %
+(detects state loss after compaction: 35/40 renamed → partial-progress failure).
+
+**Why the orchestrator-layer test won't fire:** `delegate_tool.py` degrades gracefully — summaries
+are capped at 50% of remaining headroom (hard ceiling 24k chars). Hermes won't truncate; it gets
+shorter summaries. Both conditions would likely pass, differing only in summary fidelity.
+
+**The sharper test is at the executor layer:** Can qodercli complete a 60-file rename migration
+(246k tokens) that exceeds its own 131k window? This tests whether its internal context
+management — compaction, selective Read/Grep, state tracking across compaction boundaries —
+actually works at capacity. The oracle's progress-diagnostic mode catches partial completion.
+
+**Evidence tier:** [DEDUCTIVE] mechanism proof (binary pass/fail), not [INDUCTIVE] effect-size.
+Closer to Plan 9 §1.2 construct validity ("does the instrument measure what it claims?") than a
+treatment-effect claim. In CTA vocabulary, this would be a new axis — CONTEXT_CAPACITY_BOUNDARY —
+measuring whether the skill's architectural promise (selective ingestion) holds under stress.
+
+**Status:** Fixture generator complete and verified (both presets). Execution against qodercli
+pending. Open design question: control condition is "qodercli at 131k vs 1M extended context" or
+"qodercli vs single-shot bulk ingestion" — neither is a clean counterfactual in CTA's paired sense.
 
 ---
 
