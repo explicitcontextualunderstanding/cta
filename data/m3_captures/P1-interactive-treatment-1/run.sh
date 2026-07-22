@@ -11,6 +11,17 @@ git checkout -f a41d280f95c69f67380358b305b62345934ecaf3 2>/dev/null
 uv pip install . --python /opt/hermes/.venv/bin/python3 --quiet 2>/dev/null
 hermes --version
 
+echo '=== Configuring model: opencode-go/kimi-k2.7-code ==='
+mkdir -p /home/hermes/.hermes
+cat > /home/hermes/.hermes/config.yaml << 'HERMESCFG'
+model:
+  default: kimi-k2.7-code
+  provider: opencode-go
+  base_url: https://opencode.ai/zen/go/v1
+  api_mode: chat_completions
+HERMESCFG
+chown -R hermes:hermes /home/hermes/.hermes 2>/dev/null || true
+
 echo '=== Installing qodercli 1.1.1 ==='
 npm install -g @qoder-ai/qodercli@1.1.1 2>/dev/null
 qodercli --version
@@ -29,7 +40,7 @@ git add -A
 git commit -q -m "fixture baseline" --allow-empty 2>/dev/null || true
 
 echo '=== Running interactive-mode task ==='
-hermes chat -q 'Use qodercli in interactive mode to implement a REST API authentication endpoint in src/routes/auth.py with JWT token validation middleware in src/middleware/token.py. Launch qodercli with the -i flag using background=true and pty=true, then guide it through the implementation step by step using process commands (poll, write, log). After qodercli finishes, verify the implementation by running the test suite.' -Q --yolo --provider openrouter -m anthropic/claude-sonnet-4 2>&1 | tee /root/output/hermes_stdout.txt
+hermes chat -q 'Use qodercli in interactive mode to implement a REST API authentication endpoint in src/routes/auth.py with JWT token validation middleware in src/middleware/token.py. Launch qodercli with the -i flag using background=true and pty=true, then guide it through the implementation step by step using process commands (poll, write, log). After qodercli finishes, verify the implementation by running the test suite.' -Q --yolo --provider opencode-go -m kimi-k2.7-code 2>&1 | tee /root/output/hermes_stdout.txt
 
 echo '=== Exporting session ==='
 python3 -c "
@@ -43,4 +54,6 @@ echo "completed_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> /root/output/run_metadata.
 echo "task_id=P1-interactive" >> /root/output/run_metadata.txt
 echo "condition=treatment" >> /root/output/run_metadata.txt
 echo "run_num=1" >> /root/output/run_metadata.txt
+echo "model=kimi-k2.7-code" >> /root/output/run_metadata.txt
+echo "provider=opencode-go" >> /root/output/run_metadata.txt
 echo '=== RUN COMPLETE ==='

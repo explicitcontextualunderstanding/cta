@@ -1,0 +1,11 @@
+{
+  "run_id": "P1-interactive-kimi-baseline-8",
+  "task_id": "P1-interactive",
+  "condition": "baseline",
+  "run_num": 8,
+  "exit_code": 0,
+  "elapsed_seconds": 551.7,
+  "container_name": "cta-m3-P1-interactive-kimi-baseline-8",
+  "failure_type": null,
+  "attempts": 2
+}

@@ -4,6 +4,6 @@
   "condition": "baseline",
   "run_num": 1,
   "exit_code": 0,
-  "elapsed_seconds": 31.6,
+  "elapsed_seconds": 21.6,
   "container_name": "cta-m2-E1-baseline-1"
 }

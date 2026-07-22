@@ -12,3 +12,6 @@ claude_process
 
 docs/.qoder/
 .qoder/
+
+# Embedded fixture workspaces (git repos inside captures)
+**/workspace/

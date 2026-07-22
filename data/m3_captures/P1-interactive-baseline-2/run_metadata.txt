@@ -1,0 +1,5 @@
+started_at=2026-07-21T18:50:07Z
+completed_at=2026-07-21T18:50:33Z
+task_id=P1-interactive
+condition=baseline
+run_num=2

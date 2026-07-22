@@ -286,67 +286,105 @@ skill, noisy binary detection — expected; human curation required).
 
 ---
 
-### Phase 4: Cross-Model Generalizability Writeup — COMPLETE (2026-07-21)
+### Phase 4: Cross-Model Generalizability Writeup — EVIDENCE COMPLETE (2026-07-21)
 
-**Early-stopping justification:**
+**Sample size (expanded post-reboot):**
 
-Original gate was N≥10 kimi sessions. Actual: N=4 valid kimi pairs + N=4
-claude-sonnet-4 print pairs. The 11 failed sessions all lack state.db due to
-kalloc.1024 kernel memory exhaustion — an infrastructure failure random w.r.t.
-condition (5 treatment, 6 baseline). No selection bias. Effect sizes are large
-enough that additional N refines confidence intervals without changing verdicts.
+Original gate was N≥10 kimi sessions. Final valid sample: N=5 treatment +
+N=7 baseline kimi-k2.7-code interactive sessions + N=4 claude-sonnet-4 print
+pairs. The 8 failed sessions (T6-T10, B5, B9, B10) all lack state.db due to
+kalloc.1024 kernel memory exhaustion — infrastructure failure random w.r.t.
+condition (5 treatment, 3 baseline). No selection bias.
 
-**Cross-model structural comparison:**
+**Per-session breakdown (kimi-k2.7-code, interactive, m3):**
+
+| Session | Msgs | Classification | CPI | Notes |
+|---------|------|---------------|-----|-------|
+| T1 | 56 | CLEAN | 2.28 | Best case; fast delegation |
+| T2 | 196 | STUCK | 0.36 | Spinner polling 58-74x |
+| T3 | 78 | CLEAN | 0.98 | Near-parity |
+| T4 | 81 | CLEAN | 0.53 | Monitoring overhead |
+| T5 | 172 | STUCK | 0.46 | Spinner polling, killed qodercli |
+| B1 | 138 | — | — | Baseline reference |
+| B2 | 82 | — | — | Baseline reference |
+| B3 | 105 | — | — | Baseline reference |
+| B4 | 87 | — | — | Baseline reference |
+| B6 | 127 | — | — | Baseline reference |
+| B7 | 189 | STUCK | — | Baseline stuck (14% rate) |
+| B8 | 121 | — | — | Baseline reference |
+
+**Cross-model structural comparison (revised):**
 
 | Metric | claude-sonnet-4 (print, m2) | kimi-k2.7-code (interactive, m3) |
 |--------|---------------------------|----------------------------------|
-| N pairs | 4 | 4 |
+| N valid | 4 pairs | 5T + 7B (12 sessions) |
 | Best write compression | 16x (P2) | 5x (kimi-3) |
-| Mean ECR (excl. degenerate) | 0.795 | 1.096 |
-| Best CPI | 2.92 (P2) | 2.28 (kimi-1) |
-| Stuck-session rate | 1/4 (P1 degenerate baseline) | 1/4 (kimi-2 expansion) |
+| Mean write compression | — | 4.7x (cross-pair) |
+| Mean ECR | 0.795 (excl. degenerate) | 0.961 (no net message reduction) |
+| Mean CPI | 2.92 (best) | 0.92 (net-negative) |
+| Best CPI | 2.92 (P2) | 2.28 (T1 only) |
+| Treatment stuck rate | 1/4 (permission wall) | 2/5 = 40% (spinner polling) |
+| Baseline stuck rate | 0/4 | 1/7 = 14% (B7: 189 msgs) |
 | Control: E1 neutral | ECR=1.0, WC=1.0 | N/A (not run) |
 | Control: N1 bleed | WC=3.0 (minor) | N/A (not run) |
 
-**Findings:**
+**Findings (revised with expanded N):**
 
-1. **Effect is model-agnostic in direction:** Both models show write compression
-   when the skill activates (16x claude, 3-5x kimi). The skill's value proposition
-   (collapse N writes into 1 delegation) holds across model families.
+1. **Write compression is model-agnostic in direction:** Both models show write
+   compression when the skill activates (16x claude print, 4.7x mean kimi
+   interactive). The skill's value proposition (collapse N writes into 1
+   delegation) holds across model families.
 
-2. **Effect magnitude is mode-dependent:** Print mode achieves stronger compression
-   (16x) because the entire task executes inside the delegation. Interactive mode
-   caps at 3-5x because the outer agent still monitors, polls, and verifiesates.
+2. **CPI is net-negative for interactive mode:** Mean CPI=0.92 across 5 treatment
+   sessions means the treatment consumed MORE context than baseline on average.
+   Only T1 (CPI=2.28) shows genuine offload; the other 4 sessions are at or below
+   parity. The monitoring/polling overhead negates context savings.
 
-3. **CPI confirms context offload:** Print CPI=2.92 means the baseline consumed
-   ~3x the context for equivalent work. Interactive CPI=2.28 (best case) shows
-   offload still occurs but monitoring overhead reduces the net saving.
+3. **ECR shows no net message reduction:** ECR=0.961 means treatment sessions
+   produce roughly the same message count as baselines. The delegation collapse
+   (fewer writes) is offset by monitoring overhead (polls, verifications, kills).
 
-4. **Stuck-session rate is consistent:** 1/4 in both models. In claude it manifests
-   as a degenerate baseline (permission wall). In kimi it manifests as spinner
-   polling (58-74x). Different failure mode, same rate — suggests the skill's
-   interactive guidance is the bottleneck, not the model.
+4. **Stuck-session rate is WORSE than initially estimated:** Treatment: 2/5=40%
+   (was 1/4=25% at N=4). Baseline: 1/7=14% (was assumed 0%). The skill's
+   interactive guidance is the primary stuck-session driver, but baselines can
+   also get stuck (B7: 189 msgs on a single-file task).
 
-5. **SIP consistency:** Both models trigger DELEGATION_REDIRECT (constructive) and
+5. **Effect magnitude is mode-dependent (strengthened):** Print mode achieves
+   16x WC + CPI=2.92. Interactive mode achieves 4.7x WC but CPI=0.92. The
+   write compression transfers; the context savings do NOT.
+
+6. **SIP consistency:** Both models trigger DELEGATION_REDIRECT (constructive) and
    CONCEPT_BLEED (destructive, on N1). MONITORING_IMPATIENCE is kimi-specific
-   (interactive mode only). FALSE_SUCCESS: 0 in both (recovery-aware detector
-   confirms all errors were acknowledged).
+   (interactive mode only, 2/5 sessions). FALSE_SUCCESS: 0 in both (recovery-aware
+   detector confirms all errors were acknowledged).
 
-**Generalizability claim:** The skill's value is **model-agnostic in direction but
-mode-dependent in magnitude**. Print-mode delegation is the primary value driver;
-interactive mode adds orientation speedup but introduces a ~25% stuck-session tax.
+**Generalizability claim (revised):** The skill's write compression is
+**model-agnostic in direction**. However, interactive mode's context savings are
+**net-negative** (CPI=0.92) due to monitoring overhead. Print-mode delegation
+remains the sole validated value driver; interactive mode should be considered
+net-neutral-to-harmful for context preservation until the monitoring problem
+(Plan 7) is resolved.
 
 **Reproducibility:**
 ```bash
+# Direct pair scoring (avoids --pair-by-task crash on empty DBs):
+PYTHONPATH=src python -c "
+from pathlib import Path
+from cta.structural_scorer import score_pair
+from cta.context_preservation import score_pair as cpi_pair
+t = Path('data/m3_captures/P1-interactive-kimi-treatment-1/state.db')
+b = Path('data/m3_captures/P1-interactive-kimi-baseline-1/state.db')
+print(score_pair(t, b))
+print(cpi_pair(t, b))
+"
+# Print mode (m2):
 PYTHONPATH=src python -m cta.structural_scorer data/m2_captures/ --pair-by-task
-PYTHONPATH=src python -m cta.structural_scorer data/m3_captures/ --pair-by-task
 PYTHONPATH=src python -m cta.context_preservation data/m2_captures/ --pair-by-task
-PYTHONPATH=src python -m cta.context_preservation data/m3_captures/ --pair-by-task
 ```
 
 ---
 
-### Phase 5: Loop Closure Demonstration — COMPLETE (2026-07-21)
+### Phase 5: Loop Closure Demonstration — EVIDENCE COMPLETE (2026-07-21, expanded N)
 
 **The Σ_t cycle (as executed):**
 
@@ -355,12 +393,14 @@ Skill v2.0 (initial SKILL.md)
   → CTA Audit M1-M2 (print mode, 10 claude-sonnet-4 sessions)
     → SIPs detected: PTY_OMISSION, PERMISSION_GAP, DELEGATION_REDIRECT
       → Feedback Refinement: v2.1 (bypass_permissions, timeout, error recovery)
-        → CTA Audit M3 (interactive mode, 9 kimi-k2.7-code sessions)
+        → CTA Audit M3 (interactive mode, 12 kimi-k2.7-code sessions: 5T+7B)
           → SIPs detected: MONITORING_IMPATIENCE (2/5), INTERACTIVE_BLOCKADE
             → Feedback Refinement: v2.2 (print-mode-first, qodercli-delegate wrapper,
               process(wait, timeout=120), PTY scoped to interactive only)
-              → Re-measure: structural scorer confirms 16x WC (print), 3-5x WC (interactive)
+              → Re-measure (expanded N): 16x WC (print), 4.7x WC (interactive),
+                BUT CPI=0.92 (net-negative interactive), ECR=0.961 (no msg reduction)
                 → Accept: H1 partially confirmed, H3 confirmed (revised), H4 confirmed
+                → New finding: interactive mode is net-neutral-to-harmful for context
 ```
 
 **What CTA found (evidence → action):**
@@ -385,11 +425,17 @@ Skill v2.0 (initial SKILL.md)
 
 3. **Interactive monitoring unbounded:** Without the stuck-session measurement
    (58-74x polling), the skill would have shipped without timeout guidance,
-   causing unbounded credit drain in ~25% of interactive sessions.
+   causing unbounded credit drain in 40% of interactive sessions (2/5 treatment).
 
 4. **False confidence in success reporting:** The false success detector proved
    the model DOES acknowledge errors (0 actual false positives). Without CTA,
    we would have over-engineered error recovery for a non-problem.
+
+5. **CPI net-negativity invisible at N=4:** At the original N=4, the best-case
+   CPI=2.28 (T1) dominated the narrative. Expanded N=5 reveals mean CPI=0.92 —
+   interactive mode is net-negative for context preservation. Without the
+   expanded sample, the skill would have shipped with false confidence in
+   interactive context savings.
 
 **Deliverable:** This section IS the loop closure document. The full cycle is
 reproducible via the committed configs, captures, and eval modules.
@@ -403,19 +449,20 @@ PYTHONPATH=src python -m cta.context_preservation data/m3_captures/ --pair-by-ta
 
 ---
 
-## Execution Order & Dependencies — ALL COMPLETE
+## Execution Order & Dependencies — ALL EVIDENCE COMPLETE
 
 ```
-Phase 0 (CANCELLED — early-stopping justified) ─────────────────┐
-  11 kimi sessions failed (kalloc.1024); N=4 sufficient          │
+Phase 0 (PARTIAL — 8/20 kimi sessions failed, kalloc.1024) ────┐
+  12 valid sessions recovered (5T+7B); sufficient for verdicts   │
                                                                  ▼
-Phase 1 ✓ ──► Phase 4 ✓ (cross-model writeup, early-stop) ──► Phase 5 ✓ (loop closure)
+Phase 1 ✓ ──► Phase 4 ✓ (cross-model, expanded N) ──► Phase 5 ✓ (loop closure, revised)
 
 Phase 2 ✓ (generalize harness) ──► Phase 3A-3E ✓ (eval modules)
 ```
 
-**Actual timeline:** Phases 1-5 completed in 2 sessions (~8h total).
-Phase 0 cancelled with justification (infrastructure failure, no selection bias).
+**Actual timeline:** Phases 1-5 completed in 3 sessions (~12h total).
+Phase 0 partial: 12/20 kimi sessions valid; 8 failed (infrastructure, no selection bias).
+Evidence expanded post-reboot from N=4 pairs to N=5T+7B (12 sessions).
 
 ---
 

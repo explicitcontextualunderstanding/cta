@@ -1,0 +1,11 @@
+{
+  "run_id": "P1-interactive-kimi-treatment-5",
+  "task_id": "P1-interactive",
+  "condition": "treatment",
+  "run_num": 5,
+  "exit_code": 0,
+  "elapsed_seconds": 464.6,
+  "container_name": "cta-m3-P1-interactive-kimi-treatment-5",
+  "failure_type": null,
+  "attempts": 2
+}

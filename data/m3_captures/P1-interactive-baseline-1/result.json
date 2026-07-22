@@ -4,6 +4,6 @@
   "condition": "baseline",
   "run_num": 1,
   "exit_code": 0,
-  "elapsed_seconds": 23.0,
+  "elapsed_seconds": 59.3,
   "container_name": "cta-m3-P1-interactive-baseline-1"
 }

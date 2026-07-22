@@ -1,0 +1,6 @@
+{
+  "validity": "infra_failure",
+  "reason": "No state.db but stdout recoverable (~9 msgs estimated)",
+  "msg_count": 9,
+  "recoverable": true
+}

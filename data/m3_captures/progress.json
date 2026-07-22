@@ -1,0 +1,17 @@
+[
+  {
+    "condition": "treatment",
+    "run": 6,
+    "success": false
+  },
+  {
+    "condition": "treatment",
+    "run": 7,
+    "success": false
+  },
+  {
+    "condition": "treatment",
+    "run": 8,
+    "success": false
+  }
+]

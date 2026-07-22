@@ -1666,6 +1666,14 @@ for multi-file implementation."
 - "Maximum recommended polls before escalating: 10. If still running after
   5 minutes, check `process(log)` for meaningful output before deciding to kill."
 
+**Deeper investigation:** The patience guidance above is a behavioral stop-gap.
+The structural root cause — no progress signal crossing the Hermes ↔ qodercli PTY
+boundary — is investigated in [Plan 7: plans/7-subagent_progress_observation.md].
+Key finding (v2.0, post-review): SDK events exist but only cover sub-agents within
+qodercli, not the main session's own progress. OSC sideband is dead (0 ESC chars
+in real polls). Measured signal recovery is 48%, not 80%. The behavioral fix
+(patience guidance) may deliver 80% of the value at 1% of the engineering cost.
+
 #### H3 verdict revision
 
 | Version | Statement | Verdict |
@@ -1681,10 +1689,25 @@ The PR's H3 framing must change:
 - ~~"skill collapses exploration space"~~ → "skill accelerates orientation decision"
 - New honest framing: "The skill's primary value is print-mode delegation (8x write compression, M2). Interactive mode shows marginal orientation speedup with a 40% stuck-session risk that the skill should address with monitoring patience guidance."
 
-#### Batch status
+#### Batch status — SUSPENDED (2026-07-21)
 
-PID 12399 running. Remaining: B5–B10, T6–T10. At N=10 per condition, we'll have
-power to confirm whether the 40% stuck rate is stable or an artifact of small N.
-If stuck rate drops at higher N, the skill's interactive value improves. If it
-holds, the SKILL.md monitoring guidance fix becomes critical.
+**Decision: Phase 0 completion deprioritized in favor of Plan 7 P1.**
+
+Final valid sample: N=5 treatment + N=7 baseline (12 sessions). The expanded
+evidence (Plan 2 Phase 4, revised) already reversed key verdicts: CPI=0.92
+(net-negative), stuck rate=40% (was 25%), baseline stuck=14% (was 0%). More
+sessions would tighten confidence intervals but won't change direction — 4/5
+treatment sessions are at or below CPI parity.
+
+Plan 7 P1 (SDK JSONL activation + Hermes pipe capability) has strictly higher
+marginal information value: it's a 3h go/no-go that determines whether the
+monitoring problem has a cheap architectural fix or requires the harder
+regex+behavioral path.
+
+**Remaining sessions (B5, B9, B10, T6-T10) are deferred indefinitely.** Resume
+only if the stuck-rate claim needs hardening for an external audience (e.g.,
+PR review challenges N=5 sufficiency).
+
+**Next action:** [Plan 7 §7 P1](plans/7-subagent_progress_observation.md) —
+verify SDK JSONL activation mechanism + Hermes pipe spawn capability (HARD GATE).
 

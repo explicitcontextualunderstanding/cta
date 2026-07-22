@@ -1,0 +1,9 @@
+{
+  "run_id": "P1-interactive-kimi-treatment-4",
+  "task_id": "P1-interactive",
+  "condition": "treatment",
+  "run_num": 4,
+  "exit_code": 0,
+  "elapsed_seconds": 816.2,
+  "container_name": "cta-m3-P1-interactive-kimi-treatment-4"
+}

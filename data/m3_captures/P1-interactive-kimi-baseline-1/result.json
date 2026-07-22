@@ -1,0 +1,9 @@
+{
+  "run_id": "P1-interactive-kimi-baseline-1",
+  "task_id": "P1-interactive",
+  "condition": "baseline",
+  "run_num": 1,
+  "exit_code": 0,
+  "elapsed_seconds": 692.8,
+  "container_name": "cta-m3-P1-interactive-kimi-baseline-1"
+}

@@ -1,0 +1,8 @@
+started_at=2026-07-21T22:54:27Z
+hermes_exit=0
+completed_at=2026-07-21T23:01:04Z
+task_id=P1-interactive
+condition=baseline
+run_num=7
+model=kimi-k2.7-code
+provider=opencode-go

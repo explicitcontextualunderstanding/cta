@@ -1,0 +1,208 @@
+=== M3 KIMI BATCH RUN ===
+Started: 2026-07-21T21:56:44Z
+PID: 12399
+
+=== PHASE 1: Baseline runs 2-10 (skips valid B1, B3) ===
+Started: 2026-07-21T21:56:44Z
+M3 Interactive-Mode Capture
+  Conditions: ['baseline']
+  Model: opencode-go/kimi-k2.7-code
+  Runs per condition: 9
+  Timeout: 900s
+  Max batch: 3
+  Output: /Users/kieranlal/workspace/CTA/data/m3_captures
+  Tag: kimi
+  Baseline token: YES (Option B)
+  Prompt: Use qodercli in interactive mode to implement a REST API authentication endpoint...
+
+[PREFLIGHT] Checking provider connectivity and rate limits...
+[PREFLIGHT] Provider OK. Rate limit remaining: ?
+
+[M3] P1-interactive-kimi-baseline-2: recovered stdout evidence → recovered_evidence.json
+[M3] P1-interactive-kimi-baseline-2: eligible for re-run (No state.db but stdout recoverable (~17 msgs estimated))
+[M3] kalloc.1024: 557966 elements, headroom 2442034
+[M3] Starting P1-interactive-kimi-baseline-2 (attempt 1/2, timeout=900s)...
+[M3] P1-interactive-kimi-baseline-2 finished in 516.2s (exit=0)
+[M3] P1-interactive-kimi-baseline-2 validity: valid (82 messages, no failure patterns)
+[M3] SKIP P1-interactive-kimi-baseline-3: valid session (105 msgs)
+[M3] P1-interactive-kimi-baseline-4: recovered stdout evidence → recovered_evidence.json
+[M3] P1-interactive-kimi-baseline-4: eligible for re-run (No state.db but stdout recoverable (~43 msgs estimated))
+[M3] kalloc.1024: 781315 elements, headroom 2218685
+[M3] Starting P1-interactive-kimi-baseline-4 (attempt 1/2, timeout=900s)...
+[M3] P1-interactive-kimi-baseline-4 finished in 646.8s (exit=0)
+[M3] P1-interactive-kimi-baseline-4 validity: valid (87 messages, no failure patterns)
+
+[HEALTH GATE] 3 sessions completed. Checking system health...
+[HEALTH GATE] kalloc OK (headroom 1929564)
+[HEALTH GATE] Provider OK. Rate limit remaining: ?
+
+[M3] P1-interactive-kimi-baseline-5: eligible for re-run (Container crash (exit 128, 14.9s))
+[M3] kalloc.1024: 1070980 elements, headroom 1929020
+[M3] Starting P1-interactive-kimi-baseline-5 (attempt 1/2, timeout=900s)...
+[M3] P1-interactive-kimi-baseline-5 finished in 113.6s (exit=137)
+  stderr: [0/6] [0s]
+[1/6] Fetching image [0s]
+[2/6] Unpacking image [0s]
+[3/6] Fetching kernel [0s]
+[4/6] Fetching init image [0s]
+[5/6] Unpacking init image [0s]
+[6/6] Starting container [0s]
+[6/6] Starting container [0s]
+
+[M3] Starting P1-interactive-kimi-baseline-5 (attempt 2/2, timeout=1350s)...
+[M3] P1-interactive-kimi-baseline-5 finished in 202.6s (exit=137)
+  stderr: .52/2.52 GB, Zero KB/s) [33s]
+[2/6] Unpacking image for platform linux/arm64 100% (89,441 of 89,441 entries, 2.52/2.52 GB, Zero KB/s) [34s]
+[3/6] Fetching kernel [35s]
+[4/6] Fetching init image [35s]
+[5/6] Unpacking init image [35s]
+[5/6] Unpacking init image for platform linux/arm64/v8 [35s]
+[5/6] Unpacking init image for platform linux/arm64/v8 0% (9 of 12 entries) [36s]
+[6/6] Starting container [37s]
+[6/6] Starting container [38s]
+[6/6] Starting container [39s]
+[6/6] Starting container [39s]
+
+[M3] P1-interactive-kimi-baseline-5 validity: infra_failure (No state.db but stdout recoverable (~9 msgs estimated))
+[M3] P1-interactive-kimi-baseline-6: eligible for re-run (Container crash (exit 128, 13.6s))
+[M3] kalloc.1024: 1208094 elements, headroom 1791906
+[M3] Starting P1-interactive-kimi-baseline-6 (attempt 1/2, timeout=900s)...
+[M3] P1-interactive-kimi-baseline-6 TIMED OUT after 900.0s (attempt 1)
+[M3] P1-interactive-kimi-baseline-6 retrying (timeout)...
+[M3] Starting P1-interactive-kimi-baseline-6 (attempt 2/2, timeout=1350s)...
+[M3] P1-interactive-kimi-baseline-6 finished in 1064.2s (exit=0)
+[M3] P1-interactive-kimi-baseline-6 validity: valid (127 messages, no failure patterns)
+[M3] P1-interactive-kimi-baseline-7: eligible for re-run (Container crash (exit 128, 14.7s))
+[M3] kalloc.1024: 2089366 elements, headroom 910634
+[M3] Starting P1-interactive-kimi-baseline-7 (attempt 1/2, timeout=900s)...
+[M3] P1-interactive-kimi-baseline-7 finished in 398.8s (exit=0)
+[M3] P1-interactive-kimi-baseline-7 validity: valid (189 messages, no failure patterns)
+
+[HEALTH GATE] 6 sessions completed. Checking system health...
+[HEALTH GATE] kalloc OK (headroom 735345)
+[HEALTH GATE] Provider OK. Rate limit remaining: ?
+
+[M3] P1-interactive-kimi-baseline-8: eligible for re-run (Container crash (exit 128, 14.5s))
+[M3] kalloc.1024: 2268391 elements, headroom 731609
+[M3] Starting P1-interactive-kimi-baseline-8 (attempt 1/2, timeout=900s)...
+[M3] P1-interactive-kimi-baseline-8 TIMED OUT after 900.0s (attempt 1)
+[M3] P1-interactive-kimi-baseline-8 retrying (timeout)...
+[M3] Starting P1-interactive-kimi-baseline-8 (attempt 2/2, timeout=1350s)...
+[M3] P1-interactive-kimi-baseline-8 finished in 551.7s (exit=0)
+[M3] P1-interactive-kimi-baseline-8 validity: valid (121 messages, no failure patterns)
+[M3] P1-interactive-kimi-baseline-9: eligible for re-run (Container crash (exit 128, 15.3s))
+[M3] ABORT P1-interactive-kimi-baseline-9: kalloc.1024 headroom 67618 < 200000 (reboot imminent)
+[M3] P1-interactive-kimi-baseline-10: eligible for re-run (Container crash (exit 128, 13.5s))
+[M3] ABORT P1-interactive-kimi-baseline-10: kalloc.1024 headroom 67413 < 200000 (reboot imminent)
+
+==================================================
+M3 CAPTURE SUMMARY
+==================================================
+  P1-interactive-kimi-baseline-2: VALID
+  P1-interactive-kimi-baseline-3: VALID
+  P1-interactive-kimi-baseline-4: VALID
+  P1-interactive-kimi-baseline-5: INFRA_FAILURE
+  P1-interactive-kimi-baseline-6: VALID
+  P1-interactive-kimi-baseline-7: VALID
+  P1-interactive-kimi-baseline-8: VALID
+  P1-interactive-kimi-baseline-9: ?
+  P1-interactive-kimi-baseline-10: ?
+
+  FAILED/INVALID SESSIONS (3):
+    P1-interactive-kimi-baseline-5: No state.db but stdout recoverable (~9 msgs estimated)
+    P1-interactive-kimi-baseline-9: 
+    P1-interactive-kimi-baseline-10: 
+
+  Re-run eligible sessions with:
+    python scripts/m3_interactive_harness.py --condition baseline --runs 1 --baseline-token --tag kimi --start-run 5
+    python scripts/m3_interactive_harness.py --condition baseline --runs 1 --baseline-token --tag kimi --start-run 9
+    python scripts/m3_interactive_harness.py --condition baseline --runs 1 --baseline-token --tag kimi --start-run 10
+
+Phase 1 exit code: 0
+Completed: 2026-07-21T23:25:37Z
+
+=== PHASE 2: Treatment runs 6-10 (skips valid T1-T5) ===
+Started: 2026-07-21T23:25:37Z
+M3 Interactive-Mode Capture
+  Conditions: ['treatment']
+  Model: opencode-go/kimi-k2.7-code
+  Runs per condition: 5
+  Timeout: 900s
+  Max batch: 3
+  Output: /Users/kieranlal/workspace/CTA/data/m3_captures
+  Tag: kimi
+  Baseline token: YES (Option B)
+  Prompt: Use qodercli in interactive mode to implement a REST API authentication endpoint...
+
+[PREFLIGHT] Checking provider connectivity and rate limits...
+[PREFLIGHT] Provider OK. Rate limit remaining: ?
+
+[M3] P1-interactive-kimi-treatment-6: eligible for re-run (Container crash (exit 128, 13.1s))
+[M3] ABORT P1-interactive-kimi-treatment-6: preflight pollution check failed:
+  - state_db_absent: state.db unreadable: no such table: messages
+  - no_result_json: result.json exists from a prior run
+[M3] P1-interactive-kimi-treatment-7: eligible for re-run (Container crash (exit 128, 15.0s))
+[M3] ABORT P1-interactive-kimi-treatment-7: preflight pollution check failed:
+  - state_db_absent: state.db unreadable: no such table: messages
+  - no_result_json: result.json exists from a prior run
+[M3] P1-interactive-kimi-treatment-8: eligible for re-run (Container crash (exit 128, 13.4s))
+[M3] ABORT P1-interactive-kimi-treatment-8: preflight pollution check failed:
+  - state_db_absent: state.db unreadable: no such table: messages
+  - no_result_json: result.json exists from a prior run
+
+[HEALTH GATE] 3 sessions completed. Checking system health...
+[HEALTH GATE] Estimated API calls this batch: 0/900
+[HEALTH GATE] ABORT: kalloc headroom 66490 < 200000. Reboot needed.
+
+==================================================
+M3 CAPTURE SUMMARY
+==================================================
+  P1-interactive-kimi-treatment-6: ?
+  P1-interactive-kimi-treatment-7: ?
+  P1-interactive-kimi-treatment-8: ?
+
+  FAILED/INVALID SESSIONS (3):
+    P1-interactive-kimi-treatment-6: 
+    P1-interactive-kimi-treatment-7: 
+    P1-interactive-kimi-treatment-8: 
+
+  Re-run eligible sessions with:
+    python scripts/m3_interactive_harness.py --condition treatment --runs 1 --baseline-token --tag kimi --start-run 6
+    python scripts/m3_interactive_harness.py --condition treatment --runs 1 --baseline-token --tag kimi --start-run 7
+    python scripts/m3_interactive_harness.py --condition treatment --runs 1 --baseline-token --tag kimi --start-run 8
+
+Phase 2 exit code: 0
+Completed: 2026-07-21T23:25:39Z
+
+=== FINAL STATUS ===
+Baseline exit: 0
+Treatment exit: 0
+
+=== SESSION CLASSIFICATIONS ===
+  baseline-1                valid                138 messages, no failure patterns
+  baseline-10               infra_failure        Container crash (exit 128, 13.5s)
+  baseline-2                valid                82 messages, no failure patterns
+  baseline-3                valid                105 messages, no failure patterns
+  baseline-4                valid                87 messages, no failure patterns
+  baseline-5                infra_failure        state.db unreadable: no such table: messages
+  baseline-6                valid                127 messages, no failure patterns
+  baseline-7                valid                189 messages, no failure patterns
+  baseline-8                valid                121 messages, no failure patterns
+  baseline-9                infra_failure        Container crash (exit 128, 15.3s)
+  treatment-1               valid                56 messages, no failure patterns
+  treatment-10              infra_failure        Container crash (exit 128, 14.0s)
+  treatment-2               behavioral_failure   Model exhausted tool budget (infrastructure limit, not skill effect)
+  treatment-3               valid                78 messages, no failure patterns
+  treatment-4               api_error            Session hit api_error (pattern: HTTP 40[02])
+  treatment-5               valid                172 messages, no failure patterns
+  treatment-6               infra_failure        Container crash (exit 128, 13.1s)
+  treatment-7               infra_failure        Container crash (exit 128, 15.0s)
+  treatment-8               infra_failure        Container crash (exit 128, 13.4s)
+  treatment-9               infra_failure        Container crash (exit 128, 12.9s)
+
+Valid treatment: 3/10
+Valid baseline:  7/10
+Target: >=5 per condition for statistical comparison
+
+=== BATCH RUN COMPLETE ===
+Finished: 2026-07-21T23:25:39Z

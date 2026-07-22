@@ -1,0 +1,9 @@
+{
+  "source": "stdout_recovery",
+  "session_id": null,
+  "line_count": 37,
+  "has_qodercli_launch": true,
+  "has_trust_dialog": false,
+  "has_test_results": false,
+  "failure_patterns": []
+}
