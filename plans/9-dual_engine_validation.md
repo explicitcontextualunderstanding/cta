@@ -1,7 +1,7 @@
 # Plan 9 — Dual-Engine Validation Framework
 
 Status: **DRAFT** — methodology plan (not a feature plan; judged by adoption, not deployment)
-Version: 0.5.0 (2026-07-22)
+Version: 0.6.0 (2026-07-22)
 Parent:
   - 8: plans/8-runtime_friction_detection.md (§4.0 Gap 3 pre-registration is the first consumer)
   - 2: plans/2-cta_verification_layer_plan.md (CPI claims need Type S/M backfill)
@@ -895,6 +895,7 @@ label. No change ships without evidence. No evidence is over-claimed.
 
 | Version | Date | Change |
 |---------|------|--------|
+| 0.6.0 | 2026-07-22 | G13 compaction-stress capture 1 analyzed: compaction did NOT fire (peak 53.1%, 0 context_management events). Agent used efficient Grep+Edit strategy avoiding context saturation. §13 G13 rewritten with capture 1 telemetry, construct-validity verdict (headroom proof only), and compaction-stress protocol v2. `gen_context_fixture.py` updated: new `compaction-stress` preset (120 files, 493k tokens, force-iterative mode forbidding bulk tools). §9 G13 row updated. Capture 2 pending. |
 | 0.5.0 | 2026-07-22 | §8.1 added — new data collection plan (3-5 paired captures for CPI/WC). §8 rows 3-4b updated: bimodal CPI CLOSED (regime question dead), WC and CPI skill-effect marked DATA COLLECTION IN PROGRESS. M3 updated: initial result stands, will update at N=7-9. Pre-registration (R5) committed before collection begins. Abandonment criteria pre-committed. |
 | 0.4.0 | 2026-07-22 | Structural realignment per sibling reflection: (1) §0 reframed — construct validity is CTA's primary failure mode, not statistical power. (2) §1 reframed as "aspirational discipline" — CTA has one engine looking at data two ways, not a literal dual-engine system. (3) §1.1 allows mixed labels [DEDUCTIVE + EXPLORATORY]. (4) R4 fixed — objection is shared input, not perfect agreement per se. (5) R5 honestly stated as honor-system (disciplines attention, not tamper-proof). (6) M5 (independent-scorer) promoted from stretch to required. (7) §14 added — framework tiering (MVP always-apply vs Cathedral aspirational). (8) §15 added — SKILL.md evaluation methodology (lessons from Gap 3 Runs 1-2). Probe run 2 result: native adaptation, SKILL.md v2.5.2 scope-reduced. |
 | 0.3.0 | 2026-07-22 | Added §1.3 (measurement integrity / abduction stage). Fixed §3 Stan model (declared K, added N=3-4 minimal model). Reframed §4 as circuit breakers (sequential mandatory checkpoint). Added §4.1 (R5 pre-registration proof mechanism). Added §4.2 (R6 concrete example — Gap 3 Run 1). Refined §10 with quantitative "uninformative posterior" thresholds. Added §13 (limitations and named gaps). |
