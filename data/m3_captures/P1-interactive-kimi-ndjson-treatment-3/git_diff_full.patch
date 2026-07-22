@@ -1,0 +1,72 @@
+diff --git a/src/app.py b/src/app.py
+index a3e7ad5..2cf66e7 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -8,10 +8,13 @@ from src.routes.payments import payments_bp
+ from src.routes.inventory import inventory_bp
+ from src.routes.reports import reports_bp
+ from src.routes.notifications import notifications_bp
++from src.routes.auth import auth_bp
+ 
+ 
+ def create_app() -> Flask:
+     app = Flask(__name__)
++    app.config["JWT_SECRET"] = "super-secret-key"
++    app.config["JWT_ALGORITHM"] = "HS256"
+     app.register_blueprint(users_bp)
+     app.register_blueprint(products_bp)
+     app.register_blueprint(orders_bp)
+@@ -19,6 +22,7 @@ def create_app() -> Flask:
+     app.register_blueprint(inventory_bp)
+     app.register_blueprint(reports_bp)
+     app.register_blueprint(notifications_bp)
++    app.register_blueprint(auth_bp)
+     return app
+ 
+ 
+diff --git a/src/middleware/token.py b/src/middleware/token.py
+index a6207d7..2d222fd 100644
+--- a/src/middleware/token.py
++++ b/src/middleware/token.py
+@@ -1,15 +1,23 @@
+-"""Authentication middleware (stub — target for P1)."""
++"""JWT token validation middleware."""
++
++from functools import wraps
++import jwt
++from flask import request, jsonify, current_app
+ 
+ 
+ def verify_token(token: str) -> dict | None:
+     """Verify a JWT token and return the user payload."""
+-    # TODO: implement token verification
+-    return None
++    secret = current_app.config.get("JWT_SECRET", "change-me")
++    algorithm = current_app.config.get("JWT_ALGORITHM", "HS256")
++    try:
++        payload = jwt.decode(token, secret, algorithms=[algorithm])
++        return payload
++    except jwt.InvalidTokenError:
++        return None
+ 
+ 
+ def require_auth(f):
+-    """Decorator to require authentication on a route."""
+-    from functools import wraps
++    """Decorator to require a valid JWT token on a route."""
+     from flask import request, jsonify
+ 
+     @wraps(f)
+@@ -17,10 +25,12 @@ def require_auth(f):
+         auth_header = request.headers.get("Authorization", "")
+         if not auth_header.startswith("Bearer "):
+             return jsonify({"error": "missing token"}), 401
++
+         token = auth_header[7:]
+         payload = verify_token(token)
+         if payload is None:
+             return jsonify({"error": "invalid token"}), 401
++
+         request.user = payload
+         return f(*args, **kwargs)
+ 

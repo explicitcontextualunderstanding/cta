@@ -1,0 +1,63 @@
+diff --git a/src/app.py b/src/app.py
+index a3e7ad5..5aaa03e 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -1,6 +1,7 @@
+ """Flask application entry point."""
+ 
+ from flask import Flask
++from src.routes.auth import auth_bp
+ from src.routes.users import users_bp
+ from src.routes.products import products_bp
+ from src.routes.orders import orders_bp
+@@ -12,6 +13,7 @@ from src.routes.notifications import notifications_bp
+ 
+ def create_app() -> Flask:
+     app = Flask(__name__)
++    app.register_blueprint(auth_bp)
+     app.register_blueprint(users_bp)
+     app.register_blueprint(products_bp)
+     app.register_blueprint(orders_bp)
+diff --git a/src/middleware/token.py b/src/middleware/token.py
+index a6207d7..ccb4dee 100644
+--- a/src/middleware/token.py
++++ b/src/middleware/token.py
+@@ -1,10 +1,21 @@
+-"""Authentication middleware (stub — target for P1)."""
++"""Authentication middleware — JWT token validation."""
++
++import os
++
++import jwt
++
++SECRET_KEY = os.environ.get("JWT_SECRET_KEY", "test-secret-key")
+ 
+ 
+ def verify_token(token: str) -> dict | None:
+-    """Verify a JWT token and return the user payload."""
+-    # TODO: implement token verification
+-    return None
++    """Verify an HS256 JWT and return the payload dict, or None on failure."""
++    try:
++        payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
++    except jwt.ExpiredSignatureError:
++        return None
++    except jwt.InvalidTokenError:
++        return None
++    return payload
+ 
+ 
+ def require_auth(f):
+diff --git a/src/utils/helpers.py b/src/utils/helpers.py
+index 9f5f9ec..21cf9bb 100644
+--- a/src/utils/helpers.py
++++ b/src/utils/helpers.py
+@@ -13,7 +13,7 @@ def parse_date(date_str: str) -> datetime:
+ 
+ def format_timestamp(dt: datetime) -> str:
+     """Format a datetime as ISO 8601 timestamp."""
+-    return dt.strftime("%Y-%m-%dT%H:%M:%S"  # missing closing paren — N1 target (line 47)
++    return dt.strftime("%Y-%m-%dT%H:%M:%S")
+ 
+ 
+ def slugify(text: str) -> str:

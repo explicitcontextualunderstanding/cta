@@ -1,0 +1,18 @@
+{
+  "capture_id": "P7-ndjson-treatment-3",
+  "date": "2026-07-21",
+  "qodercli_version": "1.1.2",
+  "protocol_version": "1.0.0",
+  "mode": "pipe (--output-format stream-json)",
+  "task": "List files matching pattern, write count to file, read back, confirm",
+  "total_ndjson_lines": 20,
+  "spinner_only_lines": 0,
+  "spinner_only_pct": 0.0,
+  "structured_pct": 100.0,
+  "tools_visible": ["Bash", "Read"],
+  "num_turns": 5,
+  "duration_ms": 23767,
+  "exit_code": 0,
+  "is_error": false,
+  "result": "Confirmed. /tmp/p7_treatment_3_count.txt contains 1 — there is exactly one file matching /tmp/p7_*.txt (namely p7_treatment_2.txt)."
+}

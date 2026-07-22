@@ -1,0 +1,6 @@
+{
+  "validity": "api_error",
+  "reason": "Session hit rate_limited (pattern: HTTP 429)",
+  "msg_count": 33,
+  "recoverable": false
+}
