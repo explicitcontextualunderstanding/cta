@@ -1748,14 +1748,14 @@ any verdict but would strengthen the evidence base against external challenge
 | G1 | Print-mode write compression N=2 (P2-T1, P2-T2 only) | 2 pairs | ≥4 pairs | The PR's strongest number (16x WC) comes from 2 sessions. Directionally robust but statistically fragile. | 2 more print-mode treatment+baseline pairs on kimi-k2.7-code. ~10 min container time. | MEDIUM | 1 |
 | G2 | PR #68314 body is stale | Pre-Plan 7 | Post-Plan 7 | PR doesn't mention NDJSON, 0%/52% evidence, SKILL.md v2.4.0, or the MONITORING_IMPATIENCE elimination. Reviewer sees old narrative. | Update PR body with Plan 7 closure + v2.4.0 changes. 15 min. | MEDIUM | 1 |
 | G3 | Post-NDJSON interactive CPI unmeasured | CPI=0.92 (pre-fix) | CPI re-measured | CPI=0.92 (net-negative) was measured BEFORE pipe-spawn fix. Monitoring overhead was the CPI killer. If CPI flips >1.0 post-fix, interactive narrative changes from "harmful" to "viable." | Re-run 2-3 kimi interactive sessions with NDJSON active, compute CPI against existing baselines. | **HIGH** — narrative shifter | 2 |
-| G4 | Plan 7 treatment N=1 | 1 capture | ≥3 captures | "0% spinner-only" headline rests on single session. | See [Plan 7 §14 E1](plans/7-subagent_progress_observation.md). | **HIGH** — blocker for defensibility | 7 |
+| ~~G4~~ | ~~Plan 7 treatment N=1~~ | ~~3~~ | ~~≥3~~ | ~~CLOSED (2026-07-21):~~ N=3 captures (v1.0.45 + v1.1.2×2), ALL 0% spinner-only, 100% structured, natural exit (4-5 turns, 14-24s). Defensible against "luck" challenge. | — | DONE | 7 |
 | ~~G5~~ | ~~Version drift on `--output-format stream-json`~~ | ~~1~~ | ~~1~~ | ~~CLOSED (2026-07-21):~~ Tested on 1.1.2 (major bump from 1.0.45). Same events, `protocol_version: "1.0.0"` in init. NDJSON contract survived 1.0→1.1. | — | DONE | 7 |
 | G6 | Multi-turn NDJSON untested | 0 | 1 | Full SDK mode never exercised. | See [Plan 7 §14 E3](plans/7-subagent_progress_observation.md). | LOW | 7 |
 
 ### Priority ordering
 
-1. **G4 (Plan 7 N≥3)** — IN PROGRESS (sibling running 2 captures). Cheapest to close, highest defensibility value.
-2. **G3 (post-NDJSON CPI)** — narrative shifter. If CPI flips positive, interactive mode is rehabilitated.
+1. ~~**G4 (Plan 7 N≥3)**~~ — **CLOSED.** N=3, all 0% spinner-only across two qodercli versions.
+2. **G3 (post-NDJSON CPI)** — TOP OPEN ITEM. Narrative shifter. If CPI flips positive, interactive mode is rehabilitated.
 3. **G2 (PR body update)** — 15 min, no experiments needed.
 4. **G1 (print-mode N)** — tightens the strongest claim.
 5. ~~**G5 (version drift)**~~ — **CLOSED.** Wire protocol versioned (`protocol_version: "1.0.0"`), survived major bump.

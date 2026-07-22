@@ -788,19 +788,21 @@ invalidate the verdict but would strengthen it against external challenge.
 
 | # | Gap | Current N | Target N | Why it matters | Probe | Priority |
 |---|-----|-----------|----------|----------------|-------|----------|
-| E1 | Treatment capture is N=1 (16 polls, one session) | 1 | ≥3 | "0% spinner-only" headline rests on a single capture. Reviewer could dismiss as luck. | Run 2 more Hermes sessions delegating multi-tool tasks with NDJSON active. Measure spinner-only rate per session. | **HIGH** — blocker for external defensibility |
+| ~~E1~~ | ~~Treatment capture is N=1~~ | ~~3~~ | ~~≥3~~ | ~~"0% spinner-only" headline rests on a single capture.~~ | **CLOSED (2026-07-21):** N=3 captures (v1.0.45 + v1.1.2×2). ALL 0% spinner-only, 100% structured, natural exit (4-5 turns, 14-24s). Cross-version consistency confirms effect is not luck. | ~~HIGH~~ DONE |
 | ~~E2~~ | ~~Version drift on `--output-format stream-json`~~ | ~~1~~ | ~~1~~ | ~~Undocumented flag.~~ | **CLOSED (2026-07-21):** Tested on 1.1.2 (major bump from 1.0.45). Same event types, same fields, explicit `protocol_version: "1.0.0"` in init event. Release cadence near-daily but NDJSON contract survived 1.0→1.1. Wire protocol is versioned — strong stability signal. | ~~MEDIUM~~ DONE |
 | E3 | Multi-turn NDJSON untested | 0 | 1 | Full SDK mode (stdin JSONL, `QODER_AGENT_SDK_ENTRYPOINT`) is reverse-engineered (§2.1) but never exercised. If Hermes needs iterative qodercli sessions, current integration doesn't cover it. | Spawn with full SDK recipe, send 2 turns via stdin pipes, confirm NDJSON events for both turns. | **LOW** — only if multi-turn becomes a near-term need |
 
-### E1 protocol (treatment N≥3)
+### E1 results (CLOSED 2026-07-21)
 
-1. Start Hermes session with updated `terminal_tool.py` + `process_registry.py`
-2. Delegate a multi-tool task (e.g., "Use qodercli to add a /health endpoint with tests")
-3. Let Hermes run autonomously
-4. Export capture: poll events → JSON
-5. Measure: spinner-only rate (target: 0%), structured progress rate (target: 100%)
-6. Repeat ×2 more sessions
-7. If all 3 show 0% spinner-only → E1 CLOSED
+| Capture | qodercli version | NDJSON lines | Spinner-only | Tools visible | Turns | Duration |
+|---------|-----------------|--------------|--------------|---------------|-------|----------|
+| treatment-1 | 1.0.45 | 16 | 0% | Bash, Write, Read | 4 | 14s |
+| treatment-2 | 1.1.2 | 17 | 0% | Bash, Read, Write | 4 | 15s |
+| treatment-3 | 1.1.2 | 20 | 0% | Bash, Read | 5 | 24s |
+
+All 3 captures: 0% spinner-only, 100% structured progress, natural completion.
+Cross-version consistency (1.0.45 → 1.1.2) confirms the effect is structural,
+not a version-specific artifact.
 
 ### E2 protocol (version drift)
 
