@@ -12,7 +12,7 @@ Adds a skill that enables Hermes to delegate multi-file coding tasks to [Qoder C
 
 This PR includes evidence from a **Counterfactual Trace Audit (CTA)** — 23 containerized sessions (10 print-mode claude-sonnet-4 + 13 interactive-mode kimi-k2.7-code) comparing Hermes behavior with and without the skill, following the methodology of [Zhou et al. (arXiv:2605.11946)](https://arxiv.org/abs/2605.11946). Models tested: claude-sonnet-4 (Anthropic) and kimi-k2.7-code (Moonshot). Audit code and session data: [github.com/WillChow66/CTA](https://github.com/WillChow66/CTA).
 
-> **STATUS:** All evaluation phases COMPLETE (Plan 2, Phases 1-5). Phase 0 volume expansion cancelled with early-stopping justification (11 sessions failed due to kalloc.1024 infrastructure failure, random w.r.t. condition; N=4 valid pairs sufficient for directional claims). Cross-model generalizability confirmed: effect is model-agnostic in direction, mode-dependent in magnitude.
+> **STATUS:** All evaluation phases COMPLETE (Plan 2, Phases 1-5). Phase 0 volume expansion cancelled with early-stopping justification (11 sessions failed due to kalloc.1024 infrastructure failure, random with respect to condition). Deductive claims (mechanism proofs) are conclusive; inductive claims (magnitude estimates) are exploratory — Type S=40.9% at N=4 for CPI (sign uncertain). Cross-model generalizability confirmed: effect is model-agnostic in direction, mode-dependent in magnitude.
 
 ### Evidence summary (CTA, 23 containerized sessions)
 
@@ -22,9 +22,9 @@ This PR includes evidence from a **Counterfactual Trace Audit (CTA)** — 23 con
 |-------|----------|-------|
 | Auth gatekeeper | Without skill: "Not logged in" (qodercli unusable). With skill: token configured, delegation works. | [DEDUCTIVE] |
 | Binary resolution | 6/6 treatment traces execute `which -a qodercli` during orientation. 0/6 baselines. | [DEDUCTIVE] |
-| MONITORING_IMPATIENCE eliminated | 0% spinner-only polls (N=3 treatment) vs 52% control. NDJSON pipe-spawn (v2.4.0). | [DEDUCTIVE] |
-| Runtime friction detection (H8) | 9/9 sessions correctly classified (100%). R4 cleared: independent scorer 7/7 agreement, 0 FP/FN under perturbation. | [DEDUCTIVE] |
-| PTY stability (H2-revised) | Print mode PTY-agnostic (M4 proof). Interactive: 100% pty=true compliance. | [DEDUCTIVE] |
+| MONITORING_IMPATIENCE eliminated | 0% spinner-only polls (N=3 treatment) vs 52% control. NDJSON (Newline-Delimited JSON) pipe-spawn (v2.4.0). | [DEDUCTIVE] |
+| Runtime friction detection (H8) | 9/9 sessions correctly classified (100%). R4 cleared: independent scorer 7/7 agreement, 0 false positives / 0 false negatives under perturbation. | [DEDUCTIVE] |
+| PTY (pseudo-terminal) stability (H2-revised) | Print mode PTY-agnostic (M4 proof). Interactive: 100% pty=true compliance. | [DEDUCTIVE] |
 
 **Exploratory evidence [magnitude unvalidated — motivates further study]:**
 
@@ -33,8 +33,8 @@ This PR includes evidence from a **Counterfactual Trace Audit (CTA)** — 23 con
 | Manual file writes (P2 migration) | 2 | 16 (8x fewer) | [EXPLORATORY] — N=1 pair |
 | Tool calls (P2) | 38 | 62 (1.6x fewer) | [EXPLORATORY] — N=1 pair |
 | Messages (P2) | 66 | 113 (1.7x fewer) | [EXPLORATORY] — N=1 pair |
-| Orientation speedup | 7.2 msgs | 8.5 msgs | [INDUCTIVE] — Type S >10% |
-| CPI (context efficiency) | 0.833 mean | — | [EXPLORATORY] — Type S=40.9%, CrI [-0.31, 0.40] |
+| Orientation speedup | 7.2 msgs | 8.5 msgs | [INDUCTIVE] — Type S (sign error probability) >10% |
+| Context Preservation Index (CPI) | 0.833 mean | — | [EXPLORATORY] — Type S=40.9%, 95% CrI (Credible Interval) [-0.31, 0.40] |
 
 **Conclusion:** The skill's proven value is **structural enablement**: it makes qodercli usable (auth), orients Hermes to the binary (6/6 traces), eliminates the spinner-polling failure mode (0% vs 52%), and provides a validated runtime friction instrument (9/9, independently confirmed). Exploratory evidence from a single valid pair suggests 8x write compression in print mode — directionally compelling but statistically unvalidated (N=1, Type M likely >2.0×). Interactive mode shows marginal orientation speedup with a 40% stuck-session risk that v2.4.0's NDJSON integration addresses.
 
@@ -127,7 +127,7 @@ H2-original is disconfirmed: the model omits `pty=true` on 27% of qodercli calls
 
 ## Skill Influence Patterns detected
 
-| SIP | Valence | Count | Description |
+| SIP (Skill Influence Pattern) | Valence | Count | Description |
 |-----|---------|-------|-------------|
 | PROCEDURAL_SCAFFOLDING | constructive | 6/6 treatment | Skill loaded → binary resolution → structured delegation in every positive run |
 | DELEGATION_REDIRECT | constructive | 6/6 treatment | Delegation redirected from native `delegate_task` to qodercli |
@@ -271,7 +271,7 @@ This audit extends the CTA framework from prompt/playbook skills to **delegation
 | Ceiling tasks absorb 80% of SIPs | Confirmed: E1/N1 (simple tasks) show zero SIPs; signal only appears on P1/P2 (complex tasks) |
 | Offsetting behaviors mask bugs | Confirmed: P1 permission failure hidden by model's false-success reporting |
 | Token overhead 2.77x for constructive skills | Extended: Delegation trades action count for wall-time (1.6x longer, 8x fewer writes) |
-| DTW alignment over symmetric traces | Extended: Delegation produces 1:16 asymmetric sparsity; structural metrics replace DTW |
+| DTW (Dynamic Time Warping) alignment over symmetric traces | Extended: Delegation produces 1:16 asymmetric sparsity; structural metrics replace DTW |
 
 ### New SIP vocabulary for delegation skills
 
