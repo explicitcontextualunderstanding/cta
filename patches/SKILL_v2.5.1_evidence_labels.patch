@@ -1,0 +1,46 @@
+# SKILL.md v2.5.1 — Evidence Label Patch
+#
+# SCOPE: Documentation-honesty fixes ONLY. Apply independently of probe results.
+#
+# Changes:
+#   1. "8x write compression proven in CTA" → "write compression observed (N=1, exploratory)"
+#      Rationale: Plan 9 §8 item 4 — N=1 valid pair, Type M unknown, likely >2.0×.
+#      The model doesn't need the specific number; "observed" is honest without being
+#      misleading. Does NOT change mode-selection behavior (print mode is still preferred
+#      for structural reasons independent of the 8x claim).
+#
+#   2. "40% stuck-session rate" → scoped to "legacy PTY interactive regime"
+#      Rationale: Plan 9 G7 (claim scope) — the rate is regime-bounded. Adding the
+#      regime qualifier prevents over-generalization to background/NDJSON mode.
+#      Also labels the 0% spinner-only claim as [DEDUCTIVE — mechanism elimination].
+#
+# PROBE-CONTINGENT (NOT in this patch — hold until §4.1.2 resolves):
+#   - Friction block restructuring (L121-140): narrow stated domain to exit-42 only,
+#     separate instrument description from prescription, remove "missing packages,
+#     broken imports" examples if probe confirms these don't surface.
+#   - If probe shows native adaptation (both fall back): revert friction block entirely,
+#     keep only the two exit-42 sentences.
+#   - If probe shows prescription works: keep block, narrow domain language.
+#
+# Apply to: the canonical treatment SKILL.md after probe completes.
+# Do NOT apply to: capture directories (evidence integrity — captures are immutable).
+
+--- a/hermes_home/skills/autonomous-ai-agents/qodercli/SKILL.md
++++ b/hermes_home/skills/autonomous-ai-agents/qodercli/SKILL.md
+@@ -61,7 +61,7 @@
+ 
+ | Task type | Mode | Why |
+ |-----------|------|-----|
+-| Bounded implementation (files known) | **`-p` (print)** | One-shot, no monitoring, 8x write compression proven in CTA |
++| Bounded implementation (files known) | **`-p` (print)** | One-shot, no monitoring, write compression observed in CTA (N=1, exploratory) |
+ | Repository-wide migration/refactor | **`-p` (print)** | qodercli handles dependency mapping internally |
+ | CI/automation/piped input | **`-p` with `-o json`** | Structured output, no PTY needed |
+ | Genuinely iterative (needs clarification) | `-i` (interactive) | Only when task requires multi-turn dialogue |
+@@ -66,7 +66,7 @@
+ | Genuinely iterative (needs clarification) | `-i` (interactive) | Only when task requires multi-turn dialogue |
+ 
+-**Default to print mode.** CTA evidence (N=12 sessions): legacy PTY interactive mode had a 40% stuck-session rate (spinner-only polls → premature kill). Plan 7 eliminated this for background tasks via automatic NDJSON structured progress (0% spinner-only, 100% tool-use visibility). Print mode remains simplest for bounded tasks; background mode now has full observability.
++**Default to print mode.** CTA evidence (N=12 sessions, legacy PTY interactive regime): 40% stuck-session rate from spinner-only polls → premature kill. Plan 7 eliminated this for background tasks via automatic NDJSON structured progress (0% spinner-only, 100% tool-use visibility [DEDUCTIVE — mechanism elimination, N=3]). Print mode remains simplest for bounded tasks; background mode now has full observability.
+ 
+ ### Print mode (one-shot, preferred)
+ 
