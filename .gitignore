@@ -39,3 +39,6 @@ docs/.qoder/
 **/state.db
 **/state.db-shm
 **/state.db-wal
+
+# Generated context-capacity fixtures (regenerable via scripts/gen_context_fixture.py)
+data/context_fixture_*/
