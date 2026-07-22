@@ -230,7 +230,7 @@ The model explicitly referenced the skill: *"I can see qodercli is asking for fo
 
 4. **MONITORING_IMPATIENCE SIP — ELIMINATED (v2.4.0).** The stuck-polling loop (58-74 spinner-only polls → premature kill) is fixed by NDJSON pipe-spawn integration. Background qodercli now emits structured progress events. N=3 treatment captures: 0% spinner-only (vs 52% control). Patience guidance scoped to interactive-foreground only.
 
-**Honest summary:** The skill's primary validated value is **print-mode delegation** (M2 P2: 8x write compression). Interactive mode shows marginal orientation speedup; the 40% stuck-session risk is eliminated by NDJSON (v2.4.0). Post-NDJSON CPI is bimodal (mean 1.253): clean environments achieve CPI>1.0, friction-heavy environments stay ≤1.0. Context preservation is environment-dependent, not mechanism-dependent.
+**Honest summary:** The skill's proven value is **structural enablement** — auth gatekeeper, binary resolution (6/6), MONITORING_IMPATIENCE elimination (0% vs 52%), and a validated friction instrument (9/9, independently confirmed). Exploratory evidence suggests 8x write compression in print mode (N=1, magnitude unvalidated). Interactive mode shows marginal orientation speedup (1.3 msgs, Type S >10%); the 40% stuck-session risk is eliminated by NDJSON (v2.4.0). Post-NDJSON CPI is bimodal (mean 1.253): clean environments achieve CPI>1.0, friction-heavy environments stay ≤1.0. Context preservation is environment-dependent, not mechanism-dependent.
 
 ---
 
@@ -314,10 +314,10 @@ Raw session data (SQLite databases + stdout) committed in `data/m2_captures/`, `
 
 ## Limitations
 
-1. **N=2-3 per condition** (lean design, print mode). Effect sizes are 3-16x, so statistical power is adequate, but rare-event SIPs may be underrepresented.
+1. **N=2-4 per condition** (lean design). Deductive claims (mechanism proofs) are valid at any N. Inductive claims (CPI, write compression magnitude) are NOT statistically validated: Type S=40.9% at N=4 for CPI — sign is uncertain. Effect directions are plausible but magnitudes are [EXPLORATORY].
 2. **Two models tested** (claude-sonnet-4, kimi-k2.7-code). Cross-model volume expansion (N=10 per condition) in progress — preliminary N=9 kimi results show modest interactive effect (1.4x clean, 40% stuck rate).
 3. **H2-original disconfirmed, H2-revised confirmed.** 73% PTY compliance overall, but 100% on interactive calls where it matters. M4 proved print mode is PTY-agnostic. Skill language scoped accordingly.
-4. **Interactive mode effect is modest.** N=1 "2.5x efficiency" was a cherry-pick. At N=9: trust dialog resolution gap is 1.3 messages (not 2.5x). Treatment is bimodal (60% clean at 1.4x, 40% stuck at 2-3x worse). Baseline has zero stuck sessions. The skill's strong evidence is print-mode delegation (M2 P2: 8x write compression), not interactive mode.
+4. **Interactive mode effect is modest.** N=1 "2.5x efficiency" was a cherry-pick. At N=9: trust dialog resolution gap is 1.3 messages (not 2.5x). Treatment is bimodal (60% clean at 1.4x, 40% stuck at 2-3x worse). Baseline has zero stuck sessions. The skill's strong evidence is structural enablement (auth, binary resolution, MONITORING_IMPATIENCE elimination — all [DEDUCTIVE]), not interactive-mode efficiency.
 5. **Wall-time tradeoff.** Delegation reduces agent actions but increases total execution time (qodercli is slow). This is a tradeoff, not a pure win.
 6. **MONITORING_IMPATIENCE SIP — ELIMINATED (v2.4.0).** The 40% stuck-polling loop is fixed by NDJSON pipe-spawn integration. N=3 treatment captures confirm 0% spinner-only (vs 52% control). Patience guidance scoped to interactive-foreground only.
 7. **CPI empirically measured (G3, 2026-07-21).** Post-NDJSON CPI is bimodal: run 1=0.912 (friction-heavy, 92 msgs), run 2=1.594 (clean, 53 msgs), mean=1.253 (N=2, run 3 pending). H6-original ("CPI>1.0") reclassified as UNDER-SPECIFIED — binary threshold on bimodal distribution. H6-revised ("NDJSON shifts CPI rightward; clean sessions >1.0, friction sessions ≤1.0") CONFIRMED. Context preservation is environment-dependent, not mechanism-dependent.
