@@ -573,3 +573,78 @@ python3 -c "import sqlite3; print(sqlite3.connect('/tmp/cta-persist-test/hermes_
 on the host immediately (virtiofs). After `container kill` (simulating kalloc
 exit-128), both the marker file and state.db are intact and readable. No WAL
 checkpoint or export step was needed.
+
+---
+
+## G13: Context-Capacity Fixture (Compaction-Stress Capture)
+
+Plan 9 §13 G13 tests whether an agent can complete a cross-file migration on a
+repo that exceeds its context window. The fixture generator
+(`scripts/gen_context_fixture.py`) produces synthetic repos with a binary oracle.
+
+### Fixture Generation (host-side, pre-launch)
+
+```bash
+# Generate the qodercli preset (246k tokens, 60 files, exceeds 131k window)
+python scripts/gen_context_fixture.py --target-agent qodercli \
+  --output-dir data/m3_captures/G13-capacity-treatment-1/workspace
+
+# Initialize git in the fixture (required for M3 workspace pattern)
+cd data/m3_captures/G13-capacity-treatment-1/workspace
+git init && git add -A && git commit -m "fixture baseline (seed 20260722)"
+```
+
+The fixture is deterministic (seed 20260722). Every run produces identical files.
+
+### M3 Harness Mounts
+
+| Host path | Container path | Mode | Purpose |
+|-----------|---------------|------|---------|
+| `G13-capacity-treatment-1/workspace/` | `/root/workspace` | rw | Fixture repo (survives crashes) |
+| `G13-capacity-treatment-1/hermes_home/` | `/home/hermes/.hermes` | rw | Hermes state (config, state.db + WAL) |
+| `G13-capacity-treatment-1/` | `/root/output` | rw | stdout, run.sh, metadata |
+
+### Compaction-Stress Protocol
+
+The treatment condition forces iterative file processing (no bulk commands):
+
+```
+Task: Read MIGRATION_SPEC.md. Rename RegistryEntry → CatalogNode across all files.
+Constraint: Process files ONE AT A TIME using Read + Edit. Do NOT use sed, grep -r,
+find -exec, or any bulk command. You must read each file, identify references, and
+edit each file individually.
+```
+
+This forces ~62 Read+Edit cycles. At ~4k tokens/file, context saturates around
+file 30. Compaction fires. The agent must track progress across the boundary.
+
+### Oracle Scoring (post-run, host-side)
+
+```bash
+cd data/m3_captures/G13-capacity-treatment-1/workspace
+python -m pytest tests/test_consistency.py -v
+```
+
+Key tests:
+- `test_old_name_removed` — FAILS if any file still references RegistryEntry
+- `test_progress_report` — always passes; prints exact completion % and lists
+  remaining files (the diagnostic for state-loss-after-compaction)
+
+### Evidence Classification
+
+| Outcome | Classification | Meaning |
+|---------|---------------|---------|
+| 5/5 PASS, 62/62 renamed | **[DEDUCTIVE]** mechanism proof | Selective ingestion + compaction tracking works at 188% of window |
+| Partial (e.g., 47/62) | **[DEDUCTIVE]** mechanism failure | State lost after compaction; progress diagnostic shows where |
+| 0/62 (no edits) | infra_failure | Agent didn't attempt the task (check stdout) |
+
+### Differences from Standard M3 Captures
+
+| Aspect | Standard M3 | G13 capacity |
+|--------|------------|--------------|
+| Fixture | Hand-written (~10 files) | Generated (60 files, 246k tokens) |
+| Task complexity | Multi-file write (migration) | Same, but at capacity boundary |
+| Expected session length | 20-60 messages | 120+ messages (62 Read+Edit cycles) |
+| Timeout | 300-600s | 900-1200s (long iterative session) |
+| Key diagnostic | CPI, write compression | `test_progress_report` completion % |
+| Evidence tier | [INDUCTIVE] (effect size) | [DEDUCTIVE] (binary mechanism proof) |

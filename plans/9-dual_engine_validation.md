@@ -511,6 +511,7 @@ antecedent unreachable). These pairs measure delegation efficiency only (H1).
 | CPI = 0.83 posterior mean (N=7 pairs) | Reported as fact | **[INDUCTIVE]** — Type S=4.4%, CrI [-0.12, 1.79] | Sign reliable at N=7. Magnitude reasonably estimated (Type M=1.028×). |
 | Write compression (N=4 pairs) | Reported as headline | **[INDUCTIVE]** — direction consistent, range 8x–20x | All 4 pairs show compression > 1.0. Median 16.5x. |
 | Orientation speedup 1.3 msgs | "CONFIRMED (revised)" | **[INDUCTIVE]** — likely Type S > 10% | Effect near zero relative to variance. Sign may be wrong. |
+| G13: Context capacity boundary (246k tokens, 5/5 PASS) | New | **[DEDUCTIVE]** — mechanism proof (trivial) | Tool-mediated access avoids overflow; forced full ingestion arithmetically impossible (188%). Caveat: used sed (bulk command); compaction-stress variant (iterative Read+Edit) pending. |
 
 ---
 
