@@ -1,7 +1,7 @@
 # Plan 8 — Runtime Friction Detection
 
 Status: **PHASE 0 COMPLETE** — K2 resolved (K2a), proceeding to Phase 1
-Version: 0.2.2 (2026-07-21)
+Version: 0.2.4 (2026-07-21)
 Parent:
   - 7: plans/7-subagent_progress_observation.md (NDJSON wire protocol substrate)
   - 2: plans/2-cta_verification_layer_plan.md (Phase 6 bimodal CPI finding)
@@ -621,6 +621,13 @@ available. The synthetic is a proxy — documented as limitation per §8 protoco
 Run 6+ sessions through the existing harness with friction index logging enabled.
 Compute agreement between runtime friction label and post-hoc CPI label.
 
+**Infrastructure ready (v0.2.4):**
+- `_move_to_finished()` in the overlay auto-dumps raw NDJSON to
+  `/root/output/raw_<session_id>.ndjson` on every ndjson_mode session completion.
+  No additional code changes needed — just run the harness.
+- `scripts/score_friction.py` scores captured streams offline:
+  `python3 scripts/score_friction.py /root/output/raw_proc_*.ndjson --json`
+
 **Gate:** ≥80% agreement (H8 threshold). Sessions where they disagree are
 analyzed individually — disagreement is interesting, not just failure.
 
@@ -775,6 +782,7 @@ If Plan 8 is abandoned (E1 fails or H8 rejected):
 
 | Version | Date | Change |
 |---------|------|--------|
+| 0.2.4 | 2026-07-21 | Phase 2 infrastructure: (1) `_move_to_finished()` auto-dumps raw NDJSON to `/root/output/raw_<session_id>.ndjson` for ndjson_mode sessions. (2) `scripts/score_friction.py` standalone scorer for offline validation (--window, --json, exit codes). Validated: P7-2=0.113 CLEAN, P7-3=0.086 CLEAN, synthetic=0.20-0.43. |
 | 0.2.3 | 2026-07-21 | Phase 1b EXECUTED. Direct capture FAILED (agent defeats all local friction: uv, ensurepip, env override — requires Docker F1/F3). Synthetic reconstruction from G3 run 1 state.db: peak FI=0.433 at friction burst [0:10], separation 0.347 ≥ 0.25. E1 CONDITIONAL PASS (current-state indicator discriminates regimes; full-session diluted by recovery at 0.230). Evidence: `data/m3_captures/P8-synthetic-friction-g3run1/`. Remaining: Docker-captured real friction when daemon available. |
 | 0.2.2 | 2026-07-21 | Phase 1b friction environments: added F1 (no pip + missing deps, fi=0.683), F2 (read-only FS, fi=0.517), F3 (network isolation, fi=0.800) with Dockerfiles, signal budget table, anti-escape measures, expected failure cascade, and escalation recommendation (F1→F3). |
 | 0.2.1 | 2026-07-21 | Consistency fixes + implementation: (1) BUG FIX — `tool_use_result` accessed from top-level user event, not inside tool_result block. (2) Implementation aligned with §3.2 composite formula (was using per-signal thresholds). (3) Signature extraction broadened to cover Agent/WebFetch/generic tools. (4) §3.2 documents 0.02 normalization constant and S4 display-only role. (5) Implementation deployed to `data/ndjson_overlay/process_registry.py`. (6) Phase 1a validated: P7-2/P7-3 score 0.086 (clean), synthetic friction scores 0.833 (HIGH). E3/E4 constraints verified. |
