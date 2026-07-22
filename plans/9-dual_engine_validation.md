@@ -485,7 +485,7 @@ It is judged by **adoption**:
 |---|-----------|----------|
 | M1 | Plan 8 §4.0 adopts the framework (reconciliation rules, N≥3, Type S/M) | §4.0 present and locked before unblinding |
 | M2 | ≥3 existing claims reclassified as DEDUCTIVE/INDUCTIVE/EXPLORATORY | §9 table populated and reflected in audit_report.md |
-| M3 | ≥1 inductive claim reports Type S/M with CI | Any plan's exit evidence includes posterior summary |
+| M3 | ≥1 inductive claim reports Type S/M with CI | **DONE.** `scripts/type_sm_score.py` on N=4 CPI: Type S=40.9%, Type M=1.163×, 95% CrI [-0.31, 0.40]. Verdict: [EXPLORATORY] — sign uncertain. Will update if N grows. |
 | M4 | ≥1 co-adaptation check run (R4 follow-up on H8) | **DONE.** `scripts/r4_co_adaptation_check.py` — held-out 3/4, perturbation 0 FP/FN. R4 cleared. |
 | M5 | Independent-scorer pattern used for ≥1 metric | **DONE.** `scripts/independent_scorer.py` — blind scorer classified 7/7 sessions, 100% agreement with FI. Two-engine framing validated. |
 | M6 | audit_report.md and pr_writeup.md use claim labels | **DONE.** All claims tagged. M2 satisfied (8+ labels in audit_report.md). |

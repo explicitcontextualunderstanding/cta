@@ -161,7 +161,7 @@
 
 **Plan 9 claim labels:**
 - H8 (FI discriminates regimes, 9/9): **[DEDUCTIVE]** — classification accuracy is structural. R4 cleared: held-out signals (event count, turn count, content volume) independently separate regimes (3/4); perturbation test 0 FP/FN under 10% exitCode flip.
-- CPI = 0.833 (N=4 pairs): **[INDUCTIVE]** — needs CI + Type S/M (not yet computed)
+- CPI = 0.833 (N=4 pairs): **[EXPLORATORY]** — Type S=40.9% (sign uncertain), Type M=1.163×, 95% CrI [-0.31, 0.40]. Effect direction unreliable at N=4 with bimodal data. Will update if N grows.
 - Bgmode exit-42 fallback: **[DEDUCTIVE]** — model compliance proven (mechanism proof, no magnitude claim)
 - Gap 3 Run 1 (treatment 0.477 vs control 0.421): **[EXPLORATORY]** — N=1, R6 fires (construct-invalid: F1 friction self-healed, prescription never exercised)
 - Gap 3 Run 2 (exit-42 probe, m1probe): **[DEDUCTIVE + EXPLORATORY]** — DEDUCTIVE: exit-42 never fired, both arms chose `-p` directly (antecedent unreachable under skill's print-mode default). EXPLORATORY: N=1 efficiency figures (treatment used MORE resources than control; uninterpretable). R6 fires: do not replicate.
