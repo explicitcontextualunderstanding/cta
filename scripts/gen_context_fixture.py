@@ -11,10 +11,25 @@ Target modes:
   qodercli: 200k+ tokens. Exceeds qodercli's 131k default window.
     Tests whether the executor tracks rename progress across compaction
     boundaries — state-tracking-under-compaction, not raw capacity.
+  compaction-stress: ~480k tokens, 120 files, forced-iterative mode.
+    Designed to guarantee compaction fires. Evidence from G13-compaction-stress-1
+    showed a capable agent peaks at 53% context with 60 files by using Grep for
+    bulk discovery + targeted Edits (avoiding full Reads). This preset:
+    (a) doubles file count to 120 (overflow even with efficient strategy), and
+    (b) forbids bulk tools via MIGRATION_SPEC.md constraints, forcing Read+quote+
+    Edit per file to saturate context and trigger compaction.
+
+Force-iterative mode (--force-iterative, default for compaction-stress):
+  Adds a MANDATORY PROCESS section to MIGRATION_SPEC.md that:
+  - Forbids Grep, Glob, sed, grep -r, find, and bulk edit commands
+  - Requires Read (full file) → quote relevant lines → Edit, one file at a time
+  - Requires explicit progress tracking every 10 files
+  This prevents the efficient pattern that avoided compaction in capture 1.
 
 Usage:
     python scripts/gen_context_fixture.py --output-dir /tmp/fixture_repo
     python scripts/gen_context_fixture.py --target-agent qodercli --output-dir /tmp/fixture_200k
+    python scripts/gen_context_fixture.py --target-agent compaction-stress --output-dir /tmp/fixture_stress
     python scripts/gen_context_fixture.py --files 60 --tokens-per-file 4000 --coupling-density 0.5
     python scripts/gen_context_fixture.py --seed 42 --task rename
 """
@@ -75,8 +90,9 @@ class CouplingGraph:
 
 
 TARGET_PRESETS = {
-    "orchestrator": {"n_files": 40, "tokens_per_file": 3500, "density": 0.4},
-    "qodercli": {"n_files": 60, "tokens_per_file": 4000, "density": 0.5},
+    "orchestrator": {"n_files": 40, "tokens_per_file": 3500, "density": 0.4, "force_iterative": False},
+    "qodercli": {"n_files": 60, "tokens_per_file": 4000, "density": 0.5, "force_iterative": False},
+    "compaction-stress": {"n_files": 120, "tokens_per_file": 4000, "density": 0.5, "force_iterative": True},
 }
 
 
@@ -89,11 +105,13 @@ class FixtureGenerator:
         seed: int | None = None,
         task: str = "rename",
         target_agent: str = "orchestrator",
+        force_iterative: bool | None = None,
     ):
         preset = TARGET_PRESETS[target_agent]
         self.n_files = n_files if n_files is not None else preset["n_files"]
         self.tokens_per_file = tokens_per_file if tokens_per_file is not None else preset["tokens_per_file"]
         self.density = density if density is not None else preset["density"]
+        self.force_iterative = force_iterative if force_iterative is not None else preset["force_iterative"]
         self.target_agent = target_agent
         self.seed = seed if seed is not None else 20260722
         self.task = task
@@ -423,7 +441,7 @@ class FixtureGenerator:
 
     def _generate_migration_spec(self) -> str:
         """Generate MIGRATION_SPEC.md — the task prompt."""
-        return textwrap.dedent(f"""\
+        spec = textwrap.dedent(f"""\
             # Migration Task: Protocol Rename
 
             ## Objective
@@ -463,6 +481,40 @@ class FixtureGenerator:
             - Do NOT add or remove files.
             - Every module must still import cleanly after the rename.
         """)
+
+        if self.force_iterative:
+            spec += textwrap.dedent(f"""\
+
+            ## MANDATORY PROCESS (compaction-stress protocol)
+
+            You MUST follow this exact process for each file. Deviation invalidates
+            the test.
+
+            1. **Discover files by listing the directory** (`ls src/models/`,
+               `ls src/services/`, `ls src/adapters/`). Do NOT use Grep, Glob,
+               `grep -r`, `sed`, `find`, or any bulk search/edit command.
+
+            2. **Read each file IN FULL** using the Read tool before editing it.
+               You must see the complete file content.
+
+            3. **Quote the relevant lines** containing `{self.protocol_name}` in your
+               response text before making the edit. This confirms you identified
+               all occurrences.
+
+            4. **Edit the file** using the Edit tool with targeted replacements.
+
+            5. **Process files one at a time**, sequentially. Do NOT batch reads
+               or edits across multiple files in a single turn.
+
+            6. **Track your progress explicitly.** After every 10 files, state:
+               "Completed N/{self.n_files + 2} files. Remaining: [next 5 filenames]."
+
+            These constraints exist to test state-tracking under context pressure.
+            The efficient strategy (Grep all files, then batch-edit) defeats the
+            purpose of this evaluation.
+        """)
+
+        return spec
 
     def _generate_pyproject(self) -> str:
         return textwrap.dedent("""\
@@ -530,6 +582,7 @@ class FixtureGenerator:
             "n_models": self.n_models,
             "n_services": self.n_services,
             "n_adapters": self.n_adapters,
+            "force_iterative": self.force_iterative,
         }
 
         import json
@@ -571,7 +624,26 @@ def main():
         default="data/context_fixture",
         help="Output directory",
     )
+    parser.add_argument(
+        "--force-iterative",
+        action="store_true",
+        default=None,
+        help="Force iterative Read+quote+Edit per file (forbids bulk tools). "
+        "Default: enabled for compaction-stress preset, disabled otherwise.",
+    )
+    parser.add_argument(
+        "--no-force-iterative",
+        action="store_true",
+        default=False,
+        help="Disable forced-iterative mode even for compaction-stress preset.",
+    )
     args = parser.parse_args()
+
+    force_iterative = None
+    if args.force_iterative:
+        force_iterative = True
+    elif args.no_force_iterative:
+        force_iterative = False
 
     gen = FixtureGenerator(
         n_files=args.files,
@@ -580,6 +652,7 @@ def main():
         seed=args.seed,
         task=args.task,
         target_agent=args.target_agent,
+        force_iterative=force_iterative,
     )
     metadata = gen.generate(args.output_dir)
 
@@ -590,6 +663,7 @@ def main():
     print(f"  Coupling density: {metadata['coupling_density']}")
     print(f"  Task: {metadata['task']} ({metadata['protocol_old']} → {metadata['protocol_new']})")
     print(f"  Seed: {metadata['seed']}")
+    print(f"  Force iterative: {metadata['force_iterative']}")
 
 
 if __name__ == "__main__":

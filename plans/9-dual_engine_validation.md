@@ -511,7 +511,7 @@ antecedent unreachable). These pairs measure delegation efficiency only (H1).
 | CPI = 0.83 posterior mean (N=7 pairs) | Reported as fact | **[INDUCTIVE]** — Type S=4.4%, CrI [-0.12, 1.79] | Sign reliable at N=7. Magnitude reasonably estimated (Type M=1.028×). |
 | Write compression (N=4 pairs) | Reported as headline | **[INDUCTIVE]** — direction consistent, range 8x–20x | All 4 pairs show compression > 1.0. Median 16.5x. |
 | Orientation speedup 1.3 msgs | "CONFIRMED (revised)" | **[INDUCTIVE]** — likely Type S > 10% | Effect near zero relative to variance. Sign may be wrong. |
-| G13: Context capacity boundary (246k tokens, 5/5 PASS) | New | **[DEDUCTIVE]** — mechanism proof (trivial) | Tool-mediated access avoids overflow; forced full ingestion arithmetically impossible (188%). Caveat: used sed (bulk command); compaction-stress variant (iterative Read+Edit) pending. |
+| G13: Context capacity boundary (246k tokens, 5/5 PASS) | New | **[DEDUCTIVE]** — mechanism proof (trivial) | Tool-mediated access avoids overflow; forced full ingestion arithmetically impossible (188%). Capture 1 (60 files): compaction did NOT fire (peak 53.1%), proves headroom only. Compaction-stress capture 2 (120 files, force-iterative) pending. |
 
 ---
 
@@ -685,36 +685,96 @@ The 246k tokens never entered the agent's context; `sed` operated externally.
 Baseline arithmetic: forced full ingestion requires 246,617 tokens against 131,072
 window (188% overflow). Recorded in `data/g13_evidence.json`.
 
-**The test that actually matters — compaction-stress protocol:**
+**Compaction-stress capture 1 (G13-compaction-stress-1, 2026-07-22):**
 
-The real signal is whether an agent can track rename progress across context
-compaction boundaries when forced to process files iteratively:
+Ran the qodercli preset (60 files, 246k tokens) with a fresh session. Result:
+6/6 oracle tests PASS, 62/62 files renamed. **But compaction did NOT fire.**
 
-1. **Fresh session required.** The test needs a clean qodercli session (not one
-   already partially filled with conversation). Context starts empty.
-2. **Forced iterative pattern.** Prompt: "Read each file individually, identify
-   RegistryEntry references, Edit each file to rename to CatalogNode. Do NOT use
-   sed, grep -r, or bulk commands. Process files one at a time."
-3. **Context fills after ~30 files.** 62 files × ~4k tokens each = context saturates
-   around file 30. Compaction fires. The agent must remember "I renamed files 1-30,
-   I still need 31-62."
+| Metric | Value |
+|--------|-------|
+| Peak `context_usage_ratio` | 0.531 (53.1%) |
+| `context_management` events | 0 (all null) |
+| Total turns | 36 |
+| Duration | 297s |
+| Tool calls | 64 Edits, 63 Reads, 1 Grep, 4 Bash |
+
+**Why compaction didn't fire:** The agent used an efficient strategy that avoided
+context saturation:
+1. Single Grep call to discover all 62 target files (~200 tokens, not 62 × 4k Reads)
+2. Targeted Edit calls (old_string/new_string ~150 chars each, ~480 tokens/file retained)
+3. Context management truncated stale Read results — only recent ones stayed full
+4. Linear growth: 0.96%/turn in the file-processing region (turns 9–32)
+5. Extrapolation: compaction (~80%) would fire around turn 55–60, needing ~90–100 files
+
+**Construct-validity verdict:** Capture 1 proves **capacity headroom** (62-file
+rename fits in 53% of window via tool-mediated editing) but does NOT prove
+**state-tracking-under-compaction**. The compaction boundary was never exercised.
+G13 remains at "trivial proof" level.
+
+**The architectural insight (secondary finding):** The agent's natural strategy
+(Grep-discover → Read-confirm → Edit-replace) IS the delegation architecture
+working. A non-tool-mediated agent forced to hold all 62 files in a single prompt
+would overflow (246k > 131k). The tool loop provides implicit "selective ingestion."
+This is evidence FOR the capacity-protection claim, but it's an architectural
+argument, not a compaction-stress result.
+
+**Fixture generator update (compaction-stress preset):**
+
+`scripts/gen_context_fixture.py` now has a `compaction-stress` preset designed to
+guarantee compaction fires, addressing both failure modes from capture 1:
+
+| Parameter | qodercli (capture 1) | compaction-stress (capture 2) |
+|-----------|---------------------|-------------------------------|
+| Files | 60 | 120 |
+| Estimated tokens | 246k | 493k |
+| Force-iterative | No | **Yes** |
+| Bulk tools allowed | Yes (agent used Grep) | **Forbidden** |
+| Expected compaction | Did not fire (53% peak) | Guaranteed (120 files × forced Read) |
+
+The `--force-iterative` mode adds a MANDATORY PROCESS section to MIGRATION_SPEC.md:
+- Forbids Grep, Glob, `grep -r`, `sed`, `find`, and bulk edit commands
+- Requires Read (full file) → quote relevant lines → Edit, one file at a time
+- Requires explicit progress tracking every 10 files ("Completed N/122 files")
+- Prevents the efficient pattern that avoided compaction in capture 1
+
+**The test that actually matters — compaction-stress protocol v2:**
+
+1. **Fresh session required.** Clean qodercli session, context starts empty.
+2. **Forced iterative pattern (enforced by MIGRATION_SPEC.md).** The agent must
+   Read each file in full, quote the RegistryEntry lines, then Edit. No bulk
+   discovery. No batching. One file per turn.
+3. **Context saturates around file 30–40.** 120 files × ~4k tokens Read per file,
+   with forced quoting in response text. Even with truncation of stale results,
+   the steady-state context should exceed 80% and trigger compaction.
 4. **Oracle diagnostic is the key evidence.** `test_progress_report` shows exact
-   file-level completion. If compaction causes state loss: "47/62 renamed (75.8%)"
+   file-level completion. If compaction causes state loss: "97/122 renamed (79.5%)"
    with remaining files listed. That's the evidence — not pass/fail, but WHERE it
    lost track.
 5. **Fixture is deterministic** (seed 20260722) — results comparable across attempts.
+6. **Progress checkpoints** every 10 files provide a compaction-boundary marker:
+   if the agent's progress statements stop or reset after compaction, that's
+   direct evidence of state loss.
 
 **Run command:**
 ```bash
-python scripts/gen_context_fixture.py --target-agent qodercli --output-dir <workspace>
-# Point fresh qodercli session at <workspace> with MIGRATION_SPEC.md task
-# Post-run: python -m pytest tests/test_consistency.py -v
+python scripts/gen_context_fixture.py --target-agent compaction-stress \
+  --output-dir data/m3_captures/G13-compaction-stress-2/workspace
+# Point fresh qodercli session at workspace with MIGRATION_SPEC.md task
+# Post-run: /opt/homebrew/bin/python3 -m pytest tests/test_consistency.py -v
 ```
 
-**Status:** Instrument built and verified (26a583f). Trivial proof recorded
-(3910672). Compaction-stress capture PENDING — requires fresh session.
-Shelf-life concern: pin to named model+version; regenerate with --files 80+ if
-orchestrator window grows to 256k.
+**Post-capture analysis checklist:**
+- [ ] Extract `context_usage_ratio` trajectory — confirm it exceeds 0.80
+- [ ] Search for non-null `context_management` events — confirm compaction fired
+- [ ] Check `test_progress_report` output — 122/122 or partial?
+- [ ] If partial: which files were missed? Do they cluster after a compaction boundary?
+- [ ] Check progress checkpoint statements — did the agent lose track after compaction?
+
+**Status:** Instrument updated with compaction-stress preset. Capture 1 recorded
+(headroom proof, compaction not fired). Capture 2 PENDING — requires fresh session
+with the force-iterative fixture.
+Shelf-life concern: pin to named model+version; regenerate with --files 150+ if
+executor window grows to 256k.
 
 ### Summary of named gaps
 
@@ -724,7 +784,7 @@ orchestrator window grows to 256k.
 | G10 No PPC | Medium (model validation) | Simulate-from-posterior sanity check at first N≥3 | When first N≥3 analysis runs |
 | G11 No automation | Medium (human error) | §4.1 git-commit proof now; `check_claim.py` later | Incremental |
 | G12 No mutation testing | Low (code stability) | §7 perturbation test as minimum | When metrics stabilize |
-| G13 No capacity boundary test | Medium (construct validity) | `gen_context_fixture.py` instrument built; capture pending | Next capture session |
+| G13 No capacity boundary test | Medium (construct validity) | Capture 1: headroom proven (53% peak, no compaction). Capture 2: compaction-stress preset (120 files, force-iterative) pending | Next capture session |
 
 **Operating principle (from compose-pkl):** "These gaps do not invalidate the
 mechanism — but they define the compliance boundary. Claims beyond that boundary
