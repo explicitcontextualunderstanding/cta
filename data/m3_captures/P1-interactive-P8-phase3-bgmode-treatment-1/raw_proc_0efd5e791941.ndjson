@@ -1,0 +1,1 @@
+Error: The --prompt-interactive flag cannot be used when input is piped from stdin.

@@ -1,7 +1,7 @@
 # Plan 8 — Runtime Friction Detection
 
-Status: **PHASE 3 IN PROGRESS** — H8 CONFIRMED (9/9 = 100%). Deployed to fork. SKILL.md v2.5.1 pushed. Gap 2 CLOSED. Integration tests persisted (7/7 pass).
-Version: 0.3.2 (2026-07-22)
+Status: **PHASE 3 IN PROGRESS** — H8 CONFIRMED (9/9 = 100%). Deployed to fork. SKILL.md v2.5.1 pushed. Gap 2 CLOSED. Bgmode test COMPLETE (exit-42 fallback proven). Integration tests persisted (7/7 pass).
+Version: 0.3.4 (2026-07-22)
 Parent:
   - 7: plans/7-subagent_progress_observation.md (NDJSON wire protocol substrate)
   - 2: plans/2-cta_verification_layer_plan.md (Phase 6 bimodal CPI finding)
@@ -24,8 +24,8 @@ Related:
 | K2 resolution | **K2a obtains.** `context_usage_ratio` present at `message.usage.context_usage_ratio` on every complete assistant event (stop_reason ≠ null). Full S1-S4 plan proceeds. |
 | Clean calibration | P7-3 scores friction_index=0.093 (< 0.15 threshold) with proper `tool:key_input[:80]` signatures. |
 | Phase 3 status | Deployed to hermes-agent fork. SKILL.md **v2.5.1** pushed (commit `00591faa6`): mild friction triage + exit-42 fallback guidance. **Gap 2 CLOSED:** friction display proven across CLEAN/MILD/HEAVY regimes. `detect_regime_adaptation()` in 10-detector registry. Integration tests persisted: `tests/test_regime_adaptation.py` (7/7 pass). Live container proof: `P1-interactive-P8-phase3-friction-treatment-1` (valid, exit 0, 57.8s). |
-| Background-mode test | Launched PID 22126, tag `P8-phase3-bgmode`, prompt forces `background=true` + `process(poll)`. Output: `data/m3_captures/P1-interactive-P8-phase3-bgmode-treatment-1/`. Check `result.json` + `hermes_stdout.txt` on restart. |
-| Next | **Gap 3 only:** behavioral evidence (±adaptation paired design). Blocked on friction environment the agent can't escape (Apple Container image with pip/ensurepip/curl/wget removed — F1/F3 configs in §4). Check bgmode test results first. |
+| Background-mode test | **COMPLETE.** Tag `P8-phase3-bgmode`. Model hit exit-42 (`-i` in background), quoted SKILL.md guidance verbatim, fell back to `-p`, completed task (auth.py + token.py created). 25-min reasoning loop stall (adversarial prompt conflict, not skill failure). Evidence: `data/m3_captures/P1-interactive-P8-phase3-bgmode-treatment-1/behavioral_trace.md`. |
+| Next | **Gap 3 only:** behavioral evidence (±adaptation paired design). Blocked on friction environment the agent can't escape (Apple Container image with pip/ensurepip/curl/wget removed — F1/F3 configs in §4). |
 
 ---
 
@@ -922,6 +922,7 @@ If Plan 8 is abandoned (E1 fails or H8 rejected):
 
 | Version | Date | Change |
 |---------|------|--------|
+| 0.3.4 | 2026-07-22 | **Bgmode test COMPLETE.** Container `P8-phase3-bgmode-treatment-1` (kimi-k2.7-code): model launched `-i` in background → exit 42, quoted SKILL.md exit-42 guidance verbatim ("Fall back to -p immediately — do NOT retry with -i"), fell back to `-p`, completed task (auth.py + token.py created with proper JWT implementation). 25-min reasoning loop stall due to adversarial prompt conflict ("Do NOT use print mode" vs skill guidance) — prompt-conflict stall, not skill failure. NDJSON: 1 line (exit-42 error only; no stream generated since `-i` failed immediately). Friction display NOT exercised in this run (already proven in Gap 2, v0.3.1). Evidence: `behavioral_trace.md` in capture dir. **Exit-42 → `-p` fallback guidance in SKILL.md v2.5.1 is proven effective in-container.** Only Gap 3 remains. |
 | 0.3.3 | 2026-07-22 | **Restart checkpoint.** AGENTS.md created (Apple Container, NOT Docker — kalloc.1024 leak, bind mounts, secrets, friction scope). .gitignore updated (hermes_home runtime artifacts excluded). CTA commit `79edd8f` (38 files, 1927 insertions): regime-conditional framing, Phase 3 evidence, plans 1/2/7/8 persistence updates, audit_report + pr_writeup synced to v2.5.0. `detect_regime_adaptation()` integration test: 6 scenarios pass (constructive kill, constructive print-switch, neutral no-switch, clean empty, context-flag, registry dispatch). SKILL.md step 5 `-p` mandate verified: `qodercli\s+-p\b` matches detector pattern. hermes-agent fork pushed (`4d3623106` on `feat/add-qodercli-skill`). Background-mode container test launched: PID 22126, tag `P8-phase3-bgmode`, output at `data/m3_captures/P1-interactive-P8-phase3-bgmode-treatment-1/`. **On restart:** check `result.json` + `hermes_stdout.txt` in that dir for bgmode proof. Only Gap 3 remains (behavioral evidence, blocked on friction environment). |
 | 0.3.2 | 2026-07-22 | **SKILL.md v2.5.1 pushed** (commit `00591faa6` on `fork/feat/add-qodercli-skill`). Changes: mild friction triage ("monitor, may self-recover"), heavy friction urgency ("act immediately"), exit-42 pipe conflict paragraph ("fall back to `-p`, never retry `-i`"). Integration tests persisted: `tests/test_regime_adaptation.py` (7/7 pass — 6 scenarios + registry count). 10-detector registry verified. CTA captures confirmed as v2.4.0 historical snapshots (no friction content). No active skills depend on old protocol. |
 | 0.3.1 | 2026-07-22 | **Gap 2 CLOSED.** Friction display proven across all three regimes by feeding live NDJSON through `_format_ndjson_progress()`: CLEAN (session_1.ndjson, no annotation, E3=0 chars), MILD (live pipe-mode 10-event run, `errors: 0/1`, +11 chars), HEAVY (synthetic 10-call/5-error, `⚠ Friction: HIGH-ERROR (5/10) | CTX-VELOCITY +2.8%/ev | RETRY Bash x10`, ~80 chars, E4 ✓). Method: `qodercli -p --output-format stream-json` pipe mode. Remaining: in-container poll-loop proof (exit-42 `-i`→`-p` fallback). |

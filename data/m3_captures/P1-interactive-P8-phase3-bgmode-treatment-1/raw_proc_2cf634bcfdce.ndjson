@@ -1,0 +1,2 @@
+bash: cd: --: invalid option
+cd: usage: cd [-L|[-P [-e]] [-@]] [dir]
