@@ -12,14 +12,36 @@
     "coupling_density": 0.5,
     "task": "rename RegistryEntry → CatalogNode"
   },
-  "treatment": {
-    "agent": "qodercli (this session)",
-    "method": "selective ingestion (grep discovery → sed mutation → python verification)",
-    "context_loaded": "minimal (command outputs only, no full file contents)",
-    "oracle_result": "5/5 PASS",
-    "progress": "62/62 files renamed (100.0%)",
-    "binary_outcome": "COMPLETED"
-  },
+  "attempts": [
+    {
+      "id": "attempt-1-sed",
+      "method": "selective ingestion (grep discovery → sed mutation → python verification)",
+      "context_loaded": "minimal (command outputs only, no full file contents)",
+      "oracle_result": "5/5 PASS",
+      "progress": "62/62 files renamed (100.0%)",
+      "peak_context_usage_ratio": null,
+      "compaction_fired": false,
+      "binary_outcome": "COMPLETED",
+      "verdict": "TRIVIAL PROOF — sed operated externally; 246k tokens never entered agent context"
+    },
+    {
+      "id": "attempt-2-iterative",
+      "session": "data/m3_captures/G13-compaction-stress-1/",
+      "method": "iterative Read+Edit (intended), actual: Grep discovery → targeted Edit (pattern-inferred)",
+      "context_loaded": "selective (Grep result + Edit confirmations, ~1.7k tokens/file)",
+      "oracle_result": "6/6 PASS",
+      "progress": "62/62 files renamed (100.0%)",
+      "peak_context_usage_ratio": 0.531,
+      "context_trajectory": "0.112 → 0.14 (turns 1-8) → 0.30 (Grep 62-file result) → 0.531 (end)",
+      "compaction_fired": false,
+      "context_management_events": 0,
+      "total_turns": 36,
+      "duration_seconds": 297,
+      "binary_outcome": "COMPLETED",
+      "verdict": "TRIVIAL PROOF — agent optimized away iterative Read pattern; used Grep for bulk discovery then targeted Edits. Context peaked at 53.1%, never approached compaction threshold.",
+      "protocol_violation": "Agent used Grep tool for bulk file discovery (not literally grep -r, but achieved same effect). Inferred rename pattern from first few files, applied uniformly. Never Read each file individually before editing."
+    }
+  ],
   "baseline": {
     "condition": "forced full ingestion (all 62 files loaded simultaneously)",
     "total_tokens_required": 246617,
@@ -29,17 +51,21 @@
     "remaining_for_reasoning": -115807,
     "binary_outcome": "IMPOSSIBLE (context overflow, cannot fit repo + task + reasoning)"
   },
-  "finding": "A 246k-token repo (188% of 131k window) is fully navigable via selective ingestion. Forced full ingestion is arithmetically impossible. The architectural property (tool-mediated file access) is what enables completion, not raw window size.",
+  "finding": "A 246k-token repo (188% of 131k window) is fully navigable via tool-mediated access. Two attempts confirm: (1) sed bulk command, (2) Grep+Edit pattern-inference. Both complete at minimal context cost (53% peak). The architecture provides enormous headroom — per-file context cost is ~1.7k tokens (not 4k), so 62 files fit in 53% of window. Forced full ingestion remains arithmetically impossible.",
   "claim_class": "DEDUCTIVE mechanism proof (binary outcome, no statistical inference needed)",
+  "what_is_proven": "Tool-mediated file access (Grep/Edit/sed) enables completion on repos 188% of window size. The agent's natural strategy (pattern-infer from discovery, then targeted edits) keeps context usage well below capacity.",
+  "what_is_NOT_proven": "State-tracking-under-compaction. Compaction never fired in either attempt (peak 53.1%). The harder failure mode — agent loses track of progress after context compression — remains untested.",
   "limitations": [
-    "Treatment used sed (bulk tool command), not iterative Read+Edit — tests tool access pattern, not state-tracking-under-compaction",
+    "Compaction never fired (peak context_usage_ratio = 0.531, threshold ~0.85+)",
+    "Agent violated iterative protocol: used Grep for bulk discovery instead of individual Reads",
     "Baseline is arithmetic proof (overflow > window), not an observed agent failure",
-    "Shelf life: pinned to qodercli 131k window; regenerate with --files 80+ if window grows to 256k",
-    "Does not test the harder failure mode: partial completion after compaction (agent renames 50/62 files, loses track, stops)"
+    "Shelf life: pinned to qodercli 131k window; regenerate with --files 120+ to force compaction",
+    "Does not test: partial completion after compaction (agent renames 50/62 files, loses track, stops)"
   ],
   "next_steps": [
-    "Run treatment via M3 harness (Hermes delegates to qodercli in container) for ecological validity",
-    "Design compaction-stress variant: force iterative Read+Edit (no sed) to test state tracking across context boundaries",
-    "Consider baseline with a real agent that attempts full ingestion and observe truncation behavior"
+    "Force compaction: --files 120+ OR prompt 'You MUST Read each file in full before editing. Do NOT use Grep or Glob.'",
+    "Alternative: inflate per-file context cost (require summarization before edit: 'explain each file logic before renaming')",
+    "Run via M3 harness (Hermes delegates to qodercli in container) for ecological validity",
+    "Consider whether the natural strategy (Grep+Edit) IS the answer — the architecture's value is that agents don't need to hold all files in context"
   ]
 }

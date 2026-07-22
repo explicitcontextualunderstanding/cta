@@ -325,36 +325,46 @@ Raw session data (SQLite databases + stdout) committed in `data/m2_captures/`, `
 
 ---
 
-## Named Gap: Context Capacity Boundary (designed, not yet executed)
+## Named Gap: Context Capacity Boundary (partially tested — compaction not yet exercised)
 
 The capacity-protection claim in this writeup is architectural, not empirical — no fixture in the
-evaluation exceeds either model's context limit. A purpose-built fixture generator now exists
-(`scripts/gen_context_fixture.py`) with two presets:
+original evaluation exceeds either model's context limit. A purpose-built fixture generator
+(`scripts/gen_context_fixture.py`) was created to test this, with two presets:
 
 - `--target-agent orchestrator`: 40 files, ~3500 tokens each, 144k total — exceeds Hermes's 128k window
-- `--target-agent qodercli`: 60 files, 246k total — exceeds qodercli's 131k default, forces compaction
+- `--target-agent qodercli`: 60 files, 246k total — exceeds qodercli's 131k default
 
-Both produce strict-DAG Python repos with non-guessable identifiers and a binary oracle
-(`test_consistency.py`) plus a progress-diagnostic mode reporting exact file-level completion %
-(detects state loss after compaction: 35/40 renamed → partial-progress failure).
+**Results (two attempts, 2026-07-22):**
+
+| Attempt | Method | Result | Peak context | Compaction? |
+|---------|--------|--------|-------------|-------------|
+| 1 (sed) | grep → sed bulk rename → verify | 5/5 PASS, 62/62 | ~2-3k tokens | No |
+| 2 (iterative) | Grep discovery → targeted Edit per file | 6/6 PASS, 62/62 | 53.1% | No |
+
+Both attempts completed the 246k-token rename (188% of window) without approaching the compaction
+threshold. The agent's natural strategy — pattern-infer from a single Grep, then apply targeted
+Edits (~1.7k tokens/file) — keeps context usage well below capacity. Forced full ingestion remains
+arithmetically impossible (246k tokens vs 131k window).
+
+**What is proven [DEDUCTIVE]:** Tool-mediated file access enables completion on repos 188% of
+window size. The architecture provides enormous headroom — per-file context cost is ~1.7k tokens
+(not the full 4k file size), so 62 files fit in 53% of window.
+
+**What is NOT proven:** State-tracking-under-compaction. Compaction never fired in either attempt.
+The harder failure mode — an agent losing track of progress after context compression — remains
+untested. To trigger compaction, the next attempt needs `--files 120+` or a prompt forcing
+full-file Reads before each Edit (62 × 4k = 248k tokens of Read results would overflow).
 
 **Why the orchestrator-layer test won't fire:** `delegate_tool.py` degrades gracefully — summaries
 are capped at 50% of remaining headroom (hard ceiling 24k chars). Hermes won't truncate; it gets
 shorter summaries. Both conditions would likely pass, differing only in summary fidelity.
 
-**The sharper test is at the executor layer:** Can qodercli complete a 60-file rename migration
-(246k tokens) that exceeds its own 131k window? This tests whether its internal context
-management — compaction, selective Read/Grep, state tracking across compaction boundaries —
-actually works at capacity. The oracle's progress-diagnostic mode catches partial completion.
+**Evidence tier:** [DEDUCTIVE] mechanism proof (binary pass/fail). In CTA vocabulary:
+CONTEXT_CAPACITY_BOUNDARY — the skill's architectural promise (selective ingestion) holds at 188%
+of window, but the compaction boundary itself was never exercised.
 
-**Evidence tier:** [DEDUCTIVE] mechanism proof (binary pass/fail), not [INDUCTIVE] effect-size.
-Closer to Plan 9 §1.2 construct validity ("does the instrument measure what it claims?") than a
-treatment-effect claim. In CTA vocabulary, this would be a new axis — CONTEXT_CAPACITY_BOUNDARY —
-measuring whether the skill's architectural promise (selective ingestion) holds under stress.
-
-**Status:** Fixture generator complete and verified (both presets). Execution against qodercli
-pending. Open design question: control condition is "qodercli at 131k vs 1M extended context" or
-"qodercli vs single-shot bulk ingestion" — neither is a clean counterfactual in CTA's paired sense.
+**Status:** Capacity headroom proven. Compaction-stress test pending (requires forcing context
+saturation via larger fixture or constrained prompt). Evidence: `data/g13_evidence.json`.
 
 ---
 
