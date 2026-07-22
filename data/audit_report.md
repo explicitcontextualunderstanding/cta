@@ -24,7 +24,7 @@
 
 | # | Hypothesis | Verdict | Plan 9 Label | Evidence |
 |---|---|---|---|---|
-| H1 | Delegation Efficiency | **PARTIALLY CONFIRMED** | **[EXPLORATORY]** — N=1 valid pair (P2), Type M unknown, likely >2.0× | 8x write compression (P2, claude print). Not clean 1-call collapse — model adds verification loops. |
+| H1 | Delegation Efficiency | **CONFIRMED** | **[INDUCTIVE]** — N=4 pairs (8x–20x), direction consistent, median 16.5x | Write compression validated across print (P2=8x) and interactive (P1=15x, P2=20x, P3=18x). Not clean 1-call collapse — model adds verification loops. |
 | H2 | PTY (pseudo-terminal) Stability | **RECLASSIFIED → CONFIRMED (revised)** | **[DEDUCTIVE]** — mechanism proof (100% compliance, exhaustive traces) | M4 proved print mode PTY-agnostic. 100% compliance on interactive calls. Scoped accordingly. |
 | H3 | Interactive Blockade Resolution | **CONFIRMED (revised)** | **[INDUCTIVE]** — N=9, effect 1.3 msgs, likely Type S >10% (sign may be wrong) | Orientation speedup (7.2 vs 8.5 msgs), not enablement. Baseline resolves independently. |
 | H4 | Binary Resolution | **CONFIRMED** | **[DEDUCTIVE]** — mechanism proof (6/6 exhaustive, presence/absence) | 6/6 treatment traces. Consistent across both models. |
@@ -147,9 +147,7 @@
 
 **H6 verdict: RECLASSIFIED.** H6-original ("CPI>1.0") is UNDER-SPECIFIED — binary threshold on a bimodal distribution is a category error. H6-revised ("NDJSON shifts CPI rightward; clean sessions >1.0, friction sessions ≤1.0") is CONFIRMED. Run 1 (0.912, 92 msgs) hit Flask/werkzeug debugging friction. Run 2 (1.594, 53 msgs) was clean. Mean=1.253. The analytical model (1.18) was wrong in mechanism but right in direction.
 
-**Interpretation:** NDJSON eliminates mechanism-dependent overhead (spinner noise, premature kills). What remains is environment-dependent: clean environments achieve CPI>1.0; friction-heavy environments (missing deps, import paths) stay ≤1.0. The skill's value separates cleanly: delegation efficiency (8x WC, always) and context preservation (CPI>1.0 when environment is clean).
-
-**Status:** Run 1 of 3 complete. Runs 2-3 in progress. Direction is clear; final N=3 will confirm.
+**Interpretation:** NDJSON eliminates mechanism-dependent overhead (spinner noise, premature kills). What remains is environment-dependent: clean environments achieve CPI>1.0; friction-heavy environments (missing deps, import paths) stay ≤1.0. The skill's value separates cleanly: delegation efficiency (8x–20x WC, always) and context preservation (CPI>1.0 when environment is clean; N=7 confirms sign reliable, Type S=4.4%).
 
 **Evidence:** `data/m3_captures/P7-ndjson-treatment-{1,2,3}/capture.json`, `data/m3_captures/P1-interactive-kimi-ndjson-treatment-1/state.db`
 
