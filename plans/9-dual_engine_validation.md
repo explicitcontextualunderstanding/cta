@@ -677,7 +677,41 @@ CONTEXT_CAPACITY_BOUNDARY — testing whether the skill's architectural property
 divergence at the capacity threshold. Closer to a construct validity check
 (§1.2 "does the instrument measure what it claims?") than a treatment-effect claim.
 
-**Status:** Instrument built and verified (26a583f). No capture data yet.
+**Preliminary result (26a583f + 3910672):** Treatment passed 5/5 oracle tests
+using `sed` (bulk tool command). This is a TRIVIAL proof — it demonstrates that
+tool-mediated access avoids context overflow, which is architecturally obvious.
+The 246k tokens never entered the agent's context; `sed` operated externally.
+Baseline arithmetic: forced full ingestion requires 246,617 tokens against 131,072
+window (188% overflow). Recorded in `data/g13_evidence.json`.
+
+**The test that actually matters — compaction-stress protocol:**
+
+The real signal is whether an agent can track rename progress across context
+compaction boundaries when forced to process files iteratively:
+
+1. **Fresh session required.** The test needs a clean qodercli session (not one
+   already partially filled with conversation). Context starts empty.
+2. **Forced iterative pattern.** Prompt: "Read each file individually, identify
+   RegistryEntry references, Edit each file to rename to CatalogNode. Do NOT use
+   sed, grep -r, or bulk commands. Process files one at a time."
+3. **Context fills after ~30 files.** 62 files × ~4k tokens each = context saturates
+   around file 30. Compaction fires. The agent must remember "I renamed files 1-30,
+   I still need 31-62."
+4. **Oracle diagnostic is the key evidence.** `test_progress_report` shows exact
+   file-level completion. If compaction causes state loss: "47/62 renamed (75.8%)"
+   with remaining files listed. That's the evidence — not pass/fail, but WHERE it
+   lost track.
+5. **Fixture is deterministic** (seed 20260722) — results comparable across attempts.
+
+**Run command:**
+```bash
+python scripts/gen_context_fixture.py --target-agent qodercli --output-dir <workspace>
+# Point fresh qodercli session at <workspace> with MIGRATION_SPEC.md task
+# Post-run: python -m pytest tests/test_consistency.py -v
+```
+
+**Status:** Instrument built and verified (26a583f). Trivial proof recorded
+(3910672). Compaction-stress capture PENDING — requires fresh session.
 Shelf-life concern: pin to named model+version; regenerate with --files 80+ if
 orchestrator window grows to 256k.
 
