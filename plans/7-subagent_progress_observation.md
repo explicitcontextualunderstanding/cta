@@ -13,11 +13,15 @@ Related:
 
 | Field | Value |
 |---|---|
-| Status | **CLOSED** — SIP ELIMINATED with empirical proof |
-| Evidence | `data/m3_captures/P7-ndjson-treatment-1/capture.json` |
-| Treatment results | 0% spinner-only (0/16), 100% structured (16/16), 3 tools visible (Bash, Write, Read), natural exit in 4 turns / 14s |
+| Status | **CLOSED** — SIP ELIMINATED with empirical proof (N=3) |
+| Evidence | `data/m3_captures/P7-ndjson-treatment-{1,2,3}/capture.json` |
+| Treatment results | N=3 captures, ALL 0% spinner-only, 100% structured, natural exit |
+| — treatment-1 | v1.0.45: 16 lines, 0% spinner, tools: Bash/Write/Read, 4 turns, 14s |
+| — treatment-2 | v1.1.2: 17 lines, 0% spinner, tools: Bash/Read/Write, 4 turns, 15s |
+| — treatment-3 | v1.1.2: 20 lines, 0% spinner, tools: Bash/Read, 5 turns, 24s |
 | Control baseline | 52% spinner-only (39/75), 0% structured, premature kill after 74 polls |
 | Improvement | 52% → 0% spinner-only; 0% → 100% structured; killed → natural completion |
+| Version drift | `--output-format stream-json` stable across 1.0.45 → 1.1.2 (major bump); protocol_version: "1.0.0" |
 | Conclusion | MONITORING_IMPATIENCE SIP is **ELIMINATED** by NDJSON pipe-spawn integration |
 | SKILL.md | v2.4.0 deployed — patience guidance scoped to interactive-foreground only; background tasks documented as automatic NDJSON |
 
@@ -785,7 +789,7 @@ invalidate the verdict but would strengthen it against external challenge.
 | # | Gap | Current N | Target N | Why it matters | Probe | Priority |
 |---|-----|-----------|----------|----------------|-------|----------|
 | E1 | Treatment capture is N=1 (16 polls, one session) | 1 | ≥3 | "0% spinner-only" headline rests on a single capture. Reviewer could dismiss as luck. | Run 2 more Hermes sessions delegating multi-tool tasks with NDJSON active. Measure spinner-only rate per session. | **HIGH** — blocker for external defensibility |
-| E2 | Version drift on `--output-format stream-json` | 0 (never tested across versions) | 1 post-update test | Undocumented flag. One qodercli update could silently break the integration. | `npm view @qoder-ai/qodercli time` for cadence. After next auto-update: re-run `qodercli -p --output-format stream-json --permission-mode bypass_permissions "say hello"` and confirm NDJSON on stdout. | **MEDIUM** — ticking clock, cheap to check |
+| ~~E2~~ | ~~Version drift on `--output-format stream-json`~~ | ~~1~~ | ~~1~~ | ~~Undocumented flag.~~ | **CLOSED (2026-07-21):** Tested on 1.1.2 (major bump from 1.0.45). Same event types, same fields, explicit `protocol_version: "1.0.0"` in init event. Release cadence near-daily but NDJSON contract survived 1.0→1.1. Wire protocol is versioned — strong stability signal. | ~~MEDIUM~~ DONE |
 | E3 | Multi-turn NDJSON untested | 0 | 1 | Full SDK mode (stdin JSONL, `QODER_AGENT_SDK_ENTRYPOINT`) is reverse-engineered (§2.1) but never exercised. If Hermes needs iterative qodercli sessions, current integration doesn't cover it. | Spawn with full SDK recipe, send 2 turns via stdin pipes, confirm NDJSON events for both turns. | **LOW** — only if multi-turn becomes a near-term need |
 
 ### E1 protocol (treatment N≥3)
