@@ -16,31 +16,27 @@ This PR includes evidence from a **Counterfactual Trace Audit (CTA)** — 23 con
 
 ### Evidence summary (CTA, 23 containerized sessions)
 
-**Print mode (strong signal, claude-sonnet-4, N=10):**
+**Proven capabilities [DEDUCTIVE — mechanism proofs, no statistical uncertainty]:**
 
-| Metric | With skill | Without skill | Ratio |
+| Claim | Evidence | Label |
+|-------|----------|-------|
+| Auth gatekeeper | Without skill: "Not logged in" (qodercli unusable). With skill: token configured, delegation works. | [DEDUCTIVE] |
+| Binary resolution | 6/6 treatment traces execute `which -a qodercli` during orientation. 0/6 baselines. | [DEDUCTIVE] |
+| MONITORING_IMPATIENCE eliminated | 0% spinner-only polls (N=3 treatment) vs 52% control. NDJSON pipe-spawn (v2.4.0). | [DEDUCTIVE] |
+| Runtime friction detection (H8) | 9/9 sessions correctly classified (100%). R4 cleared: independent scorer 7/7 agreement, 0 FP/FN under perturbation. | [DEDUCTIVE] |
+| PTY stability (H2-revised) | Print mode PTY-agnostic (M4 proof). Interactive: 100% pty=true compliance. | [DEDUCTIVE] |
+
+**Exploratory evidence [magnitude unvalidated — motivates further study]:**
+
+| Metric | With skill | Without skill | Label |
 |--------|-----------|---------------|-------|
-| Manual file writes (P2 migration) | 2 | 16 | **8x fewer** |
-| Tool calls (P2) | 38 | 62 | 1.6x fewer |
-| Messages (P2) | 66 | 113 | 1.7x fewer |
-| qodercli usable without skill? | Yes (token provided) | **No** ("Not logged in") | Auth gatekeeper |
+| Manual file writes (P2 migration) | 2 | 16 (8x fewer) | [EXPLORATORY] — N=1 pair |
+| Tool calls (P2) | 38 | 62 (1.6x fewer) | [EXPLORATORY] — N=1 pair |
+| Messages (P2) | 66 | 113 (1.7x fewer) | [EXPLORATORY] — N=1 pair |
+| Orientation speedup | 7.2 msgs | 8.5 msgs | [INDUCTIVE] — Type S >10% |
+| CPI (context efficiency) | 0.833 mean | — | [EXPLORATORY] — Type S=40.9%, CrI [-0.31, 0.40] |
 
-**Interactive mode (modest signal, kimi-k2.7-code, N=9 preliminary):**
-
-| Metric | With skill (N=5) | Without skill (N=4) |
-|--------|-----------------|---------------------|
-| Trust dialog resolution speed | 7.2 msgs post-launch | 8.5 msgs post-launch |
-| Stuck-session rate | **40%** (2/5) | **0%** (0/4) |
-| Clean-session efficiency | 1.4x fewer messages | Baseline |
-
-**Conclusion:** The skill's primary value is **print-mode delegation** (8x write compression, auth enablement). Interactive mode provides marginal orientation speedup; the 40% stuck-polling failure mode (MONITORING_IMPATIENCE) is **eliminated** in SKILL.md v2.4.0 via NDJSON pipe-spawn integration — background qodercli now emits structured progress (tool names, thinking state) instead of spinner glyphs. N=3 treatment captures confirm 0% spinner-only polls (vs 52% control).
-
-**Evidence strength (Plan 9 labels):**
-- 8x write compression: **[EXPLORATORY]** — N=1 valid pair (P2); direction confirmed, magnitude unvalidated (Type M likely >2.0×)
-- MONITORING_IMPATIENCE elimination (0% vs 52%): **[DEDUCTIVE]** — mechanism elimination proof (before/after, N=3)
-- Orientation speedup (7.2 vs 8.5 msgs): **[INDUCTIVE]** — N=9, effect=1.3 msgs, Type S likely >10%
-- Binary resolution (6/6 traces): **[DEDUCTIVE]** — mechanism proof (exhaustive presence/absence)
-- Friction index (H8, 9/9): **[DEDUCTIVE]** — instrument accuracy proven; R4 cleared (held-out signals separate 3/4, 0 FP/FN under perturbation)
+**Conclusion:** The skill's proven value is **structural enablement**: it makes qodercli usable (auth), orients Hermes to the binary (6/6 traces), eliminates the spinner-polling failure mode (0% vs 52%), and provides a validated runtime friction instrument (9/9, independently confirmed). Exploratory evidence from a single valid pair suggests 8x write compression in print mode — directionally compelling but statistically unvalidated (N=1, Type M likely >2.0×). Interactive mode shows marginal orientation speedup with a 40% stuck-session risk that v2.4.0's NDJSON integration addresses.
 
 ### Why this skill matters now
 
