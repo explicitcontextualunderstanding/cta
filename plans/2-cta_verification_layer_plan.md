@@ -1,6 +1,6 @@
 # Plan 2 — CTA as Grounded Verification Layer for Tool Interface Alignment
 
-Status: **PHASES 1-5 COMPLETE** | **PHASE 6 INTERIM** (H6 conditionally confirmed: N=2 mean CPI=1.253, run 3 pending). **Evidence verified 2026-07-21:** all metrics reproduce from on-disk state.db files.
+Status: **PHASES 1-5 COMPLETE** | **PHASE 6 INTERIM** (H6 conditionally confirmed: N=2 mean Context Preservation Index (CPI)=1.253, run 3 pending). **Evidence verified 2026-07-21:** all metrics reproduce from on-disk state.db files.
 Version: 1.2
 Parent: [1: plans/1-hermes_cta_fork_plan.md]
 Date: 2026-07-21
@@ -30,7 +30,7 @@ CTA sits at the intersection of five survey techniques:
 
 | Adjacent Technique | Survey § | CTA's Role |
 |---|---|---|
-| Dynamic Tool Routing | §6.3.1 | SIP scope rules (e.g., "Do NOT use for single-file lookups") are routing constraints. CONCEPT_BLEED = misrouting. |
+| Dynamic Tool Routing | §6.3.1 | SIP (Skill Influence Pattern) scope rules (e.g., "Do NOT use for single-file lookups") are routing constraints. CONCEPT_BLEED = misrouting. |
 | Tool Interface Alignment | §6.3.2 | **CTA is the measurement instrument** for alignment quality. SIPs are the divergence signal. |
 | Autonomous Tool Creation | §6.3.3 | Newly created tools need CTA validation before deployment (no baseline exists yet → CTA generates one). |
 | Feedback Refinement | §6.1.2 | SKILL.md edits driven by CTA findings = Qualitative Feedback Refinement on the tool's interface prompt. |
@@ -47,7 +47,7 @@ how to *measure* whether a scaffolding edit improved the agent. CTA provides:
 
 Five harness-level upgrades extracted from the Hermes audit:
 
-1. **Structural Metric Matrices** replace DTW for asymmetric traces (1:16 ratio)
+1. **Structural Metric Matrices** replace DTW (Dynamic Time Warping) for asymmetric traces (1:16 ratio)
 2. **False Success Detection** via external VFS diffing + background buffer scraping
 3. **Context Window Preservation** as a first-class metric (token offload ratio)
 4. **Containerized Profile Isolation** (zero-state-pollution standard)
@@ -88,7 +88,7 @@ Five harness-level upgrades extracted from the Hermes audit:
 - Batch splitting with reboot cycles (`--start-run` namespacing)
 
 **Persistence evolution:** M2 (ephemeral, crash = total loss) → M3 (crash-tolerant,
-9 resilience mechanisms) → P8 (NDJSON-only, no container/SQLite dependency).
+9 resilience mechanisms) → P8 (NDJSON (Newline-Delimited JSON)-only, no container/SQLite dependency).
 Full reference: [`docs/container_mounts_and_secrets.md`](../docs/container_mounts_and_secrets.md).
 
 ---
@@ -201,7 +201,7 @@ metrics:
 sip_detectors: [procedural_scaffolding, delegation_redirect, pty_omission, concept_bleed]
 hypotheses:
   H1: {name: Delegation Efficiency, metric: tool_call_compression, confirm_threshold: 1.5}
-  H2: {name: PTY Stability, metric: pty_compliance, confirm_threshold: 1.0}
+  H2: {name: PTY (pseudo-terminal) Stability, metric: pty_compliance, confirm_threshold: 1.0}
   H3: {name: Interactive Blockade, metric: interactive_blockade, note: "deferred to M3"}
   H4: {name: Binary Resolution, metric: binary_resolution_rate, confirm_threshold: 0.67}
 controls:
@@ -243,7 +243,7 @@ PYTHONPATH=src python -m cta.structural_scorer treatment.db baseline.db -o metri
 PYTHONPATH=src python -m cta.structural_scorer data/m3_captures/ --pair-by-task
 ```
 
-Tested: 5 pairs discovered in m3_captures, correct ECR/WC/entropy/unilateral metrics.
+Tested: 5 pairs discovered in m3_captures, correct ECR (Event Compression Ratio)/WC (Write Compression)/entropy/unilateral metrics.
 
 **Known bug (2026-07-21):** `score_pair()` called directly (not via `--pair-by-task`)
 raises `Unknown format code 'f' for object of type 'str'` — a metric value is
