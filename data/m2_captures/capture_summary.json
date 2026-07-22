@@ -1,10 +1,14 @@
 {
-  "total_runs": 1,
-  "passed": 1,
+  "total_runs": 2,
+  "passed": 2,
   "failed": 0,
   "results": [
     {
-      "run_id": "E1-baseline-1",
+      "run_id": "P1-treatment-3",
+      "success": true
+    },
+    {
+      "run_id": "P1-baseline-3",
       "success": true
     }
   ]
