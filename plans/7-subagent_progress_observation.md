@@ -774,3 +774,42 @@ WHERE output_preview LIKE '%Completed%';
   guidance covers these.
 - **Multi-turn**: Current integration is one-shot (`-p`). Multi-turn requires
   full SDK recipe (§2.1) with stdin JSONL.
+
+---
+
+## §14 OPEN EVIDENCE GAPS (post-closure)
+
+Plan 7 is CLOSED but the evidence base has known thin spots. These don't
+invalidate the verdict but would strengthen it against external challenge.
+
+| # | Gap | Current N | Target N | Why it matters | Probe | Priority |
+|---|-----|-----------|----------|----------------|-------|----------|
+| E1 | Treatment capture is N=1 (16 polls, one session) | 1 | ≥3 | "0% spinner-only" headline rests on a single capture. Reviewer could dismiss as luck. | Run 2 more Hermes sessions delegating multi-tool tasks with NDJSON active. Measure spinner-only rate per session. | **HIGH** — blocker for external defensibility |
+| E2 | Version drift on `--output-format stream-json` | 0 (never tested across versions) | 1 post-update test | Undocumented flag. One qodercli update could silently break the integration. | `npm view @qoder-ai/qodercli time` for cadence. After next auto-update: re-run `qodercli -p --output-format stream-json --permission-mode bypass_permissions "say hello"` and confirm NDJSON on stdout. | **MEDIUM** — ticking clock, cheap to check |
+| E3 | Multi-turn NDJSON untested | 0 | 1 | Full SDK mode (stdin JSONL, `QODER_AGENT_SDK_ENTRYPOINT`) is reverse-engineered (§2.1) but never exercised. If Hermes needs iterative qodercli sessions, current integration doesn't cover it. | Spawn with full SDK recipe, send 2 turns via stdin pipes, confirm NDJSON events for both turns. | **LOW** — only if multi-turn becomes a near-term need |
+
+### E1 protocol (treatment N≥3)
+
+1. Start Hermes session with updated `terminal_tool.py` + `process_registry.py`
+2. Delegate a multi-tool task (e.g., "Use qodercli to add a /health endpoint with tests")
+3. Let Hermes run autonomously
+4. Export capture: poll events → JSON
+5. Measure: spinner-only rate (target: 0%), structured progress rate (target: 100%)
+6. Repeat ×2 more sessions
+7. If all 3 show 0% spinner-only → E1 CLOSED
+
+### E2 protocol (version drift)
+
+```bash
+# Check release cadence
+npm view @qoder-ai/qodercli time --json | python3 -c "
+import json,sys
+d=json.load(sys.stdin)
+dates=sorted(d.values())
+print(f'Releases: {len(dates)}, latest: {dates[-1]}, cadence: ~{(len(dates)/12):.1f}/month')
+"
+
+# After next auto-update, verify NDJSON still works:
+qodercli -p --output-format stream-json --permission-mode bypass_permissions "say hello" | head -5
+# Expect: JSON lines with type/subtype fields. If raw text → flag BROKEN.
+```

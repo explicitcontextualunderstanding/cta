@@ -1,7 +1,7 @@
 # Plan 2 — CTA as Grounded Verification Layer for Tool Interface Alignment
 
-Status: **COMPLETE** — All phases done (Phase 0 cancelled: early-stopping justified)
-Version: 1.0
+Status: **PHASES 1-5 COMPLETE** | **PHASE 6 OPEN** (post-NDJSON CPI re-measurement). **Evidence verified 2026-07-21:** all metrics reproduce from on-disk state.db files.
+Version: 1.2
 Parent: [1: plans/1-hermes_cta_fork_plan.md]
 Date: 2026-07-21
 
@@ -17,7 +17,8 @@ self-report.
 
 Deliverable: A generalized CTA evaluation protocol + positioning paper section
 that maps CTA components onto the survey taxonomy, validated by the kimi-k2.7-code
-N=20 expansion as a worked example of the full Σ_t cycle.
+expansion (N=12 valid of 20 attempted; 8 failed kalloc.1024) as a worked example
+of the full Σ_t cycle.
 
 ---
 
@@ -234,6 +235,11 @@ PYTHONPATH=src python -m cta.structural_scorer data/m3_captures/ --pair-by-task
 
 Tested: 5 pairs discovered in m3_captures, correct ECR/WC/entropy/unilateral metrics.
 
+**Known bug (2026-07-21):** `score_pair()` called directly (not via `--pair-by-task`)
+raises `Unknown format code 'f' for object of type 'str'` — a metric value is
+returned as string where `.3f` formatting is applied. `--pair-by-task` CLI mode
+is unaffected. Use `context_preservation.score_pair()` for CPI.
+
 #### 3B: False Success Detector — DONE
 
 **File:** `src/cta/skill_rules.py` → `detect_false_success()`
@@ -370,17 +376,25 @@ net-neutral-to-harmful for context preservation until the monitoring problem
 # Direct pair scoring (avoids --pair-by-task crash on empty DBs):
 PYTHONPATH=src python -c "
 from pathlib import Path
-from cta.structural_scorer import score_pair
 from cta.context_preservation import score_pair as cpi_pair
 t = Path('data/m3_captures/P1-interactive-kimi-treatment-1/state.db')
 b = Path('data/m3_captures/P1-interactive-kimi-baseline-1/state.db')
-print(score_pair(t, b))
 print(cpi_pair(t, b))
 "
 # Print mode (m2):
 PYTHONPATH=src python -m cta.structural_scorer data/m2_captures/ --pair-by-task
 PYTHONPATH=src python -m cta.context_preservation data/m2_captures/ --pair-by-task
 ```
+
+**Evidence verification (2026-07-21):** All per-session CPI values independently
+re-derived. Pairing methodology: run-number (T1↔B1, T2↔B2, T3↔B3, T4↔B4);
+T5 pairs with B1 (B5 is 0-byte). Full 5×7 CPI matrix computed — run-number
+pairing yields: 2.28, 0.36, 0.98, 0.53, 0.46 (mean=0.92). Message counts
+verified via direct SQLite `SELECT COUNT(*) FROM messages` on all 12 valid
+state.db files — exact match. Note: `structural_scorer.score_pair()` has a
+format-string bug (`.3f` applied to str return) on direct calls; use
+`context_preservation.score_pair()` for CPI or `--pair-by-task` mode for
+structural metrics.
 
 ---
 
@@ -520,3 +534,61 @@ random infrastructure failure + large effect sizes) collapsed the timeline.
    N≥10 gate replaced by early-stopping justification)
 4. ✓ Loop closure documented in Phase 5 section (v2.0→CTA→v2.1→v2.2→re-measure)
 5. ✓ All 5 Phase 3 eval modules are standalone-runnable (exceeded: 5/5, not 2/5)
+
+---
+
+## Phase 6: Post-NDJSON CPI Re-measurement — OPEN (2026-07-21)
+
+**Tracked as:** Plan 1 §OPEN EVIDENCE GAPS → G3 (HIGH priority, narrative shifter)
+
+### Problem
+
+Phase 4 measured CPI=0.92 (net-negative) for interactive mode. This was the
+basis for "interactive mode is net-neutral-to-harmful for context preservation."
+
+**But:** That measurement was taken BEFORE Plan 7's NDJSON pipe-spawn fix. The
+monitoring overhead (58-74 spinner-only polls consuming context) was the primary
+CPI killer. With NDJSON active, poll output is structured (~80 chars of tool
+names) instead of spinner glyphs (~400 chars of noise). The monitoring overhead
+should drop substantially.
+
+### Hypothesis
+
+**H6:** Post-NDJSON interactive CPI > 1.0 (treatment preserves more context than
+baseline). If confirmed, the interactive mode narrative changes from "avoid" to
+"viable with structured progress."
+
+### Protocol
+
+1. Run 2-3 kimi-k2.7-code interactive sessions with NDJSON active (same harness,
+   same task as M3: `scripts/m3_interactive_harness.py --condition treatment --runs 3 --baseline-token --tag kimi-ndjson`)
+2. Compute CPI against existing baselines (B1-B4, B6-B8):
+   ```bash
+   PYTHONPATH=src python -c "
+   from pathlib import Path
+   from cta.context_preservation import score_pair as cpi_pair
+   t = Path('data/m3_captures/P1-interactive-kimi-ndjson-treatment-1/state.db')
+   b = Path('data/m3_captures/P1-interactive-kimi-baseline-1/state.db')
+   print(cpi_pair(t, b))
+   "
+   ```
+3. Compare: pre-NDJSON CPI=0.92 vs post-NDJSON CPI=?
+
+### Pass/fail
+
+| Outcome | CPI | Verdict | Action |
+|---------|-----|---------|--------|
+| H6 confirmed | >1.0 | Interactive mode rehabilitated | Update SKILL.md: interactive is viable with NDJSON. Update PR narrative. |
+| H6 rejected | ≤1.0 | Monitoring overhead wasn't the CPI killer | Investigate what else drives CPI<1 (verification loops? remediation?). Keep "avoid interactive" guidance. |
+| Inconclusive | 0.95-1.05 | Marginal | Report as "no meaningful change"; keep current guidance. |
+
+### Dependencies
+
+- Requires Hermes with NDJSON integration deployed (DONE: `95322e224`)
+- Requires kimi-k2.7-code access via opencode-go (DONE: `OPENCODE_GO_API_KEY`)
+- Requires container harness (DONE: `scripts/m3_interactive_harness.py`)
+- Baselines already exist (B1-B4, B6-B8 in `data/m3_captures/`)
+
+### Effort
+
+~30 min: 3 container runs (~650s each) + CPI computation. No new code needed.

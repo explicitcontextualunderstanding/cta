@@ -4,7 +4,7 @@ Porting the WillChow66/CTA (Counterfactual Trace Auditing) framework to audit
 Hermes Agent skill executions — specifically the `qodercli` skill PR for
 NousResearch/hermes-agent.
 
-Status: **ALL MILESTONES COMPLETE** | **G1 PASSED** | **G1+ PASSED** (12/13 sessions; 1 degenerate 402 baseline) | **M1 PASSED** | **M2 COMPLETE** (10 sessions) | **M3 COMPLETE** (H3 confirmed) | **M4 COMPLETE** (H2-revised confirmed, PTY_OMISSION reclassified neutral) | **G6 DONE** | **PTYCollapser REFACTORED** (raw-message-based, 34 tests pass) | **ALL DELIVERABLES BUILT** | **PR SUBMITTED** ([NousResearch/hermes-agent#68314](https://github.com/NousResearch/hermes-agent/pull/68314), 6 commits, tests committed per HARDLINE #7, body includes Qwen3.8-Max-Preview positioning + hyperlinked arXiv/CTA citations). **CTA fork pushed** to [explicitcontextualunderstanding/cta](https://github.com/explicitcontextualunderstanding/cta) (commit `e7a5886`, 3 ahead of upstream WillChow66/CTA). Hypotheses: H1 partial, H2-revised confirmed, H3 confirmed (revised: marginal orientation speedup, not enablement), H4 confirmed. **M3 VOLUME EXPANSION IN PROGRESS** (kimi-k2.7-code via opencode-go; N=4 baseline + N=5 treatment valid; batch PID 12399 running B5-B10 then T6-T10). **TERRITORY CORRECTION:** N=1 "2.5x efficiency" claim was a cherry-pick. Full data shows: treatment is bimodal (60% clean at 1.4x efficiency, 40% stuck-polling at 2-3x WORSE); baseline is consistent with zero stuck sessions; trust dialog resolution gap is 1.3 messages (not 2.5x). Skill's real interactive value: faster orientation (launch 10 msgs earlier), not fewer total messages. **PENDING:** Final statistics at N≥10, then update audit_report.md + pr_writeup.md.
+Status: **ALL MILESTONES COMPLETE** | **G1 PASSED** | **G1+ PASSED** (12/13 sessions; 1 degenerate 402 baseline) | **M1 PASSED** | **M2 COMPLETE** (10 sessions) | **M3 COMPLETE** (H3 confirmed) | **M4 COMPLETE** (H2-revised confirmed, PTY_OMISSION reclassified neutral) | **G6 DONE** | **PTYCollapser REFACTORED** (raw-message-based, 34 tests pass) | **ALL DELIVERABLES BUILT** | **PR SUBMITTED** ([NousResearch/hermes-agent#68314](https://github.com/NousResearch/hermes-agent/pull/68314), 6 commits, tests committed per HARDLINE #7, body includes Qwen3.8-Max-Preview positioning + hyperlinked arXiv/CTA citations). **CTA fork pushed** to [explicitcontextualunderstanding/cta](https://github.com/explicitcontextualunderstanding/cta) (commit `e7a5886`, 3 ahead of upstream WillChow66/CTA). Hypotheses: H1 partial, H2-revised confirmed, H3 confirmed (revised: marginal orientation speedup, not enablement), H4 confirmed. **M3 VOLUME EXPANSION SUSPENDED** (kimi-k2.7-code via opencode-go; N=5 treatment + N=7 baseline valid; 8 sessions failed kalloc.1024; batch terminated). **TERRITORY CORRECTION:** N=1 "2.5x efficiency" claim was a cherry-pick. Full data shows: treatment is bimodal (60% clean at 1.4x efficiency, 40% stuck-polling at 2-3x WORSE); baseline stuck=14% (1/7); trust dialog resolution gap is 1.3 messages (not 2.5x). Skill's real interactive value: faster orientation (launch 10 msgs earlier), not fewer total messages. **EVIDENCE VERIFIED (2026-07-21):** All 12 valid state.db files reproduce claimed message counts exactly; CPI values confirmed via `context_preservation.score_pair()` (run-number pairing: T1↔B1=2.28, T2↔B2=0.36, T3↔B3=0.98, T4↔B4=0.53, T5↔B1=0.46; mean=0.92). **PLAN 7 CLOSED (2026-07-21):** MONITORING_IMPATIENCE SIP ELIMINATED — NDJSON pipe-spawn gives 0% spinner-only (vs 52% control), 100% structured progress, natural completion in 4 turns. SKILL.md v2.4.0 deployed. **OPEN:** See §OPEN EVIDENCE GAPS at end of this file.
 
 ---
 
@@ -1580,6 +1580,12 @@ If H3 holds on both, the skill's value is model-agnostic (not an artifact of one
 
 ### Preliminary Territory Analysis (N=4B, N=5T, Jul 21 2026)
 
+> **CORRECTION (expanded N=7B):** "Zero stuck sessions" for baseline held at N=4
+> but was revised at N=7: B7 (189 msgs) is classified STUCK. Baseline stuck rate
+> is 14% (1/7), not 0%. The skill still increases stuck risk (40% vs 14%) but
+> the baseline is not immune. Findings 2–3 below reflect the N=4 snapshot;
+> the status header and Phase 4 (Plan 2) reflect the corrected N=7 figures.
+
 **Map correction:** The N=1 validation pair (T1:56 msgs vs B1:138 msgs → "2.5x efficiency")
 was a cherry-pick. Full data reveals a fundamentally different picture.
 
@@ -1710,4 +1716,54 @@ PR review challenges N=5 sufficiency).
 
 **Next action:** [Plan 7 §7 P1](plans/7-subagent_progress_observation.md) —
 verify SDK JSONL activation mechanism + Hermes pipe spawn capability (HARD GATE).
+
+#### Evidence verification (2026-07-21)
+
+Independent re-derivation of all claimed metrics from on-disk state.db files:
+
+| Check | Result |
+|-------|--------|
+| Valid state.db files | 12/12 (5T + 7B); 8 empty (0-byte) from kalloc.1024 |
+| Message counts | All 12 match claimed values exactly (T1=56…B8=121) |
+| CPI (run-number pairing) | T1↔B1=2.28, T2↔B2=0.36, T3↔B3=0.98, T4↔B4=0.53, T5↔B1=0.46 |
+| CPI mean | 0.92 (confirmed) |
+| CPI full matrix | Computed 5×7; run-number pairing matches plan's per-session table |
+| structural_scorer | Format-string bug on direct pair calls (`.3f` on str); `--pair-by-task` mode unaffected |
+| context_preservation | Fully functional; chars/4 estimation (native token_count not populated) |
+
+**Known limitation:** N=5 treatment gives wide confidence intervals. The
+directional verdict (CPI net-negative, stuck rate 40%) is robust; precise
+point estimates are not. This is acknowledged debt, not a blocking gap.
+
+---
+
+## OPEN EVIDENCE GAPS (post-Plan-7 closure, 2026-07-21)
+
+All milestones are complete and Plan 7 is CLOSED. These gaps don't invalidate
+any verdict but would strengthen the evidence base against external challenge
+(e.g., PR review, paper submission).
+
+| # | Gap | Current | Target | Why it matters | Probe | Priority | Plan |
+|---|-----|---------|--------|----------------|-------|----------|------|
+| G1 | Print-mode write compression N=2 (P2-T1, P2-T2 only) | 2 pairs | ≥4 pairs | The PR's strongest number (16x WC) comes from 2 sessions. Directionally robust but statistically fragile. | 2 more print-mode treatment+baseline pairs on kimi-k2.7-code. ~10 min container time. | MEDIUM | 1 |
+| G2 | PR #68314 body is stale | Pre-Plan 7 | Post-Plan 7 | PR doesn't mention NDJSON, 0%/52% evidence, SKILL.md v2.4.0, or the MONITORING_IMPATIENCE elimination. Reviewer sees old narrative. | Update PR body with Plan 7 closure + v2.4.0 changes. 15 min. | MEDIUM | 1 |
+| G3 | Post-NDJSON interactive CPI unmeasured | CPI=0.92 (pre-fix) | CPI re-measured | CPI=0.92 (net-negative) was measured BEFORE pipe-spawn fix. Monitoring overhead was the CPI killer. If CPI flips >1.0 post-fix, interactive narrative changes from "harmful" to "viable." | Re-run 2-3 kimi interactive sessions with NDJSON active, compute CPI against existing baselines. | **HIGH** — narrative shifter | 2 |
+| G4 | Plan 7 treatment N=1 | 1 capture | ≥3 captures | "0% spinner-only" headline rests on single session. | See [Plan 7 §14 E1](plans/7-subagent_progress_observation.md). | **HIGH** — blocker for defensibility | 7 |
+| G5 | Version drift on `--output-format stream-json` | 0 post-update tests | 1 | Undocumented flag could break silently. | See [Plan 7 §14 E2](plans/7-subagent_progress_observation.md). | MEDIUM | 7 |
+| G6 | Multi-turn NDJSON untested | 0 | 1 | Full SDK mode never exercised. | See [Plan 7 §14 E3](plans/7-subagent_progress_observation.md). | LOW | 7 |
+
+### Priority ordering
+
+1. **G4 (Plan 7 N≥3)** — cheapest to close, highest defensibility value. 2 more Hermes sessions.
+2. **G3 (post-NDJSON CPI)** — narrative shifter. If CPI flips positive, interactive mode is rehabilitated.
+3. **G2 (PR body update)** — 15 min, no experiments needed.
+4. **G1 (print-mode N)** — tightens the strongest claim.
+5. **G5 (version drift)** — passive monitoring until next qodercli release.
+6. **G6 (multi-turn)** — defer until multi-turn is a real need.
+
+### Relationship to Plan 2
+
+G3 is tracked as Phase 6 in [Plan 2](plans/2-cta_verification_layer_plan.md).
+The structural scorer and CPI modules are already built; the gap is purely
+running new sessions through the existing pipeline.
 
