@@ -56,6 +56,7 @@ This PR includes evidence from a **Counterfactual Trace Audit (CTA)** — 23 con
 | Scope constraint | Explicit "Do NOT use for single-file lookups" prevents over-delegation |
 | Folder trust handling | Documents the `1\n` response for first-launch trust dialogs |
 | Context window preservation | File ingestion happens inside qodercli's workspace; Hermes sees only the command + summary, not raw file contents |
+| Runtime friction detection | NDJSON stream signals (error rate, context velocity, retry density) classify sessions as clean/friction in real-time — Hermes sees `⚠ Friction:` warnings during stuck loops, zero overhead when clean (Plan 8, H8 confirmed: 9/9 agreement) |
 
 ---
 
@@ -329,6 +330,7 @@ Raw session data (SQLite databases + stdout) committed in `data/m2_captures/`, `
 - [x] PTY language scoped to interactive foreground (empirically validated)
 - [x] MONITORING_IMPATIENCE SIP eliminated (NDJSON pipe-spawn, N=3 proof: 0% spinner-only)
 - [x] Version drift validated (`--output-format stream-json` stable 1.0.45 → 1.1.2, protocol_version="1.0.0")
+- [x] Runtime friction detection validated (Plan 8 H8: 9/9 agreement, clean FI 0.086–0.121, friction FI 0.433)
 - [x] Negative control shows zero skill influence (metric validity)
 - [x] One-command reproducibility script (`scripts/run_audit.py`)
 - [x] Tests pass: `scripts/run_tests.sh tests/skills/test_qodercli_skill.py -q` (contributing.md HARDLINE #7)

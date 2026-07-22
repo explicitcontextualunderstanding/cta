@@ -2,7 +2,7 @@
 
 **Sessions:** 23 containerized + 3 NDJSON treatment captures (Plan 7)
 **Design:** Option B lean | **Models:** anthropic/claude-sonnet-4, kimi-k2.7-code (opencode-go)
-**Pipeline:** Plan 2 Phases 1-5 COMPLETE | Plan 7 CLOSED (MONITORING_IMPATIENCE ELIMINATED)
+**Pipeline:** Plan 2 Phases 1-5 COMPLETE | Plan 7 CLOSED (MONITORING_IMPATIENCE ELIMINATED) | Plan 8 H8 CONFIRMED (runtime friction detection)
 **Status:** Early-stopping justified (Phase 0 cancelled) | SKILL.md v2.4.0
 
 ---
@@ -150,6 +150,36 @@
 **Status:** Run 1 of 3 complete. Runs 2-3 in progress. Direction is clear; final N=3 will confirm.
 
 **Evidence:** `data/m3_captures/P7-ndjson-treatment-{1,2,3}/capture.json`, `data/m3_captures/P1-interactive-kimi-ndjson-treatment-1/state.db`
+
+---
+
+### Plan 8: Runtime Friction Detection (H8 CONFIRMED)
+
+**Status:** PHASE 2 COMPLETE — H8 CONFIRMED (9/9 = 100% agreement). Phase 3 (integration) unblocked.
+
+**Problem:** The bimodal CPI finding (Plan 2 Phase 6) showed clean sessions achieve CPI>1.0 while friction-heavy sessions stay ≤1.0. But this regime classification was only available post-hoc. Hermes had no runtime signal for which regime a background qodercli session was in.
+
+**Solution:** A friction_index computed from three NDJSON stream signals:
+- S1: error_rate (tool_use_result.exitCode ≠ 0)
+- S2: ctx_velocity_norm (context_usage_ratio growth, normalized to 0.02/event)
+- S3: retry_density (repeated tool:key_input[:80] signatures)
+
+`friction_index = (error_rate + ctx_velocity_norm + retry_density) / 3`
+
+**H8 result:** 9/9 sessions = 100% agreement (threshold ≥80%)
+
+| Regime | FI range | N | Display |
+|--------|----------|---|---------|
+| Clean | 0.086–0.121 | 8 | None (zero overhead) |
+| Friction | 0.433 (peak) | 1 | `⚠ Friction: HIGH-ERROR (3/4) | RETRY Bash x4` |
+
+**Separation:** Clean max (0.121) to friction (0.433) = 0.312 gap. E1 gate (≥0.25) passed.
+
+**Limitations:** 8/9 sessions clean; only 1 friction (synthetic reconstruction from G3 run 1). Docker unavailable for organic friction capture. Phase 3 integration pending.
+
+**Infrastructure:** `_move_to_finished()` auto-dumps raw NDJSON for offline scoring. `scripts/score_friction.py` validates captured streams.
+
+**Evidence:** `data/m3_captures/P8-phase2-prospective/`, `data/m3_captures/P8-synthetic-friction-g3run1/`
 
 ---
 
