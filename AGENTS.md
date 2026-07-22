@@ -56,7 +56,7 @@ VM's process environment — never written to disk inside the container.
 ## Friction guidance scope
 
 Runtime friction detection (Plan 8) and the regime-response protocol in
-SKILL.md v2.5.0 are scoped to the **qodercli skill only**. Do not extend
+SKILL.md v2.5.1 are scoped to the **qodercli skill only**. Do not extend
 friction guidance to other skills until Gap 3 behavioral evidence closes
 (±adaptation paired design proving CPI recovery).
 

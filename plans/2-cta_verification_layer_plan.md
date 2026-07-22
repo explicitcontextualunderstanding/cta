@@ -650,8 +650,8 @@ See [Plan 8: plans/8-runtime_friction_detection.md](plans/8-runtime_friction_det
 Status: **v0.3.1 — FUNCTIONAL.** H8 CONFIRMED (9/9=100% agreement). Gap 2 CLOSED
 (friction display proven across CLEAN/MILD/HEAVY regimes). K2 resolved
 (`context_usage_ratio` present on complete assistant events). `detect_regime_adaptation()`
-registered in 10-detector registry (6 integration tests pass). SKILL.md v2.5.0 has
-explicit `-p` mandate aligned with detector's `STRATEGY_SWITCH_PATTERNS`.
+registered in 10-detector registry (7 integration tests pass, `tests/test_regime_adaptation.py`). SKILL.md v2.5.1 pushed
+(exit-42 fallback + mild friction triage). `-p` mandate aligned with detector's `STRATEGY_SWITCH_PATTERNS`.
 Remaining: in-container poll-loop proof (exit-42 `-i`→`-p` fallback).
 
 **Errors observed (run 1 only, all resolved):**

@@ -1761,7 +1761,7 @@ any verdict but would strengthen the evidence base against external challenge
 | ~~G4~~ | ~~Plan 7 treatment N=1~~ | ~~3~~ | ~~≥3~~ | ~~CLOSED (2026-07-21):~~ N=3 captures (v1.0.45 + v1.1.2×2), ALL 0% spinner-only, 100% structured, natural exit (4-5 turns, 14-24s). Defensible against "luck" challenge. | — | DONE | 7 |
 | ~~G5~~ | ~~Version drift on `--output-format stream-json`~~ | ~~1~~ | ~~1~~ | ~~CLOSED (2026-07-21):~~ Tested on 1.1.2 (major bump from 1.0.45). Same events, `protocol_version: "1.0.0"` in init. NDJSON contract survived 1.0→1.1. | — | DONE | 7 |
 | G6 | Multi-turn NDJSON untested | 0 | 1 | Full SDK mode never exercised. | See [Plan 7 §14 E3](plans/7-subagent_progress_observation.md). | LOW | 7 |
-| G7 | Runtime friction detection | Sketch | **FUNCTIONAL** | **Plan 8 v0.3.1:** H8 CONFIRMED (9/9=100%). Gap 2 CLOSED (friction display proven CLEAN/MILD/HEAVY). `detect_regime_adaptation()` registered (6 tests pass). SKILL.md v2.5.0 has explicit `-p` mandate. K2 resolved (`context_usage_ratio` present). Remaining: in-container poll-loop proof. | See [Plan 8](plans/8-runtime_friction_detection.md). | LOW (post-merge) | 8 |
+| G7 | Runtime friction detection | Sketch | **FUNCTIONAL** | **Plan 8 v0.3.2:** H8 CONFIRMED (9/9=100%). Gap 2 CLOSED (friction display proven CLEAN/MILD/HEAVY). `detect_regime_adaptation()` registered (7 tests pass, `tests/test_regime_adaptation.py`). SKILL.md v2.5.1 pushed (exit-42 fallback + mild friction triage). K2 resolved. Remaining: in-container poll-loop proof. | See [Plan 8](plans/8-runtime_friction_detection.md). | LOW (post-merge) | 8 |
 
 ### Priority ordering
 
