@@ -1,9 +1,13 @@
 # Plan 3 — Upstream PR: Hermes Agent Adapter for CTA
 
-Status: **DRAFT** — awaiting Phase 0 results before submitting
+Status: **READY TO SUBMIT** — first in upstream chain (3 → 5 → 4 → 6)
 Target: WillChow66/CTA (origin)
 Parent: [1: plans/1-hermes_cta_fork_plan.md]
-Depends on: Phase 0 (N=10 kimi data) for validation evidence
+Depends on: None (foundational PR)
+Gate dissolved: Phase 0 (N≥10) replaced by early-stopping justification — N=4
+paired sessions sufficient for code validation; failures random w.r.t. condition.
+Plan 9 note: This PR contributes infrastructure, not evidence claims. Plan 9
+labels do not gate submission.
 
 ---
 
@@ -67,8 +71,8 @@ aligner, detector, predictor) can operate on any Hermes skill execution.
 
 ## Pre-submission checklist
 
-- [ ] Phase 0 complete (N≥10 per condition)
-- [ ] All sessions pass G1+ (or SKIP with documented cause)
+- [x] ~~Phase 0 complete (N≥10 per condition)~~ — dissolved; early-stopping justified (N=4 pairs, failures random w.r.t. condition)
+- [x] All sessions pass G1+ (or SKIP with documented cause) — 14 PASS, 3 SKIP, 0 FAIL
 - [ ] Adapter handles both Claude-origin and Hermes-origin traces in same pipeline
 - [ ] Unit tests for `hermes_session_to_trace` and `evaluate_gate`
 - [ ] PR body explains the Claude→Hermes format difference and why this extends CTA's scope

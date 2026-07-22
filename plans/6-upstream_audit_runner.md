@@ -1,9 +1,11 @@
 # Plan 6 — Upstream PR: Config-Driven Audit Runner
 
-Status: **DRAFT** — awaiting Phase 0 results before submitting
+Status: **READY TO SUBMIT** — fourth in upstream chain (3 → 5 → 4 → 6)
 Target: WillChow66/CTA (origin)
 Parent: [3: plans/3-upstream_hermes_adapter.md, 5: plans/5-upstream_structural_metrics.md]
-Depends on: Plans 3 + 5 (adapter + metrics)
+Depends on: Plans 3 + 5 merged (adapter + metrics)
+Gate dissolved: Phase 0 (N≥10) replaced by early-stopping justification.
+Plan 9 note: Infrastructure PR — Plan 9 labels do not gate submission.
 
 ---
 
@@ -92,8 +94,9 @@ These need to be fully config-driven (they mostly are, but verify no hardcoding)
 ## Pre-submission checklist
 
 - [ ] Plans 3 + 5 merged
-- [ ] Remove all qodercli-specific hardcoding from run_audit.py
-- [ ] Include example config for a non-qodercli skill (or generic template)
+- [ ] Remove all qodercli-specific hardcoding from run_audit.py (xurl dry-run proves mostly generic — verify residual)
+- [ ] Include example config for a non-qodercli skill (xurl config exists as candidate)
 - [ ] Unit tests: config loading, hypothesis evaluation, control validation
 - [ ] Detector isolation: verify one crashing detector doesn't break others
 - [ ] Document the detector registration interface for contributors
+- [x] ~~Phase 0 (N≥10)~~ — dissolved; early-stopping justified

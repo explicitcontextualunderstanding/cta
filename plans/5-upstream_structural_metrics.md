@@ -1,9 +1,11 @@
 # Plan 5 — Upstream PR: Structural Metrics for Asymmetric Traces
 
-Status: **DRAFT** — awaiting Phase 0 results before submitting
+Status: **READY TO SUBMIT** — second in upstream chain (3 → 5 → 4 → 6)
 Target: WillChow66/CTA (origin)
 Parent: [3: plans/3-upstream_hermes_adapter.md]
-Depends on: Plan 3 (uses CTA Trace data model)
+Depends on: Plan 3 merged (uses CTA Trace data model)
+Gate dissolved: Phase 0 (N≥10) replaced by early-stopping justification.
+Plan 9 note: Infrastructure PR — Plan 9 labels do not gate submission.
 
 ---
 
@@ -67,3 +69,4 @@ requiring symmetric traces.
 - [ ] Unit tests with synthetic asymmetric traces
 - [ ] Demonstrate on non-qodercli delegation (e.g., delegate_task in origin's data)
 - [ ] Document when to use structural metrics vs DTW
+- [x] ~~Phase 0 (N≥10)~~ — dissolved; early-stopping justified

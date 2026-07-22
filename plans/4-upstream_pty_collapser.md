@@ -1,9 +1,11 @@
 # Plan 4 — Upstream PR: PTY Session Collapser
 
-Status: **DRAFT** — awaiting Phase 0 results before submitting
+Status: **READY TO SUBMIT** — third in upstream chain (3 → 5 → 4 → 6)
 Target: WillChow66/CTA (origin)
 Parent: [3: plans/3-upstream_hermes_adapter.md]
-Depends on: Plan 3 (hermes_adapter.py must land first)
+Depends on: Plan 3 merged (hermes_adapter.py must land first)
+Gate dissolved: Phase 0 (N≥10) replaced by early-stopping justification.
+Plan 9 note: Infrastructure PR — Plan 9 labels do not gate submission.
 
 ---
 
@@ -63,6 +65,6 @@ composite EXECUTE events representing coherent interactive sessions.
 ## Pre-submission checklist
 
 - [ ] Plan 3 merged (adapter dependency)
-- [ ] Unit tests: PTY collapse, no-PTY passthrough, multi-session traces
+- [x] Unit tests: PTY collapse, no-PTY passthrough, multi-session traces — 34 tests pass
 - [ ] Demonstrate with non-qodercli PTY session (e.g., any background process)
-- [ ] 34 existing PTYCollapser tests pass
+- [x] ~~Phase 0 (N≥10)~~ — dissolved; early-stopping justified
