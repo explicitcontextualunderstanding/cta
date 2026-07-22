@@ -1,0 +1,173 @@
+{
+  "instructions": "INDEPENDENT SCORER TASK: For each session below, classify as CLEAN or FRICTION based solely on the behavioral features shown. Do NOT look at friction_index scores or condition labels. Fill in scorer_classification ('clean' or 'friction'), scorer_confidence ('high'/'medium'/'low'), and optional notes.",
+  "n_sessions": 7,
+  "sessions": [
+    {
+      "anonymous_id": "S-24ea887bb9d4",
+      "total_events": 16,
+      "assistant_turns": 8,
+      "tool_results": 3,
+      "error_indicators": 0,
+      "unique_tools": 2,
+      "tool_sequence": [
+        "Bash",
+        "Bash",
+        "Write"
+      ],
+      "text_snippets": [
+        "Found 3 .txt files (a.txt, b.txt, c.txt) and wrote `3` to count.txt."
+      ],
+      "scorer_classification": "clean",
+      "scorer_confidence": "high",
+      "scorer_notes": "Short session (16 events, 8 turns), zero errors, simple task completed in 3 tool calls with clear forward progress. Text confirms successful completion.",
+      "order": 1
+    },
+    {
+      "anonymous_id": "S-9af87ffdb9d3",
+      "total_events": 17,
+      "assistant_turns": 9,
+      "tool_results": 3,
+      "error_indicators": 0,
+      "unique_tools": 3,
+      "tool_sequence": [
+        "Read",
+        "Edit",
+        "Bash"
+      ],
+      "text_snippets": [
+        "Now I'll start the server and test the endpoint.\n\n",
+        "Done. The `POST /echo` endpoint is added and working \u2014 curl confirmed it echoes back `{\"hello\":\"worl"
+      ],
+      "scorer_classification": "clean",
+      "scorer_confidence": "high",
+      "scorer_notes": "Short session (17 events), zero errors, logical tool progression (Read->Edit->Bash to test). Text confirms endpoint working. Smooth execution.",
+      "order": 2
+    },
+    {
+      "anonymous_id": "S-610214192ba1",
+      "total_events": 21,
+      "assistant_turns": 12,
+      "tool_results": 4,
+      "error_indicators": 0,
+      "unique_tools": 4,
+      "tool_sequence": [
+        "Glob",
+        "Read",
+        "Write",
+        "Bash"
+      ],
+      "text_snippets": [
+        "I'll refactor to add a shared `format_field` helper that the three formatters delegate to.\n\n",
+        "Let me verify the behavior is unchanged.\n\n",
+        "Done. Added a single `format_field(name, value, template)` helper that all three formatters now dele"
+      ],
+      "scorer_classification": "clean",
+      "scorer_confidence": "high",
+      "scorer_notes": "Moderate session (21 events), zero errors, logical progression (Glob->Read->Write->Bash verify). Refactoring task completed and verified successfully.",
+      "order": 3
+    },
+    {
+      "anonymous_id": "S-173a0a7226ce",
+      "total_events": 20,
+      "assistant_turns": 11,
+      "tool_results": 4,
+      "error_indicators": 0,
+      "unique_tools": 4,
+      "tool_sequence": [
+        "Glob",
+        "Read",
+        "Edit",
+        "Bash"
+      ],
+      "text_snippets": [
+        "I'll check the current state of calc.py first.\n\n",
+        "Added `multiply` to calc.py:7 and verified it with quick tests (3\u00d74=12, -2\u00d75=-10, 0\u00d77=0) \u2014 all passe"
+      ],
+      "scorer_classification": "clean",
+      "scorer_confidence": "high",
+      "scorer_notes": "Moderate session (20 events), zero errors, logical progression (Glob->Read->Edit->Bash test). Function added and all tests passed. Smooth execution.",
+      "order": 4
+    },
+    {
+      "anonymous_id": "S-a27ce2835498",
+      "total_events": 55,
+      "assistant_turns": 27,
+      "tool_results": 18,
+      "error_indicators": 10,
+      "unique_tools": 3,
+      "tool_sequence": [
+        "Bash",
+        "Bash",
+        "Bash",
+        "Bash",
+        "Bash",
+        "Bash",
+        "Bash",
+        "Bash",
+        "Bash",
+        "Bash",
+        "Bash",
+        "Bash",
+        "Bash",
+        "Read",
+        "Edit",
+        "Bash",
+        "Read",
+        "Edit",
+        "Bash",
+        "Read"
+      ],
+      "text_snippets": [],
+      "scorer_classification": "friction",
+      "scorer_confidence": "high",
+      "scorer_notes": "Very long session (55 events, 27 turns) with 10 error indicators out of 18 tool results (56% error rate). 13 consecutive Bash calls before switching strategy strongly suggests repeated failures/retries. Session is 3x longer than clean sessions. Classic stuck/retry pattern.",
+      "order": 5
+    },
+    {
+      "anonymous_id": "S-8637f69f5767",
+      "total_events": 19,
+      "assistant_turns": 10,
+      "tool_results": 4,
+      "error_indicators": 0,
+      "unique_tools": 1,
+      "tool_sequence": [
+        "Bash",
+        "Bash",
+        "Bash",
+        "Bash"
+      ],
+      "text_snippets": [
+        "All 3 tests pass:\n\n- `test_fibonacci` PASSED\n- `test_factorial` PASSED\n- `test_factorial_negative` P"
+      ],
+      "scorer_classification": "clean",
+      "scorer_confidence": "high",
+      "scorer_notes": "Short session (19 events), zero errors, 4 Bash calls all successful. Text confirms all 3 tests pass. Straightforward test execution with no issues.",
+      "order": 6
+    },
+    {
+      "anonymous_id": "S-a5750513102d",
+      "total_events": 30,
+      "assistant_turns": 17,
+      "tool_results": 8,
+      "error_indicators": 1,
+      "unique_tools": 2,
+      "tool_sequence": [
+        "Bash",
+        "Bash",
+        "Bash",
+        "Bash",
+        "Bash",
+        "Read",
+        "Read",
+        "Bash"
+      ],
+      "text_snippets": [
+        "Both tests pass \u2014 no failures to fix.\n\n- `test_parse_config`: verifies `parse_config(\"config.json\")`"
+      ],
+      "scorer_classification": "clean",
+      "scorer_confidence": "medium",
+      "scorer_notes": "Moderate session (30 events, 17 turns) with only 1 error out of 8 tool results (12.5% error rate). Five initial Bash calls suggest some exploration but not excessive retry. Final text confirms tests pass. Slightly elevated length but low error rate and successful completion indicate minor hiccup, not systemic friction.",
+      "order": 7
+    }
+  ]
+}

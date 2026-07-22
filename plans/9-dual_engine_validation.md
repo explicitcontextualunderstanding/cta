@@ -487,8 +487,8 @@ It is judged by **adoption**:
 | M2 | ≥3 existing claims reclassified as DEDUCTIVE/INDUCTIVE/EXPLORATORY | §9 table populated and reflected in audit_report.md |
 | M3 | ≥1 inductive claim reports Type S/M with CI | Any plan's exit evidence includes posterior summary |
 | M4 | ≥1 co-adaptation check run (R4 follow-up on H8) | **DONE.** `scripts/r4_co_adaptation_check.py` — held-out 3/4, perturbation 0 FP/FN. R4 cleared. |
-| M5 | Independent-scorer pattern used for ≥1 metric | §6 table has at least one verified row |
-| M6 | audit_report.md and pr_writeup.md use claim labels | All claims tagged [DEDUCTIVE]/[INDUCTIVE]/[EXPLORATORY] |
+| M5 | Independent-scorer pattern used for ≥1 metric | **DONE.** `scripts/independent_scorer.py` — blind scorer classified 7/7 sessions, 100% agreement with FI. Two-engine framing validated. |
+| M6 | audit_report.md and pr_writeup.md use claim labels | **DONE.** All claims tagged. M2 satisfied (8+ labels in audit_report.md). |
 
 **Plan 9 is COMPLETE when M1-M5 pass.** M5 is required (not stretch) because the
 independent-scorer is what makes the "two engines" framing literally true. Without
