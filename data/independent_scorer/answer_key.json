@@ -1,0 +1,48 @@
+{
+  "note": "ANSWER KEY \u2014 DO NOT SHARE WITH SCORER until evaluation",
+  "n_sessions": 7,
+  "key": [
+    {
+      "order": 1,
+      "anonymous_id": "S-24ea887bb9d4",
+      "true_label": "clean",
+      "source_file": "session_1.ndjson"
+    },
+    {
+      "order": 2,
+      "anonymous_id": "S-9af87ffdb9d3",
+      "true_label": "clean",
+      "source_file": "session_4.ndjson"
+    },
+    {
+      "order": 3,
+      "anonymous_id": "S-610214192ba1",
+      "true_label": "clean",
+      "source_file": "session_6.ndjson"
+    },
+    {
+      "order": 4,
+      "anonymous_id": "S-173a0a7226ce",
+      "true_label": "clean",
+      "source_file": "session_2.ndjson"
+    },
+    {
+      "order": 5,
+      "anonymous_id": "S-a27ce2835498",
+      "true_label": "friction",
+      "source_file": "raw.ndjson"
+    },
+    {
+      "order": 6,
+      "anonymous_id": "S-8637f69f5767",
+      "true_label": "clean",
+      "source_file": "session_5.ndjson"
+    },
+    {
+      "order": 7,
+      "anonymous_id": "S-a5750513102d",
+      "true_label": "clean",
+      "source_file": "session_3.ndjson"
+    }
+  ]
+}
