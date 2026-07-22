@@ -40,7 +40,7 @@ This PR includes evidence from a **Counterfactual Trace Audit (CTA)** — 23 con
 - MONITORING_IMPATIENCE elimination (0% vs 52%): **[DEDUCTIVE]** — mechanism elimination proof (before/after, N=3)
 - Orientation speedup (7.2 vs 8.5 msgs): **[INDUCTIVE]** — N=9, effect=1.3 msgs, Type S likely >10%
 - Binary resolution (6/6 traces): **[DEDUCTIVE]** — mechanism proof (exhaustive presence/absence)
-- Friction index (H8, 9/9): **[DEDUCTIVE]** with R4 flag — instrument accuracy proven; co-adaptation check pending
+- Friction index (H8, 9/9): **[DEDUCTIVE]** — instrument accuracy proven; R4 cleared (held-out signals separate 3/4, 0 FP/FN under perturbation)
 
 ### Why this skill matters now
 

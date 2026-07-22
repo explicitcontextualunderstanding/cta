@@ -451,7 +451,7 @@ Apply this framework retroactively to existing claims. Priority order:
 | Priority | Claim | Plan | Current state | Action |
 |----------|-------|------|---------------|--------|
 | 1 | Gap 3 CPI comparison | Plan 8 §4.0 | Run 1 EXPLORATORY (R6: F1 self-healed). Probe run 2 (m1probe image, exit-42 as only friction): VALID, NO FIRE — antecedent unreachable (skill's mode-selection table defaults to `-p`; neither arm attempted `-i`). | **CLOSED via option 3 (scope reduction).** R6 fires: do not replicate. Prescription arm untestable under current skill design. Instrument arm (H8) stands independently. SKILL.md v2.5.2 retains friction index as signal, removes unproven kill→retry protocol. |
-| 2 | H8 9/9 agreement | Plan 8 Phase 2 | 100% agreement, no co-adaptation check | Run §7 held-out signal test. Label as "within-codebase" until passed. |
+| 2 | H8 9/9 agreement | Plan 8 Phase 2 | 100% agreement. §7 co-adaptation check RUN. | **DONE.** Held-out signal test: 3/4 independent signals separate regimes (event count 2.68x, turns 2.42x, content 0.09x). Perturbation test: 0 FP, 0 FN under 10% exitCode flip. R4 CLEARED — label upgraded to [DEDUCTIVE] (no flag). |
 | 3 | Bimodal CPI (0.912 / 1.594) | Plan 2 Phase 6 | N=2 per regime, point estimates | Label as [EXPLORATORY]. Cannot compute Type S/M at N=2. |
 | 4 | Write compression 8x | Plan 2 / audit_report | N=1 valid pair (P2) | Label as [EXPLORATORY]. Type M almost certainly >2.0x at N=1. |
 | 5 | Skill-effect (orientation speedup 7.2 vs 8.5 msgs) | Plan 1 / audit_report | N=9, but effect is 1.3 msgs | Fit hierarchical model. Likely Type S > 10% (effect near zero). |
@@ -468,7 +468,7 @@ evidence — it's just honestly labeled evidence.
 | Claim | Current label | Correct label | Why |
 |-------|--------------|---------------|-----|
 | H4: Binary resolution (6/6 traces) | "CONFIRMED" | **[DEDUCTIVE]** — mechanism proof | Presence/absence in traces. No magnitude. N=6 is exhaustive, not statistical. |
-| H8: FI discriminates regimes (9/9) | "CONFIRMED" | **[DEDUCTIVE]** with R4 flag | Classification accuracy is structural. But R4 fires (same signal source). Needs §7 check. |
+| H8: FI discriminates regimes (9/9) | "CONFIRMED" | **[DEDUCTIVE]** — R4 cleared | Classification accuracy is structural. §7 co-adaptation check passed: 3/4 held-out signals separate regimes; 0 FP/FN under 10% perturbation. |
 | Plan 7: 0% spinner-only (N=3) | "ELIMINATED" | **[DEDUCTIVE]** — mechanism elimination | Before/after mechanism proof. Not a magnitude claim. |
 | CPI = 0.833 (N=4 pairs) | Reported as fact | **[INDUCTIVE]** — needs CI + Type S/M | Statistical estimate from paired measurement. |
 | Write compression = 8x (N=1) | Reported as headline | **[EXPLORATORY]** — N=1, no CI | Single observation. Cannot support confirmatory claim. |
@@ -486,7 +486,7 @@ It is judged by **adoption**:
 | M1 | Plan 8 §4.0 adopts the framework (reconciliation rules, N≥3, Type S/M) | §4.0 present and locked before unblinding |
 | M2 | ≥3 existing claims reclassified as DEDUCTIVE/INDUCTIVE/EXPLORATORY | §9 table populated and reflected in audit_report.md |
 | M3 | ≥1 inductive claim reports Type S/M with CI | Any plan's exit evidence includes posterior summary |
-| M4 | ≥1 co-adaptation check run (R4 follow-up on H8) | §7 procedure executed, result documented |
+| M4 | ≥1 co-adaptation check run (R4 follow-up on H8) | **DONE.** `scripts/r4_co_adaptation_check.py` — held-out 3/4, perturbation 0 FP/FN. R4 cleared. |
 | M5 | Independent-scorer pattern used for ≥1 metric | §6 table has at least one verified row |
 | M6 | audit_report.md and pr_writeup.md use claim labels | All claims tagged [DEDUCTIVE]/[INDUCTIVE]/[EXPLORATORY] |
 

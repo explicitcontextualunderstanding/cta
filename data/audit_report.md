@@ -157,15 +157,15 @@
 
 ### Plan 8: Runtime Friction Detection (Phase 3 DEPLOYED — Gap 3 CLOSED via Option 3)
 
-**Status:** PHASE 3 DEPLOYED + LIVE PROOF. H8 CONFIRMED (9/9 = 100%, R4-flagged). SKILL.md v2.5.2. Gap 3 CLOSED: probe Run 2 (m1probe, exit-42) VALID but NO FIRE — antecedent unreachable under skill's print-mode default. R6 fires: do not replicate. Prescription scope-reduced to monitoring-only index + narrow exit-42 guard.
+**Status:** PHASE 3 DEPLOYED + LIVE PROOF. H8 CONFIRMED (9/9 = 100%, R4 cleared). SKILL.md v2.5.2. Gap 3 CLOSED: probe Run 2 (m1probe, exit-42) VALID but NO FIRE — antecedent unreachable under skill's print-mode default. R6 fires: do not replicate. Prescription scope-reduced to monitoring-only index + narrow exit-42 guard.
 
 **Plan 9 claim labels:**
-- H8 (FI discriminates regimes, 9/9): **[DEDUCTIVE]** with **R4 flag** — classification accuracy is structural, but FI and CPI derive from the same NDJSON stream (co-adaptation suspected; §7 check pending)
+- H8 (FI discriminates regimes, 9/9): **[DEDUCTIVE]** — classification accuracy is structural. R4 cleared: held-out signals (event count, turn count, content volume) independently separate regimes (3/4); perturbation test 0 FP/FN under 10% exitCode flip.
 - CPI = 0.833 (N=4 pairs): **[INDUCTIVE]** — needs CI + Type S/M (not yet computed)
 - Bgmode exit-42 fallback: **[DEDUCTIVE]** — model compliance proven (mechanism proof, no magnitude claim)
 - Gap 3 Run 1 (treatment 0.477 vs control 0.421): **[EXPLORATORY]** — N=1, R6 fires (construct-invalid: F1 friction self-healed, prescription never exercised)
 - Gap 3 Run 2 (exit-42 probe, m1probe): **[DEDUCTIVE + EXPLORATORY]** — DEDUCTIVE: exit-42 never fired, both arms chose `-p` directly (antecedent unreachable under skill's print-mode default). EXPLORATORY: N=1 efficiency figures (treatment used MORE resources than control; uninterpretable). R6 fires: do not replicate.
-- Friction index separation (0.312 gap): **[DEDUCTIVE]** with **R4 flag** — same signal source as CPI
+- Friction index separation (0.312 gap): **[DEDUCTIVE]** — R4 cleared (§7 co-adaptation check passed: 3/4 held-out signals separate, 0 FP/FN under perturbation)
 
 **Causal role (v0.3.0):** Friction is a **moderator** (stratification instrument), not a treatment. Core decomposition: `observed_outcome = skill_effect + environment_effect + noise`. The friction index separates `environment_effect` from `skill_effect` before SIP labeling. SKILL.md's friction protocol is a **meta-SIP**: a second-order intervention that treats the regime signal, not the task. SIPs are now `f(skill, task, regime)`.
 
