@@ -2,7 +2,7 @@
 
 **Target:** `NousResearch/hermes-agent` → `skills/autonomous-ai-agents/qodercli/SKILL.md`
 **Author:** explicitcontextualunderstanding
-**Skill version:** 2.5.0
+**Skill version:** 2.5.2
 
 ---
 
@@ -35,6 +35,13 @@ This PR includes evidence from a **Counterfactual Trace Audit (CTA)** — 23 con
 
 **Conclusion:** The skill's primary value is **print-mode delegation** (8x write compression, auth enablement). Interactive mode provides marginal orientation speedup; the 40% stuck-polling failure mode (MONITORING_IMPATIENCE) is **eliminated** in SKILL.md v2.4.0 via NDJSON pipe-spawn integration — background qodercli now emits structured progress (tool names, thinking state) instead of spinner glyphs. N=3 treatment captures confirm 0% spinner-only polls (vs 52% control).
 
+**Evidence strength (Plan 9 labels):**
+- 8x write compression: **[EXPLORATORY]** — N=1 valid pair (P2); direction confirmed, magnitude unvalidated (Type M likely >2.0×)
+- MONITORING_IMPATIENCE elimination (0% vs 52%): **[DEDUCTIVE]** — mechanism elimination proof (before/after, N=3)
+- Orientation speedup (7.2 vs 8.5 msgs): **[INDUCTIVE]** — N=9, effect=1.3 msgs, Type S likely >10%
+- Binary resolution (6/6 traces): **[DEDUCTIVE]** — mechanism proof (exhaustive presence/absence)
+- Friction index (H8, 9/9): **[DEDUCTIVE]** with R4 flag — instrument accuracy proven; co-adaptation check pending
+
 ### Why this skill matters now
 
 - **Exclusive Model Access**: Provides Hermes with native access to **Qwen3.8-Max-Preview** (Alibaba Cloud's 2.4T-parameter flagship model), which is available exclusively through Alibaba Cloud and Qoder CLI/QoderWork platforms.
@@ -56,7 +63,7 @@ This PR includes evidence from a **Counterfactual Trace Audit (CTA)** — 23 con
 | Scope constraint | Explicit "Do NOT use for single-file lookups" prevents over-delegation |
 | Folder trust handling | Documents the `1\n` response for first-launch trust dialogs |
 | Context window preservation | File ingestion happens inside qodercli's workspace; Hermes sees only the command + summary, not raw file contents |
-| Runtime friction detection | NDJSON stream signals (error rate, context velocity, retry density) classify sessions as clean/friction in real-time — Hermes sees `⚠ Friction:` warnings during stuck loops, zero overhead when clean. SKILL.md v2.5.0 mandates `-p` (print mode) retry after friction — a regime-level response, not a task decision (Plan 8, H8 confirmed: 9/9 agreement) |
+| Runtime friction detection | NDJSON stream signals (error rate, context velocity, retry density) classify sessions as clean/friction in real-time — Hermes sees `⚠ Friction:` warnings during stuck loops, zero overhead when clean (Plan 8, H8 confirmed: 9/9 agreement). SKILL.md v2.5.2 retains the friction index as a monitoring instrument; the kill→retry prescription was scope-reduced after Gap 3 probes showed its antecedent is unreachable under the skill's own print-mode default. Exit-42 retained as a narrow edge-case guard. |
 
 ---
 
@@ -131,7 +138,7 @@ H2-original is disconfirmed: the model omits `pty=true` on 27% of qodercli calls
 | PTY_OMISSION | ~~destructive~~ **neutral** (M4) | 6/6 treatment | `pty=true` omitted on print-mode calls where it's a no-op (M4 confirmed: identical exit codes + file output with/without PTY) |
 | FALSE_SUCCESS | destructive | **0** | Recovery-aware detector: 0 findings across 23 sessions. All delegation errors were either acknowledged or independently verified. |
 | MONITORING_IMPATIENCE | ~~destructive~~ **ELIMINATED** (Plan 7) | 2/5 kimi treatment → **0** post-fix | Spinner-only polling → premature kill. Fixed by NDJSON pipe-spawn (v2.4.0). N=3 captures: 0% spinner-only (vs 52% control). |
-| REGIME_ADAPTATION | constructive / neutral | 0 (pending Gap 3) | Second-order SIP: f(skill, environment). Fires when friction detected AND agent switches to `-p` (constructive) or friction detected but no adaptation (neutral). Plan 8 §1.1. |
+| REGIME_ADAPTATION | constructive (instrument) / prescription closed | 0 fires (antecedent unreachable) | Second-order SIP: f(skill, environment). Instrument confirmed (H8 9/9). Prescription scope-reduced: exit-42 antecedent unreachable under skill's print-mode default (Gap 3 probe Run 2). SKILL.md v2.5.2 retains index, removes protocol. |
 | CONCEPT_BLEED | — | 0 | Negative control (N1) and edge case (E1) show zero qodercli invocations |
 
 **Detection infrastructure:** 10-detector registry in `src/cta/skill_rules.py` (pty_omission, interactive_blockade, vague_prompt, procedural_scaffolding, delegation_redirect, concept_bleed, false_success, secret_exposure, forbidden_flag_usage, regime_adaptation). Config-driven via `configs/qodercli.yaml` `sip_detectors` list.
@@ -279,7 +286,7 @@ This audit extends the CTA framework from prompt/playbook skills to **delegation
 | PTY_OMISSION | neutral (M4) | — (new: terminal argument non-compliance; no-op in print mode) |
 | PERMISSION_GAP | destructive | — (new: headless confirmation blocks) |
 | MONITORING_IMPATIENCE | ~~destructive~~ → **ELIMINATED** | — (new: spinner polling → premature kill; fixed by NDJSON pipe-spawn, v2.4.0) |
-| REGIME_ADAPTATION | constructive / neutral | — (new: second-order SIP = f(skill, environment); friction detected → strategy switch to print mode. Plan 8 §1.1 meta-SIP) |
+| REGIME_ADAPTATION | constructive (instrument) / prescription closed | — (new: second-order SIP = f(skill, environment). Instrument confirmed (H8 9/9); prescription scope-reduced after Gap 3 probes showed antecedent unreachable under skill's print-mode default. SKILL.md v2.5.2) |
 | FALSE_SUCCESS | destructive | Offsetting behaviors (subtype: model claims success despite failure) |
 
 ---
@@ -318,7 +325,7 @@ Raw session data (SQLite databases + stdout) committed in `data/m2_captures/`, `
 5. **Wall-time tradeoff.** Delegation reduces agent actions but increases total execution time (qodercli is slow). This is a tradeoff, not a pure win.
 6. **MONITORING_IMPATIENCE SIP — ELIMINATED (v2.4.0).** The 40% stuck-polling loop is fixed by NDJSON pipe-spawn integration. N=3 treatment captures confirm 0% spinner-only (vs 52% control). Patience guidance scoped to interactive-foreground only.
 7. **CPI empirically measured (G3, 2026-07-21).** Post-NDJSON CPI is bimodal: run 1=0.912 (friction-heavy, 92 msgs), run 2=1.594 (clean, 53 msgs), mean=1.253 (N=2, run 3 pending). H6-original ("CPI>1.0") reclassified as UNDER-SPECIFIED — binary threshold on bimodal distribution. H6-revised ("NDJSON shifts CPI rightward; clean sessions >1.0, friction sessions ≤1.0") CONFIRMED. Context preservation is environment-dependent, not mechanism-dependent.
-8. **Gap 3: Regime adaptation behavioral evidence pending.** H8 proves the friction instrument works (classification accuracy: 9/9). It does NOT prove that acting on the signal improves outcomes. The `detect_regime_adaptation` detector (10-detector registry) is deployed but has 0 organic findings — closure requires a paired session where friction fires, agent adapts per SKILL.md v2.5.0, and CPI recovers toward clean-regime baseline. Blocked on Docker/F1-F3 friction environment (agent defeats all local friction inducers).
+8. **Gap 3: Regime adaptation prescription closed (option 3 — scope reduction).** H8 proves the friction instrument works (classification accuracy: 9/9). The prescription (kill → retry `-p`) was tested in two paired probes: Run 1 (F1 friction) — inner agent self-healed, friction never surfaced to Hermes; Run 2 (exit-42, m1probe) — both arms chose `-p` directly per the skill's print-mode default, exit-42 never fired. The prescription's antecedent is unreachable under the shipped skill's design. R6 fires: do not replicate. SKILL.md v2.5.2 retains the friction index as a monitoring instrument and exit-42 as a narrow edge-case guard; the 5-step kill→retry protocol is removed. The instrument (H8) is the durable deliverable.
 
 ---
 
@@ -333,7 +340,7 @@ Raw session data (SQLite databases + stdout) committed in `data/m2_captures/`, `
 - [x] PTY language scoped to interactive foreground (empirically validated)
 - [x] MONITORING_IMPATIENCE SIP eliminated (NDJSON pipe-spawn, N=3 proof: 0% spinner-only)
 - [x] Version drift validated (`--output-format stream-json` stable 1.0.45 → 1.1.2, protocol_version="1.0.0")
-- [x] Runtime friction detection deployed (Plan 8 H8: 9/9 agreement, clean FI 0.086–0.121, friction FI 0.433). SKILL.md v2.5.0 regime-response protocol. Live container proof passed.
+- [x] Runtime friction detection deployed (Plan 8 H8: 9/9 agreement, clean FI 0.086–0.121, friction FI 0.433). SKILL.md v2.5.2: monitoring-only index + narrow exit-42 guard (prescription scope-reduced after Gap 3 probes). Live container proof passed.
 - [x] Regime adaptation detector added (10-detector registry; second-order SIP = f(skill, environment))
 - [x] Negative control shows zero skill influence (metric validity)
 - [x] One-command reproducibility script (`scripts/run_audit.py`)

@@ -1278,12 +1278,12 @@ or enrich adapter events with an `args` field.
 
 ### Final hypothesis status (all milestones)
 
-| # | Hypothesis | Verdict | Milestone |
-|---|---|---|---|
-| H1 | Delegation Efficiency | **PARTIALLY CONFIRMED** | M2 |
-| H2 | PTY Execution Stability | **RECLASSIFIED → H2-revised CONFIRMED** | M2+M4 |
-| H3 | Interactive Blockade Resolution | **CONFIRMED** | M3 |
-| H4 | Binary Resolution Validation | **CONFIRMED** | M2+M3 |
+| # | Hypothesis | Verdict | Plan 9 label | Milestone |
+|---|---|---|---|---|
+| H1 | Delegation Efficiency | **PARTIALLY CONFIRMED** | [EXPLORATORY] — WC 8x at N=1 valid pair; Type M almost certainly >2.0× | M2 |
+| H2 | PTY Execution Stability | **RECLASSIFIED → H2-revised CONFIRMED** | [DEDUCTIVE] — mechanism proof (M4: print mode PTY-agnostic) | M2+M4 |
+| H3 | Interactive Blockade Resolution | **CONFIRMED** | [INDUCTIVE] — orientation speedup 7.2 vs 8.5 msgs (effect=1.3, Type S likely >10%) | M3 |
+| H4 | Binary Resolution Validation | **CONFIRMED** | [DEDUCTIVE] — mechanism proof (6/6 traces, no magnitude claim) | M2+M3 |
 
 ---
 
@@ -1761,7 +1761,7 @@ any verdict but would strengthen the evidence base against external challenge
 | ~~G4~~ | ~~Plan 7 treatment N=1~~ | ~~3~~ | ~~≥3~~ | ~~CLOSED (2026-07-21):~~ N=3 captures (v1.0.45 + v1.1.2×2), ALL 0% spinner-only, 100% structured, natural exit (4-5 turns, 14-24s). Defensible against "luck" challenge. | — | DONE | 7 |
 | ~~G5~~ | ~~Version drift on `--output-format stream-json`~~ | ~~1~~ | ~~1~~ | ~~CLOSED (2026-07-21):~~ Tested on 1.1.2 (major bump from 1.0.45). Same events, `protocol_version: "1.0.0"` in init. NDJSON contract survived 1.0→1.1. | — | DONE | 7 |
 | G6 | Multi-turn NDJSON untested | 0 | 1 | Full SDK mode never exercised. | See [Plan 7 §14 E3](plans/7-subagent_progress_observation.md). | LOW | 7 |
-| G7 | Runtime friction detection | Sketch | **FUNCTIONAL** | **Plan 8 v0.3.2:** H8 CONFIRMED (9/9=100%). Gap 2 CLOSED (friction display proven CLEAN/MILD/HEAVY). `detect_regime_adaptation()` registered (7 tests pass, `tests/test_regime_adaptation.py`). SKILL.md v2.5.1 pushed (exit-42 fallback + mild friction triage). K2 resolved. Remaining: in-container poll-loop proof. | See [Plan 8](plans/8-runtime_friction_detection.md). | LOW (post-merge) | 8 |
+| G7 | Runtime friction detection | Sketch | **FUNCTIONAL → Gap 3 IN PROGRESS** | **Plan 8 v0.3.4:** H8 CONFIRMED (9/9=100%). Gap 2 CLOSED. Bgmode test COMPLETE (exit-42 fallback proven in-container: model quoted SKILL.md guidance verbatim, fell back to `-p`, task completed). SKILL.md v2.5.1 pushed (`00591faa6`). 7 integration tests pass. **Gap 3 started:** ±adaptation paired design — F1 friction container (no pip/uv/curl/wget) building, harness prepped (`scripts/gap3_friction_harness.py`). | See [Plan 8](plans/8-runtime_friction_detection.md). | **HIGH** (Gap 3) | 8 |
 
 ### Priority ordering
 
@@ -1771,7 +1771,7 @@ any verdict but would strengthen the evidence base against external challenge
 4. **G1 (print-mode N)** — tightens the strongest claim.
 5. ~~**G5 (version drift)**~~ — **CLOSED.** Wire protocol versioned (`protocol_version: "1.0.0"`), survived major bump.
 6. **G6 (multi-turn)** — defer until multi-turn is a real need.
-7. **G7 (runtime friction detection)** — **FUNCTIONAL.** Plan 8 v0.3.1: H8 confirmed, Gap 2 closed, detector registered. Remaining: in-container poll-loop proof. See [Plan 8](plans/8-runtime_friction_detection.md).
+7. **G7 (runtime friction detection)** — **Gap 3 IN PROGRESS.** Bgmode test complete (exit-42 proven). F1 friction container building; paired ±adaptation harness prepped. See [Plan 8](plans/8-runtime_friction_detection.md).
 
 ### Relationship to Plan 2
 

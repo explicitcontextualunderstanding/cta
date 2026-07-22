@@ -14,7 +14,7 @@ Related:
 
 | Field | Value |
 |---|---|
-| Status | **GAP 3 IN PROGRESS — ±ADAPTATION PAIRED DESIGN** |
+| Status | **GAP 3 → OPTION 3 (SCOPE REDUCTION).** Instrument confirmed; prescription closed (antecedent unreachable). |
 | Research question | Can we classify the environment regime (clean vs friction) at runtime from the NDJSON stream? |
 | Causal role | Friction is a **moderator** (stratification instrument), not a treatment. See §1.1. |
 | Substrate | `_format_ndjson_progress()` in `hermes-agent/tools/process_registry.py:90-268` (friction-enabled) |

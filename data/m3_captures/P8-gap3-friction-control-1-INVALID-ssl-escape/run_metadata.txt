@@ -1,0 +1,9 @@
+started_at=2026-07-22T14:56:23Z
+hermes_exit=0
+completed_at=2026-07-22T15:00:11Z
+experiment=gap3
+adaptation=control
+run_num=1
+model=kimi-k2.7-code
+provider=opencode-go
+container_image=registry.rossollc.com/hermes:friction

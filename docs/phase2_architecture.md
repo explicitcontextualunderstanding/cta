@@ -300,7 +300,7 @@ This adds the full metric matrix (per-pair + aggregate) to `audit_report.json`.
 | File | Role | Status |
 |------|------|--------|
 | `src/cta/audit_config.py` | Config loader (JSON → dataclasses) | Exists, needs YAML extension |
-| `src/cta/skill_rules.py` | SIP detector registry + 6 detectors | Exists, needs false_success |
+| `src/cta/skill_rules.py` | SIP detector registry + 10 detectors | Exists, complete |
 | `src/cta/structural_metrics.py` | Core metric functions | Exists, complete |
 | `src/cta/structural_scorer.py` | Standalone CLI scorer | **New (this session)** |
 | `src/cta/hermes_adapter.py` | state.db → CTA Trace conversion | Exists, complete |

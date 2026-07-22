@@ -374,6 +374,15 @@ condition (5 treatment, 3 baseline). No selection bias.
    (interactive mode only, 2/5 sessions). FALSE_SUCCESS: 0 in both (recovery-aware
    detector confirms all errors were acknowledged).
 
+**Plan 9 claim labels (§8 backfill):**
+
+| Claim | Label | Rationale |
+|-------|-------|-----------|
+| Write compression 8x/16x (P2, N=1 valid pair) | [EXPLORATORY] | Type M almost certainly >2.0× at N=1. Direction is real; magnitude is not confirmatory. |
+| CPI = 0.833 (N=4 kimi pairs) | [INDUCTIVE] | Needs CI + Type S/M. Cannot report as point estimate without uncertainty bounds. |
+| Bimodal CPI (0.912 / 1.594, N=2 per regime) | [EXPLORATORY] | Cannot compute Type S/M at N=2. Hypothesis-generating, not confirmatory. |
+| ECR ≈ 1.0 (no net message reduction) | [INDUCTIVE] | Consistent across N=4 pairs but effect is near zero — Type S likely high. |
+
 **Generalizability claim (revised):** The skill's write compression is
 **model-agnostic in direction**. However, interactive mode's context savings are
 **net-negative** (CPI=0.92) due to monitoring overhead. Print-mode delegation
@@ -600,7 +609,7 @@ what remains is environment-dependent.
 | ~~H6 rejected~~ | ~~≤1.0~~ | ~~Monitoring overhead wasn't the CPI killer~~ | ~~Superseded by reclassification~~ |
 | **ACTUAL: Bimodal** | 0.912 / 1.594 | **H6-original UNDER-SPECIFIED; H6-revised CONFIRMED** | Reclassify. CPI is environment-dependent, not mechanism-dependent. |
 
-**Result (N=2, run 3 pending):** CPI is bimodal — clean sessions (53 msgs, no env friction) achieve CPI=1.594; friction-heavy sessions (92 msgs, Flask/werkzeug debugging) land at CPI=0.912. Mean=1.253. The binary H6 threshold was a category error on a bimodal distribution.
+**Result (N=2, run 3 pending) [EXPLORATORY — Plan 9 §8 priority 3]:** CPI is bimodal — clean sessions (53 msgs, no env friction) achieve CPI=1.594; friction-heavy sessions (92 msgs, Flask/werkzeug debugging) land at CPI=0.912. Mean=1.253. The binary H6 threshold was a category error on a bimodal distribution.
 
 ### Dependencies
 
@@ -647,12 +656,12 @@ CTA classify sessions into clean/friction regimes *during execution* rather than
 post-hoc trace analysis.
 
 See [Plan 8: plans/8-runtime_friction_detection.md](plans/8-runtime_friction_detection.md).
-Status: **v0.3.1 — FUNCTIONAL.** H8 CONFIRMED (9/9=100% agreement). Gap 2 CLOSED
-(friction display proven across CLEAN/MILD/HEAVY regimes). K2 resolved
-(`context_usage_ratio` present on complete assistant events). `detect_regime_adaptation()`
-registered in 10-detector registry (7 integration tests pass, `tests/test_regime_adaptation.py`). SKILL.md v2.5.1 pushed
-(exit-42 fallback + mild friction triage). `-p` mandate aligned with detector's `STRATEGY_SWITCH_PATTERNS`.
-Remaining: in-container poll-loop proof (exit-42 `-i`→`-p` fallback).
+Status: **v0.3.5 — Gap 3 IN PROGRESS.** H8 CONFIRMED (9/9=100% agreement). Gap 2 CLOSED.
+Bgmode test COMPLETE (exit-42 fallback proven in-container: model quoted SKILL.md guidance
+verbatim, fell back to `-p`, task completed). SKILL.md v2.5.1 pushed (`00591faa6`).
+7 integration tests pass. **Gap 3 started:** ±adaptation paired design in F1 friction
+container (no pip/uv/curl/wget). Treatment=v2.5.1 (friction guidance), control=v2.4.0.
+CPI recovery criterion: treatment CPI > control CPI, recovering toward clean baseline (>1.0).
 
 **Errors observed (run 1 only, all resolved):**
 - exit 42 on `-i` attempts: expected pipe-spawn conflict, correct fallback to `-p`

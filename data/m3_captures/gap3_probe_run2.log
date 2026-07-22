@@ -1,0 +1,25 @@
+Gap 3 ±Adaptation Paired Experiment
+  Condition: both
+  Run number: 2
+  Model: opencode-go/kimi-k2.7-code
+  Timeout: 900s
+  Container image: registry.rossollc.com/hermes:m1probe
+  Treatment skill: /Users/kieranlal/workspace/CTA/data/m3_captures/P1-interactive-P8-phase3-bgmode-treatment-1/hermes_home/skills/autonomous-ai-agents/qodercli/SKILL.md
+  Control skill: /Users/kieranlal/workspace/CTA/data/m3_captures/P1-interactive-P8-phase3-friction-treatment-1/hermes_home/skills/autonomous-ai-agents/qodercli/SKILL.md
+  Output: /Users/kieranlal/workspace/CTA/data/m3_captures
+
+[GAP3] kalloc.1024: 2065064 elements, headroom 934936
+[GAP3] Checking provider connectivity...
+[GAP3] Provider OK. Rate limit remaining: ?
+[GAP3] Starting P8-gap3-friction-treatment-2 (attempt 1/2, timeout=900s)...
+[GAP3] P8-gap3-friction-treatment-2 finished in 250.5s (exit=0)
+[GAP3] P8-gap3-friction-treatment-2 validity: valid (54 messages, no failure patterns)
+[GAP3] Starting P8-gap3-friction-control-2 (attempt 1/2, timeout=900s)...
+[GAP3] P8-gap3-friction-control-2 finished in 225.4s (exit=0)
+[GAP3] P8-gap3-friction-control-2 validity: valid (41 messages, no failure patterns)
+
+==================================================
+GAP3 RESULTS
+==================================================
+  P8-gap3-friction-treatment-2: VALID
+  P8-gap3-friction-control-2: VALID

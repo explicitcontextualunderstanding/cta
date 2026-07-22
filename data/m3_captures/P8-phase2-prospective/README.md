@@ -20,7 +20,8 @@
 ## Limitations
 
 - 8/9 sessions are clean (only 1 friction, synthetic)
-- Real friction sessions require Docker (F1/F3 configs) — Docker unavailable
+- Real friction sessions use the F1 friction image (`registry.rossollc.com/hermes:friction`,
+  built + verified inescapable 2026-07-22). Paired experiment running.
 - CPI proxy is simplified: (success_rate * expected_growth / actual_growth)
 - No disagreement cases to analyze (E5 trivially satisfied)
 

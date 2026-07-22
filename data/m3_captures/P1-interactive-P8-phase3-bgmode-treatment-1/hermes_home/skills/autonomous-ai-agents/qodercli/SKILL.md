@@ -1,7 +1,7 @@
 ---
 name: qodercli
 description: "Delegate coding to Qoder CLI (features, PRs, refactors)."
-version: 2.5.2
+version: 2.5.1
 author: explicitcontextualunderstanding
 license: MIT
 platforms: [linux, macos, windows]
@@ -121,9 +121,23 @@ process(action="write", session_id="<id>", data="\x03")
 **Environment friction detection:** Poll output includes a runtime friction index computed from the NDJSON stream (error rate, context velocity, retry density). When the background session hits environment problems (missing packages, broken imports, permission errors), you will see:
 
 - `errors: N/M` — mild friction (some tool calls failing). Monitor — the session may self-recover. No action needed unless it escalates to heavy friction.
-- `⚠ Friction: HIGH-ERROR (N/M) | RETRY Bash x4` — heavy friction (session is stuck in fix→fail loops). The session is burning context on remediation loops and will likely timeout. Kill it (`process(action="kill")`), diagnose from logs, fix the environment, and retry with `-p`.
+- `⚠ Friction: HIGH-ERROR (N/M) | RETRY Bash x4` — heavy friction (session is stuck in fix→fail loops). Act immediately.
 
-**Exit-42 pipe conflict:** If qodercli exits with code 42, it means `-i` (interactive) was rejected because stdin is piped. Fall back to `-p` immediately — the task and prompt are fine; only the mode flag needs changing. (In practice this is rare: the mode-selection table above already defaults to `-p`, which avoids this entirely.)
+**When you see `⚠ Friction` — this is a regime response, not a task decision:**
+
+The friction signal means the *environment* is broken, not the task or the skill. Your response should treat the regime signal: change how you interact with qodercli, not what you ask it to do.
+
+1. The session is burning context on remediation loops — it will likely timeout or produce incomplete work.
+2. Kill it: `process(action="kill", session_id="<id>")`
+3. Diagnose: check `process(action="log")` output for the specific errors (ModuleNotFoundError, Permission denied, etc.)
+4. Fix the environment (install missing deps, fix permissions) BEFORE retrying.
+5. **Retry with `-p` (print mode).** Do NOT retry with `-i` or `background=true` — that re-enters the same monitoring loop that friction broke. Print mode is one-shot: no polling, no NDJSON stream, no friction accumulation.
+
+```
+terminal(command="qodercli -p '<same task, tighter scope>' --permission-mode bypass_permissions", workdir="~/project", pty=true, timeout=300)
+```
+
+**Exit-42 pipe conflict:** If qodercli exits with code 42, it means `-i` (interactive) was rejected because stdin is piped. This is expected in background/pipe mode. Fall back to `-p` immediately — do NOT retry with `-i` in a different configuration. The task and prompt are fine; only the mode flag needs changing.
 
 Clean sessions show zero friction overhead — no indicator appears when the environment is healthy.
 

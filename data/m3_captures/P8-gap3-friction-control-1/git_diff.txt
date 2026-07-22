@@ -1,0 +1,5 @@
+ package.json            |  4 ++--
+ src/app.py              |  2 ++
+ src/middleware/token.py | 19 ++++++++++++++-----
+ src/utils/helpers.py    |  2 +-
+ 4 files changed, 19 insertions(+), 8 deletions(-)

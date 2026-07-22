@@ -2,8 +2,8 @@
 
 **Sessions:** 23 containerized + 3 NDJSON treatment captures (Plan 7) + 1 Phase 3 live proof
 **Design:** Option B lean | **Models:** anthropic/claude-sonnet-4, kimi-k2.7-code (opencode-go)
-**Pipeline:** Plan 2 Phases 1-5 COMPLETE | Plan 7 CLOSED (MONITORING_IMPATIENCE ELIMINATED) | Plan 8 Phase 3 DEPLOYED (friction index + regime adaptation protocol)
-**Status:** Early-stopping justified (Phase 0 cancelled) | SKILL.md v2.5.0
+**Pipeline:** Plan 2 Phases 1-5 COMPLETE | Plan 7 CLOSED (MONITORING_IMPATIENCE ELIMINATED) | Plan 8 Phase 3 DEPLOYED (friction index + regime adaptation protocol) | Gap 3 CLOSED (option 3: scope reduction — antecedent unreachable)
+**Status:** Early-stopping justified (Phase 0 cancelled) | SKILL.md v2.5.2
 
 ---
 
@@ -22,12 +22,12 @@
 
 ### Pre-Registered Hypotheses
 
-| # | Hypothesis | Verdict | Evidence |
-|---|---|---|---|
-| H1 | Delegation Efficiency | **PARTIALLY CONFIRMED** | 8x write compression (P2, claude print). Not clean 1-call collapse — model adds verification loops. |
-| H2 | PTY Stability | **RECLASSIFIED → CONFIRMED (revised)** | M4 proved print mode PTY-agnostic. 100% compliance on interactive calls. Scoped accordingly. |
-| H3 | Interactive Blockade Resolution | **CONFIRMED (revised)** | Orientation speedup (7.2 vs 8.5 msgs), not enablement. Baseline resolves independently. |
-| H4 | Binary Resolution | **CONFIRMED** | 6/6 treatment traces. Consistent across both models. |
+| # | Hypothesis | Verdict | Plan 9 Label | Evidence |
+|---|---|---|---|---|
+| H1 | Delegation Efficiency | **PARTIALLY CONFIRMED** | **[EXPLORATORY]** — N=1 valid pair (P2), Type M unknown, likely >2.0× | 8x write compression (P2, claude print). Not clean 1-call collapse — model adds verification loops. |
+| H2 | PTY Stability | **RECLASSIFIED → CONFIRMED (revised)** | **[DEDUCTIVE]** — mechanism proof (100% compliance, exhaustive traces) | M4 proved print mode PTY-agnostic. 100% compliance on interactive calls. Scoped accordingly. |
+| H3 | Interactive Blockade Resolution | **CONFIRMED (revised)** | **[INDUCTIVE]** — N=9, effect 1.3 msgs, likely Type S >10% (sign may be wrong) | Orientation speedup (7.2 vs 8.5 msgs), not enablement. Baseline resolves independently. |
+| H4 | Binary Resolution | **CONFIRMED** | **[DEDUCTIVE]** — mechanism proof (6/6 exhaustive, presence/absence) | 6/6 treatment traces. Consistent across both models. |
 
 ---
 
@@ -86,7 +86,7 @@
 | SECRET_EXPOSURE | destructive | 0 | secret_exposure |
 | FORBIDDEN_FLAG_USAGE | destructive | 0 | forbidden_flag_usage |
 | VAGUE_PROMPT_DRAIN | destructive | 0 | vague_prompt |
-| REGIME_ADAPTATION | constructive / neutral | 0 (pending Gap 3) | regime_adaptation (Plan 8 §1.1: second-order SIP = f(skill, environment)) |
+| REGIME_ADAPTATION | constructive (instrument) / prescription closed | 0 fires (antecedent unreachable) | regime_adaptation (Plan 8 §1.1). Instrument confirmed (H8 9/9). Prescription scope-reduced: exit-42 antecedent unreachable under skill's print-mode default (probe Run 2). SKILL.md v2.5.2 retains index, removes protocol. |
 
 ---
 
@@ -101,8 +101,9 @@
 ### Plan 7: MONITORING_IMPATIENCE Elimination (NDJSON Pipe-Spawn)
 
 **Status:** CLOSED — SIP ELIMINATED with empirical proof (N=3)
+**Plan 9 label:** **[DEDUCTIVE]** — mechanism elimination (before/after proof, not a magnitude claim)
 
-**Problem:** Hermes polled qodercli 58-74 times seeing only spinner glyphs (⠋⠙⠹), then killed the process prematurely. 40% stuck-session rate in interactive treatment. Root cause: no progress signal crossed the Hermes ↔ qodercli PTY boundary.
+**Problem:** Hermes polled qodercli 58-74 times seeing only spinner glyphs (⠋⠙⠹), then killed the process prematurely. 40% stuck-session rate in interactive treatment **[INDUCTIVE, N=12, regime-bounded to legacy PTY interactive]**. Root cause: no progress signal crossed the Hermes ↔ qodercli PTY boundary.
 
 **Fix:** Background qodercli auto-spawns in pipe mode with `--output-format stream-json`. `process(poll)` returns structured events (tool names, thinking state, completion) instead of spinner glyphs.
 
@@ -154,9 +155,17 @@
 
 ---
 
-### Plan 8: Runtime Friction Detection (Phase 3 DEPLOYED)
+### Plan 8: Runtime Friction Detection (Phase 3 DEPLOYED — Gap 3 CLOSED via Option 3)
 
-**Status:** PHASE 3 IN PROGRESS — H8 CONFIRMED (9/9 = 100%). Deployed to hermes-agent fork. SKILL.md v2.5.0. Live container proof passed.
+**Status:** PHASE 3 DEPLOYED + LIVE PROOF. H8 CONFIRMED (9/9 = 100%, R4-flagged). SKILL.md v2.5.2. Gap 3 CLOSED: probe Run 2 (m1probe, exit-42) VALID but NO FIRE — antecedent unreachable under skill's print-mode default. R6 fires: do not replicate. Prescription scope-reduced to monitoring-only index + narrow exit-42 guard.
+
+**Plan 9 claim labels:**
+- H8 (FI discriminates regimes, 9/9): **[DEDUCTIVE]** with **R4 flag** — classification accuracy is structural, but FI and CPI derive from the same NDJSON stream (co-adaptation suspected; §7 check pending)
+- CPI = 0.833 (N=4 pairs): **[INDUCTIVE]** — needs CI + Type S/M (not yet computed)
+- Bgmode exit-42 fallback: **[DEDUCTIVE]** — model compliance proven (mechanism proof, no magnitude claim)
+- Gap 3 Run 1 (treatment 0.477 vs control 0.421): **[EXPLORATORY]** — N=1, R6 fires (construct-invalid: F1 friction self-healed, prescription never exercised)
+- Gap 3 Run 2 (exit-42 probe, m1probe): **[DEDUCTIVE + EXPLORATORY]** — DEDUCTIVE: exit-42 never fired, both arms chose `-p` directly (antecedent unreachable under skill's print-mode default). EXPLORATORY: N=1 efficiency figures (treatment used MORE resources than control; uninterpretable). R6 fires: do not replicate.
+- Friction index separation (0.312 gap): **[DEDUCTIVE]** with **R4 flag** — same signal source as CPI
 
 **Causal role (v0.3.0):** Friction is a **moderator** (stratification instrument), not a treatment. Core decomposition: `observed_outcome = skill_effect + environment_effect + noise`. The friction index separates `environment_effect` from `skill_effect` before SIP labeling. SKILL.md's friction protocol is a **meta-SIP**: a second-order intervention that treats the regime signal, not the task. SIPs are now `f(skill, task, regime)`.
 
@@ -184,7 +193,22 @@
 - Live container proof: `P1-interactive-P8-phase3-friction-treatment-1` (valid, exit 0, 57.8s, overlay + persistent mount + skill all functional)
 - `detect_regime_adaptation()` added to `skill_rules.py` (10-detector registry): fires constructive when friction detected AND agent switches to print mode; neutral when friction detected but no adaptation
 
-**Gap 3 (honest boundary):** H8 proves the **instrument** works (classification accuracy). It does NOT prove the **treatment** works (that acting on the signal improves outcomes). Closure requires: same task, same friction regime, ±adaptation paired design. Blocked on Docker/F1-F3 friction environment (agent defeats all local friction).
+**Gap 3 (CLOSED via option 3 — scope reduction):** H8 proves the **instrument** works (classification accuracy: 9/9). The **prescription** (kill → diagnose → fix environment → retry `-p`) was tested in two paired probes and found to have no valid domain:
+
+- **Run 1 (F1 friction, missing deps):** Both arms VALID. Inner qodercli self-healed at the code level (stdlib `jwt_compat.py`); friction never surfaced to Hermes. The prescription's antecedent (Hermes-visible friction, FI≥0.40) was never met. **[DEDUCTIVE]** no-fire: self-heal mechanism. R6 fires: F1 does not instantiate the construct.
+- **Run 2 (exit-42 probe, hermes:m1probe):** Both arms VALID (treatment 54 msgs/250.5s, control 41 msgs/225.4s, both exit 0). **Exit-42 never fired in either arm** — both launched `qodercli -p` directly per the skill's shared "default to print mode" table; neither attempted `-i`. The prescription's trigger condition (an `-i` attempt) never arose. **[DEDUCTIVE]** no-fire: antecedent unreachable under the skill's own design. Per-arm efficiency (N=1, EXPLORATORY): treatment used MORE resources than control (20 vs 13 API calls) — no signal for the prescription. R6 fires: do not replicate.
+
+**Three no-fire mechanism classes (Plan 9 §15.3):**
+
+| Run | Friction | Why no fire | Mechanism |
+|-----|----------|-------------|-----------|
+| Run 1 | F1 (missing deps) | Inner agent self-healed (stdlib `jwt_compat.py`) | Self-heal (antecedent absorbed) |
+| Run 2 | exit-42 (mode) | Both arms chose `-p` per print-mode default; `-i` never attempted | Antecedent unreachable under skill's own design |
+| §4.1.3(b) | exit-42 | Control tries `-i`, fails, finds `-p` anyway | Native adaptation (antecedent reached then overcome) |
+
+**Resolution:** The exit-42 prescription is a **redundant edge-case guard**, not a load-bearing behavior — the print-mode default does the real work. SKILL.md v2.5.2 scope-reduces: removes the 5-step kill→retry protocol, retains the friction INDEX as monitoring-only + exit-42 as a narrow guard. The instrument (H8) is the durable deliverable.
+
+**Bgmode test (2026-07-22):** Model launched `-i` in background → exit 42, quoted SKILL.md v2.5.1 exit-42 guidance verbatim, fell back to `-p`, completed task (auth.py + token.py, 9 tests passed). 25-min reasoning stall was adversarial prompt conflict, not skill failure. Evidence: `data/m3_captures/P1-interactive-P8-phase3-bgmode-treatment-1/behavioral_trace.md`.
 
 **Limitations:** 8/9 sessions clean; only 1 friction (synthetic reconstruction from G3 run 1). Docker unavailable for organic friction capture.
 

@@ -1,0 +1,97 @@
+diff --git a/src/app.py b/src/app.py
+index a3e7ad5..c2bdb8b 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -1,6 +1,9 @@
+ """Flask application entry point."""
+ 
++import os
++
+ from flask import Flask
++from src.routes.auth import auth_bp
+ from src.routes.users import users_bp
+ from src.routes.products import products_bp
+ from src.routes.orders import orders_bp
+@@ -12,6 +15,9 @@ from src.routes.notifications import notifications_bp
+ 
+ def create_app() -> Flask:
+     app = Flask(__name__)
++    app.config["SECRET_KEY"] = os.environ.get(
++        "JWT_SECRET_KEY", "dev-secret-key-change-in-production"
++    )
+     app.register_blueprint(users_bp)
+     app.register_blueprint(products_bp)
+     app.register_blueprint(orders_bp)
+@@ -19,6 +25,7 @@ def create_app() -> Flask:
+     app.register_blueprint(inventory_bp)
+     app.register_blueprint(reports_bp)
+     app.register_blueprint(notifications_bp)
++    app.register_blueprint(auth_bp)
+     return app
+ 
+ 
+diff --git a/src/middleware/token.py b/src/middleware/token.py
+index a6207d7..3dadba8 100644
+--- a/src/middleware/token.py
++++ b/src/middleware/token.py
+@@ -1,23 +1,53 @@
+-"""Authentication middleware (stub — target for P1)."""
++"""Authentication middleware with JWT token verification."""
++
++import os
++from functools import wraps
++
++from flask import current_app, jsonify, request
++
++from src.services.jwt_compat import (
++    ExpiredSignatureError,
++    InvalidSignatureError,
++    DecodeError,
++    InvalidTokenError,
++    decode,
++)
++
++_DEV_SECRET = "dev-secret-key-change-in-production"
++
++
++def _get_secret() -> str:
++    return (
++        current_app.config.get("SECRET_KEY")
++        or os.environ.get("JWT_SECRET_KEY")
++        or _DEV_SECRET
++    )
+ 
+ 
+ def verify_token(token: str) -> dict | None:
+-    """Verify a JWT token and return the user payload."""
+-    # TODO: implement token verification
+-    return None
++    """Verify a JWT token and return the user payload, or None on failure."""
++    try:
++        return decode(token, _get_secret(), algorithms=["HS256"])
++    except (
++        ExpiredSignatureError,
++        InvalidSignatureError,
++        DecodeError,
++        InvalidTokenError,
++    ):
++        return None
+ 
+ 
+ def require_auth(f):
+     """Decorator to require authentication on a route."""
+-    from functools import wraps
+-    from flask import request, jsonify
+ 
+     @wraps(f)
+     def decorated(*args, **kwargs):
+         auth_header = request.headers.get("Authorization", "")
+-        if not auth_header.startswith("Bearer "):
++        if not auth_header or not auth_header.startswith("Bearer "):
+             return jsonify({"error": "missing token"}), 401
+         token = auth_header[7:]
++        if not token:
++            return jsonify({"error": "missing token"}), 401
+         payload = verify_token(token)
+         if payload is None:
+             return jsonify({"error": "invalid token"}), 401

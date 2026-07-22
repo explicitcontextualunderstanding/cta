@@ -1,0 +1,53 @@
+diff --git a/src/app.py b/src/app.py
+index a3e7ad5..181dc7c 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -8,10 +8,12 @@ from src.routes.payments import payments_bp
+ from src.routes.inventory import inventory_bp
+ from src.routes.reports import reports_bp
+ from src.routes.notifications import notifications_bp
++from src.routes.auth import auth_bp
+ 
+ 
+ def create_app() -> Flask:
+     app = Flask(__name__)
++    app.register_blueprint(auth_bp)
+     app.register_blueprint(users_bp)
+     app.register_blueprint(products_bp)
+     app.register_blueprint(orders_bp)
+diff --git a/src/middleware/token.py b/src/middleware/token.py
+index a6207d7..d2f018b 100644
+--- a/src/middleware/token.py
++++ b/src/middleware/token.py
+@@ -1,16 +1,26 @@
+-"""Authentication middleware (stub — target for P1)."""
++"""Authentication middleware with JWT token validation."""
++
++import jwt
++from functools import wraps
++from flask import request, jsonify
++
++SECRET_KEY = "super-secret-key-change-in-production-32bytes!"
++ALGORITHM = "HS256"
+ 
+ 
+ def verify_token(token: str) -> dict | None:
+     """Verify a JWT token and return the user payload."""
+-    # TODO: implement token verification
+-    return None
++    try:
++        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
++        return payload
++    except jwt.ExpiredSignatureError:
++        return None
++    except jwt.InvalidTokenError:
++        return None
+ 
+ 
+ def require_auth(f):
+     """Decorator to require authentication on a route."""
+-    from functools import wraps
+-    from flask import request, jsonify
+ 
+     @wraps(f)
+     def decorated(*args, **kwargs):

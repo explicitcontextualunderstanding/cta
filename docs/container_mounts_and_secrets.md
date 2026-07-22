@@ -159,7 +159,7 @@ crashes before run.sh's export step, file modifications are lost.
 | `data/m3_captures/<run_id>/workspace/` | `/root/workspace` | rw | Git-tracked working copy (**survives crashes**) |
 | `data/m3_captures/<run_id>/hermes_home/` | `/home/hermes/.hermes` | rw | **Persistent Hermes state** — config.yaml, skills/, state.db + WAL (**survives crashes**) |
 | Skill dir (treatment only) | `/root/skill` | readonly | SKILL.md parent dir (symlink-resolved) |
-| `tools_overlay/` (optional) | `/root/tools_overlay` | readonly | NDJSON-patched terminal_tool.py + process_registry.py |
+| `data/ndjson_overlay/` (optional) | `/root/tools_overlay` | readonly | NDJSON-patched terminal_tool.py + process_registry.py |
 
 **M3 fix:** workspace is pre-created on host (`shutil.copytree` + `git init` +
 `git commit`) BEFORE container launch. Bind-mounted rw. File modifications are
@@ -362,6 +362,162 @@ cd data/m3_captures/<run_id>/workspace
 git diff --stat > ../git_diff.txt
 git diff > ../git_diff_full.patch
 ```
+
+---
+
+## Friction Container (Gap 3)
+
+`containers/Dockerfile.friction` builds `registry.rossollc.com/hermes:friction` —
+an F1 friction environment where package installation is impossible. Used by
+`scripts/gap3_friction_harness.py` for the ±adaptation paired experiment.
+
+### Build
+
+```bash
+container build --no-cache -f containers/Dockerfile.friction \
+  -t registry.rossollc.com/hermes:friction .
+```
+
+Builder shim: `container build` (Apple Container 0.11.0+). No Docker required.
+
+### Non-editable install requirement
+
+Hermes MUST be installed with `uv pip install .` (regular), NOT `pip install -e .`
+(editable). Editable installs break `__version__` generation in `hermes_cli`:
+
+```
+ImportError: cannot import name '__version__' from 'hermes_cli'
+```
+
+The Dockerfile upgrades hermes to a pinned commit BEFORE removing package managers.
+
+### Tools overlay path
+
+With a non-editable install, Python imports resolve from site-packages, not the
+source tree. The tools overlay (NDJSON patch) must be copied to:
+
+```
+/opt/hermes/.venv/lib/python3.13/site-packages/tools/
+```
+
+NOT `/opt/hermes/tools/` (source tree — ignored by the installed package).
+
+### Escape vectors discovered (run 1, 2026-07-22)
+
+| # | Vector | How agent exploited it | Dockerfile fix |
+|---|--------|----------------------|----------------|
+| 1 | `/usr/bin/uv` | Direct `uv pip install flask pyjwt` | Step 4: remove `/usr/bin/uv /bin/uv /usr/local/bin/uv` |
+| 2 | `/app/.venv` (Honcho) | `import jwt` succeeded from Honcho's site-packages | Step 8b: remove flask/pyjwt from `/app/.venv/lib/` |
+| 3 | `/tmp/uv-cache/` | Offline install from cached wheels | Step 8c: `rm -rf /tmp/uv-cache /root/.cache/uv` |
+| 4 | `urllib.request` + ssl | Downloaded get-pip.py via HTTPS, reinstalled pip | ~~Step 11 original: remove `ssl.py` + `_ssl*.so`~~ **SUPERSEDED** — breaks hermes (see below) |
+| 5 | (same as #4) | urllib HTTPS download | **Step 11 (revised):** copy ssl into hermes venv site-packages, remove from system python (venv split) |
+
+**CRITICAL: ssl removal breaks hermes (discovered 2026-07-22, run 1 re-attempt).**
+`hermes_cli/auth.py:26` does `import ssl` at module load time. Removing `ssl.py`
+(Dockerfile step 11 original) causes hermes to crash immediately with
+`ModuleNotFoundError: No module named 'ssl'` — both Gap 3 arms exited in ~5s
+without reaching the LLM. Node.js TLS is unaffected (independent stack), but
+hermes's Python HTTP client requires ssl for its own API calls.
+
+**Fix (step 11 revised — venv split):** Copy `ssl.py` and `_ssl*.so` into the
+hermes venv's site-packages, THEN remove them from system python. Python's import
+system searches `sys.path` in order; the venv's site-packages is on hermes's path.
+
+- `/opt/hermes/.venv/bin/python3 -c "import ssl"` → **succeeds** (hermes works)
+- `/usr/local/bin/python3 -c "import ssl"` → **succeeds** (residual — see below)
+
+**Residual escape (accepted):** System python can still `import ssl` because
+`sitecustomize.py` leaks the hermes venv site-packages onto system `sys.path`.
+The venv split alone does NOT isolate ssl from system python. However, the proven
+escape vector (urllib HTTPS one-liner) is blocked by **step 12** (urllib HTTPS
+handler patch). The remaining theoretical escape — raw `ssl.create_default_context()`
++ `socket` + manual HTTP GET — is a novel multi-step chain the model is unlikely
+to discover under 900s time pressure. Accepted as low-risk.
+
+```dockerfile
+# Dockerfile step 11 (actual):
+RUN cp /usr/local/lib/python3.13/ssl.py \
+       /opt/hermes/.venv/lib/python3.13/site-packages/ssl.py \
+    && cp /usr/local/lib/python3.13/lib-dynload/_ssl.cpython-313-aarch64-linux-gnu.so \
+       /opt/hermes/.venv/lib/python3.13/site-packages/_ssl.cpython-313-aarch64-linux-gnu.so \
+    && rm -f /usr/local/lib/python3.13/ssl.py \
+             /usr/local/lib/python3.13/lib-dynload/_ssl.cpython-313-aarch64-linux-gnu.so
+```
+
+Multiple Python venvs exist in the base image: system (`/usr/local/lib/python3.13/`),
+hermes (`/opt/hermes/.venv/`), honcho (`/app/.venv/`). Flask/pyjwt removed from all
+three (steps 7, 8, 8b). The ssl venv split only preserves ssl for hermes — honcho
+and system python lose it (honcho is not used during Gap 3 runs).
+
+### Friction Container Verification
+
+After building (or rebuilding post-reboot), verify inescapability before running
+the experiment:
+
+```bash
+container run --rm --entrypoint /bin/sh registry.rossollc.com/hermes:friction -c '
+  echo "=== Python import checks (all must FAIL) ==="
+  python3 -c "import flask" 2>&1 && echo "ESCAPE: flask" || echo "OK: no flask"
+  python3 -c "import jwt" 2>&1 && echo "ESCAPE: jwt" || echo "OK: no jwt"
+  python3 -c "import pip" 2>&1 && echo "ESCAPE: pip" || echo "OK: no pip"
+
+  echo "=== System python ssl (RESIDUAL — succeeds via sitecustomize path leak) ==="
+  python3 -c "import ssl; print(\"KNOWN RESIDUAL: system ssl available (step 12 blocks urllib HTTPS)\")" 2>&1 || echo "OK: system ssl removed (stronger than expected)"
+
+  echo "=== urllib HTTPS (must FAIL — no ssl module) ==="
+  python3 -c "
+import urllib.request
+urllib.request.urlopen(\"https://pypi.org\", timeout=5)
+print(\"ESCAPE: urllib HTTPS works\")
+" 2>&1 || echo "OK: urllib HTTPS blocked"
+
+  echo "=== Tool availability (all must FAIL) ==="
+  which uv 2>/dev/null && echo "ESCAPE: uv" || echo "OK: no uv"
+  which curl 2>/dev/null && echo "ESCAPE: curl" || echo "OK: no curl"
+  which wget 2>/dev/null && echo "ESCAPE: wget" || echo "OK: no wget"
+  which pip 2>/dev/null && pip --version 2>/dev/null && echo "ESCAPE: pip works" || echo "OK: pip fake/absent"
+
+  echo "=== Hermes venv checks ==="
+  /opt/hermes/.venv/bin/python3 -c "import flask" 2>&1 && echo "ESCAPE: hermes flask" || echo "OK: hermes no flask"
+  /opt/hermes/.venv/bin/python3 -c "import jwt" 2>&1 && echo "ESCAPE: hermes jwt" || echo "OK: hermes no jwt"
+  /app/.venv/bin/python3 -c "import jwt" 2>&1 && echo "ESCAPE: honcho jwt" || echo "OK: honcho no jwt"
+
+  echo "=== Hermes venv ssl (must SUCCEED — hermes auth.py needs it) ==="
+  /opt/hermes/.venv/bin/python3 -c "import ssl; print(\"OK: hermes ssl:\", ssl.OPENSSL_VERSION)" 2>&1 || echo "FAIL: hermes venv ssl missing (hermes will crash)"
+
+  echo "=== Node.js TLS (must WORK — LLM API calls) ==="
+  node -e "require(\"https\").get(\"https://registry.npmjs.org\", r => { console.log(\"OK: node https \" + r.statusCode); process.exit(0) }).on(\"error\", e => { console.log(\"FAIL: \" + e.message); process.exit(1) })"
+
+  echo "=== Hermes version (must print) ==="
+  hermes --version
+'
+```
+
+**Pass criteria:** flask/jwt/pip imports fail, urllib HTTPS fails (step 12 — the
+real blocking), all tools absent, hermes venv `import ssl` SUCCEEDS, Node.js HTTPS
+works (status 200), `hermes --version` prints. System python `import ssl` succeeds
+(known residual via sitecustomize path leak — accepted; proven escape vector is
+urllib HTTPS which IS blocked). Any "ESCAPE" line = image needs another removal
+step. Any "FAIL" in the hermes ssl/node/hermes section = hermes will crash at startup.
+
+### Gap 3 harness workflow
+
+```bash
+# 1. Check kalloc headroom (>200k required)
+zprint | grep "data.kalloc.1024"
+
+# 2. Verify friction image (above)
+
+# 3. Run paired experiment
+python scripts/gap3_friction_harness.py --condition both --run-num 1 --timeout 900
+
+# 4. Check results
+cat data/m3_captures/P8-gap3-friction-treatment-1/classification.json
+cat data/m3_captures/P8-gap3-friction-control-1/classification.json
+```
+
+Run IDs: `P8-gap3-friction-{treatment,control}-{N}`. Both arms install a skill;
+the condition selects WHICH variant (v2.5.1 treatment vs v2.4.0 control).
 
 ---
 

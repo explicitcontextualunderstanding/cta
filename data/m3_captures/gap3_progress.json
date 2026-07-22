@@ -1,0 +1,73 @@
+[
+  {
+    "run_num": 1,
+    "condition": "both",
+    "results": {
+      "treatment": true,
+      "control": true
+    },
+    "timestamp": "2026-07-22T14:53:07Z"
+  },
+  {
+    "run_num": 1,
+    "condition": "both",
+    "results": {
+      "treatment": true,
+      "control": false
+    },
+    "timestamp": "2026-07-22T14:56:22Z"
+  },
+  {
+    "run_num": 1,
+    "condition": "control",
+    "results": {
+      "control": true
+    },
+    "timestamp": "2026-07-22T15:00:13Z"
+  },
+  {
+    "run_num": 1,
+    "condition": "both",
+    "results": {
+      "treatment": false,
+      "control": false
+    },
+    "timestamp": "2026-07-22T15:16:36Z"
+  },
+  {
+    "run_num": 1,
+    "condition": "both",
+    "results": {
+      "treatment": false,
+      "control": false
+    },
+    "timestamp": "2026-07-22T15:17:34Z"
+  },
+  {
+    "run_num": 1,
+    "condition": "both",
+    "results": {
+      "treatment": true,
+      "control": true
+    },
+    "timestamp": "2026-07-22T15:40:00Z"
+  },
+  {
+    "run_num": 2,
+    "condition": "both",
+    "results": {
+      "treatment": false,
+      "control": false
+    },
+    "timestamp": "2026-07-22T16:03:10Z"
+  },
+  {
+    "run_num": 2,
+    "condition": "both",
+    "results": {
+      "treatment": true,
+      "control": true
+    },
+    "timestamp": "2026-07-22T16:33:13Z"
+  }
+]

@@ -1,0 +1,21 @@
+FROM registry.rossollc.com/hermes:latest
+
+LABEL cta.experiment="gap3-m1-probe" \
+      cta.description="Pinned hermes commit (overlay-compatible) WITH deps present — exit-42 is the only friction"
+
+# Override entrypoint for setup layers
+ENTRYPOINT []
+
+# --- Upgrade hermes to the SAME pinned commit as the friction image ---
+# Keeps the hermes build constant across Run 1 (friction) and the M1 probe so the
+# tools overlay (written against this commit) imports cleanly and FI is measurable.
+# NO friction removals: flask/pyjwt/pip/uv/curl stay present, so exit-42 is the
+# only friction the paired arms encounter.
+RUN cd /opt/hermes \
+    && git fetch origin a41d280f95c69f67380358b305b62345934ecaf3 --depth=1 \
+    && git checkout -f a41d280f95c69f67380358b305b62345934ecaf3 \
+    && uv pip install . --python /opt/hermes/.venv/bin/python3
+
+# --- Restore hermes entrypoint ---
+ENTRYPOINT ["/usr/bin/tini", "--", "/opt/hermes/.venv/bin/hermes"]
+CMD ["gateway", "run"]

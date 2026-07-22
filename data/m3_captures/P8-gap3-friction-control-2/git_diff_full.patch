@@ -1,0 +1,56 @@
+diff --git a/package.json b/package.json
+index 3a5b374..9b70f4e 100644
+--- a/package.json
++++ b/package.json
+@@ -10,6 +10,8 @@
+   "dependencies": {
+     "flask": "^3.0",
+     "sqlalchemy": "^2.0",
+-    "pytest": "^8.0"
++    "pytest": "^8.0",
++    "pyjwt": "^2.8",
++    "werkzeug": "^3.0"
+   }
+ }
+diff --git a/src/app.py b/src/app.py
+index a3e7ad5..181dc7c 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -8,10 +8,12 @@ from src.routes.payments import payments_bp
+ from src.routes.inventory import inventory_bp
+ from src.routes.reports import reports_bp
+ from src.routes.notifications import notifications_bp
++from src.routes.auth import auth_bp
+ 
+ 
+ def create_app() -> Flask:
+     app = Flask(__name__)
++    app.register_blueprint(auth_bp)
+     app.register_blueprint(users_bp)
+     app.register_blueprint(products_bp)
+     app.register_blueprint(orders_bp)
+diff --git a/src/middleware/token.py b/src/middleware/token.py
+index a6207d7..71c4ed2 100644
+--- a/src/middleware/token.py
++++ b/src/middleware/token.py
+@@ -1,10 +1,17 @@
+-"""Authentication middleware (stub — target for P1)."""
++"""Authentication middleware."""
++
++import os
++import jwt
++
++_SECRET = os.environ.get("JWT_SECRET_KEY", "dev-secret")
+ 
+ 
+ def verify_token(token: str) -> dict | None:
+     """Verify a JWT token and return the user payload."""
+-    # TODO: implement token verification
+-    return None
++    try:
++        return jwt.decode(token, _SECRET, algorithms=["HS256"])
++    except jwt.PyJWTError:
++        return None
+ 
+ 
+ def require_auth(f):

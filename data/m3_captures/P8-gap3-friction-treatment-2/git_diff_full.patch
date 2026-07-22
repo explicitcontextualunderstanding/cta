@@ -1,0 +1,45 @@
+diff --git a/src/app.py b/src/app.py
+index a3e7ad5..5aaa03e 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -1,6 +1,7 @@
+ """Flask application entry point."""
+ 
+ from flask import Flask
++from src.routes.auth import auth_bp
+ from src.routes.users import users_bp
+ from src.routes.products import products_bp
+ from src.routes.orders import orders_bp
+@@ -12,6 +13,7 @@ from src.routes.notifications import notifications_bp
+ 
+ def create_app() -> Flask:
+     app = Flask(__name__)
++    app.register_blueprint(auth_bp)
+     app.register_blueprint(users_bp)
+     app.register_blueprint(products_bp)
+     app.register_blueprint(orders_bp)
+diff --git a/src/middleware/token.py b/src/middleware/token.py
+index a6207d7..d35f9ea 100644
+--- a/src/middleware/token.py
++++ b/src/middleware/token.py
+@@ -1,10 +1,18 @@
+ """Authentication middleware (stub — target for P1)."""
+ 
++import os
++
++import jwt
++
++_SECRET = os.environ.get("JWT_SECRET_KEY", "test-secret")
++
+ 
+ def verify_token(token: str) -> dict | None:
+     """Verify a JWT token and return the user payload."""
+-    # TODO: implement token verification
+-    return None
++    try:
++        return jwt.decode(token, _SECRET, algorithms=["HS256"])
++    except jwt.PyJWTError:
++        return None
+ 
+ 
+ def require_auth(f):

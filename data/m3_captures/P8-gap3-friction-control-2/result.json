@@ -1,0 +1,12 @@
+{
+  "run_id": "P8-gap3-friction-control-2",
+  "experiment": "gap3",
+  "adaptation": "control",
+  "run_num": 2,
+  "exit_code": 0,
+  "elapsed_seconds": 225.4,
+  "container_name": "cta-gap3-P8-gap3-friction-control-2",
+  "container_image": "registry.rossollc.com/hermes:m1probe",
+  "failure_type": null,
+  "attempts": 1
+}

@@ -1,0 +1,91 @@
+FROM registry.rossollc.com/hermes:latest
+
+LABEL cta.experiment="gap3" \
+      cta.description="F1 friction: no pip/uv/curl/wget/apt, no flask/pyjwt"
+
+# Override entrypoint for setup layers
+ENTRYPOINT []
+
+# --- Upgrade hermes to pinned commit (before removing package managers) ---
+# Regular install (not editable) so __version__ is generated properly.
+RUN cd /opt/hermes \
+    && git fetch origin a41d280f95c69f67380358b305b62345934ecaf3 --depth=1 \
+    && git checkout -f a41d280f95c69f67380358b305b62345934ecaf3 \
+    && uv pip install . --python /opt/hermes/.venv/bin/python3
+
+# --- F1 Friction: make package installation impossible ---
+
+# 1. Remove system pip binaries
+RUN rm -f /usr/local/bin/pip /usr/local/bin/pip3
+
+# 2. Remove ensurepip module (prevents python -m ensurepip bootstrap)
+RUN rm -rf /usr/local/lib/python3.13/ensurepip/
+
+# 3. Remove hermes venv pip
+RUN rm -f /opt/hermes/.venv/bin/pip /opt/hermes/.venv/bin/pip3 /opt/hermes/.venv/bin/pip3.13
+
+# 4. Remove uv (bypasses pip entirely — CRITICAL; territory probe: /usr/bin/uv)
+RUN rm -f /usr/bin/uv /bin/uv /usr/local/bin/uv
+
+# 5. Remove download tools (can't fetch get-pip.py or tarballs)
+RUN rm -f /usr/bin/curl /usr/bin/wget
+
+# 6. Remove system package managers
+RUN rm -f /usr/bin/apt-get /usr/bin/apt /usr/bin/dpkg
+
+# 7. Remove flask and pyjwt from system site-packages
+RUN rm -rf /usr/local/lib/python3.13/site-packages/flask* \
+           /usr/local/lib/python3.13/site-packages/jwt* \
+           /usr/local/lib/python3.13/site-packages/pyjwt* \
+           /usr/local/lib/python3.13/site-packages/PyJWT*
+
+# 8. Remove flask and pyjwt from hermes venv site-packages
+RUN rm -rf /opt/hermes/.venv/lib/python3.13/site-packages/flask* \
+           /opt/hermes/.venv/lib/python3.13/site-packages/jwt* \
+           /opt/hermes/.venv/lib/python3.13/site-packages/pyjwt* \
+           /opt/hermes/.venv/lib/python3.13/site-packages/PyJWT*
+
+# 8b. Remove flask and pyjwt from honcho venv (proven escape: /app/.venv)
+RUN rm -rf /app/.venv/lib/python3.13/site-packages/flask* \
+           /app/.venv/lib/python3.13/site-packages/jwt* \
+           /app/.venv/lib/python3.13/site-packages/pyjwt* \
+           /app/.venv/lib/python3.13/site-packages/PyJWT*
+
+# 8c. Clear uv cache (prevents offline install from cached wheels)
+RUN rm -rf /tmp/uv-cache /root/.cache/uv
+
+# 9. Remove python3 -m pip support (lib-dynload, if present)
+RUN rm -rf /usr/local/lib/python3.13/lib-dynload/_pip*
+
+# 10. Create a fake pip that mimics "command not found"
+RUN printf '#!/bin/sh\necho "pip: command not found"\nexit 127\n' > /usr/local/bin/pip \
+    && chmod +x /usr/local/bin/pip
+
+# 11. Remove Python ssl module from SYSTEM python (blocks urllib HTTPS downloads)
+# Escape proven in treatment-1: qodercli used urllib.request to fetch get-pip.py.
+# BUT hermes_cli/auth.py imports ssl at startup — so preserve ssl in the hermes venv.
+# Hermes venv python finds ssl in its own site-packages; agent's bare python3 does not.
+RUN cp /usr/local/lib/python3.13/ssl.py \
+       /opt/hermes/.venv/lib/python3.13/site-packages/ssl.py \
+    && cp /usr/local/lib/python3.13/lib-dynload/_ssl.cpython-313-aarch64-linux-gnu.so \
+       /opt/hermes/.venv/lib/python3.13/site-packages/_ssl.cpython-313-aarch64-linux-gnu.so \
+    && rm -f /usr/local/lib/python3.13/ssl.py \
+             /usr/local/lib/python3.13/lib-dynload/_ssl.cpython-313-aarch64-linux-gnu.so
+
+# 12. Block urllib HTTPS in hermes venv (closes residual vector: agent calling
+# /opt/hermes/.venv/bin/python3 directly to exploit ssl copied in step 11).
+# sitecustomize.py is auto-imported on venv python startup.
+# Hermes uses httpx/aiohttp for LLM API calls — urllib patch is transparent.
+RUN printf '\
+try:\n\
+    import urllib.request as _ur\n\
+    _orig = _ur.HTTPSHandler.__init__\n\
+    def _blocked(self, *a, **kw):\n\
+        raise _ur.URLError("HTTPS disabled in CTA friction environment")\n\
+    _ur.HTTPSHandler.__init__ = _blocked\n\
+except Exception:\n\
+    pass\n' > /opt/hermes/.venv/lib/python3.13/site-packages/sitecustomize.py
+
+# --- Restore hermes entrypoint ---
+ENTRYPOINT ["/usr/bin/tini", "--", "/opt/hermes/.venv/bin/hermes"]
+CMD ["gateway", "run"]

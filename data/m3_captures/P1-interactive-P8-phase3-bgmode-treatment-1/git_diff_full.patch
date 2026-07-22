@@ -1,0 +1,84 @@
+diff --git a/package.json b/package.json
+index 3a5b374..0cea5ed 100644
+--- a/package.json
++++ b/package.json
+@@ -10,6 +10,7 @@
+   "dependencies": {
+     "flask": "^3.0",
+     "sqlalchemy": "^2.0",
+-    "pytest": "^8.0"
++    "pytest": "^8.0",
++    "PyJWT": "^2.8"
+   }
+ }
+diff --git a/src/app.py b/src/app.py
+index a3e7ad5..ce13873 100644
+--- a/src/app.py
++++ b/src/app.py
+@@ -1,6 +1,8 @@
+ """Flask application entry point."""
+ 
++import os
+ from flask import Flask
++from src.routes.auth import auth_bp
+ from src.routes.users import users_bp
+ from src.routes.products import products_bp
+ from src.routes.orders import orders_bp
+@@ -12,6 +14,8 @@ from src.routes.notifications import notifications_bp
+ 
+ def create_app() -> Flask:
+     app = Flask(__name__)
++    app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-secret-key")
++    app.register_blueprint(auth_bp)
+     app.register_blueprint(users_bp)
+     app.register_blueprint(products_bp)
+     app.register_blueprint(orders_bp)
+diff --git a/src/middleware/token.py b/src/middleware/token.py
+index a6207d7..516c2cb 100644
+--- a/src/middleware/token.py
++++ b/src/middleware/token.py
+@@ -1,16 +1,26 @@
+-"""Authentication middleware (stub — target for P1)."""
++"""JWT authentication middleware."""
++
++import os
++from functools import wraps
++
++import jwt
++from flask import request, jsonify, current_app
++
++SECRET_KEY = os.environ.get("SECRET_KEY", "dev-secret-key")
++ALGORITHM = "HS256"
+ 
+ 
+ def verify_token(token: str) -> dict | None:
+     """Verify a JWT token and return the user payload."""
+-    # TODO: implement token verification
+-    return None
++    try:
++        secret = current_app.config.get("SECRET_KEY", SECRET_KEY)
++        return jwt.decode(token, secret, algorithms=[ALGORITHM])
++    except (jwt.ExpiredSignatureError, jwt.InvalidTokenError):
++        return None
+ 
+ 
+ def require_auth(f):
+     """Decorator to require authentication on a route."""
+-    from functools import wraps
+-    from flask import request, jsonify
+ 
+     @wraps(f)
+     def decorated(*args, **kwargs):
+diff --git a/src/utils/helpers.py b/src/utils/helpers.py
+index 9f5f9ec..21cf9bb 100644
+--- a/src/utils/helpers.py
++++ b/src/utils/helpers.py
+@@ -13,7 +13,7 @@ def parse_date(date_str: str) -> datetime:
+ 
+ def format_timestamp(dt: datetime) -> str:
+     """Format a datetime as ISO 8601 timestamp."""
+-    return dt.strftime("%Y-%m-%dT%H:%M:%S"  # missing closing paren — N1 target (line 47)
++    return dt.strftime("%Y-%m-%dT%H:%M:%S")
+ 
+ 
+ def slugify(text: str) -> str:

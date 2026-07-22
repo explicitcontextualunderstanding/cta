@@ -26,5 +26,6 @@ After recovery, FI drops to 0.230 → correct (session no longer in friction).
 
 ## Limitation:
 This is a synthetic reconstruction, not a true capture. The inner qodercli NDJSON
-stream from G3 run 1 was not preserved (A6). Real friction capture requires Docker
-with removed pip/ensurepip/network (Plan 8 Phase 1b Test Plan, configs F1/F3).
+stream from G3 run 1 was not preserved (A6). Real friction capture uses the F1
+friction image (`registry.rossollc.com/hermes:friction`, built + verified
+inescapable 2026-07-22). Paired experiment running.

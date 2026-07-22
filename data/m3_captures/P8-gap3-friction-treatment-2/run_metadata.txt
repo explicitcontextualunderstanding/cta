@@ -1,0 +1,9 @@
+started_at=2026-07-22T16:25:17Z
+hermes_exit=0
+completed_at=2026-07-22T16:29:26Z
+experiment=gap3
+adaptation=treatment
+run_num=2
+model=kimi-k2.7-code
+provider=opencode-go
+container_image=registry.rossollc.com/hermes:m1probe
